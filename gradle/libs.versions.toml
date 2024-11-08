@@ -1,17 +1,21 @@
 [versions]
-agp = "8.5.2"
-kotlin = "1.9.0"
+agp = "8.7.2"
+kotlin = "1.9.25"
 playServicesWearable = "18.2.0"
-composeBom = "2024.04.01"
-composeMaterial = "1.2.1"
-composeFoundation = "1.2.1"
-activityCompose = "1.7.2"
+composeBom = "2024.10.01"
+composeMaterial = "1.4.0"
+composeFoundation = "1.4.0"
+activityCompose = "1.9.3"
 coreSplashscreen = "1.0.1"
-tiles = "1.1.0"
-tilesMaterial = "1.1.0"
-horologistComposeTools = "0.4.8"
-horologistTiles = "0.4.8"
-watchfaceComplicationsDataSourceKtx = "1.1.1"
+tiles = "1.4.1"
+tilesMaterial = "1.4.1"
+horologistComposeTools = "0.6.20"
+horologistTiles = "0.6.20"
+watchfaceComplicationsDataSourceKtx = "1.2.1"
+navigationCompose = "2.8.3"
+playServicesLocation = "21.3.0"
+runtimeLivedata = "1.7.5"
+material3Android = "1.3.1"
 
 [libraries]
 play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
@@ -30,6 +34,10 @@ tiles-material = { group = "androidx.wear.tiles", name = "tiles-material", versi
 horologist-compose-tools = { group = "com.google.android.horologist", name = "horologist-compose-tools", version.ref = "horologistComposeTools" }
 horologist-tiles = { group = "com.google.android.horologist", name = "horologist-tiles", version.ref = "horologistTiles" }
 watchface-complications-data-source-ktx = { group = "androidx.wear.watchface", name = "watchface-complications-data-source-ktx", version.ref = "watchfaceComplicationsDataSourceKtx" }
+navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
+runtime-livedata = { group = "androidx.compose.runtime", name = "runtime-livedata", version.ref = "runtimeLivedata" }
+material3-android = { group = "androidx.compose.material3", name = "material3-android", version.ref = "material3Android" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
