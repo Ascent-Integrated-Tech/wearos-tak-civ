@@ -36,7 +36,7 @@ class MainActivity : ComponentActivity() {
         setTheme(android.R.style.Theme_DeviceDefault)
 
         setContent {
-            WearApp("Android")
+            WearApp("User")
         }
     }
 }
