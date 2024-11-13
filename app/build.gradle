@@ -94,6 +94,7 @@ dependencies {
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation libs.play.services.location
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4

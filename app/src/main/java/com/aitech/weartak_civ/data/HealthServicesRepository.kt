@@ -21,7 +21,7 @@ import androidx.concurrent.futures.await
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.PassiveListenerConfig
-//import com.example.passivedatacompose.TAG
+import com.example.passivedatacompose.data.HealthServicesRepository.Constants.TAG
 //import com.example.passivedatacompose.service.PassiveDataService
 import kotlinx.coroutines.flow.flow
 
@@ -30,11 +30,12 @@ import kotlinx.coroutines.flow.flow
  * those APIs to enable use in coroutines.
  */
 class HealthServicesRepository(context: Context) {
-    /*
+
     private val healthServicesClient = HealthServices.getClient(context)
     private val passiveMonitoringClient = healthServicesClient.passiveMonitoringClient
     private val dataTypes = setOf(DataType.HEART_RATE_BPM)
 
+    /*
     private val passiveListenerConfig = PassiveListenerConfig(
         dataTypes = dataTypes,
         shouldUserActivityInfoBeRequested = false,
@@ -61,4 +62,9 @@ class HealthServicesRepository(context: Context) {
     }
 
      */
+
+    object Constants {
+        val TAG = "WearTAK-HealthServicesRepository"
+    }
+
 }

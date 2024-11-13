@@ -22,6 +22,7 @@ import androidx.health.services.client.data.HeartRateAccuracy.SensorStatus.Compa
 import androidx.health.services.client.data.SampleDataPoint
 
 fun List<SampleDataPoint<Double>>.latestHeartRate(): Double? {
+
     return this
         // dataPoints can have multiple types (e.g. if the app is registered for multiple types).
         .filter { it.dataType == DataType.HEART_RATE_BPM }
