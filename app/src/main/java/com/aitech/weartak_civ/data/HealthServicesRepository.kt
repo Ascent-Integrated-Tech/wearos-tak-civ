@@ -1,19 +1,5 @@
-/*
- * Copyright 2022 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-package com.example.passivedatacompose.data
+
+package com.aitech.weartak_civ.data
 
 import android.content.Context
 import android.util.Log
@@ -21,7 +7,7 @@ import androidx.concurrent.futures.await
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.PassiveListenerConfig
-import com.example.passivedatacompose.data.HealthServicesRepository.Constants.TAG
+import com.aitech.weartak_civ.data.HealthServicesRepository.Constants.TAG
 //import com.example.passivedatacompose.service.PassiveDataService
 import kotlinx.coroutines.flow.flow
 

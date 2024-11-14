@@ -10,6 +10,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Looper
+import android.provider.Settings.Secure
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,6 +33,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -45,6 +52,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.awaitWithException
 import androidx.health.services.client.data.DataType
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
@@ -55,6 +64,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART1
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART2
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART3
@@ -69,7 +79,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART6
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART7
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_8
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_9
-
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -80,6 +89,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.net.Socket
@@ -88,6 +98,7 @@ import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import java.util.Timer
 import java.util.TimerTask
@@ -120,9 +131,9 @@ class MainActivity : ComponentActivity() {
     }
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationRequest: LocationRequest
-    private val callsign_id = 1
-    private val callsign = "SAMSUNG_GALAXY_6_WEAROS-" + callsign_id
-    private val device_uid = "UID_GALAXY_WEAROS_" + callsign_id
+    //private val callsign_id = 1
+    //private val callsign = "WEAROS-" + callsign_id
+    private val device_uid by lazy { "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID) }
     val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     var lat : Double? = null
     var lon : Double? = null
@@ -131,9 +142,16 @@ class MainActivity : ComponentActivity() {
     var le : Float? = null
     var speed : Float? = null
     var bearing : Float? = null
+    var secureSocket : SSLSocket? = null
+    val mainActivity : MainActivity = this
+    private val dataRepository: DataRepository by lazy { DataRepository(this) }
+    private var callsign = "WEAROS-0"
+    private val callsignState = MutableLiveData<String>("WEAROS-0")
+
 
     private fun hasGps(): Boolean = packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
-    fun sendLocation(secureSock: Socket, uid: String, callsign: String, role: String, teamColor: String, location: LocationResult) {
+
+    fun sendLocation(secureSock: SSLSocket, uid: String, callsign: String, role: String, teamColor: String, location: LocationResult) {
         try {
             val locDateTime = Date()
             lat = location.lastLocation?.latitude
@@ -155,7 +173,7 @@ class MainActivity : ComponentActivity() {
                 calendar.setTime(locDateTime)
 
                 // Add 120 seconds to the calendar
-                calendar.add(Calendar.SECOND, 120)
+                calendar.add(Calendar.SECOND, 20)
 
                 val locDateTimeFuture = calendar.time
                 val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
@@ -169,15 +187,15 @@ class MainActivity : ComponentActivity() {
                 val bearingActual = bearing ?: "0.0"
                 val cotMsg: String = LOC_PART1 + device_uid +
                         LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
-                        LOC_PART3 + lat + "' lon='" + lon + "' hae='" + haeActual + "' ce='" + ceActual + "' le='" + leActual +
+                        LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(Locale.ENGLISH, "%.2f", haeActual) +
+                        "' ce='" + java.lang.String.format(Locale.ENGLISH, "%.2f", ceActual) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
                         LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
                         LOC_PART7 + 98 + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
                 Log.d(TAG, "Sending location COT message: $cotMsg")
-                CoroutineScope(Dispatchers.IO).launch {
-                    val outputStream = secureSock.getOutputStream()
-                    outputStream.write(cotMsg.toByteArray(charset("UTF-8")))
-                    outputStream.flush()
-                }
+
+                val outputStream = secureSock.getOutputStream()
+                outputStream.write(cotMsg.toByteArray(charset("UTF-8")))
+                outputStream.flush()
             }
         } catch (e: IOException) {
             e.printStackTrace()
@@ -188,7 +206,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun processBiometrics(secureSock: Socket) {
+    fun processBiometrics(secureSock: Socket, callsign: String) {
         try {
             // Parse and manipulate timestamps
             dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
@@ -213,18 +231,20 @@ class MainActivity : ComponentActivity() {
                 val haeActual = hae ?: "0.0"
                 val ceActual = ce ?: "9999999.0"
                 val leActual = le ?: "9999999.0"
-                cotMsg = cotMsg + lat + "' lon='" + lon + "' hae='" + haeActual + "' ce='" + ceActual + "' le='" + leActual +
-                        BIO_PART4 + "SG6WOS" + callsign_id +
+                // TODO: Serial number should be unique. Hash android id to it
+                cotMsg = cotMsg + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(Locale.ENGLISH, "%.2f", haeActual) +
+                        "' ce='" + java.lang.String.format(Locale.ENGLISH, "%.2f", ceActual) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
+                        BIO_PART4 + "SG6WOS" + callsign +
                         "' heartRate='79' " +
                         "callsign='" + callsign +
-                        "' model='SAMSUNG_GALAXY_6_WEAROS" +
+                        "' model='WEAROS" +
                         "' batteryLevel='98" + BIO_PART5
             } else {
                 cotMsg = cotMsg + "0.0' lon='0.0' hae='9999999.0' ce='9999999.0' le='9999999.0" +
-                        BIO_PART4 + "SG6WOS" + callsign_id +
+                        BIO_PART4 + "SG6WOS" + callsign +
                         "' heartRate='79' " +
                         "callsign='" + callsign +
-                        "' model='SAMSUNG_GALAXY_6_WEAROS" +
+                        "' model='WEAROS" +
                         "' batteryLevel='98" + BIO_PART5
             }
 
@@ -241,8 +261,7 @@ class MainActivity : ComponentActivity() {
             System.err.println("Unexpected error sending biometric COT message: " + e.message)
         }
     }
-    fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String): SSLSocket? {
-        var secureSocket: SSLSocket? = null
+    fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
         Log.d("WearTAK-CIV","connectTAKServer called")
         try {
             // Load client certificate
@@ -280,14 +299,33 @@ class MainActivity : ComponentActivity() {
             Log.e("WearTAK-CIV", "Error connectTAKServer:", e)
         }
 
-        return secureSocket
+    }
+
+    val locationCallback: LocationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            CoroutineScope(Dispatchers.IO).launch {
+                sendLocation(secureSocket!!, device_uid, callsign, "Team Member", "Orange", result)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "onDestroy called")
+        CoroutineScope(Dispatchers.IO).launch {
+            secureSocket?.close()
+        }
+        fusedLocationClient?.removeLocationUpdates(locationCallback)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
 
         super.onCreate(savedInstanceState)
-
+        CoroutineScope(Dispatchers.Main).launch {
+            dataRepository.getCallsign.collect { cs -> Log.d(TAG, "Getting and setting initial callsign: " + cs); callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs);  }
+            //dataRepository.getCallsign.collect { callsign -> Log.d(TAG, "set callsign: " + callsign) }
+        }
         setTheme(android.R.style.Theme_DeviceDefault)
 
         val healthClient = HealthServices.getClient(this /*context*/)
@@ -315,12 +353,8 @@ class MainActivity : ComponentActivity() {
             // for ActivityCompat#requestPermissions for more details.
             val listPermissionsNeeded: MutableList<String> = ArrayList()
             listPermissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION)
-            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1, )
+            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
         }
-        setContent {
-            WearTAKCivApp("User")
-        }
-
 
         if (hasGps()) {
             Log.i(TAG, "This hardware has GPS")
@@ -328,29 +362,26 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "This hardware does NOT have GPS")
         }
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(3)).build()
+        locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(1)).build()
 
         CoroutineScope(Dispatchers.IO).launch {
-            val secureSocket = connectTAKServer( R.raw.tak_prod_ascent_user, "atakatak", "tak.prod.ops.ascentitech.com")
+            connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
             if (null != secureSocket) {
                 val timer = Timer()
                 timer.schedule(
                     object : TimerTask() {
                         override fun run() {
-                            processBiometrics(secureSocket)
+                            processBiometrics(secureSocket!!, callsign)
                         }
                     },0, 30000)
 
-                val locationCallback: LocationCallback = object : LocationCallback() {
-                    override fun onLocationResult(result: LocationResult) {
-                        sendLocation(secureSocket, device_uid, callsign, "Team Member", "Orange", result)
-                    }
-                }
+
                 if ((ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
                     (ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
                     Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
                 } else {
                     Log.d(TAG, "Calling requestLocationUpdates")
+                    //mainActivity.startService(Intent(mainActivity, LocationService))
                     fusedLocationClient.requestLocationUpdates(
                         locationRequest,
                         locationCallback,
@@ -358,18 +389,21 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-        };
+        }
+        setContent {
+            WearTAKCivApp(callsignState)
+        }
     }
 }
 
 @Composable
-fun WearTAKCivApp(greetingName: String) {
+fun WearTAKCivApp(greetingNameState: LiveData<String>) {
     val navController = rememberNavController()
     NavHost(navController, startDestination = "main_screen") {
         composable("main_screen",
             enterTransition = { fadeIn() },
             exitTransition = { fadeOut() }) {
-            MainScreen(navController, greetingName)
+            MainScreen(navController, greetingNameState)
         }
         composable("settings_screen",
             enterTransition = { slideInVertically() },
@@ -380,7 +414,7 @@ fun WearTAKCivApp(greetingName: String) {
 }
 
 @Composable
-fun MainScreen(navController: NavController, greetingName: String) {
+fun MainScreen(navController: NavController, greetingNameState: LiveData<String>) {
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -390,7 +424,7 @@ fun MainScreen(navController: NavController, greetingName: String) {
             contentAlignment = Alignment.Center
         ) {
             TimeText()
-            Greeting(greetingName = greetingName)
+            Greeting(greetingNameState = greetingNameState)
             Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings",
                 modifier = Modifier
                     .size(40.dp)
@@ -403,12 +437,13 @@ fun MainScreen(navController: NavController, greetingName: String) {
 }
 
 @Composable
-fun Greeting(greetingName: String) {
+fun Greeting(greetingNameState: LiveData<String>) {
+    val greetingName: String? by greetingNameState.observeAsState()
     Text(
         modifier = Modifier.fillMaxWidth(),
         textAlign = TextAlign.Center,
         color = MaterialTheme.colors.primary,
-        text = stringResource(R.string.hello_world, greetingName)
+        text = "From WearTAK-CIV, Hello ${greetingName}!"
     )
 }
 
@@ -448,5 +483,6 @@ fun SettingsScreen(navController: NavController) {
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable
 fun DefaultPreview() {
-    WearTAKCivApp("Preview Android")
+    var callsignState = MutableLiveData<String>("Preview Android!")
+    WearTAKCivApp(callsignState)
 }

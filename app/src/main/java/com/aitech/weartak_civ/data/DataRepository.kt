@@ -1,19 +1,5 @@
-/*
- * Copyright 2022 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-package com.example.passivedatacompose.data
+
+package com.aitech.weartak_civ.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
@@ -21,13 +7,15 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlin.random.Random
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "passive_data")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 
-class PassiveDataRepository(private val context: Context) {
+class DataRepository(private val context: Context) {
     val passiveDataEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PASSIVE_DATA_ENABLED] ?: false
     }
@@ -48,8 +36,19 @@ class PassiveDataRepository(private val context: Context) {
         }
     }
 
+    val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CALLSIGN] ?: ("WEAROS-" + Random.nextInt(1, 1000).toString())
+    }
+
+    suspend fun storeCallsign(callsign: String) {
+        context.dataStore.edit { prefs ->
+            prefs[CALLSIGN] = callsign
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
         private val LATEST_HEART_RATE = doublePreferencesKey("latest_heart_rate")
+        private val CALLSIGN = stringPreferencesKey("callsign")
     }
 }

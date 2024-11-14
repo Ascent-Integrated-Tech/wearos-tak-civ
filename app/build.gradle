@@ -95,6 +95,9 @@ dependencies {
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation libs.play.services.location
+    implementation "androidx.wear:wear-ongoing:1.0.0"
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"
+    implementation libs.runtime.livedata
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
