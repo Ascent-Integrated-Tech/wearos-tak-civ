@@ -1,12 +1,16 @@
-/* While this template provides a good starting point for using Wear Compose, you can always
- * take a look at https://github.com/android/wear-os-samples/tree/main/ComposeStarter and
- * https://github.com/android/wear-os-samples/tree/main/ComposeAdvanced to find the most up to date
- * changes to the libraries and their usages.
+/*
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
  */
 
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Looper
@@ -80,7 +84,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART7
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_8
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_9
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.LocationService
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -112,7 +118,7 @@ import javax.net.ssl.X509TrustManager
 
 class MainActivity : ComponentActivity() {
 
-    object Constants {
+    companion object Constants {
         val TAG = "WearTAK-MainActivity"
         val LOC_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
         val LOC_PART2 = "' type='a-f-G-U-C' time='"
@@ -128,12 +134,19 @@ class MainActivity : ComponentActivity() {
         val BIO_PART3 = "' how='m-g' access='Undefined'><point lat='"
         val BIO_PART4 = "' /><detail><status serialNumber='"
         val BIO_PART5 = "'/></detail></event>"
+        lateinit var mainActivity : MainActivity
+        lateinit var device_uid : String
+        var callsign = "WEAROS-0"
+
+        fun getActivity(): MainActivity {
+            return mainActivity
+        }
     }
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationRequest: LocationRequest
     //private val callsign_id = 1
     //private val callsign = "WEAROS-" + callsign_id
-    private val device_uid by lazy { "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID) }
+    //val device_uid by lazy { "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID) }
     val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     var lat : Double? = null
     var lon : Double? = null
@@ -143,11 +156,8 @@ class MainActivity : ComponentActivity() {
     var speed : Float? = null
     var bearing : Float? = null
     var secureSocket : SSLSocket? = null
-    val mainActivity : MainActivity = this
     private val dataRepository: DataRepository by lazy { DataRepository(this) }
-    private var callsign = "WEAROS-0"
     private val callsignState = MutableLiveData<String>("WEAROS-0")
-
 
     private fun hasGps(): Boolean = packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
 
@@ -183,7 +193,7 @@ class MainActivity : ComponentActivity() {
                 val haeActual = hae ?: "0.0"
                 val ceActual = ce ?: "9999999.0"
                 val leActual = le ?: "9999999.0"
-                val speedActual = le ?: "0.0"
+                val speedActual = speed ?: "0.0"
                 val bearingActual = bearing ?: "0.0"
                 val cotMsg: String = LOC_PART1 + device_uid +
                         LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
@@ -206,7 +216,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun processBiometrics(secureSock: Socket, callsign: String) {
+    fun processBiometrics(secureSock: SSLSocket, callsign: String) {
         try {
             // Parse and manipulate timestamps
             dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
@@ -261,6 +271,7 @@ class MainActivity : ComponentActivity() {
             System.err.println("Unexpected error sending biometric COT message: " + e.message)
         }
     }
+
     fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
         Log.d("WearTAK-CIV","connectTAKServer called")
         try {
@@ -315,13 +326,16 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
-        fusedLocationClient?.removeLocationUpdates(locationCallback)
+        //fusedLocationClient?.removeLocationUpdates(locationCallback)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
 
         super.onCreate(savedInstanceState)
+        mainActivity = this
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+
         CoroutineScope(Dispatchers.Main).launch {
             dataRepository.getCallsign.collect { cs -> Log.d(TAG, "Getting and setting initial callsign: " + cs); callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs);  }
             //dataRepository.getCallsign.collect { callsign -> Log.d(TAG, "set callsign: " + callsign) }
@@ -361,8 +375,8 @@ class MainActivity : ComponentActivity() {
         } else {
             Log.i(TAG, "This hardware does NOT have GPS")
         }
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(1)).build()
+        //fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
 
         CoroutineScope(Dispatchers.IO).launch {
             connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
@@ -380,13 +394,16 @@ class MainActivity : ComponentActivity() {
                     (ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
                     Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
                 } else {
-                    Log.d(TAG, "Calling requestLocationUpdates")
-                    //mainActivity.startService(Intent(mainActivity, LocationService))
+                    Log.d(TAG, "Calling LocationService")
+                    mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                    /*
                     fusedLocationClient.requestLocationUpdates(
                         locationRequest,
                         locationCallback,
                         Looper.getMainLooper()
                     )
+
+                     */
                 }
             }
         }
