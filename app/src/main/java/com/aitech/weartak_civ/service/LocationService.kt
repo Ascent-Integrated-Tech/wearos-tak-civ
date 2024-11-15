@@ -140,8 +140,8 @@ class LocationService : Service() {
 
     private fun createLocationRequest() {
         val locationRequest = LocationRequest.create()
-        locationRequest.interval = 1000
-        locationRequest.fastestInterval = 500
+        locationRequest.interval = 2000
+        locationRequest.fastestInterval = 1000
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
         locationRequest.priority = Priority.PRIORITY_HIGH_ACCURACY
@@ -230,10 +230,18 @@ class LocationService : Service() {
             }
         } catch (e: IOException) {
             e.printStackTrace()
-            System.err.println("Error sending location COT message: " + e.message)
+            System.err.println("IO Error sending location COT message: " + e.message)
+            if (null != secureSock) {
+                secureSock.close()
+            }
+            connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
         } catch (e: java.lang.Exception) {
             e.printStackTrace()
             System.err.println("Unexpected error sending location COT message: " + e.message)
+            if (null != secureSock) {
+                secureSock.close()
+            }
+            connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
         }
     }
 
