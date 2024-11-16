@@ -13,7 +13,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Looper
 import android.provider.Settings.Secure
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -54,8 +53,14 @@ import androidx.concurrent.futures.await
 import androidx.core.app.ActivityCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.health.services.client.HealthServices
+import androidx.health.services.client.MeasureCallback
+import androidx.health.services.client.MeasureClient
 import androidx.health.services.client.awaitWithException
+import androidx.health.services.client.data.Availability
+import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
+import androidx.health.services.client.data.DataTypeAvailability
+import androidx.health.services.client.data.DeltaDataType
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
@@ -69,36 +74,24 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART1
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART2
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART3
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART4
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART5
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART1
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART2
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART3
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART4
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART5
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART6
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART7
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_8
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_9
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.data.HealthServicesRepository
+import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.BatteryMonitorService
+import com.aitech.weartak_civ.service.BatteryMonitorService.Companion.batteryPercentage
 import com.aitech.weartak_civ.service.LocationService
+import com.aitech.weartak_civ.service.PassiveDataService
+import com.aitech.weartak_civ.service.PassiveDataService.Companion
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.IOException
-import java.net.Socket
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
@@ -119,7 +112,7 @@ import javax.net.ssl.X509TrustManager
 class MainActivity : ComponentActivity() {
 
     companion object Constants {
-        val TAG = "WearTAK-MainActivity"
+        val TAG = "WearTAK-" + MainActivity::class.java.simpleName
         val LOC_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
         val LOC_PART2 = "' type='a-f-G-U-C' time='"
         val LOC_PART3 = "' how='m-g' access='Undefined'><point lat='"
@@ -158,63 +151,10 @@ class MainActivity : ComponentActivity() {
     var secureSocket : SSLSocket? = null
     private val dataRepository: DataRepository by lazy { DataRepository(this) }
     private val callsignState = MutableLiveData<String>("WEAROS-0")
+    lateinit var healthServicesRepository : HealthServicesRepository
+    lateinit var measureClient : MeasureClient
 
     private fun hasGps(): Boolean = packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
-
-    fun sendLocation(secureSock: SSLSocket, uid: String, callsign: String, role: String, teamColor: String, location: LocationResult) {
-        try {
-            val locDateTime = Date()
-            lat = location.lastLocation?.latitude
-            lon = location.lastLocation?.longitude
-            hae = location.lastLocation?.altitude
-            ce = location.lastLocation?.accuracy
-            le = location.lastLocation?.verticalAccuracyMeters
-            speed = location.lastLocation?.speed
-            bearing = location.lastLocation?.bearing
-            //Log.d(TAG, "sendLocation called with location ${location.toString()}")
-            //Log.d(TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
-            if ((null != lat) && (null != lon)) {
-                // Parse and manipulate timestamps
-                dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-                val locTimeStr = dateTimeFormatter.format(locDateTime)
-
-                // Create a Calendar object and set it to the given date
-                val calendar: Calendar = Calendar.getInstance()
-                calendar.setTime(locDateTime)
-
-                // Add 120 seconds to the calendar
-                calendar.add(Calendar.SECOND, 20)
-
-                val locDateTimeFuture = calendar.time
-                val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
-                //Log.d(TAG, "Current location time string: $locTimeStr")
-
-                // Construct CoT message
-                val haeActual = hae ?: "0.0"
-                val ceActual = ce ?: "9999999.0"
-                val leActual = le ?: "9999999.0"
-                val speedActual = speed ?: "0.0"
-                val bearingActual = bearing ?: "0.0"
-                val cotMsg: String = LOC_PART1 + device_uid +
-                        LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
-                        LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(Locale.ENGLISH, "%.2f", haeActual) +
-                        "' ce='" + java.lang.String.format(Locale.ENGLISH, "%.2f", ceActual) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
-                        LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                        LOC_PART7 + 98 + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
-                Log.d(TAG, "Sending location COT message: $cotMsg")
-
-                val outputStream = secureSock.getOutputStream()
-                outputStream.write(cotMsg.toByteArray(charset("UTF-8")))
-                outputStream.flush()
-            }
-        } catch (e: IOException) {
-            e.printStackTrace()
-            System.err.println("Error sending location COT message: " + e.message)
-        } catch (e: java.lang.Exception) {
-            e.printStackTrace()
-            System.err.println("Unexpected error sending location COT message: " + e.message)
-        }
-    }
 
     fun processBiometrics(secureSock: SSLSocket, callsign: String) {
         try {
@@ -248,14 +188,14 @@ class MainActivity : ComponentActivity() {
                         "' heartRate='79' " +
                         "callsign='" + callsign +
                         "' model='WEAROS" +
-                        "' batteryLevel='98" + BIO_PART5
+                        "' batteryLevel='$batteryPercentage" + BIO_PART5
             } else {
                 cotMsg = cotMsg + "0.0' lon='0.0' hae='9999999.0' ce='9999999.0' le='9999999.0" +
                         BIO_PART4 + "SG6WOS" + callsign +
                         "' heartRate='79' " +
                         "callsign='" + callsign +
                         "' model='WEAROS" +
-                        "' batteryLevel='98" + BIO_PART5
+                        "' batteryLevel='$batteryPercentage" + BIO_PART5
             }
 
             // Send the CoT message
@@ -273,7 +213,7 @@ class MainActivity : ComponentActivity() {
     }
 
     fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
-        Log.d("WearTAK-CIV","connectTAKServer called")
+        Log.d(TAG,"connectTAKServer called")
         try {
             // Load client certificate
             val keyStore = KeyStore.getInstance("PKCS12")
@@ -304,10 +244,10 @@ class MainActivity : ComponentActivity() {
             secureSocket = socketFactory.createSocket(takServer, 8089) as SSLSocket
             secureSocket!!.startHandshake()
 
-            Log.d("WearTAK-CIV","Successfully connected to $takServer on port 8089")
+            Log.d(TAG,"Successfully connected to $takServer on port 8089")
         } catch (e: Exception) {
             e.printStackTrace()
-            Log.e("WearTAK-CIV", "Error connectTAKServer:", e)
+            Log.e(TAG, "Error connectTAKServer:", e)
         }
 
     }
@@ -315,7 +255,7 @@ class MainActivity : ComponentActivity() {
     val locationCallback: LocationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             CoroutineScope(Dispatchers.IO).launch {
-                sendLocation(secureSocket!!, device_uid, callsign, "Team Member", "Orange", result)
+                //sendLocation(secureSocket!!, device_uid, callsign, "Team Member", "Orange", result)
             }
         }
     }
@@ -323,18 +263,54 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "onDestroy called")
+        mainActivity.stopService(Intent(mainActivity, BatteryMonitorService::class.java))
+        mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
+
+        // Unregister the callback.
+            runBlocking {
+                measureClient.unregisterMeasureCallbackAsync(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
+            }
+        lifecycleScope.launch {
+            healthServicesRepository.unregisterForHeartRateData()
+        }
+
         //fusedLocationClient?.removeLocationUpdates(locationCallback)
+    }
+
+    val heartRateCallback = object : MeasureCallback {
+        override fun onAvailabilityChanged(dataType: DeltaDataType<*, *>, availability: Availability) {
+            Log.d(TAG, "onAvailabilityChanged called w/ availability: $availability")
+            if (availability is DataTypeAvailability) {
+                // Handle availability change.
+            }
+        }
+
+        override fun onDataReceived(dataPoints: DataPointContainer) {
+            // Inspect data points.
+            var latestHeartRate: Double? = null
+            Log.d(TAG, "onDataReceived")
+            runBlocking {
+                dataPoints.getData(DataType.HEART_RATE_BPM).latestHeartRate()?.let {
+                    //repository.storeLatestHeartRate(it)
+                    latestHeartRate = it
+                }
+            }
+            Log.d(TAG, "onDataReceived: hr: $latestHeartRate")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
-
         super.onCreate(savedInstanceState)
         mainActivity = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        healthServicesRepository = HealthServicesRepository(this)
+        lifecycleScope.launch {
+            healthServicesRepository.registerForHeartRateData()
+        }
 
         CoroutineScope(Dispatchers.Main).launch {
             dataRepository.getCallsign.collect { cs -> Log.d(TAG, "Getting and setting initial callsign: " + cs); callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs);  }
@@ -344,31 +320,42 @@ class MainActivity : ComponentActivity() {
 
         val healthClient = HealthServices.getClient(this /*context*/)
         val passiveMonitoringClient = healthClient.passiveMonitoringClient
-        lifecycleScope.launchWhenCreated {
+        measureClient = healthClient.measureClient
+        lifecycleScope.launch {
             val capabilities = passiveMonitoringClient.getCapabilitiesAsync()
             capabilities.awaitWithException()
             capabilities.await()
             // Supported types for passive data collection
             val passiveMonitoringDataTypes = capabilities.get().supportedDataTypesPassiveMonitoring
-            Log.d("WearTAK-CIV", "passiveMonitoringDataTypes: " + passiveMonitoringDataTypes.toString())
+            Log.d(TAG, "passiveMonitoringDataTypes: " + passiveMonitoringDataTypes.toString())
             val supportsHeartRate = DataType.HEART_RATE_BPM in passiveMonitoringDataTypes
             val supportsVo2Max = DataType.VO2_MAX in passiveMonitoringDataTypes
             val supportsLocation = DataType.LOCATION in passiveMonitoringDataTypes
-            Log.d("WearTAK-CIV", "supportsHeartRate: " + supportsHeartRate + "; supportsVo2Max: " + supportsVo2Max + "; supportsLocation: " + supportsLocation)
+            Log.d(TAG, "supportsHeartRate: " + supportsHeartRate + "; supportsVo2Max: " + supportsVo2Max + "; supportsLocation: " + supportsLocation)
+            val measureCapabilities = measureClient.getCapabilitiesAsync().await()
+            val measureSupportsHeartRate = DataType.HEART_RATE_BPM in measureCapabilities.supportedDataTypesMeasure
+            Log.d(TAG, "measureCapabilities: $measureCapabilities")
+            Log.d(TAG, "measureSupportsHeartRate: " + measureSupportsHeartRate)
+            measureClient.registerMeasureCallback(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
         }
+        val listPermissionsNeeded: MutableList<String> = ArrayList()
         if ((ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
             (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
+            // TODO: Call ActivityCompat#requestPermissions to request the missing permissions,
+            // and then override:
             //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
             //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            val listPermissionsNeeded: MutableList<String> = ArrayList()
+            // to handle the case where the user grants/deny the permission.
             listPermissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION)
-            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
         }
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) != PackageManager.PERMISSION_GRANTED) {
+            listPermissionsNeeded.add(Manifest.permission.BODY_SENSORS)
+        }
+        if (listPermissionsNeeded.size > 0) {
+            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1,)
+        }
+
+        mainActivity.startService(Intent(mainActivity, BatteryMonitorService::class.java))
 
         if (hasGps()) {
             Log.i(TAG, "This hardware has GPS")
@@ -379,6 +366,7 @@ class MainActivity : ComponentActivity() {
         locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
 
         CoroutineScope(Dispatchers.IO).launch {
+            /*
             connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
             if (null != secureSocket) {
                 val timer = Timer()
@@ -388,14 +376,14 @@ class MainActivity : ComponentActivity() {
                             processBiometrics(secureSocket!!, callsign)
                         }
                     },0, 30000)
-
+*/
 
                 if ((ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
                     (ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
                     Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
                 } else {
                     Log.d(TAG, "Calling LocationService")
-                    mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                   mainActivity.startService(Intent(mainActivity, LocationService::class.java))
                     /*
                     fusedLocationClient.requestLocationUpdates(
                         locationRequest,
@@ -405,7 +393,6 @@ class MainActivity : ComponentActivity() {
 
                      */
                 }
-            }
         }
         setContent {
             WearTAKCivApp(callsignState)

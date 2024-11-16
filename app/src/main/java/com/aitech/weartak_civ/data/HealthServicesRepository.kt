@@ -15,8 +15,9 @@ import androidx.concurrent.futures.await
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.PassiveListenerConfig
+import androidx.health.services.client.setPassiveListenerService
 import com.aitech.weartak_civ.data.HealthServicesRepository.Constants.TAG
-//import com.example.passivedatacompose.service.PassiveDataService
+import com.aitech.weartak_civ.service.PassiveDataService
 import kotlinx.coroutines.flow.flow
 
 /**
@@ -29,7 +30,6 @@ class HealthServicesRepository(context: Context) {
     private val passiveMonitoringClient = healthServicesClient.passiveMonitoringClient
     private val dataTypes = setOf(DataType.HEART_RATE_BPM)
 
-    /*
     private val passiveListenerConfig = PassiveListenerConfig(
         dataTypes = dataTypes,
         shouldUserActivityInfoBeRequested = false,
@@ -48,6 +48,7 @@ class HealthServicesRepository(context: Context) {
             PassiveDataService::class.java,
             passiveListenerConfig
         ).await()
+
     }
 
     suspend fun unregisterForHeartRateData() {
@@ -55,10 +56,8 @@ class HealthServicesRepository(context: Context) {
         passiveMonitoringClient.clearPassiveListenerServiceAsync().await()
     }
 
-     */
-
     object Constants {
-        val TAG = "WearTAK-HealthServicesRepository"
+        val TAG = "WearTAK-HealthRepo"
     }
 
 }

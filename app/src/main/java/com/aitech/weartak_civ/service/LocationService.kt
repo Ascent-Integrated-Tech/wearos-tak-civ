@@ -22,7 +22,6 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.*
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -41,7 +40,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART7
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_8
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_9
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import com.aitech.weartak_civ.service.BatteryMonitorService.Companion.batteryPercentage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,7 +70,7 @@ class LocationService : Service() {
     var secureSocket : SSLSocket? = null
 
     override fun onCreate() {
-        Log.d(LOG_TAG, "LocationService onCreate()")
+        Log.d(TAG, "LocationService onCreate()")
 
     }
 
@@ -107,7 +106,7 @@ class LocationService : Service() {
         try {
             startForeground(LOCATION_SERVICE_NOTIFICATION_ID, notification)
         } catch (e: NullPointerException) {
-            Log.e(LOG_TAG, "Failed to set location ForegroundService", e )
+            Log.e(TAG, "Failed to set location ForegroundService", e )
         }
     }
 
@@ -133,7 +132,7 @@ class LocationService : Service() {
                 handler!!.post { this.createLocationRequest() }
             }
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "Not able to Start the Location Update thread ", e)
+            Log.e(TAG, "Not able to Start the Location Update thread ", e)
         }
 
     }
@@ -141,7 +140,7 @@ class LocationService : Service() {
     private fun createLocationRequest() {
         val locationRequest = LocationRequest.create()
         locationRequest.interval = 2000
-        locationRequest.fastestInterval = 1000
+        locationRequest.fastestInterval = 2000
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
         locationRequest.priority = Priority.PRIORITY_HIGH_ACCURACY
@@ -152,7 +151,7 @@ class LocationService : Service() {
             locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
         }
          */
-        Log.d(LOG_TAG, "LocationRequest params: fastestInterval(" + locationRequest.fastestInterval + "), interval(" + locationRequest.interval + "), maxWaitTime(" + locationRequest.maxWaitTime +
+        Log.d(TAG, "LocationRequest params: fastestInterval(" + locationRequest.fastestInterval + "), interval(" + locationRequest.interval + "), maxWaitTime(" + locationRequest.maxWaitTime +
                 "), priority(" + locationRequest.priority + "), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")
         val builder = LocationSettingsRequest.Builder()
         builder.addLocationRequest(locationRequest)
@@ -163,8 +162,8 @@ class LocationService : Service() {
             ContextCompat.checkSelfPermission(applicationContext,
                     Manifest.permission.ACCESS_COARSE_LOCATION)
         }
-        Log.d(LOG_TAG, "Fine Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION)))
-        Log.d(LOG_TAG, "Coarse Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION)))
+        Log.d(TAG, "Fine Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION)))
+        Log.d(TAG, "Coarse Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION)))
         locationCallback = MyLocationCallback()
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
         fusedLocationProviderClient?.requestLocationUpdates(locationRequest, locationCallback, Looper.myLooper())
@@ -178,11 +177,11 @@ class LocationService : Service() {
     fun sendLocation(secureSock: SSLSocket, uid: String, callsign: String, role: String, teamColor: String, location: LocationResult) {
         try {
             val locDateTime = Date()
-            val lat = location.lastLocation?.latitude
-            val lon = location.lastLocation?.longitude
-            val hae = location.lastLocation?.altitude
-            val ce = location.lastLocation?.accuracy
-            val le = location.lastLocation?.verticalAccuracyMeters
+            lat = location.lastLocation?.latitude
+            lon = location.lastLocation?.longitude
+            hae = location.lastLocation?.altitude
+            ce = location.lastLocation?.accuracy
+            le = location.lastLocation?.verticalAccuracyMeters
             val speed = location.lastLocation?.speed
             val bearing = location.lastLocation?.bearing
             //Log.d(LOG_TAG, "sendLocation called with location ${location.toString()}")
@@ -214,8 +213,8 @@ class LocationService : Service() {
                         LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(Locale.ENGLISH, "%.2f", haeActual) +
                         "' ce='" + java.lang.String.format(Locale.ENGLISH, "%.2f", ceActual) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
                         LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                        LOC_PART7 + 98 + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
-                Log.d(LOG_TAG, "Sending location COT message: $cotMsg")
+                        LOC_PART7 + batteryPercentage + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
+                Log.d(TAG, "Sending location COT message: $cotMsg")
 
                 if ((null != secureSock) && secureSock.isConnected) {
                     val outputStream = secureSock.getOutputStream()
@@ -246,7 +245,7 @@ class LocationService : Service() {
     }
 
     fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
-        Log.d("WearTAK-CIV","connectTAKServer called")
+        Log.d(TAG,"connectTAKServer called")
         try {
             // Load client certificate
             val keyStore = KeyStore.getInstance("PKCS12")
@@ -278,10 +277,10 @@ class LocationService : Service() {
             secureSocket = socketFactory.createSocket(takServer, 8089) as SSLSocket
             secureSocket!!.startHandshake()
 
-            Log.d("WearTAK-CIV","Successfully connected to $takServer on port 8089")
+            Log.d(TAG,"Successfully connected to $takServer on port 8089")
         } catch (e: Exception) {
             e.printStackTrace()
-            Log.e("WearTAK-CIV", "Error connectTAKServer:", e)
+            Log.e(TAG, "Error connectTAKServer:", e)
         }
 
     }
@@ -316,13 +315,13 @@ class LocationService : Service() {
                 locationManagerHandler!!.post { this.createLocationManagerRequest() }
             }
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "Not able to Start the LocationManager Update thread ", e)
+            Log.e(TAG, "Not able to Start the LocationManager Update thread ", e)
         }
     }
 
     private fun createLocationManagerRequest() {
         val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager?
-        Log.d(LOG_TAG, "Location update LocationManager created")
+        Log.d(TAG, "Location update LocationManager created")
         // Define a listener that responds to location updates
         val locationListener = MyLocationListener()
         try {
@@ -338,7 +337,7 @@ class LocationService : Service() {
             }
             locationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0f, locationListener)
         } catch (ex: Exception) {
-            Log.e(LOG_TAG, "Location update Exception: " + ex.message)
+            Log.e(TAG, "Location update Exception: " + ex.message)
         }
     }
 
@@ -373,7 +372,7 @@ class LocationService : Service() {
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
-        Log.d(LOG_TAG, "Location Service Destroyed")
+        Log.d(TAG, "Location Service Destroyed")
     }
 
     private fun destroyLocationThread() {
@@ -384,7 +383,7 @@ class LocationService : Service() {
                 locationThread?.join()
                 locationThread = null
             } catch (e: InterruptedException) {
-                Log.e(LOG_TAG, e.localizedMessage)
+                Log.e(TAG, e.localizedMessage)
             }
 
         }
@@ -397,7 +396,12 @@ class LocationService : Service() {
     }
 
     companion object {
-        private val LOG_TAG = "WearTAK-CIV-" + LocationService::class.java.simpleName
+        private val TAG = "WearTAK-" + LocationService::class.java.simpleName
         private val LOCATION_SERVICE_NOTIFICATION_ID = 1234
+        var lat : Double? = null
+        var lon : Double? = null
+        var hae : Double? = null
+        var ce : Float? = null
+        var le : Float? = null
     }
 }
