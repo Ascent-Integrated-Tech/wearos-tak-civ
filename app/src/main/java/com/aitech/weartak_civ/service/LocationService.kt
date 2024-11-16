@@ -49,6 +49,7 @@ import java.io.IOException
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -162,7 +163,8 @@ class LocationService : Service() {
         Log.d(TAG, "Coarse Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION)))
         locationCallback = MyLocationCallback()
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
-        fusedLocationProviderClient?.requestLocationUpdates(locationRequest, locationCallback, Looper.myLooper())
+        val simpleLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
+        fusedLocationProviderClient?.requestLocationUpdates(simpleLocationRequest, locationCallback, Looper.myLooper())
 
     }
 
@@ -326,7 +328,7 @@ class LocationService : Service() {
                 locationThread?.join()
                 locationThread = null
             } catch (e: InterruptedException) {
-                Log.e(TAG, e.localizedMessage)
+                Log.e(TAG, "ERROR in destroyLocationThread: ", e)
             }
 
         }
