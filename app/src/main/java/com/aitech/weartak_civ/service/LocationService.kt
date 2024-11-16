@@ -40,7 +40,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART7
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_8
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_9
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.service.BatteryMonitorService.Companion.batteryPercentage
+import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,18 +68,13 @@ class LocationService : Service() {
     private var currentLocation: Location? = null
     // TODO: move this to main / use main
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    var secureSocket : SSLSocket? = null
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
-
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        CoroutineScope(Dispatchers.IO).launch {
-            connectTAKServer(R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
-            initializeLocation()
-        }
+        initializeLocation()
         return START_NOT_STICKY
     }
 
@@ -174,115 +170,63 @@ class LocationService : Service() {
         return binder
     }
 
-    fun sendLocation(secureSock: SSLSocket, uid: String, callsign: String, role: String, teamColor: String, location: LocationResult) {
-        try {
-            val locDateTime = Date()
-            lat = location.lastLocation?.latitude
-            lon = location.lastLocation?.longitude
-            hae = location.lastLocation?.altitude
-            ce = location.lastLocation?.accuracy
-            le = location.lastLocation?.verticalAccuracyMeters
-            val speed = location.lastLocation?.speed
-            val bearing = location.lastLocation?.bearing
-            //Log.d(LOG_TAG, "sendLocation called with location ${location.toString()}")
-            //Log.d(LOG_TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
-            if ((null != lat) && (null != lon)) {
-                // Parse and manipulate timestamps
-                dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-                val locTimeStr = dateTimeFormatter.format(locDateTime)
+    fun sendLocation(
+        uid: String,
+        callsign: String,
+        role: String,
+        teamColor: String,
+        location: LocationResult
+    ) {
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+        val locDateTime = Date()
+        lat = location.lastLocation?.latitude
+        lon = location.lastLocation?.longitude
+        hae = location.lastLocation?.altitude
+        ce = location.lastLocation?.accuracy
+        le = location.lastLocation?.verticalAccuracyMeters
+        val speed = location.lastLocation?.speed
+        val bearing = location.lastLocation?.bearing
+        //Log.d(LOG_TAG, "sendLocation called with location ${location.toString()}")
+        //Log.d(LOG_TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
+        if ((null != lat) && (null != lon)) {
+            // Parse and manipulate timestamps
+            dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+            val locTimeStr = dateTimeFormatter.format(locDateTime)
 
-                // Create a Calendar object and set it to the given date
-                val calendar: Calendar = Calendar.getInstance()
-                calendar.setTime(locDateTime)
+            // Create a Calendar object and set it to the given date
+            val calendar: Calendar = Calendar.getInstance()
+            calendar.setTime(locDateTime)
 
-                // Add 120 seconds to the calendar
-                calendar.add(Calendar.SECOND, 20)
+            // Add 20 seconds to the calendar
+            calendar.add(Calendar.SECOND, 20)
 
-                val locDateTimeFuture = calendar.time
-                val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
-                //Log.d(LOG_TAG, "Current location time string: $locTimeStr")
+            val locDateTimeFuture = calendar.time
+            val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
+            //Log.d(LOG_TAG, "Current location time string: $locTimeStr")
 
-                // Construct CoT message
-                val haeActual = hae ?: "0.0"
-                val ceActual = ce ?: "9999999.0"
-                val leActual = le ?: "9999999.0"
-                val speedActual = speed ?: "0.0"
-                val bearingActual = bearing ?: "0.0"
-                val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
-                        LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
-                        LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(Locale.ENGLISH, "%.2f", haeActual) +
-                        "' ce='" + java.lang.String.format(Locale.ENGLISH, "%.2f", ceActual) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
-                        LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                        LOC_PART7 + batteryPercentage + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
-                Log.d(TAG, "Sending location COT message: $cotMsg")
-
-                if ((null != secureSock) && secureSock.isConnected) {
-                    val outputStream = secureSock.getOutputStream()
-                    outputStream.write(cotMsg.toByteArray(charset("UTF-8")))
-                    outputStream.flush()
-                } else {
-                    if (null != secureSock) {
-                        secureSock.close()
-                    }
-                    connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
-                }
-            }
-        } catch (e: IOException) {
-            e.printStackTrace()
-            System.err.println("IO Error sending location COT message: " + e.message)
-            if (null != secureSock) {
-                secureSock.close()
-            }
-            connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
-        } catch (e: java.lang.Exception) {
-            e.printStackTrace()
-            System.err.println("Unexpected error sending location COT message: " + e.message)
-            if (null != secureSock) {
-                secureSock.close()
-            }
-            connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
+            // Construct CoT message
+            val haeActual = hae ?: "0.0"
+            val ceActual = ce ?: "9999999.0"
+            val leActual = le ?: "9999999.0"
+            val speedActual = speed ?: "0.0"
+            val bearingActual = bearing ?: "0.0"
+            val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
+                    LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
+                    LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
+                Locale.ENGLISH,
+                "%.2f",
+                haeActual
+            ) +
+                    "' ce='" + java.lang.String.format(
+                Locale.ENGLISH,
+                "%.2f",
+                ceActual
+            ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
+                    LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
+                    LOC_PART7 + batteryPercentage + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
+            //Log.d(TAG, "Sending location COT message: $cotMsg")
+            sendDataTAKServer(cotMsg)
         }
-    }
-
-    fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
-        Log.d(TAG,"connectTAKServer called")
-        try {
-            // Load client certificate
-            val keyStore = KeyStore.getInstance("PKCS12")
-            keyStore.load(resources.openRawResource(userCertP12ResourceId), userCertP12Password.toCharArray())
-
-            // Initialize the KeyManagerFactory with the client certificate
-            val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-            keyManagerFactory.init(keyStore, userCertP12Password.toCharArray())
-
-            // Initialize SSL Context with TrustManager
-            val sslContext = SSLContext.getInstance("TLS")
-            sslContext.init(keyManagerFactory.keyManagers, arrayOf<TrustManager>(object :
-                X509TrustManager {
-                override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) {
-                }
-
-                override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) {
-                }
-
-                override fun getAcceptedIssuers(): Array<X509Certificate> {
-                    return emptyArray()
-                }
-            }),
-                null
-            )
-
-            // Create the socket and connect
-            val socketFactory = sslContext.socketFactory
-            secureSocket = socketFactory.createSocket(takServer, 8089) as SSLSocket
-            secureSocket!!.startHandshake()
-
-            Log.d(TAG,"Successfully connected to $takServer on port 8089")
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Log.e(TAG, "Error connectTAKServer:", e)
-        }
-
     }
 
     private inner class MyLocationCallback : LocationCallback() {
@@ -293,7 +237,6 @@ class LocationService : Service() {
                 //Log.d(LOG_TAG, "Received location: " + location.toString())
                 CoroutineScope(Dispatchers.IO).launch {
                     sendLocation(
-                        secureSocket!!,
                         MainActivity.device_uid,
                         callsign,
                         "Team Member",

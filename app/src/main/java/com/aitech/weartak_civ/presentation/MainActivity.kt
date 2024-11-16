@@ -36,15 +36,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
@@ -72,16 +67,15 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.BatteryMonitorService
-import com.aitech.weartak_civ.service.BatteryMonitorService.Companion.batteryPercentage
+import com.aitech.weartak_civ.service.BatteryService
+import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
+import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
-import com.aitech.weartak_civ.service.PassiveDataService
-import com.aitech.weartak_civ.service.PassiveDataService.Companion
+import com.aitech.weartak_civ.service.TAKConnectService
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -99,8 +93,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import java.util.Timer
-import java.util.TimerTask
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
@@ -156,126 +148,30 @@ class MainActivity : ComponentActivity() {
 
     private fun hasGps(): Boolean = packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
 
-    fun processBiometrics(secureSock: SSLSocket, callsign: String) {
-        try {
-            // Parse and manipulate timestamps
-            dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-            val bioDateTime = Date()
-            val bioTimeStr = dateTimeFormatter.format(bioDateTime)
-
-            // Create a Calendar object and set it to the given date
-            val calendar: Calendar = Calendar.getInstance()
-            calendar.setTime(bioDateTime)
-
-            // Add 120 seconds to the calendar
-            calendar.add(Calendar.SECOND, 120)
-
-            val bioDateTimeFuture = calendar.time
-            val bioFutureTimeStr = dateTimeFormatter.format(bioDateTimeFuture)
-            //Log.d(TAG, "Current biometrics time string: $bioTimeStr")
-
-            // Construct CoT message
-            var cotMsg: String = BIO_PART1 + device_uid + BIO_PART2 +
-                    bioTimeStr + "' start='" + bioTimeStr + "' stale='" + bioFutureTimeStr + BIO_PART3
-            if ((null != lat) && (null != lon)) {
-                val haeActual = hae ?: "0.0"
-                val ceActual = ce ?: "9999999.0"
-                val leActual = le ?: "9999999.0"
-                // TODO: Serial number should be unique. Hash android id to it
-                cotMsg = cotMsg + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(Locale.ENGLISH, "%.2f", haeActual) +
-                        "' ce='" + java.lang.String.format(Locale.ENGLISH, "%.2f", ceActual) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
-                        BIO_PART4 + "SG6WOS" + callsign +
-                        "' heartRate='79' " +
-                        "callsign='" + callsign +
-                        "' model='WEAROS" +
-                        "' batteryLevel='$batteryPercentage" + BIO_PART5
-            } else {
-                cotMsg = cotMsg + "0.0' lon='0.0' hae='9999999.0' ce='9999999.0' le='9999999.0" +
-                        BIO_PART4 + "SG6WOS" + callsign +
-                        "' heartRate='79' " +
-                        "callsign='" + callsign +
-                        "' model='WEAROS" +
-                        "' batteryLevel='$batteryPercentage" + BIO_PART5
-            }
-
-            // Send the CoT message
-            Log.d(TAG,"Sending biometric COT msg: $cotMsg")
-            val outputStream = secureSock.getOutputStream()
-            outputStream.write(cotMsg.toByteArray(charset("UTF-8")))
-            outputStream.flush()
-        } catch (e: IOException) {
-            e.printStackTrace()
-            System.err.println("Error sending biometric COT message: " + e.message)
-        } catch (e: java.lang.Exception) {
-            e.printStackTrace()
-            System.err.println("Unexpected error sending biometric COT message: " + e.message)
-        }
-    }
-
-    fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
-        Log.d(TAG,"connectTAKServer called")
-        try {
-            // Load client certificate
-            val keyStore = KeyStore.getInstance("PKCS12")
-            keyStore.load(resources.openRawResource(userCertP12ResourceId), userCertP12Password.toCharArray())
-
-            // Initialize the KeyManagerFactory with the client certificate
-            val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-            keyManagerFactory.init(keyStore, userCertP12Password.toCharArray())
-
-            // Initialize SSL Context with TrustManager
-            val sslContext = SSLContext.getInstance("TLS")
-            sslContext.init(keyManagerFactory.keyManagers, arrayOf<TrustManager>(object : X509TrustManager {
-                    override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) {
-                    }
-
-                    override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) {
-                    }
-
-                    override fun getAcceptedIssuers(): Array<X509Certificate> {
-                        return emptyArray()
-                    }
-                }),
-                null
-            )
-
-            // Create the socket and connect
-            val socketFactory = sslContext.socketFactory
-            secureSocket = socketFactory.createSocket(takServer, 8089) as SSLSocket
-            secureSocket!!.startHandshake()
-
-            Log.d(TAG,"Successfully connected to $takServer on port 8089")
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Log.e(TAG, "Error connectTAKServer:", e)
-        }
-
-    }
-
-    val locationCallback: LocationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            CoroutineScope(Dispatchers.IO).launch {
-                //sendLocation(secureSocket!!, device_uid, callsign, "Team Member", "Orange", result)
-            }
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "onDestroy called")
-        mainActivity.stopService(Intent(mainActivity, BatteryMonitorService::class.java))
+        mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
+        mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
         mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+        mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
 
+        /*
         // Unregister the callback.
-            runBlocking {
-                measureClient.unregisterMeasureCallbackAsync(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
-            }
+        runBlocking {
+            measureClient.unregisterMeasureCallbackAsync(
+                DataType.Companion.HEART_RATE_BPM,
+                heartRateCallback
+            )
+        }
         lifecycleScope.launch {
             healthServicesRepository.unregisterForHeartRateData()
         }
+
+         */
 
         //fusedLocationClient?.removeLocationUpdates(locationCallback)
     }
@@ -303,15 +199,18 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        mainActivity = this
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        mainActivity = this
+        mainActivity.startService(Intent(mainActivity, TAKConnectService::class.java))
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        /*
         healthServicesRepository = HealthServicesRepository(this)
         lifecycleScope.launch {
             healthServicesRepository.registerForHeartRateData()
         }
 
+         */
         CoroutineScope(Dispatchers.Main).launch {
             dataRepository.getCallsign.collect { cs -> Log.d(TAG, "Getting and setting initial callsign: " + cs); callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs);  }
             //dataRepository.getCallsign.collect { callsign -> Log.d(TAG, "set callsign: " + callsign) }
@@ -336,7 +235,7 @@ class MainActivity : ComponentActivity() {
             val measureSupportsHeartRate = DataType.HEART_RATE_BPM in measureCapabilities.supportedDataTypesMeasure
             Log.d(TAG, "measureCapabilities: $measureCapabilities")
             Log.d(TAG, "measureSupportsHeartRate: " + measureSupportsHeartRate)
-            measureClient.registerMeasureCallback(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
+            //measureClient.registerMeasureCallback(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
         }
         val listPermissionsNeeded: MutableList<String> = ArrayList()
         if ((ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
@@ -355,7 +254,8 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1,)
         }
 
-        mainActivity.startService(Intent(mainActivity, BatteryMonitorService::class.java))
+        mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+        mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
 
         if (hasGps()) {
             Log.i(TAG, "This hardware has GPS")
@@ -363,36 +263,41 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "This hardware does NOT have GPS")
         }
         //fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
+        //locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
 
-        CoroutineScope(Dispatchers.IO).launch {
-            /*
-            connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
-            if (null != secureSocket) {
-                val timer = Timer()
-                timer.schedule(
-                    object : TimerTask() {
-                        override fun run() {
-                            processBiometrics(secureSocket!!, callsign)
-                        }
-                    },0, 30000)
+        /*
+        connectTAKServer( R.raw.tak_il_ascent_user, "atakatak", "tak.il.ops.ascentitech.com")
+        if (null != secureSocket) {
+            val timer = Timer()
+            timer.schedule(
+                object : TimerTask() {
+                    override fun run() {
+                        processBiometrics(secureSocket!!, callsign)
+                    }
+                },0, 30000)
 */
 
-                if ((ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
-                    Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
-                } else {
-                    Log.d(TAG, "Calling LocationService")
-                   mainActivity.startService(Intent(mainActivity, LocationService::class.java))
-                    /*
-                    fusedLocationClient.requestLocationUpdates(
-                        locationRequest,
-                        locationCallback,
-                        Looper.getMainLooper()
-                    )
+        if ((ActivityCompat.checkSelfPermission(
+                applicationContext,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED) &&
+            (ActivityCompat.checkSelfPermission(
+                applicationContext,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED)
+        ) {
+            Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
+        } else {
+            Log.d(TAG, "Calling LocationService")
+            mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+            /*
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback,
+                Looper.getMainLooper()
+            )
 
-                     */
-                }
+             */
         }
         setContent {
             WearTAKCivApp(callsignState)
@@ -409,7 +314,8 @@ fun WearTAKCivApp(greetingNameState: LiveData<String>) {
             exitTransition = { fadeOut() }) {
             MainScreen(navController, greetingNameState)
         }
-        composable("settings_screen",
+        composable(
+            "settings_screen",
             enterTransition = { slideInVertically() },
             exitTransition = { slideOutVertically() }) {
             SettingsScreen(navController)

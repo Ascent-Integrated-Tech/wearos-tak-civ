@@ -29,13 +29,13 @@ import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
 
-class BatteryMonitorService: Service() {
+class BatteryService: Service() {
     private var batteryMonitorHandler: Handler? = null
     private var batteryMonitorThread: HandlerThread? = null
     private val batteryMonitorRunnable = BatteryMonitorRunnable()
 
     override fun onCreate() {
-        Log.d(LOG_TAG, "BatteryMonitorService onCreate")
+        Log.d(LOG_TAG, "BatteryService onCreate")
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -120,11 +120,11 @@ class BatteryMonitorService: Service() {
             batteryMonitorHandler?.looper?.quit()
             batteryMonitorThread?.quitSafely()
         }
-        Log.d(LOG_TAG, "BatteryMonitorService Destroyed")
+        Log.d(LOG_TAG, "BatteryService Destroyed")
     }
 
     companion object {
-        private val LOG_TAG = "WearTAK-" + BatteryMonitorService::class.java.simpleName
+        private val LOG_TAG = "WearTAK-" + BatteryService::class.java.simpleName
         const private val INITIAL_BATTERY_MONITOR_START_DELAY = 1_000L // Set to 1 second
         //const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 3_00_000L // 5 minutes
         const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 60_000L // Set to 1 minute
