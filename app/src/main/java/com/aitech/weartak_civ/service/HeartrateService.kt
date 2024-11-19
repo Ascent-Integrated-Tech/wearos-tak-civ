@@ -125,7 +125,7 @@ class HeartrateService: Service() {
                 }
                 hr = localHr
                 //heartRateTextView.text = "Heart rate: $hr"
-                //Log.d(TAG, "Obtained heartrate: $hr")
+                Log.d(TAG, "Obtained heartrate: $hr")
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > 5_000L)) {
                     lastTimeHrSent = currTime
