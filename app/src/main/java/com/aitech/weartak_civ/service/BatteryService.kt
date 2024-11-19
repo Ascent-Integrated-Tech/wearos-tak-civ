@@ -92,7 +92,7 @@ class BatteryService: Service() {
             val batteryStatus = context.registerReceiver(null, iFilter)
             val level = (if ((batteryStatus != null)) batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) else -1).toFloat()
             val scale = if ((batteryStatus != null)) batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1) else -1
-            Log.d(LOG_TAG, "getBatteryPercentage: level ($level); scale ($scale)")
+            //Log.d(LOG_TAG, "getBatteryPercentage: level ($level); scale ($scale)")
             return (level / scale) * 100
         } catch (e: RuntimeException) {
             Log.e(LOG_TAG, "Error in getBatteryPercentage: ", e)
@@ -103,7 +103,7 @@ class BatteryService: Service() {
     private inner class BatteryMonitorRunnable : Runnable {
         override fun run() {
             batteryPercentage = getBatteryPercentage(applicationContext).toInt()
-            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
+            //Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
             batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
         }
     }

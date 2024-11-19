@@ -12,6 +12,7 @@ package com.aitech.weartak_civ.presentation
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings.Secure
 import android.util.Log
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -64,7 +64,6 @@ import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.DataTypeAvailability
 import androidx.health.services.client.data.DeltaDataType
-import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
@@ -146,7 +145,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "onDestroy called")
+
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
         mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
         mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
@@ -199,7 +198,12 @@ class MainActivity : ComponentActivity() {
         dataRepository = DataRepository(this)
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        mainActivity.startService(Intent(mainActivity, TAKConnectService::class.java))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+
+        } else {
+            mainActivity.startService(Intent(mainActivity, TAKConnectService::class.java))
+        }
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         /*
         healthServicesRepository = HealthServicesRepository(this)
@@ -248,10 +252,15 @@ class MainActivity : ComponentActivity() {
             listPermissionsNeeded.add(Manifest.permission.BODY_SENSORS)
         }
         if (listPermissionsNeeded.size > 0) {
-            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1,)
+            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
         }
 
-        mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
+
+        } else {
+            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+        }
         mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
 
         if (hasGps()) {
@@ -286,7 +295,12 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
         } else {
             Log.d(TAG, "Calling LocationService")
-            mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
+
+            } else {
+                mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+            }
             /*
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
