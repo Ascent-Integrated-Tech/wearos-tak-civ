@@ -1,18 +1,20 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    //id 'com.android.application'
+    //id 'org.jetbrains.kotlin.android'
 }
 
 android {
     namespace 'com.aitech.weartak_civ'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
         minSdk 30
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "0.22"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -21,32 +23,35 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = JavaVersion.VERSION_17.majorVersion
     }
     buildFeatures {
         compose true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion '1.5.1'
+        kotlinCompilerExtensionVersion '1.5.15'
     }
     packaging {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
     }
+    buildToolsVersion '35.0.0'
+    ndkVersion '27.0.12077973'
 }
 
 dependencies {
-
+    //implementation libs.androidx.activity.compose
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
     implementation libs.ui
@@ -60,6 +65,41 @@ dependencies {
     implementation libs.horologist.compose.tools
     implementation libs.horologist.tiles
     implementation libs.watchface.complications.data.source.ktx
+    implementation libs.navigation.compose
+
+    // Health Services
+    //implementation libs.androidx
+    //implementation libs.androidx.health.services
+
+    // Used to bridge between Futures and coroutines
+    //implementation libs.guava
+    //implementation libs.concurrent.futures
+
+    // Used for WorkManager
+    //implementation libs.androidx.work
+    //implementation libs.androidx.work.ktx
+
+    // Used for Datastore
+    //implementation libs.androidx.datastore
+
+    // Used for permissions
+    //implementation libs.accompanist.permissions
+
+    implementation("androidx.compose.material:material-icons-core:1.7.5")
+    implementation("androidx.wear.compose:compose-navigation:1.5.0-alpha05")
+    implementation("androidx.health:health-services-client:1.1.0-alpha04")
+    implementation("androidx.concurrent:concurrent-futures:1.2.0")
+
+    // Kotlin
+    implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation libs.play.services.location
+    implementation "androidx.wear:wear-ongoing:1.0.0"
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"
+    implementation libs.runtime.livedata
+    implementation libs.material3.android
+
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
     debugImplementation libs.ui.tooling
