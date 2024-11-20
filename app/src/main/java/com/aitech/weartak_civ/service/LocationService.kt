@@ -20,41 +20,40 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.location.Location
 import android.location.LocationManager
-import android.os.*
+import android.os.Binder
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.*
-import java.lang.NullPointerException
-import java.util.*
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART1
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART2
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART3
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART4
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART5
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART6
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART7
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_8
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.LOC_PART_9
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.IOException
-import java.security.KeyStore
-import java.security.cert.X509Certificate
+import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.KeyManagerFactory
-import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 
 class LocationService : Service() {
@@ -69,6 +68,7 @@ class LocationService : Service() {
     private var currentLocation: Location? = null
     // TODO: move this to main / use main
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+    private var heartrate: Int = -1;
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
@@ -212,6 +212,10 @@ class LocationService : Service() {
             val leActual = le ?: "9999999.0"
             val speedActual = speed ?: "0.0"
             val bearingActual = bearing ?: "0.0"
+
+            CoroutineScope(Dispatchers.Default).launch {
+                dataRepository.latestHeartRate.collect { hr -> heartrate = hr }
+            }
             val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
                     LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
                     LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
@@ -225,7 +229,7 @@ class LocationService : Service() {
                 ceActual
             ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
                     LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                    LOC_PART7 + batteryPercentage + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
+                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
             //Log.d(TAG, "Sending location COT message: $cotMsg")
             sendDataTAKServer(cotMsg)
         }
@@ -236,7 +240,7 @@ class LocationService : Service() {
             if (locationResult != null && locationResult.lastLocation != null) {
                 val location = locationResult.lastLocation
                 currentLocation = location
-                //Log.d(LOG_TAG, "Received location: " + location.toString())
+                //Log.d(TAG, "Received location: " + location.toString())
                 CoroutineScope(Dispatchers.IO).launch {
                     sendLocation(
                         MainActivity.device_uid,
@@ -348,5 +352,16 @@ class LocationService : Service() {
         var hae : Double? = null
         var ce : Float? = null
         var le : Float? = null
+        val LOC_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
+        val LOC_PART2 = "' type='a-f-G-U-C' time='"
+        const val LOC_PART3 = "' how='m-g' access='Undefined'><point lat='"
+        const val LOC_PART4 = "' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='"
+        const val LOC_PART5 = "'/><uid Droid='"
+        const val LOC_PART6 = "'/><__group role='"
+        const val LOC_PART7 = "'/><status battery='"
+        const val LOC_PART_8 = "'/><track course='"
+        const val LOC_PART_9 = "'/></detail></event>"
+        const val DETAILS_META_KEY_HEART_RATE: String = "<HEART_RATE_COT_KEY com.aitech.atak.biometrics.heartrate.HeartRate='"
+
     }
 }
