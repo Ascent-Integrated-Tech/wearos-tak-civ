@@ -100,20 +100,6 @@ class MainActivity : ComponentActivity() {
 
     companion object Constants {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
-        val LOC_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
-        val LOC_PART2 = "' type='a-f-G-U-C' time='"
-        val LOC_PART3 = "' how='m-g' access='Undefined'><point lat='"
-        val LOC_PART4 = "' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='"
-        val LOC_PART5 = "'/><uid Droid='"
-        val LOC_PART6 = "'/><__group role='"
-        val LOC_PART7 = "'/><status battery='"
-        val LOC_PART_8 = "'/><track course='"
-        val LOC_PART_9 = "'/></detail></event>"
-        val BIO_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
-        val BIO_PART2 = "' type='t-x-c-heartRate' time='"
-        val BIO_PART3 = "' how='m-g' access='Undefined'><point lat='"
-        val BIO_PART4 = "' /><detail><status serialNumber='"
-        val BIO_PART5 = "'/></detail></event>"
         lateinit var mainActivity : MainActivity
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
@@ -213,7 +199,7 @@ class MainActivity : ComponentActivity() {
 
          */
         CoroutineScope(Dispatchers.Main).launch {
-            dataRepository.getCallsign.collect { cs -> Log.d(TAG, "Getting and setting initial callsign: " + cs); callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs);  }
+            dataRepository.getCallsign.collect { cs -> callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs); }
             //dataRepository.getCallsign.collect { callsign -> Log.d(TAG, "set callsign: " + callsign) }
         }
         setTheme(android.R.style.Theme_DeviceDefault)

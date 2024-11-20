@@ -20,12 +20,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART1
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART2
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART3
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART4
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART5
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
@@ -35,6 +31,9 @@ import com.aitech.weartak_civ.service.LocationService.Companion.lat
 import com.aitech.weartak_civ.service.LocationService.Companion.le
 import com.aitech.weartak_civ.service.LocationService.Companion.lon
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -47,8 +46,8 @@ class HeartrateService: Service() {
     private var heartRateSensor: Sensor? = null
     private val handler = Handler()
     var permission: Boolean = false
-    var hr: Int = -1
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+    private val repository = DataRepository(this)
 
     override fun onCreate() {
         super.onCreate()
@@ -125,7 +124,10 @@ class HeartrateService: Service() {
                 }
                 hr = localHr
                 //heartRateTextView.text = "Heart rate: $hr"
-                Log.d(TAG, "Obtained heartrate: $hr")
+                //Log.d(TAG, "Obtained heartrate: $hr")
+                runBlocking {
+                    repository.storeLatestHeartRate(hr)
+                }
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > 5_000L)) {
                     lastTimeHrSent = currTime
@@ -203,5 +205,11 @@ class HeartrateService: Service() {
         private val TAG = "WearTAK-" + HeartrateService::class.java.simpleName
         private val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
         private val SAMPLING_PERIOD_US = 2_000_000   // Every 2 seconds; Could also bve SensorManager.SENSOR_DELAY_NORMAL
+        private const val BIO_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
+        private const val BIO_PART2 = "' type='t-x-c-heartRate' time='"
+        private const val BIO_PART3 = "' how='m-g' access='Undefined'><point lat='"
+        private const val BIO_PART4 = "' /><detail><status serialNumber='"
+        private const val BIO_PART5 = "'/></detail></event>"
+        public var hr: Int = -1
     }
 }

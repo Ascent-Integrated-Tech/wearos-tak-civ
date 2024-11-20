@@ -16,12 +16,6 @@ import androidx.health.services.client.data.DataType
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.latestHeartRate
-import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART1
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART2
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART3
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART4
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.BIO_PART5
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
@@ -58,12 +52,12 @@ class PassiveDataService : PassiveListenerService() {
     }
 
     override fun onNewDataPointsReceived(dataPoints: DataPointContainer) {
-        var latestHeartRate: Double? = null
+        var latestHeartRate: Int? = null
         Log.d(TAG, "onNewDataPointsReceived")
         runBlocking {
             dataPoints.getData(DataType.HEART_RATE_BPM).latestHeartRate()?.let {
-                repository.storeLatestHeartRate(it)
-                latestHeartRate = it
+                repository.storeLatestHeartRate(it.toInt())
+                latestHeartRate = it.toInt()
             }
         }
         CoroutineScope(Dispatchers.IO).launch {
@@ -71,7 +65,7 @@ class PassiveDataService : PassiveListenerService() {
         }
     }
 
-    fun processBiometrics(callsign: String, heartrate: Double) {
+    fun processBiometrics(callsign: String, heartrate: Int) {
         // Parse and manipulate timestamps
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
         val bioDateTime = Date()
@@ -129,5 +123,10 @@ class PassiveDataService : PassiveListenerService() {
 
     companion object {
         private val TAG = "WearTAK-" + PassiveDataService::class.java.simpleName
+        private const val BIO_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
+        private const val BIO_PART2 = "' type='t-x-c-heartRate' time='"
+        private const val BIO_PART3 = "' how='m-g' access='Undefined'><point lat='"
+        private const val BIO_PART4 = "' /><detail><status serialNumber='"
+        private const val BIO_PART5 = "'/></detail></event>"
     }
 }
