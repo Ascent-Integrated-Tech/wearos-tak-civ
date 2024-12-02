@@ -98,8 +98,8 @@ class TAKConnectService: Service() {
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         private var secureSocket : SSLSocket? = null
         private var isConnecting : AtomicBoolean = AtomicBoolean(false)
-        const private val TAK_SERVER = "tak.il.ops.ascentitech.com"
-        private val TAK_CERT = R.raw.tak_il_ascent_user
+        const private val TAK_SERVER = "tak.test.ops.ascentitech.com"
+        private val TAK_CERT = R.raw.tak_test_ascent_user
 
         fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
             Log.d(TAG,"connectTAKServer called")
