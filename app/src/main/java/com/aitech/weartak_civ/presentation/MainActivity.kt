@@ -22,21 +22,36 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -46,12 +61,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.concurrent.futures.await
 import androidx.core.app.ActivityCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -75,6 +93,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
+import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.data.latestHeartRate
@@ -302,6 +321,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+//Contains functionality for all watch screens
 @Composable
 fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
     val navController = rememberNavController()
@@ -320,40 +340,219 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
     }
 }
 
+//Contains functionality for main screen
 @Composable
-fun MainScreen(navController: NavController, greetingNameState: MutableLiveData<String>) {
+fun MainScreen(navController: NavController, callsignState: MutableLiveData<String>) {
     WearTAKCIVTheme {
-        Box(
+        Box (
             modifier = Modifier
-                .fillMaxSize()
                 .background(MaterialTheme.colors.background)
-                .padding(bottom = 16.dp),
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .padding(2.dp)
         ) {
-            TimeText()
-            Greeting(callsignState = greetingNameState)
-            Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings",
+
+            Column(
                 modifier = Modifier
-                    .size(40.dp)
-                    .align(Alignment.BottomCenter)
-                    .clickable {
-                        navController.navigate("settings_screen")
-                    })
+                    .background(MaterialTheme.colors.background)
+                    .padding(10.dp),
+        //                horizontalAlignment = Alignment.CenterHorizontally,
+        //                verticalArrangement = Arrangement.Center
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(top = 35.dp)
+                        .fillMaxWidth()
+                ) {
+                    HeartRate()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .padding(vertical = 10.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    SOSButton()
+                    Spacer(
+                        modifier = Modifier.width(10.dp)
+                    )
+                    MarkerDropButton()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Callsign(callsignState)
+                }
+
+            }
+            TroubleshootingIcons()
+            TimeText()
         }
     }
 }
 
 @Composable
-fun Greeting(callsignState: MutableLiveData<String>) {
-    val greetingName: String? by callsignState.observeAsState()
-    Text(
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center,
-        color = MaterialTheme.colors.primary,
-        text = "From WearTAK-CIV, Hello ${greetingName}!"
-    )
+fun HeartRate () {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(R.drawable.heart_rate),
+                contentDescription = "Contact profile picture",
+                modifier = Modifier
+                    // Set image size to 40 dp
+                    .size(14.dp)
+                    // Clip image to be shaped as a circle
+            )
+            Text(
+                text = " 100",
+                textAlign = TextAlign.Start,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Text(
+                text = " bpm",
+                color = Color.White
+            )
+        }
+    }
 }
 
+@Composable
+fun TroubleshootingIcons() {
+    val iconSizeSmall= 20.dp
+    val iconSizeLarge = 17.dp
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(70.dp),
+            contentAlignment = Alignment.TopCenter
+    ) {
+        // Icon on the top left curve
+        Image(
+            painterResource(R.drawable.tak_server), // Replace with your icon
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(
+                    x = (40).dp, // Adjust this value based on the curve
+                    y = (-10).dp // Adjust this value based on the curve
+                )
+                .size(iconSizeSmall) // Adjust icon size as needed
+        )
+
+        // Icon on the bottom left curve
+        Icon(
+            painterResource(R.drawable.cell), // Replace with your icon
+            contentDescription = "Bottom Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(
+                    x = (15).dp, // Adjust this value
+                    y = (15).dp // Adjust this value
+                )
+                .size(iconSizeLarge)
+        )
+
+        // Icon on the top right curve
+        Icon(
+            imageVector = Icons.Default.LocationOn, // Replace with your icon
+            contentDescription = "Top Right Icon",
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .offset(
+                    x = (-40).dp, // Adjust this value
+                    y = (-10).dp // Adjust this value
+                )
+                .size(iconSizeSmall)
+        )
+
+        // Icon on the bottom right curve
+        Icon(
+            painterResource(R.drawable.battery), // Replace with your icon
+            contentDescription = "Bottom Right Icon",
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .offset(
+                    x = (-15).dp, // Adjust this value
+                    y = (15).dp // Adjust this value
+                )
+                .size(iconSizeLarge)
+        )
+    }
+}
+
+@Composable
+fun Callsign(callsignState: MutableLiveData<String>) {
+    val greetingName: String? by callsignState.observeAsState()
+    AssistChip(
+        onClick = { /* Do something! */ },
+        label = { Text(
+            "${greetingName}",
+            fontSize = 15.sp,
+            ) },
+        shape = RoundedCornerShape(40.dp)
+        )
+}
+
+@Composable
+fun SOSButton() {
+    Button(
+        onClick = { /* Do something! */ },
+        modifier = Modifier
+            .border(
+                width = 4.dp,
+                color = Color.Red,
+                shape = RoundedCornerShape(40.dp),
+            )
+            .size(100.dp, 60.dp),
+        shape = RoundedCornerShape(40.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
+            contentColor = Color.Red
+        )
+    ) {
+        Text (
+            "SOS",
+            fontSize = 25.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Red
+        )
+    }
+}
+
+@Composable
+fun MarkerDropButton() {
+    IconButton(
+        onClick = { /* doSomething() */ },
+        modifier = Modifier
+            .border(
+                width = 2.dp,
+                color = Color.White,
+                shape = CircleShape
+            )
+            .size(60.dp),
+    ) {
+        Icon(
+            painterResource(R.drawable.markerdrop),
+            contentDescription = "Localized description",
+            modifier = Modifier.size(30.dp)
+        )
+    }
+}
+
+//Contains functionality for settings screen
 @Composable
 fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
     WearTAKCIVTheme {
@@ -409,9 +608,17 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
     }
 }
 
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)
 @Composable
 fun DefaultPreview() {
+    var callsignState = MutableLiveData<String>("Scooby Doo!")
+    WearTAKCivApp(callsignState)
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Composable
+fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("Preview Android!")
     WearTAKCivApp(callsignState)
+    SettingsScreen(rememberNavController(),callsignState)
 }
