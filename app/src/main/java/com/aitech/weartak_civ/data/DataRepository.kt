@@ -13,7 +13,6 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -25,6 +24,7 @@ import kotlin.random.Random
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 
 class DataRepository(private val context: Context) {
+
     val passiveDataEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PASSIVE_DATA_ENABLED] ?: false
     }
@@ -55,9 +55,53 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_LOCATION_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableLocationService(enableLocationService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_LOCATION_SERVICE] = enableLocationService
+        }
+    }
+
+    val getEnableBiometricsService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BIOMETRICS_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableBiometricsService(enableBiometricsService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BIOMETRICS_SERVICE] = enableBiometricsService
+        }
+    }
+
+    val getLocationUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOCATION_UPDATE_INTERVAL] ?: 2
+    }
+
+    suspend fun storeLocationUpdateInterval(locationUpdateInterval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOCATION_UPDATE_INTERVAL] = locationUpdateInterval
+        }
+    }
+
+    val getBiometricsSendInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[BIOMETRICS_SEND_INTERVAL] ?: 5
+    }
+
+    suspend fun storeBiometricsSendInterval(biometricsSendInterval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[BIOMETRICS_SEND_INTERVAL] = biometricsSendInterval
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
         private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
+        private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
+        private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
+        private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
+        private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
     }
 }
