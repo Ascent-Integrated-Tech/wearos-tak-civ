@@ -10,8 +10,11 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings.Secure
@@ -31,6 +34,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,6 +45,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -52,6 +60,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.contentColorFor
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -60,10 +69,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
@@ -88,6 +100,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.wear.compose.material.ContentAlpha
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
@@ -100,6 +113,11 @@ import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.HeartrateService
@@ -109,6 +127,7 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
@@ -122,38 +141,98 @@ class MainActivity : ComponentActivity() {
         lateinit var mainActivity : MainActivity
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
+        var enableLocationService : Boolean =  true
+        var enableBiometricsService : Boolean = true
         lateinit var dataRepository: DataRepository
 
         fun getActivity(): MainActivity {
             return mainActivity
         }
+
+        fun startBiometericService() {
+            if (enableBiometricsService) {
+                if ((ActivityCompat.checkSelfPermission(
+                        mainActivity.applicationContext,
+                        Manifest.permission.BODY_SENSORS
+                    ) != PackageManager.PERMISSION_GRANTED) &&
+                    (ActivityCompat.checkSelfPermission(
+                        mainActivity.applicationContext,
+                        Manifest.permission.BODY_SENSORS_BACKGROUND
+                    ) != PackageManager.PERMISSION_GRANTED)
+                ) {
+                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking requestLocationUpdates")
+                } else {
+                    Log.d(TAG, "Starting hearrate service")
+                    mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
+                }
+            }  else {
+                Log.d(TAG, "startBiometricsService is false. So NOT starting location service")
+            }
+        }
+        private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
+
+        fun startLocationService() {
+            if (hasGps()) {
+                Log.i(TAG, "This hardware has GPS")
+            } else {
+                Log.i(TAG, "This hardware does NOT have GPS")
+            }
+            //fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+            //locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
+
+            if ((ActivityCompat.checkSelfPermission(
+                    mainActivity.applicationContext,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED) &&
+                (ActivityCompat.checkSelfPermission(
+                    mainActivity.applicationContext,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED)
+            ) {
+                Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
+            } else {
+                if (enableLocationService) {
+                    Log.d(TAG, "Starting LocationService")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        mainActivity.startForegroundService(
+                            Intent(
+                                mainActivity,
+                                LocationService::class.java
+                            )
+                        )
+
+                    } else {
+                        mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                    }
+                    /*
+                fusedLocationClient.requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                )
+                 */
+                } else {
+                    Log.d(TAG, "enableLocationService is false. So NOT starting location service")
+                }
+            }
+        }
+
     }
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locationRequest: LocationRequest
-    //private val callsign_id = 1
-    //private val callsign = "WEAROS-" + callsign_id
-    //val device_uid by lazy { "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID) }
-    val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    var lat : Double? = null
-    var lon : Double? = null
-    var hae : Double? = null
-    var ce : Float? = null
-    var le : Float? = null
-    var speed : Float? = null
-    var bearing : Float? = null
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
 
-    private fun hasGps(): Boolean = packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
-
     override fun onDestroy() {
         super.onDestroy()
-
+        
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
-        mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-        mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+        if (enableBiometricsService) {
+            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+        }
+        if (enableLocationService) {
+            mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+        }
         mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
@@ -198,11 +277,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun printSensorDetails(context: Context?) {
+        var resSensorList: MutableList<Sensor> = ArrayList()
+        try {
+            val smm = context?.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            resSensorList.addAll(smm.getSensorList(Sensor.TYPE_ALL))
+            Log.d(TAG, "Sensor List: ${resSensorList.size}")
+            resSensorList.forEach { sensor ->
+                Log.d(TAG, "    ${sensor.name}")
+            }
+        } catch (e: Exception) {
+            resSensorList = ArrayList()
+            Log.e(TAG, "Sensor List ERROR: Unable to obtain", e)
+        }
+    }
+
+    fun startBatteryService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
+
+        } else {
+            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+        }
+    }
+
+    fun setDataFromDatastore() {
+        runBlocking {
+            callsign = dataRepository.getCallsign.first()
+            callsignState.postValue(callsign) // TODO: Check if we need this at all
+            Log.d(TAG, "Setting callsign: $callsign")
+            enableLocationService = dataRepository.getEnableLocationService.first()
+            Log.d(TAG, "Setting enableLocationService to $enableLocationService")
+            enableBiometricsService = dataRepository.getEnableBiometricsService.first()
+            Log.d(TAG, "Setting enableBiometricsService to $enableBiometricsService")
+            LocationService.locationUpdateIntervalSecs = dataRepository.getLocationUpdateInterval.first()
+            LocationService.locationUpdateFastestIntervalSecs = LocationService.locationUpdateIntervalSecs
+            Log.d(TAG, "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs} seconds")
+            HeartrateService.heartrateSendIntervalSecs = dataRepository.getBiometricsSendInterval.first()
+            Log.d(TAG, "Setting heartrateSendInterval to ${HeartrateService.heartrateSendIntervalSecs} seconds")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         mainActivity = this
         dataRepository = DataRepository(this)
         installSplashScreen()
-        super.onCreate(savedInstanceState)
+
+        setDataFromDatastore()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
 
@@ -217,11 +340,10 @@ class MainActivity : ComponentActivity() {
         }
 
          */
-        CoroutineScope(Dispatchers.Main).launch {
-            dataRepository.getCallsign.collect { cs -> callsign = cs; callsignState.postValue(cs); dataRepository.storeCallsign(cs); }
-            //dataRepository.getCallsign.collect { callsign -> Log.d(TAG, "set callsign: " + callsign) }
-        }
+
         setTheme(android.R.style.Theme_DeviceDefault)
+
+        printSensorDetails(this)
 
         val healthClient = HealthServices.getClient(this /*context*/)
         val passiveMonitoringClient = healthClient.passiveMonitoringClient
@@ -260,61 +382,9 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
-
-        } else {
-            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
-        }
-        mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
-
-        if (hasGps()) {
-            Log.i(TAG, "This hardware has GPS")
-        } else {
-            Log.i(TAG, "This hardware does NOT have GPS")
-        }
-        //fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        //locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
-
-        /*
-        connectTAKServer( R.raw.tak_prod_ascent_user, "atakatak", "tak.prod.ops.ascentitech.com")
-        if (null != secureSocket) {
-            val timer = Timer()
-            timer.schedule(
-                object : TimerTask() {
-                    override fun run() {
-                        processBiometrics(secureSocket!!, callsign)
-                    }
-                },0, 30000)
-*/
-
-        if ((ActivityCompat.checkSelfPermission(
-                applicationContext,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED) &&
-            (ActivityCompat.checkSelfPermission(
-                applicationContext,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED)
-        ) {
-            Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
-        } else {
-            Log.d(TAG, "Calling LocationService")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
-
-            } else {
-                mainActivity.startService(Intent(mainActivity, LocationService::class.java))
-            }
-            /*
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback,
-                Looper.getMainLooper()
-            )
-
-             */
-        }
+        startBatteryService()
+        startBiometericService()
+        startLocationService()
         setContent {
             WearTAKCivApp(callsignState)
         }
@@ -385,7 +455,7 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
                         .fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Callsign(callsignState)
+                    Callsign(navController, callsignState)
                 }
 
             }
@@ -494,10 +564,10 @@ fun TroubleshootingIcons() {
 }
 
 @Composable
-fun Callsign(callsignState: MutableLiveData<String>) {
+fun Callsign(navController: NavController, callsignState: MutableLiveData<String>) {
     val greetingName: String? by callsignState.observeAsState()
     AssistChip(
-        onClick = { /* Do something! */ },
+        onClick = { navController.navigate("settings_screen") },
         label = { Text(
             "${greetingName}",
             fontSize = 15.sp,
@@ -552,6 +622,54 @@ fun MarkerDropButton() {
     }
 }
 
+@Composable
+private fun SettingSwitchItem(
+    modifier: Modifier = Modifier,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    title: String,
+    description: String,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1.0f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            val contentAlpha = if (enabled) ContentAlpha.high else ContentAlpha.disabled
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.caption1,
+                maxLines = 1,
+                modifier = Modifier.alpha(contentAlpha)
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.caption3,
+                modifier = Modifier.alpha(contentAlpha)
+            )
+        }
+
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled
+        )
+    }
+}
+
 //Contains functionality for settings screen
 @Composable
 fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
@@ -565,42 +683,155 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
             contentAlignment = Alignment.Center
         ) {
             TimeText()
-            /*
-        Text(
-            text = "This is the settings screen",
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colors.primary,
-        )
-         */
             var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsign)) }
-            OutlinedTextField(
-                value = callsignTextFieldValue,
-                onValueChange = {
-                    callsignTextFieldValue = it
-                },
-                label = { Text(text = "Callsign", color = colors.primary) },
-                placeholder = { Text(text = "Your Callsign", color = colors.primary) },
-                textStyle = TextStyle(color = MaterialTheme.colors.primary)
-            )
+            var locationChecked by remember{ mutableStateOf(enableLocationService)}
+            var locationUpdateInterval by remember{ mutableStateOf(TextFieldValue(LocationService.locationUpdateIntervalSecs.toString()))}
+            var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+            var biometricsSendingInterval by remember{ mutableStateOf(TextFieldValue(HeartrateService.heartrateSendIntervalSecs.toString()))}
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+                .align(Alignment.Center)
+                .verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                    singleLine = true,
+                    value = callsignTextFieldValue,
+                    onValueChange = {
+                        callsignTextFieldValue = it
+                    },
+                    label = { Text(text = "Callsign", color = colors.primary) },
+                    placeholder = { Text(text = "Your Callsign", color = colors.primary) },
+                    textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                )
+                Text(
+                    text = "General Settings",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colors.primary,
+                )
+
+                SettingSwitchItem(checked = locationChecked, onCheckedChange =  { locationChecked = it },
+                    title = "Location", description = "Service ON/OFF",)
+                OutlinedTextField(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    value = locationUpdateInterval,
+                    onValueChange = {
+                        locationUpdateInterval = it
+                    },
+                    label = { Text(text = "Location Update Interval", color = colors.primary, style = MaterialTheme.typography.caption3) },
+                    placeholder = { Text(text = "Interval in secs", color = colors.primary, style = MaterialTheme.typography.caption3) },
+                    textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                )
+                SettingSwitchItem(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
+                    title = "Biometrics",
+                    description = "Service ON/OFF",)
+                OutlinedTextField(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    value = biometricsSendingInterval,
+                    onValueChange = {
+                        biometricsSendingInterval = it
+                    },
+                    label = { Text(text = "Biometrics Send Interval", color = colors.primary, style = MaterialTheme.typography.caption3) },
+                    placeholder = { Text(text = "Interval in secs", color = colors.primary, style = MaterialTheme.typography.caption3) },
+                    textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                )
+            }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(25.dp)
                         .clickable {
                             Log.d(TAG, "Settings NOT saved")
                             navController.navigate("main_screen")
                         })
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(20.dp))
                 Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(25.dp)
                         .clickable {
-                            callsign = callsignTextFieldValue.text
-                            callsignLiveDataState.postValue(callsign)
-                            CoroutineScope(Dispatchers.Main).launch {
-                                dataRepository.storeCallsign(callsign)
+                            var settingsChanged : Boolean = false
+                            var callsignChanged: Boolean = false
+                            var locationCheckedChanged: Boolean = false
+                            var biometricsCheckedChanged: Boolean = false
+                            var locationSendingIntervalChanged = false
+                            var biometricsSendingIntervalChanged = false
+                            if (!callsign.equals(callsignTextFieldValue.text)) {
+                                settingsChanged = true; callsignChanged = true
+                                callsign = callsignTextFieldValue.text
+                                callsignLiveDataState.postValue(callsign)
                             }
-                            Log.d(TAG, "Settings saved with callsign: $callsign")
+                            if (enableLocationService != locationChecked) {
+                                settingsChanged = true; locationCheckedChanged = true
+                                enableLocationService = locationChecked
+                                if (enableLocationService) {
+                                    Log.d(TAG, "Starting location service")
+                                    startLocationService()
+                                } else {
+                                    Log.d(TAG, "Stopping location service")
+                                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                                }
+                            }
+                            val locationUpdateIntervalText = locationUpdateInterval.text
+                            if (!locationUpdateIntervalText.equals("") && (locationUpdateIntervalText.toInt() != 0) && !locationUpdateIntervalText.equals(LocationService.locationUpdateIntervalSecs.toString())) {
+                                settingsChanged = true; locationSendingIntervalChanged = true
+                                LocationService.locationUpdateIntervalSecs = locationUpdateIntervalText.toInt()
+                                LocationService.locationUpdateFastestIntervalSecs = LocationService.locationUpdateIntervalSecs
+                                Log.d(TAG, "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs}")
+                                if (enableLocationService) {
+                                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                                    startLocationService()
+                                }
+                            }
+                            if (enableBiometricsService != biometricsChecked) {
+                                settingsChanged = true; biometricsCheckedChanged = true
+                                enableBiometricsService = biometricsChecked
+                                if (enableBiometricsService) {
+                                    Log.d(TAG, "Starting biometric service")
+                                    startBiometericService()
+                                } else {
+                                    Log.d(TAG, "Stopping biometric service")
+                                    mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                                }
+                            }
+                            val biometricsSendingIntervalText = biometricsSendingInterval.text
+                            if (!biometricsSendingIntervalText.equals("") && (biometricsSendingIntervalText.toInt() != 0) && !biometricsSendingIntervalText.equals(HeartrateService.heartrateSendIntervalSecs.toString())) {
+                                settingsChanged = true; biometricsSendingIntervalChanged = true
+                                HeartrateService.heartrateSendIntervalSecs = biometricsSendingIntervalText.toInt()
+                                Log.d(TAG, "Setting heartrateSendIntervalSecs to ${HeartrateService.heartrateSendIntervalSecs}")
+                            }
+                            if (settingsChanged) {
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    if (callsignChanged) {
+                                        Log.d(TAG, "Storing Callsign ($callsign)")
+                                        dataRepository.storeCallsign(callsign)
+                                    }
+                                    if (locationCheckedChanged) {
+                                        Log.d(TAG, "Storing enableLocationService $enableLocationService")
+                                        dataRepository.storeEnableLocationService(enableLocationService)
+                                    }
+                                    if (locationSendingIntervalChanged) {
+                                        Log.d(TAG, "Storing locationSendingInterval (${LocationService.locationUpdateIntervalSecs})")
+                                        dataRepository.storeLocationUpdateInterval(LocationService.locationUpdateIntervalSecs)
+                                    }
+                                    if (biometricsCheckedChanged) {
+                                        Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
+                                        dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                                    }
+                                    if (biometricsSendingIntervalChanged){
+                                        Log.d(TAG, "Storing biometricsSendingInterval (${HeartrateService.heartrateSendIntervalSecs})")
+                                        dataRepository.storeBiometricsSendInterval(HeartrateService.heartrateSendIntervalSecs)
+                                    }
+                                    Log.d(TAG, "Finished saving settings")
+                                }
+                            } else {
+                                Log.d(TAG, "Settings not changed and hence NOT saved")
+                            }
                             navController.navigate("main_screen")
                         })
             }

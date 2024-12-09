@@ -47,7 +47,7 @@ class TAKConnectService: Service() {
         startForegroundService()
         CoroutineScope(Dispatchers.IO).launch {
             Log.d(TAG, "onStartCommand: calling connectTAKServer")
-            connectTAKServer(TAK_CERT, "atakatak", TAK_SERVER)
+            connectTAKServer(TAK_CERT, TAK_CERT_PASSWORD, TAK_SERVER)
         }
         return START_NOT_STICKY
     }
@@ -99,7 +99,13 @@ class TAKConnectService: Service() {
         private var secureSocket : SSLSocket? = null
         private var isConnecting : AtomicBoolean = AtomicBoolean(false)
         const private val TAK_SERVER = "tak.test.ops.ascentitech.com"
+        const private val TAK_CERT_PASSWORD = "atakatak"
         private val TAK_CERT = R.raw.tak_test_ascent_user
+        /*
+        const private val TAK_SERVER = "56.136.23.111"
+        const private val TAK_CERT_PASSWORD = "QeD6HaCYlQ6l1Tr"
+        private val TAK_CERT = R.raw.tak_af_event_user
+         */
 
         fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
             Log.d(TAG,"connectTAKServer called")
@@ -171,7 +177,7 @@ class TAKConnectService: Service() {
                         secureSocket?.close()
                         connectTAKServer(
                             TAK_CERT,
-                            "atakatak",
+                            TAK_CERT_PASSWORD,
                             TAK_SERVER
                         )
                     }
@@ -181,7 +187,7 @@ class TAKConnectService: Service() {
                     secureSocket?.close()
                     connectTAKServer(
                         TAK_CERT,
-                        "atakatak",
+                        TAK_CERT_PASSWORD,
                         TAK_SERVER
                     )
                 } catch (e: java.lang.Exception) {
@@ -190,7 +196,7 @@ class TAKConnectService: Service() {
                     secureSocket?.close()
                     connectTAKServer(
                         TAK_CERT,
-                        "atakatak",
+                        TAK_CERT_PASSWORD,
                         TAK_SERVER
                     )
                 }

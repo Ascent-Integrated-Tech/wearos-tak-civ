@@ -31,8 +31,6 @@ import com.aitech.weartak_civ.service.LocationService.Companion.lat
 import com.aitech.weartak_civ.service.LocationService.Companion.le
 import com.aitech.weartak_civ.service.LocationService.Companion.lon
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -129,7 +127,7 @@ class HeartrateService: Service() {
                     repository.storeLatestHeartRate(hr)
                 }
                 val currTime = System.currentTimeMillis()
-                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > 5_000L)) {
+                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > heartrateSendIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     sendBiometrics(callsign, hr)
                 }
@@ -147,8 +145,8 @@ class HeartrateService: Service() {
         val calendar: Calendar = Calendar.getInstance()
         calendar.setTime(bioDateTime)
 
-        // Add 20 seconds to the calendar
-        calendar.add(Calendar.SECOND, 20)
+        // 3 times the heartrateSendIntervalSecs to the calendar
+        calendar.add(Calendar.SECOND, heartrateSendIntervalSecs*3)
 
         val bioDateTimeFuture = calendar.time
         val bioFutureTimeStr = dateTimeFormatter.format(bioDateTimeFuture)
@@ -210,6 +208,7 @@ class HeartrateService: Service() {
         private const val BIO_PART3 = "' how='m-g' access='Undefined'><point lat='"
         private const val BIO_PART4 = "' /><detail><status serialNumber='"
         private const val BIO_PART5 = "'/></detail></event>"
-        public var hr: Int = -1
+        var hr: Int = -1
+        var heartrateSendIntervalSecs : Int = 5
     }
 }
