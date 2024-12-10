@@ -53,13 +53,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -123,14 +121,11 @@ import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.text.SimpleDateFormat
 import javax.net.ssl.SSLSocket
 
 
@@ -467,6 +462,7 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
 
 @Composable
 fun HeartRate () {
+    val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     Column(
         modifier = Modifier
             .fillMaxWidth(),
@@ -485,7 +481,7 @@ fun HeartRate () {
                     // Clip image to be shaped as a circle
             )
             Text(
-                text = " 100",
+                text = " $heartRateText",
                 textAlign = TextAlign.Start,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,

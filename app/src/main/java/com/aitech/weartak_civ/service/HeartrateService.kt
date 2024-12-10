@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
@@ -123,13 +124,16 @@ class HeartrateService: Service() {
                 hr = localHr
                 //heartRateTextView.text = "Heart rate: $hr"
                 //Log.d(TAG, "Obtained heartrate: $hr")
-                runBlocking {
-                    repository.storeLatestHeartRate(hr)
-                }
+
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > heartrateSendIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     sendBiometrics(callsign, hr)
+                    runBlocking {
+                        //Log.d(TAG, "Posting hr value to hrStringLiveData")
+                        hrStringLiveData.postValue(hr.toString())
+                        //repository.storeLatestHeartRate(hr)
+                    }
                 }
             }
         }
@@ -210,5 +214,6 @@ class HeartrateService: Service() {
         private const val BIO_PART5 = "'/></detail></event>"
         var hr: Int = -1
         var heartrateSendIntervalSecs : Int = 5
+        val hrStringLiveData = MutableLiveData<String>("N/A")
     }
 }
