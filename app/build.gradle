@@ -21,6 +21,22 @@ android {
 
     }
 
+    signingConfigs {
+        debug {
+            storeFile file("weartak.keystore")
+            storePassword '112358key!'
+            keyAlias 'platform'
+            keyPassword '112358key!'
+        }
+
+        release {
+            storeFile file("weartak.keystore")
+            storePassword '112358key!'
+            keyAlias 'platform'
+            keyPassword '112358key!'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
