@@ -418,13 +418,13 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
             modifier = Modifier
                 .background(MaterialTheme.colors.background)
                 .fillMaxSize()
-                .padding(2.dp)
+                .padding(5.dp)
         ) {
 
             Column(
                 modifier = Modifier
                     .background(MaterialTheme.colors.background)
-                    .padding(10.dp),
+                    .padding(5.dp),
         //                horizontalAlignment = Alignment.CenterHorizontally,
         //                verticalArrangement = Arrangement.Center
             ) {
@@ -438,7 +438,7 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
 
                 Row(
                     modifier = Modifier
-                        .padding(vertical = 10.dp)
+                        .padding(vertical = 5.dp)
                         .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
