@@ -59,6 +59,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
@@ -78,6 +79,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -100,12 +102,16 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.ContentAlpha
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
+import androidx.wear.compose.material.ToggleChip
+import androidx.wear.compose.material.ToggleChipDefaults
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
@@ -128,6 +134,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLSocket
 
 
@@ -140,6 +147,7 @@ class MainActivity : ComponentActivity() {
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
         var enableBiometricsService : Boolean = true
+        var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
         lateinit var networkManager : NetworkManager
 
@@ -294,7 +302,6 @@ class MainActivity : ComponentActivity() {
     fun startBatteryService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
-
         } else {
             mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
         }
@@ -408,6 +415,12 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             exitTransition = { slideOutVertically() }) {
             SettingsScreen(navController, callsignLiveDataState)
         }
+        composable(
+            "callsign_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            CallsignSetting(navController, callsignLiveDataState)
+        }
     }
 }
 
@@ -467,6 +480,103 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
 }
 
 @Composable
+fun CallsignRoleTeamChip(
+    route: String,
+    title: String,
+    nameState: MutableLiveData<String>,
+    navController: NavController
+) {
+    val nameSecondary: String? by nameState.observeAsState()
+    Chip(
+        onClick = { navController.navigate(route) },
+        enabled = true,
+        // Primary label has maximum 3 lines, Secondary label has maximum 2 lines.
+        label = { Text(text = title) },
+        secondaryLabel = {
+            Text(text = nameSecondary.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
+        },
+        colors = ChipDefaults.chipColors(
+            backgroundColor = Color.DarkGray,
+            contentColor = Color.White,
+            secondaryContentColor = Color.LightGray
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+fun CallsignSetting (navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsign)) }
+        OutlinedTextField(
+            value = callsignTextFieldValue,
+            onValueChange = {
+                callsignTextFieldValue = it
+            },
+            label = { Text(text = "Callsign", color = colors.primary) },
+            placeholder = { Text(text = "Your Callsign", color = colors.primary) },
+            textStyle = TextStyle(color = MaterialTheme.colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("settings_screen")
+                    })
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        callsign = callsignTextFieldValue.text
+                        callsignLiveDataState.postValue(callsign)
+                        CoroutineScope(Dispatchers.Main).launch {
+                            dataRepository.storeCallsign(callsign)
+                        }
+                        Log.d(TAG, "Settings saved with callsign: $callsign")
+                        navController.navigate("main_screen")
+                    })
+        }
+    }
+}
+
+@Composable
+fun TeamSetting (navController: NavController) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colors.background),
+        contentAlignment = Alignment.Center
+    ) {
+
+    }
+}
+
+@Composable
+fun RoleSetting (navController: NavController) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colors.background),
+        contentAlignment = Alignment.Center
+    ) {
+
+    }
+}
+
+
+@Composable
 fun HeartRate () {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     Column(
@@ -503,6 +613,8 @@ fun HeartRate () {
 
 @Composable
 fun TroubleshootingIcons() {
+    //TODO: Add icons with slashes
+
     val iconSizeSmall= 20.dp
     val iconSizeLarge = 17.dp
     Box(
@@ -511,9 +623,13 @@ fun TroubleshootingIcons() {
             .height(70.dp),
             contentAlignment = Alignment.TopCenter
     ) {
+        var locationChecked by remember{ mutableStateOf(enableLocationService)}
+        val battery by BatteryService.batteryPercentageLiveData.observeAsState()
+        val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+
         // Icon on the top left curve
         Image(
-            painterResource(R.drawable.tak_server), // Replace with your icon
+            painter = if (takServer == true) painterResource(R.drawable.tak_server) else painterResource(R.drawable.tak_server_disconnected),
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -525,17 +641,17 @@ fun TroubleshootingIcons() {
         )
 
         // Icon on the bottom left curve
-        Icon(
-            painterResource(R.drawable.cell), // Replace with your icon
-            contentDescription = "Bottom Left Icon",
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(
-                    x = (15).dp, // Adjust this value
-                    y = (15).dp // Adjust this value
-                )
-                .size(iconSizeLarge)
-        )
+//        Icon(
+//            painterResource(R.drawable.cell), // Replace with your icon
+//            contentDescription = "Bottom Left Icon",
+//            modifier = Modifier
+//                .align(Alignment.CenterStart)
+//                .offset(
+//                    x = (15).dp, // Adjust this value
+//                    y = (15).dp // Adjust this value
+//                )
+//                .size(iconSizeLarge)
+//        )
 
         // Icon on the top right curve
         Icon(
@@ -547,20 +663,31 @@ fun TroubleshootingIcons() {
                     x = (-40).dp, // Adjust this value
                     y = (-10).dp // Adjust this value
                 )
-                .size(iconSizeSmall)
+                .size(iconSizeSmall),
+            tint = if (locationChecked) Color.White else Color.Gray
         )
 
         // Icon on the bottom right curve
+
+        val batteryIcon = when {
+            battery!! <= 20 -> R.drawable.battery_1_bar
+            battery!! <= 40 -> R.drawable.battery_3
+            battery!! <= 60 -> R.drawable.battery_4_bar
+            battery!! <= 80 -> R.drawable.battery_5
+            else -> R.drawable.battery_full
+        }
         Icon(
-            painterResource(R.drawable.battery), // Replace with your icon
+            painter = painterResource(batteryIcon), // Replace with your icon
             contentDescription = "Bottom Right Icon",
+            tint = if (battery!! <= 20) Color.Red else Color.White,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .offset(
                     x = (-15).dp, // Adjust this value
                     y = (15).dp // Adjust this value
                 )
-                .size(iconSizeLarge)
+                .size(iconSizeSmall)
+
         )
     }
 }
@@ -680,42 +807,45 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colors.background)
-                .padding(bottom = 16.dp)
+                .padding(bottom = 16.dp, top = 15.dp)
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
-            TimeText()
             var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsign)) }
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
             var locationUpdateInterval by remember{ mutableStateOf(TextFieldValue(LocationService.locationUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var biometricsSendingInterval by remember{ mutableStateOf(TextFieldValue(HeartrateService.heartrateSendIntervalSecs.toString()))}
+
             Column(modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.7f)
-                .align(Alignment.Center)
-                .verticalScroll(rememberScrollState())
+                .fillMaxHeight(0.9f)
+                .align(Alignment.TopCenter)
+                .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                OutlinedTextField(
-                    modifier = Modifier.padding(horizontal = 2.dp),
-                    singleLine = true,
-                    value = callsignTextFieldValue,
-                    onValueChange = {
-                        callsignTextFieldValue = it
-                    },
-                    label = { Text(text = "Callsign", color = colors.primary) },
-                    placeholder = { Text(text = "Your Callsign", color = colors.primary) },
-                    textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                Text(
+                    text = "Callsign Settings",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
                 )
+
+                CallsignRoleTeamChip("callsign_screen", "Callsign", callsignLiveDataState, navController)
+                CallsignRoleTeamChip("callsign_screen", "Team", callsignLiveDataState, navController)
+                CallsignRoleTeamChip("callsign_screen", "Role", callsignLiveDataState, navController)
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Text(
                     text = "General Settings",
                     textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colors.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
                 )
 
                 SettingSwitchItem(checked = locationChecked, onCheckedChange =  { locationChecked = it },
-                    title = "Location", description = "Service ON/OFF",)
+                    title = "Location Service", description = "Service ON/OFF")
                 OutlinedTextField(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -844,14 +974,20 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)
 @Composable
 fun DefaultPreview() {
-    var callsignState = MutableLiveData<String>("Scooby Doo!")
+    var callsignState = MutableLiveData<String>("WEAROS-0")
     WearTAKCivApp(callsignState)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable
+fun CallsignSettingsPreview() {
+    var callsignState = MutableLiveData<String>("WEAROS-0")
+    CallsignSetting(rememberNavController(),callsignState)
+}
+
+@Preview(widthDp = 192, heightDp = 1000)
+@Composable
 fun SettingsPreview() {
-    var callsignState = MutableLiveData<String>("Preview Android!")
-    WearTAKCivApp(callsignState)
+    var callsignState = MutableLiveData<String>("WEAROS-0")
     SettingsScreen(rememberNavController(),callsignState)
 }

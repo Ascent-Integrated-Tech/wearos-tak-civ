@@ -146,7 +146,7 @@ class LocationService : Service() {
             locationRequest.priority = LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
         } else {
             locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-        }
+        }PRIORITY_HIGH_ACCURACY
          */
         Log.d(TAG, "LocationRequest params: fastestInterval(" + locationRequest.fastestInterval + "), interval(" + locationRequest.interval + "), maxWaitTime(" + locationRequest.maxWaitTime +
                 "), priority(" + locationRequest.priority + "), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")

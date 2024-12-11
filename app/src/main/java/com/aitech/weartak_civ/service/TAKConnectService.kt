@@ -21,8 +21,11 @@ import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
+import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentageLiveData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -97,10 +100,13 @@ class TAKConnectService: Service() {
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         private var secureSocket : SSLSocket? = null
-        private var isConnecting : AtomicBoolean = AtomicBoolean(false)
+        var isConnecting : AtomicBoolean = AtomicBoolean(false)
         const private val TAK_SERVER = "tak.test.ops.ascentitech.com"
         const private val TAK_CERT_PASSWORD = "atakatak"
         private val TAK_CERT = R.raw.tak_test_ascent_user
+        var isConnected : Boolean = false
+        val isConnectedLiveData = MutableLiveData<Boolean>(false)
+
         /*
         const private val TAK_SERVER = "56.136.23.111"
         const private val TAK_CERT_PASSWORD = "QeD6HaCYlQ6l1Tr"
@@ -108,6 +114,9 @@ class TAKConnectService: Service() {
          */
 
         fun connectTAKServer(userCertP12ResourceId: Int, userCertP12Password: String, takServer: String) {
+            isConnected = false
+            isConnectedLiveData.postValue(isConnected)
+
             Log.d(TAG,"connectTAKServer called")
             if (isConnecting.getAndSet(true) == false) {
                 try {
@@ -152,10 +161,15 @@ class TAKConnectService: Service() {
                     val socketFactory = sslContext.socketFactory
                     secureSocket = socketFactory.createSocket(takServer, 8089) as SSLSocket
                     secureSocket!!.startHandshake()
+                    isConnected = true
+                    isConnectedLiveData.postValue(isConnected)
 
                     Log.d(TAG, "Successfully connected to $takServer on port 8089")
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    isConnected = false
+                    isConnectedLiveData.postValue(isConnected)
+
                     Log.e(TAG, "Error connectTAKServer:", e)
                 }
             }
