@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,10 +28,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,21 +48,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
@@ -108,6 +120,7 @@ import androidx.wear.compose.material.ContentAlpha
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
+import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
@@ -129,6 +142,7 @@ import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
+import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -150,6 +164,18 @@ class MainActivity : ComponentActivity() {
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
         lateinit var networkManager : NetworkManager
+        private val klaxon = Klaxon()
+
+        data class Welcome4 (
+            val lrEntries: List<String>,
+            val lrValues: List<String>
+        ) {
+            public fun toJson() = klaxon.toJsonString(this)
+
+            companion object {
+                public fun fromJson(json: String) = klaxon.parse<Welcome4>(json)
+            }
+        }
 
         fun getActivity(): MainActivity {
             return mainActivity
@@ -434,7 +460,6 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
                 .fillMaxSize()
                 .padding(5.dp)
         ) {
-
             Column(
                 modifier = Modifier
                     .background(MaterialTheme.colors.background)
@@ -551,17 +576,35 @@ fun CallsignSetting (navController: NavController, callsignLiveDataState: Mutabl
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@SuppressLint("NewApi")
 @Composable
 fun TeamSetting (navController: NavController) {
+    val inputStream = MainActivity.mainActivity.resources.openRawResource(R.raw.roles_json_config)
+    var jsonConfig: MainActivity.Constants.Welcome4? = null
+    try {
+        var bytes  = inputStream.readAllBytes()
+        jsonConfig = MainActivity.Constants.Welcome4.fromJson(String(bytes, charset("UTF-8")))
+        Log.d(TAG, "JSON CONFIG VALUES: ${jsonConfig?.lrValues.toString()}")
+    } catch (e: Exception) {
+        Log.e(TAG, "ERROR when reading json config", e)
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colors.background),
         contentAlignment = Alignment.Center
     ) {
+        LazyColumn {
+            items(jsonConfig!!.lrEntries) { lrEntry ->
 
+//                Text(
+//                        text = jsonConfig?.lrValues?.get(i).toString(),
+//                    )
+                }
+            }
+        }
     }
-}
 
 @Composable
 fun RoleSetting (navController: NavController) {
@@ -614,9 +657,11 @@ fun HeartRate () {
 @Composable
 fun TroubleshootingIcons() {
     //TODO: Add icons with slashes
+    //TODO: Add values to function instead of one giant function
+    //TODO: Connect cell
 
     val iconSizeSmall= 20.dp
-    val iconSizeLarge = 17.dp
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -760,6 +805,7 @@ private fun SettingSwitchItem(
     description: String,
     enabled: Boolean = true,
 ) {
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -977,6 +1023,13 @@ fun DefaultPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     WearTAKCivApp(callsignState)
 }
+
+@Preview(widthDp = 192, heightDp = 1000)
+@Composable
+fun TeamRoleSettingsPreview() {
+    TeamSetting(rememberNavController())
+}
+
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable

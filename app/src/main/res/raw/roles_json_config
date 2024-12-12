@@ -1,0 +1,28 @@
+{
+	"lrEntries": [
+		"Firefighter",
+		"Engineer/Driver-Operator",
+		"Lieutenant",
+		"Captain",
+		"Battalion Chief",
+		"Incident Commander",
+		"Safety Officer",
+		"Rescue Technician",
+		"Paramedic",
+		"HazMat Specialist",
+		"Logistics Officer"
+	],
+	"lrValues": [
+		"FF",
+		"Eng",
+		"Lt",
+		"Cap",
+		"BC",
+		"IC",
+		"SO",
+		"Res",
+		"PM",
+		"HazMat",
+		"LO"
+	]
+}

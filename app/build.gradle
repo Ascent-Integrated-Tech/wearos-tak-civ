@@ -82,6 +82,8 @@ dependencies {
     implementation libs.horologist.tiles
     implementation libs.watchface.complications.data.source.ktx
     implementation libs.navigation.compose
+    implementation 'com.beust:klaxon:5.5'
+
 
     // Health Services
     //implementation libs.androidx
