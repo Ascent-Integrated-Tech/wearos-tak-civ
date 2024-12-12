@@ -15,6 +15,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.net.ConnectivityManager
+import android.net.NetworkInfo
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings.Secure
@@ -139,6 +141,7 @@ class MainActivity : ComponentActivity() {
         var enableLocationService : Boolean =  true
         var enableBiometricsService : Boolean = true
         lateinit var dataRepository: DataRepository
+        lateinit var networkManager : NetworkManager
 
         fun getActivity(): MainActivity {
             return mainActivity
@@ -233,6 +236,7 @@ class MainActivity : ComponentActivity() {
             secureSocket?.close()
         }
 
+        networkManager.deInit()
         /*
         // Unregister the callback.
         runBlocking {
@@ -317,6 +321,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         mainActivity = this
         dataRepository = DataRepository(this)
+        networkManager = NetworkManager.getInstance()
+        networkManager.init()
         installSplashScreen()
 
         setDataFromDatastore()

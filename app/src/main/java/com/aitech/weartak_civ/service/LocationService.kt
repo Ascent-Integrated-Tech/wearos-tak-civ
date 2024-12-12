@@ -49,7 +49,10 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class LocationService : Service() {
@@ -62,7 +65,10 @@ class LocationService : Service() {
     private var currentLocation: Location? = null
     // TODO: move this to main / use main
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    private var heartrate: Int = -1;
+    private var heartrate: Int = -1
+    private var scheduler: ScheduledExecutorService? = null
+    private val sendLocationRunnable = SendLocationRunnable()
+    private val firstLocationSent = AtomicBoolean(false)
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
@@ -166,24 +172,42 @@ class LocationService : Service() {
         return binder
     }
 
-    fun sendLocation(
-        uid: String,
-        callsign: String,
-        role: String,
-        teamColor: String,
-        location: LocationResult
-    ) {
+    private fun startScheduler() {
+        if (scheduler == null || scheduler!!.isShutdown()) {
+            scheduler = Executors.newScheduledThreadPool(1)
+            scheduler!!.scheduleWithFixedDelay(sendLocationRunnable, 500, locationUpdateIntervalSecs * 1000L, TimeUnit.MILLISECONDS)
+            Log.d(TAG, "Scheduler started.")
+        }
+    }
+
+    private inner class SendLocationRunnable: Runnable {
+        override fun run() {
+            //Log.d(TAG, "SendLocationRunnable called")
+            CoroutineScope(Dispatchers.IO).launch {
+                sendLocation(MainActivity.device_uid, callsign, "Team Member", "Orange")
+            }
+        }
+    }
+
+    fun stopScheduler() {
+        if (scheduler != null && !scheduler!!.isShutdown()) {
+            scheduler!!.shutdownNow()
+            Log.d(TAG, "Scheduler stopped.")
+        }
+    }
+
+    fun sendLocation(uid: String, callsign: String, role: String, teamColor: String) {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
         val locDateTime = Date()
-        lat = location.lastLocation?.latitude
-        lon = location.lastLocation?.longitude
-        hae = location.lastLocation?.altitude
-        ce = location.lastLocation?.accuracy
-        le = location.lastLocation?.verticalAccuracyMeters
-        val speed = location.lastLocation?.speed
-        val bearing = location.lastLocation?.bearing
-        //Log.d(LOG_TAG, "sendLocation called with location ${location.toString()}")
-        //Log.d(LOG_TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
+        lat = currentLocation?.latitude
+        lon = currentLocation?.longitude
+        hae = currentLocation?.altitude
+        ce = currentLocation?.accuracy
+        le = currentLocation?.verticalAccuracyMeters
+        val speed = currentLocation?.speed
+        val bearing = currentLocation?.bearing
+        //Log.d(TAG, "sendLocation called with location ${currentLocation?.toString()}")
+        //Log.d(TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
         if ((null != lat) && (null != lon)) {
             // Parse and manipulate timestamps
             dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
@@ -226,6 +250,8 @@ class LocationService : Service() {
                     LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
             //Log.d(TAG, "Sending location COT message: $cotMsg")
             sendDataTAKServer(cotMsg)
+        } else {
+            Log.d(TAG, "Not sending location as lat ($lat), lon ($lon)")
         }
     }
 
@@ -234,15 +260,9 @@ class LocationService : Service() {
             if (locationResult != null && locationResult.lastLocation != null) {
                 val location = locationResult.lastLocation
                 currentLocation = location
-                //Log.d(TAG, "Received location: " + location.toString())
-                CoroutineScope(Dispatchers.IO).launch {
-                    sendLocation(
-                        MainActivity.device_uid,
-                        callsign,
-                        "Team Member",
-                        "Orange",
-                        locationResult
-                    )
+                Log.d(TAG, "Received location: " + location.toString())
+                if(!firstLocationSent.getAndSet(true)) {
+                    startScheduler()
                 }
             }
         }
@@ -258,6 +278,7 @@ class LocationService : Service() {
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
+        stopScheduler()
         Log.d(TAG, "Location Service Destroyed")
     }
 
