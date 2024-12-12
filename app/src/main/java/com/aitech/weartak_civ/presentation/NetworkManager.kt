@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Log
 import android.widget.Toast
+import androidx.lifecycle.MutableLiveData
 
 
 class NetworkManager : ConnectivityManager.NetworkCallback()  {

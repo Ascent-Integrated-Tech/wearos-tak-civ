@@ -16,8 +16,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.net.ConnectivityManager
-import android.net.NetworkInfo
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings.Secure
@@ -33,7 +31,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,33 +43,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
@@ -123,8 +112,6 @@ import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
-import androidx.wear.compose.material.ToggleChip
-import androidx.wear.compose.material.ToggleChipDefaults
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
@@ -143,12 +130,12 @@ import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
+import com.beust.klaxon.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLSocket
 
 
@@ -161,19 +148,31 @@ class MainActivity : ComponentActivity() {
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
         var enableBiometricsService : Boolean = true
+        var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
         lateinit var networkManager : NetworkManager
         private val klaxon = Klaxon()
 
-        data class Welcome4 (
+        data class RolesJson (
             val lrEntries: List<String>,
             val lrValues: List<String>
         ) {
             public fun toJson() = klaxon.toJsonString(this)
 
             companion object {
-                public fun fromJson(json: String) = klaxon.parse<Welcome4>(json)
+                public fun fromJson(json: String) = klaxon.parse<RolesJson>(json)
+            }
+        }
+
+        data class TeamsJson (
+            val ltEntries: List<String>,
+            val ltValues: List<String>
+        ) {
+            public fun toJson() = klaxon.toJsonString(this)
+
+            companion object {
+                public fun fromJson(json: String) = klaxon.parse<TeamsJson>(json)
             }
         }
 
@@ -447,6 +446,18 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             exitTransition = { slideOutVertically() }) {
             CallsignSetting(navController, callsignLiveDataState)
         }
+        composable(
+            "role_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            RoleSetting(navController)
+        }
+        composable(
+            "team_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            TeamSetting(navController)
+        }
     }
 }
 
@@ -515,7 +526,6 @@ fun CallsignRoleTeamChip(
     Chip(
         onClick = { navController.navigate(route) },
         enabled = true,
-        // Primary label has maximum 3 lines, Secondary label has maximum 2 lines.
         label = { Text(text = title) },
         secondaryLabel = {
             Text(text = nameSecondary.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
@@ -576,45 +586,149 @@ fun CallsignSetting (navController: NavController, callsignLiveDataState: Mutabl
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @SuppressLint("NewApi")
 @Composable
-fun TeamSetting (navController: NavController) {
-    val inputStream = MainActivity.mainActivity.resources.openRawResource(R.raw.roles_json_config)
-    var jsonConfig: MainActivity.Constants.Welcome4? = null
+fun TeamSettingChips () {
+    var selectedRadioIndex by remember { mutableStateOf(0) }
+    val inputStream = mainActivity.resources.openRawResource(R.raw.teams_json_config)
+    var jsonConfig: MainActivity.Constants.TeamsJson? = null
+    val ltEntries = listOf("1", "2", "3")
     try {
         var bytes  = inputStream.readAllBytes()
-        jsonConfig = MainActivity.Constants.Welcome4.fromJson(String(bytes, charset("UTF-8")))
+        jsonConfig = MainActivity.Constants.TeamsJson.fromJson(String(bytes, charset("UTF-8")))
+        Log.d(TAG, "JSON CONFIG VALUES: ${jsonConfig?.ltValues.toString()}")
+    } catch (e: Exception) {
+        Log.e(TAG, "ERROR when reading json config", e)
+    }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+        verticalArrangement = Arrangement.Top,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        jsonConfig?.ltEntries!!.forEachIndexed { index, lrItem ->
+            run {
+                SelectableChip(
+                    modifier = Modifier.fillMaxWidth(),
+                    selected = index == selectedRadioIndex,
+                    onClick = { selectedRadioIndex = index},
+                    label = {
+                        // The primary label should have a maximum 3 lines of text
+                        Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    },
+                    enabled = true,
+                    shape = RoundedCornerShape(0.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TeamSetting (navController: NavController) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colors.background)
+            .padding(top = 20.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        TeamSettingChips()
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("settings_screen")
+                    })
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+//                        callsign = callsignTextFieldValue.text
+//                        callsignLiveDataState.postValue(callsign)
+//                        CoroutineScope(Dispatchers.Main).launch {
+//                            dataRepository.storeCallsign(callsign)
+//                        }
+//                        Log.d(TAG, "Settings saved with team: $callsign")
+                        navController.navigate("settings_screen")
+                    })
+        }
+    }
+}
+
+@SuppressLint("NewApi")
+@Composable
+fun RoleSettingsChips() {
+    var selectedRadioIndex by remember { mutableStateOf(0) }
+    val inputStream = mainActivity.resources.openRawResource(R.raw.roles_json_config)
+    var jsonConfig: MainActivity.Constants.RolesJson? = null
+    val lrEntries = listOf("1", "2", "3")
+    try {
+        var bytes  = inputStream.readAllBytes()
+        jsonConfig = MainActivity.Constants.RolesJson.fromJson(String(bytes, charset("UTF-8")))
         Log.d(TAG, "JSON CONFIG VALUES: ${jsonConfig?.lrValues.toString()}")
     } catch (e: Exception) {
         Log.e(TAG, "ERROR when reading json config", e)
     }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colors.background),
-        contentAlignment = Alignment.Center
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+        verticalArrangement = Arrangement.Top,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LazyColumn {
-            items(jsonConfig!!.lrEntries) { lrEntry ->
-
-//                Text(
-//                        text = jsonConfig?.lrValues?.get(i).toString(),
-//                    )
-                }
+        jsonConfig?.lrEntries!!.forEachIndexed { index, lrItem ->
+             run {
+                SelectableChip(
+                    modifier = Modifier.fillMaxWidth(),
+                    selected = index == selectedRadioIndex,
+                    onClick = { selectedRadioIndex = index},
+                    label = {
+                        // The primary label should have a maximum 3 lines of text
+                        Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    },
+                    enabled = true,
+                    shape = RoundedCornerShape(0.dp)
+                )
             }
         }
     }
+}
 
 @Composable
 fun RoleSetting (navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background),
-        contentAlignment = Alignment.Center
+            .background(MaterialTheme.colors.background)
+            .padding(top = 20.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.TopCenter
     ) {
-
+        RoleSettingsChips()
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("settings_screen")
+                    })
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+//                        callsign = callsignTextFieldValue.text
+//                        callsignLiveDataState.postValue(callsign)
+//                        CoroutineScope(Dispatchers.Main).launch {
+//                            dataRepository.storeCallsign(callsign)
+//                        }
+//                        Log.d(TAG, "Settings saved with team: $callsign")
+                        navController.navigate("settings_screen")
+                    })
+        }
     }
 }
 
@@ -671,6 +785,7 @@ fun TroubleshootingIcons() {
         var locationChecked by remember{ mutableStateOf(enableLocationService)}
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+        val cellChecked by remember{ mutableStateOf(enableLocationService)}
 
         // Icon on the top left curve
         Image(
@@ -685,18 +800,18 @@ fun TroubleshootingIcons() {
                 .size(iconSizeSmall) // Adjust icon size as needed
         )
 
-        // Icon on the bottom left curve
-//        Icon(
-//            painterResource(R.drawable.cell), // Replace with your icon
-//            contentDescription = "Bottom Left Icon",
-//            modifier = Modifier
-//                .align(Alignment.CenterStart)
-//                .offset(
-//                    x = (15).dp, // Adjust this value
-//                    y = (15).dp // Adjust this value
-//                )
-//                .size(iconSizeLarge)
-//        )
+//         Icon on the bottom left curve
+        Icon(
+            painterResource(R.drawable.cell), // Replace with your icon
+            contentDescription = "Bottom Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(
+                    x = (15).dp, // Adjust this value
+                    y = (15).dp // Adjust this value
+                )
+                .size(iconSizeSmall)
+        )
 
         // Icon on the top right curve
         Icon(
@@ -878,8 +993,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 )
 
                 CallsignRoleTeamChip("callsign_screen", "Callsign", callsignLiveDataState, navController)
-                CallsignRoleTeamChip("callsign_screen", "Team", callsignLiveDataState, navController)
-                CallsignRoleTeamChip("callsign_screen", "Role", callsignLiveDataState, navController)
+                CallsignRoleTeamChip("team_screen", "Team", callsignLiveDataState, navController)
+                CallsignRoleTeamChip("role_screen", "Role", callsignLiveDataState, navController)
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -933,7 +1048,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     modifier = Modifier
                         .size(25.dp)
                         .clickable {
-                            var settingsChanged : Boolean = false
+                            var settingsChanged: Boolean = false
                             var callsignChanged: Boolean = false
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
@@ -952,17 +1067,35 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                     startLocationService()
                                 } else {
                                     Log.d(TAG, "Stopping location service")
-                                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                                    mainActivity.stopService(
+                                        Intent(
+                                            mainActivity,
+                                            LocationService::class.java
+                                        )
+                                    )
                                 }
                             }
                             val locationUpdateIntervalText = locationUpdateInterval.text
-                            if (!locationUpdateIntervalText.equals("") && (locationUpdateIntervalText.toInt() != 0) && !locationUpdateIntervalText.equals(LocationService.locationUpdateIntervalSecs.toString())) {
+                            if (!locationUpdateIntervalText.equals("") && (locationUpdateIntervalText.toInt() != 0) && !locationUpdateIntervalText.equals(
+                                    LocationService.locationUpdateIntervalSecs.toString()
+                                )
+                            ) {
                                 settingsChanged = true; locationSendingIntervalChanged = true
-                                LocationService.locationUpdateIntervalSecs = locationUpdateIntervalText.toInt()
-                                LocationService.locationUpdateFastestIntervalSecs = LocationService.locationUpdateIntervalSecs
-                                Log.d(TAG, "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs}")
+                                LocationService.locationUpdateIntervalSecs =
+                                    locationUpdateIntervalText.toInt()
+                                LocationService.locationUpdateFastestIntervalSecs =
+                                    LocationService.locationUpdateIntervalSecs
+                                Log.d(
+                                    TAG,
+                                    "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs}"
+                                )
                                 if (enableLocationService) {
-                                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                                    mainActivity.stopService(
+                                        Intent(
+                                            mainActivity,
+                                            LocationService::class.java
+                                        )
+                                    )
                                     startLocationService()
                                 }
                             }
@@ -974,14 +1107,26 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                     startBiometericService()
                                 } else {
                                     Log.d(TAG, "Stopping biometric service")
-                                    mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                                    mainActivity.stopService(
+                                        Intent(
+                                            mainActivity,
+                                            HeartrateService::class.java
+                                        )
+                                    )
                                 }
                             }
                             val biometricsSendingIntervalText = biometricsSendingInterval.text
-                            if (!biometricsSendingIntervalText.equals("") && (biometricsSendingIntervalText.toInt() != 0) && !biometricsSendingIntervalText.equals(HeartrateService.heartrateSendIntervalSecs.toString())) {
+                            if (!biometricsSendingIntervalText.equals("") && (biometricsSendingIntervalText.toInt() != 0) && !biometricsSendingIntervalText.equals(
+                                    HeartrateService.heartrateSendIntervalSecs.toString()
+                                )
+                            ) {
                                 settingsChanged = true; biometricsSendingIntervalChanged = true
-                                HeartrateService.heartrateSendIntervalSecs = biometricsSendingIntervalText.toInt()
-                                Log.d(TAG, "Setting heartrateSendIntervalSecs to ${HeartrateService.heartrateSendIntervalSecs}")
+                                HeartrateService.heartrateSendIntervalSecs =
+                                    biometricsSendingIntervalText.toInt()
+                                Log.d(
+                                    TAG,
+                                    "Setting heartrateSendIntervalSecs to ${HeartrateService.heartrateSendIntervalSecs}"
+                                )
                             }
                             if (settingsChanged) {
                                 CoroutineScope(Dispatchers.Main).launch {
@@ -990,19 +1135,35 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                         dataRepository.storeCallsign(callsign)
                                     }
                                     if (locationCheckedChanged) {
-                                        Log.d(TAG, "Storing enableLocationService $enableLocationService")
-                                        dataRepository.storeEnableLocationService(enableLocationService)
+                                        Log.d(
+                                            TAG,
+                                            "Storing enableLocationService $enableLocationService"
+                                        )
+                                        dataRepository.storeEnableLocationService(
+                                            enableLocationService
+                                        )
                                     }
                                     if (locationSendingIntervalChanged) {
-                                        Log.d(TAG, "Storing locationSendingInterval (${LocationService.locationUpdateIntervalSecs})")
+                                        Log.d(
+                                            TAG,
+                                            "Storing locationSendingInterval (${LocationService.locationUpdateIntervalSecs})"
+                                        )
                                         dataRepository.storeLocationUpdateInterval(LocationService.locationUpdateIntervalSecs)
                                     }
                                     if (biometricsCheckedChanged) {
-                                        Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
-                                        dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                                        Log.d(
+                                            TAG,
+                                            "Storing enableBiometricsService $enableBiometricsService"
+                                        )
+                                        dataRepository.storeEnableBiometricsService(
+                                            enableBiometricsService
+                                        )
                                     }
-                                    if (biometricsSendingIntervalChanged){
-                                        Log.d(TAG, "Storing biometricsSendingInterval (${HeartrateService.heartrateSendIntervalSecs})")
+                                    if (biometricsSendingIntervalChanged) {
+                                        Log.d(
+                                            TAG,
+                                            "Storing biometricsSendingInterval (${HeartrateService.heartrateSendIntervalSecs})"
+                                        )
                                         dataRepository.storeBiometricsSendInterval(HeartrateService.heartrateSendIntervalSecs)
                                     }
                                     Log.d(TAG, "Finished saving settings")
@@ -1024,13 +1185,6 @@ fun DefaultPreview() {
     WearTAKCivApp(callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 1000)
-@Composable
-fun TeamRoleSettingsPreview() {
-    TeamSetting(rememberNavController())
-}
-
-
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable
 fun CallsignSettingsPreview() {
@@ -1038,9 +1192,15 @@ fun CallsignSettingsPreview() {
     CallsignSetting(rememberNavController(),callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 1000)
+@Preview(widthDp = 192, heightDp = 600)
 @Composable
 fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     SettingsScreen(rememberNavController(),callsignState)
+}
+
+@Preview(widthDp = 192, heightDp = 500)
+@Composable
+fun ChipPreview() {
+   RoleSetting(rememberNavController())
 }
