@@ -1,22 +1,8 @@
 {
 	"ltEntries": [
-		"Engine Crew",
-		"Truck Crew",
-		"Rescue Team",
-		"HazMat Team",
-		"Wildland Fire Crew",
-		"Command Team",
-		"Rapid Intervention Team",
-		"Paramedics Team"
+		"Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown"
 	],
 	"ltValues": [
-		"Red",
-		"White",
-		"Green",
-		"Yellow",
-		"Orange",
-		"Blue",
-		"Cyan",
-		"Pink"
+		"Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown"
 	]
 }

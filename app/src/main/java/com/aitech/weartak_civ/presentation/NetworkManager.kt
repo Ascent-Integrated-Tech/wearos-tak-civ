@@ -47,7 +47,7 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
         }
         Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         // TODO: Just for testing. Please remove
-        Toast.makeText(mainActivity?.applicationContext, "nwConn = $isNetworkConnected; wifi = $isWifi; cell = $isCellular", Toast.LENGTH_LONG).show()
+        //Toast.makeText(mainActivity?.applicationContext, "nwConn = $isNetworkConnected; wifi = $isWifi; cell = $isCellular", Toast.LENGTH_LONG).show()
     }
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {

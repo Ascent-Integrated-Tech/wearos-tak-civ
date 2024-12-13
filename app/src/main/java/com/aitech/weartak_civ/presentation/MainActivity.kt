@@ -22,6 +22,7 @@ import android.provider.Settings.Secure
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -118,12 +119,21 @@ import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.HeartrateService
@@ -153,6 +163,17 @@ class MainActivity : ComponentActivity() {
         lateinit var dataRepository: DataRepository
         lateinit var networkManager : NetworkManager
         private val klaxon = Klaxon()
+        final val DEFAULT_TEAMS_LIST = listOf("Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown")
+        final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
+        var team = ""
+        var role = ""
+        lateinit var teamEntriesValuesList : TeamsJson
+        lateinit var roleEntriesValuesList : RolesJson
+        var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
+        val teamState = MutableLiveData<String>("")
+        val teamSettingsState = MutableLiveData<String>("")
+        val roleState = MutableLiveData<String>("")
+        val roleSettingsState = MutableLiveData<String>("")
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -336,6 +357,21 @@ class MainActivity : ComponentActivity() {
         runBlocking {
             callsign = dataRepository.getCallsign.first()
             callsignState.postValue(callsign) // TODO: Check if we need this at all
+            callsignSettingsState.postValue(callsign) // TODO: Check if we need this at all
+            team = dataRepository.getTeam.first()
+            // Needed on initial install of app where the teams json file does not match with DEFAULT_TEAMS_LIST
+            if (teamEntriesValuesList.ltEntries.indexOf(team) == -1) {
+                team = teamEntriesValuesList.ltEntries[0]
+            }
+            teamState.postValue(team)
+            teamSettingsState.postValue(team)
+            role = dataRepository.getRole.first()
+            // Needed on initial install of app where the roles json file does not match with DEFAULT_ROLES_LIST
+            if (roleEntriesValuesList.lrEntries.indexOf(role) == -1) {
+                role = roleEntriesValuesList.lrEntries[0]
+            }
+            roleState.postValue(role)
+            roleSettingsState.postValue(role)
             Log.d(TAG, "Setting callsign: $callsign")
             enableLocationService = dataRepository.getEnableLocationService.first()
             Log.d(TAG, "Setting enableLocationService to $enableLocationService")
@@ -349,12 +385,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun readTeamsJson() {
+        val inputStream = mainActivity.resources.openRawResource(R.raw.teams_json_config)
+        try {
+            var bytes  = inputStream.readAllBytes()
+            teamEntriesValuesList = TeamsJson.fromJson(String(bytes, charset("UTF-8")))!!
+            Log.d(TAG, "Team Entries List: ${teamEntriesValuesList?.ltEntries.toString()}")
+            Log.d(TAG, "Team Values List: ${teamEntriesValuesList?.ltValues.toString()}")
+        } catch (e: Exception) {
+            Log.e(TAG, "ERROR when reading Team json config", e)
+            teamEntriesValuesList = TeamsJson(DEFAULT_TEAMS_LIST, DEFAULT_TEAMS_LIST)
+        }
+    }
+
+    fun readRolesJson() {
+        val inputStream = mainActivity.resources.openRawResource(R.raw.roles_json_config)
+        try {
+            var bytes  = inputStream.readAllBytes()
+            roleEntriesValuesList = RolesJson.fromJson(String(bytes, charset("UTF-8")))!!
+            Log.d(TAG, "Roles Entries List: ${roleEntriesValuesList?.lrEntries.toString()}")
+            Log.d(TAG, "Roles Values List: ${roleEntriesValuesList?.lrValues.toString()}")
+        } catch (e: Exception) {
+            Log.e(TAG, "ERROR when reading Role json config", e)
+            roleEntriesValuesList = RolesJson(DEFAULT_ROLES_LIST, DEFAULT_ROLES_LIST)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainActivity = this
         dataRepository = DataRepository(this)
         networkManager = NetworkManager.getInstance()
         networkManager.init()
+        readTeamsJson()
+        readRolesJson()
         installSplashScreen()
 
         setDataFromDatastore()
@@ -444,7 +508,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             "callsign_screen",
             enterTransition = { slideInVertically() },
             exitTransition = { slideOutVertically() }) {
-            CallsignSetting(navController, callsignLiveDataState)
+            CallsignSetting(navController, callsignSettingsState)
         }
         composable(
             "role_screen",
@@ -542,7 +606,7 @@ fun CallsignRoleTeamChip(
 }
 
 @Composable
-fun CallsignSetting (navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
+fun CallsignSetting(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -551,12 +615,14 @@ fun CallsignSetting (navController: NavController, callsignLiveDataState: Mutabl
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsign)) }
+        var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsignLiveDataState.value ?: "null")) }
+        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
         OutlinedTextField(
             value = callsignTextFieldValue,
             onValueChange = {
                 callsignTextFieldValue = it
             },
+            maxLines = 1,
             label = { Text(text = "Callsign", color = colors.primary) },
             placeholder = { Text(text = "Your Callsign", color = colors.primary) },
             textStyle = TextStyle(color = MaterialTheme.colors.primary)
@@ -574,57 +640,27 @@ fun CallsignSetting (navController: NavController, callsignLiveDataState: Mutabl
                 modifier = Modifier
                     .size(40.dp)
                     .clickable {
-                        callsign = callsignTextFieldValue.text
-                        callsignLiveDataState.postValue(callsign)
-                        CoroutineScope(Dispatchers.Main).launch {
-                            dataRepository.storeCallsign(callsign)
-                        }
-                        Log.d(TAG, "Settings saved with callsign: $callsign")
-                        navController.navigate("main_screen")
+                        callsignLiveDataState.postValue(callsignTextFieldValue.text)
+                        Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
+                        navController.navigate("settings_screen")
                     })
         }
     }
 }
 
-@SuppressLint("NewApi")
-@Composable
-fun TeamSettingChips () {
-    var selectedRadioIndex by remember { mutableStateOf(0) }
-    val inputStream = mainActivity.resources.openRawResource(R.raw.teams_json_config)
-    var jsonConfig: MainActivity.Constants.TeamsJson? = null
-    val ltEntries = listOf("1", "2", "3")
-    try {
-        var bytes  = inputStream.readAllBytes()
-        jsonConfig = MainActivity.Constants.TeamsJson.fromJson(String(bytes, charset("UTF-8")))
-        Log.d(TAG, "JSON CONFIG VALUES: ${jsonConfig?.ltValues.toString()}")
-    } catch (e: Exception) {
-        Log.e(TAG, "ERROR when reading json config", e)
+fun findTeamIndex(teamName: String?) : Int {
+    if (null == teamName) {
+        return 0
     }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
-        verticalArrangement = Arrangement.Top,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        jsonConfig?.ltEntries!!.forEachIndexed { index, lrItem ->
-            run {
-                SelectableChip(
-                    modifier = Modifier.fillMaxWidth(),
-                    selected = index == selectedRadioIndex,
-                    onClick = { selectedRadioIndex = index},
-                    label = {
-                        // The primary label should have a maximum 3 lines of text
-                        Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    },
-                    enabled = true,
-                    shape = RoundedCornerShape(0.dp)
-                )
-            }
-        }
+    val index = teamEntriesValuesList.ltEntries.indexOf(teamName)
+    if (index == -1) {
+        return 0
     }
+    return index
 }
 
 @Composable
-fun TeamSetting (navController: NavController) {
+fun TeamSetting(navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -633,7 +669,29 @@ fun TeamSetting (navController: NavController) {
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
-        TeamSettingChips()
+        val index : Int = findTeamIndex(teamSettingsState.value)
+        var selectedRadioIndex by remember { mutableStateOf(index) }
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            verticalArrangement = Arrangement.Top,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            teamEntriesValuesList.ltEntries.forEachIndexed { index, ltItem ->
+                run {
+                    SelectableChip(
+                        modifier = Modifier.fillMaxWidth(),
+                        selected = index == selectedRadioIndex,
+                        onClick = { selectedRadioIndex = index},
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(ltItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                        shape = RoundedCornerShape(0.dp)
+                    )
+                }
+            }
+        }
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
                 modifier = Modifier
@@ -647,53 +705,23 @@ fun TeamSetting (navController: NavController) {
                 modifier = Modifier
                     .size(40.dp)
                     .clickable {
-//                        callsign = callsignTextFieldValue.text
-//                        callsignLiveDataState.postValue(callsign)
-//                        CoroutineScope(Dispatchers.Main).launch {
-//                            dataRepository.storeCallsign(callsign)
-//                        }
-//                        Log.d(TAG, "Settings saved with team: $callsign")
+                        teamSettingsState.postValue(teamEntriesValuesList.ltEntries[selectedRadioIndex])
+                        Log.d(TAG, "Settings saved with team: ${teamSettingsState.value}")
                         navController.navigate("settings_screen")
                     })
         }
     }
 }
 
-@SuppressLint("NewApi")
-@Composable
-fun RoleSettingsChips() {
-    var selectedRadioIndex by remember { mutableStateOf(0) }
-    val inputStream = mainActivity.resources.openRawResource(R.raw.roles_json_config)
-    var jsonConfig: MainActivity.Constants.RolesJson? = null
-    val lrEntries = listOf("1", "2", "3")
-    try {
-        var bytes  = inputStream.readAllBytes()
-        jsonConfig = MainActivity.Constants.RolesJson.fromJson(String(bytes, charset("UTF-8")))
-        Log.d(TAG, "JSON CONFIG VALUES: ${jsonConfig?.lrValues.toString()}")
-    } catch (e: Exception) {
-        Log.e(TAG, "ERROR when reading json config", e)
+fun findRoleIndex(roleName: String?) : Int {
+    if (null == roleName) {
+        return 0
     }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
-        verticalArrangement = Arrangement.Top,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        jsonConfig?.lrEntries!!.forEachIndexed { index, lrItem ->
-             run {
-                SelectableChip(
-                    modifier = Modifier.fillMaxWidth(),
-                    selected = index == selectedRadioIndex,
-                    onClick = { selectedRadioIndex = index},
-                    label = {
-                        // The primary label should have a maximum 3 lines of text
-                        Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    },
-                    enabled = true,
-                    shape = RoundedCornerShape(0.dp)
-                )
-            }
-        }
+    val index = roleEntriesValuesList.lrEntries.indexOf(roleName)
+    if (index == -1) {
+        return 0
     }
+    return index
 }
 
 @Composable
@@ -706,7 +734,30 @@ fun RoleSetting (navController: NavController) {
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
-        RoleSettingsChips()
+        val index = findRoleIndex(roleSettingsState.value)
+        var selectedRadioIndex by remember { mutableStateOf(index) }
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            verticalArrangement = Arrangement.Top,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            roleEntriesValuesList.lrEntries.forEachIndexed { index, lrItem ->
+                run {
+                    SelectableChip(
+                        modifier = Modifier.fillMaxWidth(),
+                        selected = index == selectedRadioIndex,
+                        onClick = { selectedRadioIndex = index},
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                        shape = RoundedCornerShape(0.dp)
+                    )
+                }
+            }
+        }
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
                 modifier = Modifier
@@ -720,12 +771,8 @@ fun RoleSetting (navController: NavController) {
                 modifier = Modifier
                     .size(40.dp)
                     .clickable {
-//                        callsign = callsignTextFieldValue.text
-//                        callsignLiveDataState.postValue(callsign)
-//                        CoroutineScope(Dispatchers.Main).launch {
-//                            dataRepository.storeCallsign(callsign)
-//                        }
-//                        Log.d(TAG, "Settings saved with team: $callsign")
+                        roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
+                        Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
                         navController.navigate("settings_screen")
                     })
         }
@@ -972,7 +1019,6 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
-            var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsign)) }
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
             var locationUpdateInterval by remember{ mutableStateOf(TextFieldValue(LocationService.locationUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
@@ -992,9 +1038,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     modifier = Modifier.padding(7.dp)
                 )
 
-                CallsignRoleTeamChip("callsign_screen", "Callsign", callsignLiveDataState, navController)
-                CallsignRoleTeamChip("team_screen", "Team", callsignLiveDataState, navController)
-                CallsignRoleTeamChip("role_screen", "Role", callsignLiveDataState, navController)
+                CallsignRoleTeamChip("callsign_screen", "Callsign", callsignSettingsState, navController)
+                CallsignRoleTeamChip("team_screen", "Team", teamSettingsState, navController)
+                CallsignRoleTeamChip("role_screen", "Role", roleSettingsState, navController)
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -1040,6 +1086,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     modifier = Modifier
                         .size(25.dp)
                         .clickable {
+                            callsignSettingsState.postValue(callsign)
+                            teamSettingsState.postValue(team)
+                            roleSettingsState.postValue(role)
                             Log.d(TAG, "Settings NOT saved")
                             navController.navigate("main_screen")
                         })
@@ -1050,14 +1099,26 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                         .clickable {
                             var settingsChanged: Boolean = false
                             var callsignChanged: Boolean = false
+                            var teamChanged = false
+                            var roleChanged = false
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
                             var locationSendingIntervalChanged = false
                             var biometricsSendingIntervalChanged = false
-                            if (!callsign.equals(callsignTextFieldValue.text)) {
+                            if (!callsign.equals(callsignSettingsState.value)) {
                                 settingsChanged = true; callsignChanged = true
-                                callsign = callsignTextFieldValue.text
+                                callsign = callsignSettingsState.value ?: callsign
                                 callsignLiveDataState.postValue(callsign)
+                            }
+                            if (!team.equals(teamSettingsState.value)) {
+                                settingsChanged = true; teamChanged = true
+                                team = teamSettingsState.value ?: team
+                                teamState.postValue(team)
+                            }
+                            if (!role.equals(roleSettingsState.value)) {
+                                settingsChanged = true; roleChanged = true
+                                role = roleSettingsState.value ?: role
+                                roleState.postValue(role)
                             }
                             if (enableLocationService != locationChecked) {
                                 settingsChanged = true; locationCheckedChanged = true
@@ -1133,6 +1194,14 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                     if (callsignChanged) {
                                         Log.d(TAG, "Storing Callsign ($callsign)")
                                         dataRepository.storeCallsign(callsign)
+                                    }
+                                    if (teamChanged) {
+                                        Log.d(TAG, "Storing Team ($team)")
+                                        dataRepository.storeTeam(team)
+                                    }
+                                    if (roleChanged) {
+                                        Log.d(TAG, "Storing Role ($role)")
+                                        dataRepository.storeRole(role)
                                     }
                                     if (locationCheckedChanged) {
                                         Log.d(

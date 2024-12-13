@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
-        minSdk 30
+        minSdk 33
         targetSdk 34
         versionCode 7
         versionName "0.28"

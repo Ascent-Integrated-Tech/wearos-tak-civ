@@ -55,6 +55,25 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getTeam: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[TEAM] ?: "Orange"
+    }
+
+    suspend fun storeTeam(team: String) {
+        context.dataStore.edit { prefs ->
+            prefs[TEAM] = team
+        }
+    }
+    val getRole: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[ROLE] ?: "Team Member"
+    }
+
+    suspend fun storeRole(role: String) {
+        context.dataStore.edit { prefs ->
+            prefs[ROLE] = role
+        }
+    }
+
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_LOCATION_SERVICE] ?: true
     }
@@ -99,6 +118,8 @@ class DataRepository(private val context: Context) {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
         private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
+        private val TEAM = stringPreferencesKey("team")
+        private val ROLE = stringPreferencesKey("role")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

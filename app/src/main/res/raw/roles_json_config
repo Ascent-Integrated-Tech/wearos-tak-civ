@@ -1,28 +1,8 @@
 {
 	"lrEntries": [
-		"Firefighter",
-		"Engineer/Driver-Operator",
-		"Lieutenant",
-		"Captain",
-		"Battalion Chief",
-		"Incident Commander",
-		"Safety Officer",
-		"Rescue Technician",
-		"Paramedic",
-		"HazMat Specialist",
-		"Logistics Officer"
+		"Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9"
 	],
 	"lrValues": [
-		"FF",
-		"Eng",
-		"Lt",
-		"Cap",
-		"BC",
-		"IC",
-		"SO",
-		"Res",
-		"PM",
-		"HazMat",
-		"LO"
+		"Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9"
 	]
 }
