@@ -1,8 +1,34 @@
 {
 	"ltEntries": [
-		"White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown"
+		"Hill AFB FES",
+		"Hill AFB EOD",
+		"Hill AFB SF",
+		"White",
+		"Yellow",
+		"Orange",
+		"Magenta",
+		"Maroon",
+		"Purple",
+		"Dark Blue",
+		"Cyan",
+		"Teal",
+		"Green",
+		"Dark Green"
 	],
 	"ltValues": [
-		"White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown"
+		"Red",
+		"Brown",
+		"Blue",
+		"White",
+		"Yellow",
+		"Orange",
+		"Magenta",
+		"Maroon",
+		"Purple",
+		"Dark Blue",
+		"Cyan",
+		"Teal",
+		"Green",
+		"Dark Green"
 	]
 }

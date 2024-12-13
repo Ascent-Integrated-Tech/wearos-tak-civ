@@ -1,8 +1,30 @@
 {
-	"lrEntries": [
-		"Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9"
-	],
-	"lrValues": [
-		"Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9"
-	]
+    "lrEntries": [
+        "E01FF01",
+        "E01FF02",
+        "EOD Team Lead",
+        "SF Team Lead",
+        "Team Member",
+        "Team Lead",
+        "HQ",
+        "Sniper",
+        "Medic",
+        "Forward Observer",
+        "RTO",
+        "K9"
+    ],
+    "lrValues": [
+        "E01FF01",
+        "E01FF02",
+        "EOD Team Lead",
+        "SF Team Lead",
+        "Team Member",
+        "Team Lead",
+        "HQ",
+        "Sniper",
+        "Medic",
+        "Forward Observer",
+        "RTO",
+        "K9"
+    ]
 }
