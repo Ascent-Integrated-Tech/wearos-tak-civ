@@ -32,6 +32,8 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -146,7 +148,7 @@ class LocationService : Service() {
             locationRequest.priority = LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
         } else {
             locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-        }
+        }PRIORITY_HIGH_ACCURACY
          */
         Log.d(TAG, "LocationRequest params: fastestInterval(" + locationRequest.fastestInterval + "), interval(" + locationRequest.interval + "), maxWaitTime(" + locationRequest.maxWaitTime +
                 "), priority(" + locationRequest.priority + "), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")
@@ -184,7 +186,7 @@ class LocationService : Service() {
         override fun run() {
             //Log.d(TAG, "SendLocationRunnable called")
             CoroutineScope(Dispatchers.IO).launch {
-                sendLocation(MainActivity.device_uid, callsign, "Team Member", "Orange")
+                sendLocation(MainActivity.device_uid, callsign, roleValue, teamValue)
             }
         }
     }

@@ -11,10 +11,10 @@ android {
 
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
-        minSdk 30
+        minSdk 33
         targetSdk 34
         versionCode 7
-        versionName "0.28"
+        versionName "0.29"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -82,6 +82,8 @@ dependencies {
     implementation libs.horologist.tiles
     implementation libs.watchface.complications.data.source.ktx
     implementation libs.navigation.compose
+    implementation 'com.beust:klaxon:5.5'
+
 
     // Health Services
     //implementation libs.androidx

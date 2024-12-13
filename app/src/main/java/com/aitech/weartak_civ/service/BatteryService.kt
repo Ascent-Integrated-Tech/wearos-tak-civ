@@ -26,6 +26,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
 
@@ -103,7 +104,8 @@ class BatteryService: Service() {
     private inner class BatteryMonitorRunnable : Runnable {
         override fun run() {
             batteryPercentage = getBatteryPercentage(applicationContext).toInt()
-            //Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
+            batteryPercentageLiveData.postValue(batteryPercentage)
+            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
             batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
         }
     }
@@ -129,6 +131,7 @@ class BatteryService: Service() {
         //const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 3_00_000L // 5 minutes
         const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 60_000L // Set to 1 minute
         const private val BATTERY_MONITOR_SERVICE_NOTIFICATION_ID = 102
-        var batteryPercentage : Int = 0
+        var batteryPercentage : Int = 100
+        val batteryPercentageLiveData = MutableLiveData<Int>(100)
     }
 }
