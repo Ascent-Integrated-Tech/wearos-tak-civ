@@ -32,8 +32,8 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -186,7 +186,7 @@ class LocationService : Service() {
         override fun run() {
             //Log.d(TAG, "SendLocationRunnable called")
             CoroutineScope(Dispatchers.IO).launch {
-                sendLocation(MainActivity.device_uid, callsign, role, team)
+                sendLocation(MainActivity.device_uid, callsign, roleValue, teamValue)
             }
         }
     }

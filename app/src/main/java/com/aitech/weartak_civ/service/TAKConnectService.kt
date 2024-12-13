@@ -24,8 +24,6 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
-import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentageLiveData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -101,9 +99,9 @@ class TAKConnectService: Service() {
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         private var secureSocket : SSLSocket? = null
         var isConnecting : AtomicBoolean = AtomicBoolean(false)
-        const private val TAK_SERVER = "tak.test.ops.ascentitech.com"
+        const private val TAK_SERVER = "tak.il.ops.ascentitech.com"
         const private val TAK_CERT_PASSWORD = "atakatak"
-        private val TAK_CERT = R.raw.tak_test_ascent_user
+        private val TAK_CERT = R.raw.tak_il_ascent_user
         var isConnected : Boolean = false
         val isConnectedLiveData = MutableLiveData<Boolean>(false)
 

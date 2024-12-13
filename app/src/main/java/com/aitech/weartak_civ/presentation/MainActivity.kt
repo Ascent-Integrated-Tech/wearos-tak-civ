@@ -10,7 +10,6 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -22,17 +21,14 @@ import android.provider.Settings.Secure
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,8 +42,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -128,19 +122,20 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
-import com.beust.klaxon.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -163,10 +158,12 @@ class MainActivity : ComponentActivity() {
         lateinit var dataRepository: DataRepository
         lateinit var networkManager : NetworkManager
         private val klaxon = Klaxon()
-        final val DEFAULT_TEAMS_LIST = listOf("Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown")
+        final val DEFAULT_TEAMS_LIST = listOf("White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown")
         final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
         var team = ""
         var role = ""
+        var teamValue = ""
+        var roleValue = ""
         lateinit var teamEntriesValuesList : TeamsJson
         lateinit var roleEntriesValuesList : RolesJson
         var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
@@ -359,17 +356,23 @@ class MainActivity : ComponentActivity() {
             callsignState.postValue(callsign) // TODO: Check if we need this at all
             callsignSettingsState.postValue(callsign) // TODO: Check if we need this at all
             team = dataRepository.getTeam.first()
+            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
             // Needed on initial install of app where the teams json file does not match with DEFAULT_TEAMS_LIST
-            if (teamEntriesValuesList.ltEntries.indexOf(team) == -1) {
+            if (teamIndex == -1) {
                 team = teamEntriesValuesList.ltEntries[0]
+                teamIndex = 0
             }
+            teamValue = teamEntriesValuesList.ltValues[teamIndex]
             teamState.postValue(team)
             teamSettingsState.postValue(team)
             role = dataRepository.getRole.first()
+            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
             // Needed on initial install of app where the roles json file does not match with DEFAULT_ROLES_LIST
-            if (roleEntriesValuesList.lrEntries.indexOf(role) == -1) {
+            if (roleIndex == -1) {
                 role = roleEntriesValuesList.lrEntries[0]
+                roleIndex = 0
             }
+            roleValue = roleEntriesValuesList.lrValues[roleIndex]
             roleState.postValue(role)
             roleSettingsState.postValue(role)
             Log.d(TAG, "Setting callsign: $callsign")
@@ -1113,11 +1116,29 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             if (!team.equals(teamSettingsState.value)) {
                                 settingsChanged = true; teamChanged = true
                                 team = teamSettingsState.value ?: team
+                                var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
+                                // This cannot happen, but still...
+                                if (teamIndex == -1) {
+                                    Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
+                                    teamIndex = 0
+                                    team = teamEntriesValuesList.ltEntries[0]
+                                    teamSettingsState.postValue(team)
+                                }
+                                teamValue = teamEntriesValuesList.ltValues[teamIndex]
                                 teamState.postValue(team)
                             }
                             if (!role.equals(roleSettingsState.value)) {
                                 settingsChanged = true; roleChanged = true
                                 role = roleSettingsState.value ?: role
+                                var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+                                // This cannot happen, but still...
+                                if (roleIndex == -1) {
+                                    Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
+                                    roleIndex = 0
+                                    role = roleEntriesValuesList.lrEntries[0]
+                                    roleSettingsState.postValue(role)
+                                }
+                                roleValue = roleEntriesValuesList.lrValues[roleIndex]
                                 roleState.postValue(role)
                             }
                             if (enableLocationService != locationChecked) {
