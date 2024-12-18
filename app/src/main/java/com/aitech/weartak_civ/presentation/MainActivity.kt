@@ -13,6 +13,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Paint
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
@@ -21,6 +22,7 @@ import android.provider.Settings.Secure
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -40,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -53,6 +56,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
@@ -107,6 +111,10 @@ import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
+import androidx.wear.compose.material.ToggleChip
+import androidx.wear.compose.material.ToggleChipDefaults
+import androidx.wear.protolayout.LayoutElementBuilders.HorizontalAlignment
+import androidx.wear.protolayout.LayoutElementBuilders.VerticalAlignment
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
@@ -549,14 +557,15 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
                     modifier = Modifier
                         .padding(top = 35.dp)
                         .fillMaxWidth()
+                        .weight(1f)
                 ) {
                     HeartRate()
                 }
 
                 Row(
                     modifier = Modifier
-                        .padding(vertical = 5.dp)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -569,7 +578,9 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
 
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(top = 10.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Callsign(navController, callsignState)
@@ -786,6 +797,8 @@ fun RoleSetting (navController: NavController) {
 @Composable
 fun HeartRate () {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
+    var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+
     Column(
         modifier = Modifier
             .fillMaxWidth(),
@@ -803,17 +816,27 @@ fun HeartRate () {
                     .size(14.dp)
                     // Clip image to be shaped as a circle
             )
-            Text(
-                text = " $heartRateText",
-                textAlign = TextAlign.Start,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Text(
-                text = " bpm",
-                color = Color.White
-            )
+            if (biometricsChecked) {
+                Text(
+                    text = " $heartRateText",
+                    textAlign = TextAlign.Start,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+                Text(
+                    text = " bpm",
+                    color = Color.White
+                )
+            } else {
+                Text(
+                    text = " --- ",
+                    textAlign = TextAlign.Start,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
         }
     }
 }
@@ -865,7 +888,7 @@ fun TroubleshootingIcons() {
 
         // Icon on the top right curve
         Icon(
-            imageVector = Icons.Default.LocationOn, // Replace with your icon
+            if (locationChecked) painterResource(R.drawable.location_on) else painterResource(R.drawable.location_off),
             contentDescription = "Top Right Icon",
             modifier = Modifier
                 .align(Alignment.CenterEnd)
@@ -905,13 +928,18 @@ fun TroubleshootingIcons() {
 @Composable
 fun Callsign(navController: NavController, callsignState: MutableLiveData<String>) {
     val greetingName: String? by callsignState.observeAsState()
+    val maxChar = 10
     AssistChip(
         onClick = { navController.navigate("settings_screen") },
         label = { Text(
             "${greetingName}",
-            fontSize = 15.sp,
-            ) },
-        shape = RoundedCornerShape(40.dp)
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = if (greetingName!!.length <= maxChar) 17.sp else 13.sp,
+            modifier = Modifier.padding(10.dp),
+
+        )},
+        shape = RoundedCornerShape(40.dp),
         )
 }
 
@@ -925,7 +953,7 @@ fun SOSButton() {
                 color = Color.Red,
                 shape = RoundedCornerShape(40.dp),
             )
-            .size(100.dp, 60.dp),
+            .size(110.dp),
         shape = RoundedCornerShape(40.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
@@ -951,7 +979,7 @@ fun MarkerDropButton() {
                 color = Color.White,
                 shape = CircleShape
             )
-            .size(60.dp),
+            .size(100.dp),
     ) {
         Icon(
             painterResource(R.drawable.markerdrop),
@@ -962,53 +990,41 @@ fun MarkerDropButton() {
 }
 
 @Composable
-private fun SettingSwitchItem(
-    modifier: Modifier = Modifier,
+fun SettingSwitchToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     title: String,
     description: String,
     enabled: Boolean = true,
 ) {
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .toggleable(
-                value = checked,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = onCheckedChange
-            ),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(
-            modifier = Modifier.weight(1.0f),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            val contentAlpha = if (enabled) ContentAlpha.high else ContentAlpha.disabled
-
-            Text(
-                text = title,
-                style = MaterialTheme.typography.caption1,
-                maxLines = 1,
-                modifier = Modifier.alpha(contentAlpha)
+    // The primary label should have a maximum 3 lines of text
+    // and the secondary label should have max 2 lines of text.
+    ToggleChip(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis,) },
+        secondaryLabel = {
+            Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        },
+        checked = checked,
+        // For Switch  toggle controls the Wear Material UX guidance is to set the
+        // unselected toggle control color to ToggleChipDefaults.switchUncheckedIconColor()
+        // rather than the default.
+        colors =
+        ToggleChipDefaults.toggleChipColors(
+            uncheckedToggleControlColor = ToggleChipDefaults.SwitchUncheckedIconColor
+        ),
+        toggleControl = {
+            Switch(
+                checked = checked,
+                onCheckedChange = null,
+                enabled = enabled
             )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.caption3,
-                modifier = Modifier.alpha(contentAlpha)
-            )
-        }
-
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            enabled = enabled
-        )
-    }
+        },
+        onCheckedChange = onCheckedChange,
+        enabled = true,
+    )
 }
+
 
 //Contains functionality for settings screen
 @Composable
@@ -1054,35 +1070,68 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     modifier = Modifier.padding(7.dp)
                 )
 
-                SettingSwitchItem(checked = locationChecked, onCheckedChange =  { locationChecked = it },
+                SettingSwitchToggle(checked = locationChecked, onCheckedChange =  { locationChecked = it },
                     title = "Location Service", description = "Service ON/OFF")
-                OutlinedTextField(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    value = locationUpdateInterval,
-                    onValueChange = {
-                        locationUpdateInterval = it
-                    },
-                    label = { Text(text = "Location Update Interval", color = colors.primary, style = MaterialTheme.typography.caption3) },
-                    placeholder = { Text(text = "Interval in secs", color = colors.primary, style = MaterialTheme.typography.caption3) },
-                    textStyle = TextStyle(color = MaterialTheme.colors.primary)
-                )
-                SettingSwitchItem(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
+                if (locationChecked) {
+                    OutlinedTextField(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        value = locationUpdateInterval,
+                        onValueChange = {
+                            locationUpdateInterval = it
+                        },
+                        label = {
+                            Text(
+                                text = "Location Update Interval",
+                                color = colors.primary,
+                                style = MaterialTheme.typography.caption3
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                text = "Interval in secs",
+                                color = colors.primary,
+                                style = MaterialTheme.typography.caption3
+                            )
+                        },
+                        textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                SettingSwitchToggle(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
                     title = "Biometrics",
                     description = "Service ON/OFF",)
-                OutlinedTextField(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    value = biometricsSendingInterval,
-                    onValueChange = {
-                        biometricsSendingInterval = it
-                    },
-                    label = { Text(text = "Biometrics Send Interval", color = colors.primary, style = MaterialTheme.typography.caption3) },
-                    placeholder = { Text(text = "Interval in secs", color = colors.primary, style = MaterialTheme.typography.caption3) },
-                    textStyle = TextStyle(color = MaterialTheme.colors.primary)
-                )
+
+                if (biometricsChecked) {
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        value = biometricsSendingInterval,
+                        onValueChange = {
+                            biometricsSendingInterval = it
+                        },
+                        label = {
+                            Text(
+                                text = "Biometrics Send Interval",
+                                color = colors.primary,
+                                style = MaterialTheme.typography.caption3
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                text = "Interval in secs",
+                                color = colors.primary,
+                                style = MaterialTheme.typography.caption3
+                            )
+                        },
+                        textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                    )
+                }
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
