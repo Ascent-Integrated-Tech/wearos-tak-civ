@@ -55,8 +55,10 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -76,9 +78,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -106,13 +111,26 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.wear.compose.foundation.SwipeToDismissBoxState
+import androidx.wear.compose.foundation.edgeSwipeToDismiss
+import androidx.wear.compose.foundation.rememberRevealState
+import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
+import androidx.wear.compose.material.Checkbox
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.ContentAlpha
+import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
+import androidx.wear.compose.material.SplitSelectableChip
+import androidx.wear.compose.material.SplitToggleChip
+import androidx.wear.compose.material.SwipeToRevealChip
+import androidx.wear.compose.material.SwipeToRevealDefaults
+import androidx.wear.compose.material.SwipeToRevealPrimaryAction
+import androidx.wear.compose.material.SwipeToRevealSecondaryAction
+import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
@@ -563,6 +581,12 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             exitTransition = { slideOutVertically() }) {
             TeamSetting(navController)
         }
+        composable(
+            "tak_server_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            TakServerSetting(navController)
+        }
     }
 }
 
@@ -823,6 +847,108 @@ fun RoleSetting (navController: NavController) {
     }
 }
 
+@Composable
+fun TakServerSetting(navController: NavController) {
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .align(Alignment.TopCenter)
+                .padding(bottom = 30.dp)
+                .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "TAK Servers",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                TakServerChip()
+                TakServerChip()
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Chip(
+                    onClick = {  },
+                    enabled = true,
+                    label = { Text(text = "Add New Server", fontSize = 13.sp) },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    icon = { Icon(Icons.Filled.Add, contentDescription = "Localized description") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp)
+                )
+            }
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                Button(
+                    onClick = { navController.navigate("settings_screen") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                        contentColor = Color.Red
+                    ),
+                ) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowLeft,
+                        contentDescription = "Localized description",
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TakServerChip(
+
+) {
+    var checked by remember { mutableStateOf(true) }
+    SplitToggleChip(
+        label = {
+            Image(
+                painter = painterResource(R.drawable.tak_server),
+                contentDescription = "Top Left Icon",
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .size(22.dp)
+                    .padding(end = 2.dp),
+            )
+                Text("Server", maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier
+                    .align(Alignment.CenterVertically))
+                },
+        secondaryLabel = {
+            Text("1122211111", maxLines = 2, overflow = TextOverflow.Ellipsis)
+        },
+        checked = checked,
+        toggleControl = {
+            Checkbox(
+                checked = checked,
+                enabled = true,
+            )
+        },
+        onCheckedChange = { checked = it },
+        onClick = {
+            /* Do something */
+        },
+        enabled = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 3.dp)
+    )
+}
 
 @Composable
 fun HeartRate () {
@@ -1162,7 +1288,31 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                         textStyle = TextStyle(color = MaterialTheme.colors.primary)
                     )
                 }
+                
+                Text(
+                    text = "Connection Settings",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                Chip(
+                    onClick = { navController.navigate("tak_server_screen") },
+                    enabled = true,
+                    label = { Text(text = "TAK Servers") },
+                    secondaryLabel = { Text(text = "X" + " Connected") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp)
+                )
             }
+
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
                     modifier = Modifier
@@ -1361,15 +1511,15 @@ fun CallsignSettingsPreview() {
     CallsignSetting(rememberNavController(),callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 600)
+@Preview(widthDp = 192, heightDp = 800)
 @Composable
 fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     SettingsScreen(rememberNavController(),callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 500)
+@Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
-fun ChipPreview() {
-   RoleSetting(rememberNavController())
+fun TAKSettingsPreview() {
+    TakServerSetting(rememberNavController())
 }
