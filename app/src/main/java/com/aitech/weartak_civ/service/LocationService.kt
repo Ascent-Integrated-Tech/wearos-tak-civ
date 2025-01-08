@@ -249,7 +249,7 @@ class LocationService : Service() {
                 ceActual
             ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
                     LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
+                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + "model=" + "'WEAROS'" + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
             //Log.d(TAG, "Sending location COT message: $cotMsg")
             sendDataTAKServer(cotMsg)
         } else {
@@ -321,8 +321,28 @@ class LocationService : Service() {
         const val LOC_PART7 = "'/><status battery='"
         const val LOC_PART_8 = "'/><track course='"
         const val LOC_PART_9 = "'/></detail></event>"
-        const val DETAILS_META_KEY_HEART_RATE: String = "<HEART_RATE_COT_KEY com.aitech.atak.biometrics.heartrate.HeartRate='"
+        const val DETAILS_META_KEY_HEART_RATE: String = "<biometrics hr='"
         var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 2
     }
 }
+
+// TODO: change the biometrics child of details to seperate into arrays called "device". This way a cot with multiple devices connected to it can dispatch various biometrics in one cot message (ie biostrap + oura ring).
+/*
+<detail>
+    <biometrics>
+        <device>
+            <model>WEAROS</model>
+            <hr>94</hr>
+        </device>
+         <device>
+            <model>WEAROS</model>
+            <hr>94</hr>
+        </device>
+        <device>
+            <model>WEAROS</model>
+            <hr>94</hr>
+        </device>
+    </biometrics>
+</detail>
+ */
