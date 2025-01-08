@@ -23,11 +23,14 @@ import kotlin.random.Random
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
+import android.util.Log
+import com.aitech.weartak_civ.service.CotDispatchService
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 
 class DataRepository(private val context: Context) {
+    private val TAG = "WearTAK-" + DataRepository::class.java.simpleName
 
     val passiveDataEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PASSIVE_DATA_ENABLED] ?: false
@@ -57,6 +60,15 @@ class DataRepository(private val context: Context) {
 
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
+
+    private val _markerEventId = MutableStateFlow<Int>(0)
+    val markerEventId: StateFlow<Int> = _markerEventId
+
+    fun dropMarker() {
+        // Increment to represent a new event
+        _markerEventId.value = _markerEventId.value + 1
+        Log.d(TAG, "dropMarker Called")
+    }
 
     // Functions to update the data
     suspend fun storeLatestHeartRate(heartRate: Int) {
