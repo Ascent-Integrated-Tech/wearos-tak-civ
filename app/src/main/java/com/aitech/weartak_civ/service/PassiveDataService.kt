@@ -13,7 +13,6 @@ import android.util.Log
 import androidx.health.services.client.PassiveListenerService
 import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign

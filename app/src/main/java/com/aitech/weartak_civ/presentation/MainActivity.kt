@@ -10,6 +10,8 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -132,6 +134,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
@@ -266,6 +269,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startCotDispatchService() {
+            Log.d(TAG, "Starting CotDispatchService")
+            mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
+        }
+
     }
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
@@ -274,7 +282,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        
+
+        mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
         if (enableBiometricsService) {
             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
@@ -485,6 +494,8 @@ class MainActivity : ComponentActivity() {
         startBatteryService()
         startBiometericService()
         startLocationService()
+        startCotDispatchService()
+
         setContent {
             WearTAKCivApp(callsignState)
         }
