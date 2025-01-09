@@ -53,6 +53,11 @@ class TAKConnectService: Service() {
         return START_NOT_STICKY
     }
 
+    fun connectTAKServerUsernamePassword(server: String, username: String, password: String, port: Int): Boolean {
+        //connectTAKServer(TAK_CERT, TAK_CERT_PASSWORD, TAK_SERVER)
+        return true
+    }
+
     private fun startForegroundService() {
         val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             createNotificationChannel()

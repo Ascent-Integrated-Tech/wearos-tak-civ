@@ -37,6 +37,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,6 +49,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -60,14 +62,20 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -110,6 +118,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.wear.compose.foundation.SwipeToDismissBoxState
 import androidx.wear.compose.foundation.edgeSwipeToDismiss
@@ -137,6 +146,7 @@ import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.protolayout.LayoutElementBuilders.HorizontalAlignment
 import androidx.wear.protolayout.LayoutElementBuilders.VerticalAlignment
+import androidx.wear.protolayout.material.ButtonColors
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
@@ -172,6 +182,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.checkerframework.checker.units.qual.C
 import javax.net.ssl.SSLSocket
 
 
@@ -372,7 +383,7 @@ class MainActivity : ComponentActivity() {
     fun printSensorDetails(context: Context?) {
         var resSensorList: MutableList<Sensor> = ArrayList()
         try {
-            val smm = context?.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            val smm = context?.getSystemService(SENSOR_SERVICE) as SensorManager
             resSensorList.addAll(smm.getSensorList(Sensor.TYPE_ALL))
             Log.d(TAG, "Sensor List: ${resSensorList.size}")
             resSensorList.forEach { sensor ->
@@ -587,6 +598,12 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             exitTransition = { slideOutVertically() }) {
             TakServerSetting(navController)
         }
+        composable(
+            "new_server_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            NewServerPage(navController)
+        }
     }
 }
 
@@ -596,13 +613,13 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
     WearTAKCIVTheme {
         Box (
             modifier = Modifier
-                .background(MaterialTheme.colors.background)
+                .background(colors.background)
                 .fillMaxSize()
                 .padding(5.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .background(MaterialTheme.colors.background)
+                    .background(colors.background)
                     .padding(5.dp),
         //                horizontalAlignment = Alignment.CenterHorizontally,
         //                verticalArrangement = Arrangement.Center
@@ -678,7 +695,7 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background)
+            .background(colors.background)
             .padding(bottom = 16.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
@@ -693,7 +710,7 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
             maxLines = 1,
             label = { Text(text = "Callsign", color = colors.primary) },
             placeholder = { Text(text = "Your Callsign", color = colors.primary) },
-            textStyle = TextStyle(color = MaterialTheme.colors.primary)
+            textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
@@ -732,7 +749,7 @@ fun TeamSetting(navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background)
+            .background(colors.background)
             .padding(top = 20.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
@@ -797,7 +814,7 @@ fun RoleSetting (navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background)
+            .background(colors.background)
             .padding(top = 20.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
@@ -853,7 +870,7 @@ fun TakServerSetting(navController: NavController) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colors.background)
+                .background(colors.background)
                 .padding(bottom = 16.dp, top = 15.dp)
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
@@ -879,7 +896,7 @@ fun TakServerSetting(navController: NavController) {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Chip(
-                    onClick = {  },
+                    onClick = { navController.navigate("new_server_screen") },
                     enabled = true,
                     label = { Text(text = "Add New Server", fontSize = 13.sp) },
                     colors = ChipDefaults.chipColors(
@@ -949,6 +966,171 @@ fun TakServerChip(
             .padding(bottom = 3.dp)
     )
 }
+
+@Composable
+fun NewServerPage (navController: NavController) {
+    WearTAKCIVTheme {
+        val shouldShowDialog = remember { mutableStateOf(false) }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (shouldShowDialog.value) {
+                DeleteServerDialog(shouldShowDialog = shouldShowDialog, navController)
+            }
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .align(Alignment.TopCenter)
+                .padding(bottom = 20.dp)
+                .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = /* add if statement for new server vs editing current server */ "Add New Server",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                NewServerSettingText("Connection Name", callsignSettingsState)
+                NewServerSettingText("Address/URL", callsignSettingsState)
+                NewServerSettingText("Port", callsignSettingsState)
+                NewServerSettingText("Username", callsignSettingsState)
+                NewServerSettingText("Password", callsignSettingsState)
+
+                // Change if to create button when settings are edited
+                if (callsignSettingsState.value == "E2-FF1") {
+                    Button(
+                        onClick = { shouldShowDialog.value = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                            contentColor = Color.Red
+                        ),
+                        modifier = Modifier.padding(top = 5.dp)
+                    ) {
+                        Text(
+                            text = "Delete Server",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(5.dp)
+                        )
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                Icon(imageVector = Icons.Default.Close,
+                    tint = Color.Red,
+                    contentDescription = "Close",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable {
+                            Log.d(TAG, "Settings NOT saved")
+                            navController.navigate("tak_server_screen")
+                        })
+                Spacer(modifier = Modifier.width(12.dp))
+                Icon(imageVector = Icons.Default.Check,
+                    tint = Color.Green,
+                    contentDescription = "Save",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable {
+//                            callsignLiveDataState.postValue(callsignTextFieldValue.text)
+//                            Log.d(
+//                                TAG,
+//                                "Settings saved with callsign: ${callsignLiveDataState.value}"
+//                            )
+                            navController.navigate("tak_server_screen")
+                        })
+            }
+        }
+    }
+}
+
+@Composable
+fun NewServerSettingText (
+    label: String,
+    textState: MutableLiveData<String>,
+) {
+    var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(textState.value ?: "null")) }
+//    Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+    OutlinedTextField(
+        value = callsignTextFieldValue,
+        onValueChange = {
+            callsignTextFieldValue = it
+        },
+        maxLines = 1,
+        label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
+        textStyle = TextStyle(color = colors.primary),
+        modifier = Modifier.padding(bottom = 5.dp)
+    )
+}
+
+@Composable
+fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: NavController) {
+    if (shouldShowDialog.value) {
+            AlertDialog(
+                containerColor = colors.background,
+                modifier = Modifier.fillMaxSize(),
+                onDismissRequest = {
+                    shouldShowDialog.value = false
+                },
+                icon = {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        modifier = Modifier.size(25.dp),
+                        contentDescription = null,
+                        tint = Color.Red
+                    )
+                },
+                text = {
+                    Text(
+                        "Are you sure you want to delete this server?",
+                        textAlign = TextAlign.Center
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                            navController.navigate("tak_server_screen")
+                        },
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                        ),
+                    ) {
+                        Text(
+                            text = "Confirm",
+                        )
+                    }
+                },
+
+                dismissButton = {
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                        },
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Gray,
+                        )
+                        ) {
+                        Text(
+                            text = "Dismiss",
+                        )
+                    }
+                }
+            )
+        }
+    }
 
 @Composable
 fun HeartRate () {
@@ -1189,7 +1371,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colors.background)
+                .background(colors.background)
                 .padding(bottom = 16.dp, top = 15.dp)
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
@@ -1203,6 +1385,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
                 .align(Alignment.TopCenter)
+                .padding(bottom = 20.dp)
                 .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -1251,7 +1434,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 style = MaterialTheme.typography.caption3
                             )
                         },
-                        textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                        textStyle = TextStyle(color = colors.primary)
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1285,7 +1468,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 style = MaterialTheme.typography.caption3
                             )
                         },
-                        textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                        textStyle = TextStyle(color = colors.primary)
                     )
                 }
                 
@@ -1522,4 +1705,16 @@ fun SettingsPreview() {
 @Composable
 fun TAKSettingsPreview() {
     TakServerSetting(rememberNavController())
+}
+
+@Preview(widthDp = 192, heightDp = 600, showBackground = true)
+@Composable
+fun NewServerPreview() {
+    NewServerPage(rememberNavController())
+}
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun DeleteServerPreview() {
+    val shouldShowDialog = remember { mutableStateOf(true) }
+    DeleteServerDialog(shouldShowDialog, rememberNavController())
 }
