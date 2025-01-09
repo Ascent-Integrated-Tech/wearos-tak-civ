@@ -54,15 +54,9 @@ class CotDispatchService : Service() {
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.d(TAG, "CotDispatchService onStartCommand()")
-//        when(intent.action) {
-//            Actions.START.toString() -> startForegroundService()
-//            Actions.STOP.toString() -> stopSelf()       // stopSelf will handle stopping of service on it own.
-//        }
+
         startForegroundService()
-//        // Possibly call startDispatchScheduler() again if needed,
-//        // but it’s typically fine to do it once in onCreate()
-//        Log.d(TAG, "CotDispatchService onStartCommand()")
-//        return super.onStartCommand(intent, flags, startId)
+
         return START_NOT_STICKY
     }
 
@@ -96,11 +90,6 @@ class CotDispatchService : Service() {
         return channelId
     }
 
-    // actions that our service needs to do
-//    enum class Actions {
-//        START, STOP
-//    }
-
     override fun onCreate() {
         super.onCreate()
         dataRepository = MainActivity.dataRepository  // or another injection approach
@@ -114,7 +103,7 @@ class CotDispatchService : Service() {
         cotDispatchHandler = cotDispatchThread?.looper?.let { Handler(it) }
 
         // Schedule the first run
-        cotDispatchHandler?.postDelayed(cotDispatchRunnable, DISPATCH_INTERVAL)
+        cotDispatchHandler?.postDelayed(cotDispatchRunnable, locationUpdateIntervalSecs * 1000L)
     }
 
     private val cotDispatchRunnable = object : Runnable {
@@ -122,25 +111,23 @@ class CotDispatchService : Service() {
             CoroutineScope(Dispatchers.IO).launch {
 
                 val location = dataRepository.latestLocation.value
-                val heartRate = dataRepository.latestHeartRate.value
-//                val heartRate = -1
+                var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
 
-                if (location != null && heartRate != null && battery != null) {
+'                if (location != null && battery != null) {
+                    if (heartRate == null) {
+                        heartRate = -1
+                    }'
                     val cotMessage = buildCotMessage(location, heartRate, battery)
                     sendDataTAKServer(cotMessage)
 //                    Log.d(TAG, "CoT message sent: $cotMessage")
                 } else {
-                    if (heartRate==null) {
-                        Log.w(TAG, "Heart Rate Data is null.")
-                    } else {
-                        Log.w(TAG, "Missing data for CoT message. Not sending.")
-                    }
+                    Log.w(TAG, "Missing data for CoT message. Not sending.")
                 }
             }
 
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, DISPATCH_INTERVAL)
+            cotDispatchHandler?.postDelayed(this, locationUpdateIntervalSecs * 1000L)
         }
     }
 
@@ -187,11 +174,9 @@ class CotDispatchService : Service() {
         cotDispatchThread?.quitSafely()
     }
 
-
-
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
-        private const val DISPATCH_INTERVAL = 2_000L // 30 seconds
+//        private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
         var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 2
