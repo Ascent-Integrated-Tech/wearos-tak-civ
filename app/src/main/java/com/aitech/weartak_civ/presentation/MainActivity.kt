@@ -10,6 +10,8 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -140,6 +142,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
@@ -272,6 +275,12 @@ class MainActivity : ComponentActivity() {
                     Log.d(TAG, "enableLocationService is false. So NOT starting location service")
                 }
             }
+        }
+
+        fun startCotDispatchService() {
+            Log.d(TAG, "Starting CotDispatchService")
+            mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
+//            mainActivity.startService(Intent(CotDispatchService.Actions.START.toString()))
         }
 
     }
@@ -493,6 +502,8 @@ class MainActivity : ComponentActivity() {
         startBatteryService()
         startBiometericService()
         startLocationService()
+        startCotDispatchService()
+
         setContent {
             WearTAKCivApp(callsignState)
         }

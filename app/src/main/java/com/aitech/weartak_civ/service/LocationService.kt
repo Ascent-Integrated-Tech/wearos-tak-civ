@@ -186,7 +186,7 @@ class LocationService : Service() {
         override fun run() {
             //Log.d(TAG, "SendLocationRunnable called")
             CoroutineScope(Dispatchers.IO).launch {
-                sendLocation(MainActivity.device_uid, callsign, roleValue, teamValue)
+//                sendLocation(MainActivity.device_uid, callsign, roleValue, teamValue)
             }
         }
     }
@@ -198,77 +198,74 @@ class LocationService : Service() {
         }
     }
 
-    fun sendLocation(uid: String, callsign: String, role: String, teamColor: String) {
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-        val locDateTime = Date()
-        lat = currentLocation?.latitude
-        lon = currentLocation?.longitude
-        hae = currentLocation?.altitude
-        ce = currentLocation?.accuracy
-        le = currentLocation?.verticalAccuracyMeters
-        val speed = currentLocation?.speed
-        val bearing = currentLocation?.bearing
-        //Log.d(TAG, "sendLocation called with location ${currentLocation?.toString()}")
-        //Log.d(TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
-        if ((null != lat) && (null != lon)) {
-            // Parse and manipulate timestamps
-            dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-            val locTimeStr = dateTimeFormatter.format(locDateTime)
-
-            // Create a Calendar object and set it to the given date
-            val calendar: Calendar = Calendar.getInstance()
-            calendar.setTime(locDateTime)
-
-            // 3 times locationUpdateIntervalSecs to the calendar
-            calendar.add(Calendar.SECOND, locationUpdateIntervalSecs * 3)
-
-            val locDateTimeFuture = calendar.time
-            val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
-            //Log.d(LOG_TAG, "Current location time string: $locTimeStr")
-
-            // Construct CoT message
-            val haeActual = hae ?: "0.0"
-            val ceActual = ce ?: "9999999.0"
-            val leActual = le ?: "9999999.0"
-            val speedActual = speed ?: "0.0"
-            val bearingActual = bearing ?: "0.0"
-
-            CoroutineScope(Dispatchers.Default).launch {
-                dataRepository.latestHeartRate.collect { hr -> heartrate = hr }
-            }
-            val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
-                    LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
-                    LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                haeActual
-            ) +
-                    "' ce='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                ceActual
-            ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
-                    LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + "model=" + "'WEAROS'" + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
-            //Log.d(TAG, "Sending location COT message: $cotMsg")
-            sendDataTAKServer(cotMsg)
-        } else {
-            Log.d(TAG, "Not sending location as lat ($lat), lon ($lon)")
-        }
-    }
+//    fun sendLocation(uid: String, callsign: String, role: String, teamColor: String) {
+//        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+//        val locDateTime = Date()
+//        lat = currentLocation?.latitude
+//        lon = currentLocation?.longitude
+//        hae = currentLocation?.altitude
+//        ce = currentLocation?.accuracy
+//        le = currentLocation?.verticalAccuracyMeters
+//        val speed = currentLocation?.speed
+//        val bearing = currentLocation?.bearing
+//        //Log.d(TAG, "sendLocation called with location ${currentLocation?.toString()}")
+//        //Log.d(TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
+//        if ((null != lat) && (null != lon)) {
+//            // Parse and manipulate timestamps
+//            dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+//            val locTimeStr = dateTimeFormatter.format(locDateTime)
+//
+//            // Create a Calendar object and set it to the given date
+//            val calendar: Calendar = Calendar.getInstance()
+//            calendar.setTime(locDateTime)
+//
+//            // 3 times locationUpdateIntervalSecs to the calendar
+//            calendar.add(Calendar.SECOND, locationUpdateIntervalSecs * 3)
+//
+//            val locDateTimeFuture = calendar.time
+//            val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
+//            //Log.d(LOG_TAG, "Current location time string: $locTimeStr")
+//
+//            // Construct CoT message
+//            val haeActual = hae ?: "0.0"
+//            val ceActual = ce ?: "9999999.0"
+//            val leActual = le ?: "9999999.0"
+//            val speedActual = speed ?: "0.0"
+//            val bearingActual = bearing ?: "0.0"
+//
+//            CoroutineScope(Dispatchers.Default).launch {
+//                dataRepository.latestHeartRate.collect { hr -> heartrate = hr }
+//            }
+//            val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
+//                    LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
+//                    LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
+//                Locale.ENGLISH,
+//                "%.2f",
+//                haeActual
+//            ) +
+//                    "' ce='" + java.lang.String.format(
+//                Locale.ENGLISH,
+//                "%.2f",
+//                ceActual
+//            ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
+//                    LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
+//                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + "model=" + "'WEAROS'" + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
+//            //Log.d(TAG, "Sending location COT message: $cotMsg")
+//            sendDataTAKServer(cotMsg)
+//        } else {
+//            Log.d(TAG, "Not sending location as lat ($lat), lon ($lon)")
+//        }
+//    }
 
     private inner class MyLocationCallback : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
-            if (locationResult != null && locationResult.lastLocation != null) {
-                val location = locationResult.lastLocation
-                currentLocation = location
-                Log.d(TAG, "Received location: " + location.toString())
-                if(!firstLocationSent.getAndSet(true)) {
-                    startScheduler()
-                }
+            val location = locationResult.lastLocation ?: return
+            CoroutineScope(Dispatchers.IO).launch {
+                dataRepository.storeLatestLocation(location)
             }
         }
     }
+
 
     inner class LocationServiceBinder : Binder() {
         val service: LocationService

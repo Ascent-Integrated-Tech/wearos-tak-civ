@@ -78,6 +78,12 @@
             android:exported="false"
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
+        <service
+            android:name=".service.CotDispatchService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
         <!--
        <service
            android:name=".service.PassiveDataService"

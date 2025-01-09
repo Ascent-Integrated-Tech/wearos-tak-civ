@@ -20,6 +20,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlin.random.Random
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import android.location.Location
+
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 
@@ -35,14 +39,36 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val latestHeartRate: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[LATEST_HEART_RATE] ?: -1
+//    val latestHeartRate: Flow<Int> = context.dataStore.data.map { prefs ->
+//        prefs[LATEST_HEART_RATE] ?: -1
+//    }
+//
+//    suspend fun storeLatestHeartRate(heartRate: Int) {
+//        context.dataStore.edit { prefs ->
+//            prefs[LATEST_HEART_RATE] = heartRate
+//        }
+//    }
+
+    private val _latestHeartRate = MutableStateFlow<Int?>(null)
+    val latestHeartRate: StateFlow<Int?> = _latestHeartRate
+
+    private val _latestLocation = MutableStateFlow<Location?>(null)
+    val latestLocation: StateFlow<Location?> = _latestLocation
+
+    private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
+    val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
+
+    // Functions to update the data
+    suspend fun storeLatestHeartRate(heartRate: Int) {
+        _latestHeartRate.emit(heartRate)
     }
 
-    suspend fun storeLatestHeartRate(heartRate: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[LATEST_HEART_RATE] = heartRate
-        }
+    suspend fun storeLatestLocation(location: Location) {
+        _latestLocation.emit(location)
+    }
+
+    suspend fun storeLatestBatteryPercentage(batteryPercentage: Int) {
+        _latestBatteryPercentage.emit(batteryPercentage)
     }
 
     val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->

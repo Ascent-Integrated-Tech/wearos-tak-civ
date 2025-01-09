@@ -32,6 +32,9 @@ import com.aitech.weartak_civ.service.LocationService.Companion.lat
 import com.aitech.weartak_civ.service.LocationService.Companion.le
 import com.aitech.weartak_civ.service.LocationService.Companion.lon
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -46,7 +49,11 @@ class HeartrateService: Service() {
     private val handler = Handler()
     var permission: Boolean = false
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    private val repository = DataRepository(this)
+//    private val dataRepository = DataRepository(this)
+
+// Instead of creating a new DataRepository, reference the same one from MainActivity
+    private val sharedRepository: DataRepository // TODO: Use Constructor Injection for a more robust use of a shared DataRepository. Using hilt or dagger, you’d define a single @Singleton repository and annotate each service as @AndroidEntryPoint. Then each service receives the same repository instance automatically.
+        get() = MainActivity.dataRepository
 
     override fun onCreate() {
         super.onCreate()
@@ -128,17 +135,19 @@ class HeartrateService: Service() {
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > heartrateSendIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
-                    sendBiometrics(callsign, hr)
+//                    sendBiometrics(callsign, hr)
                     runBlocking {
                         //Log.d(TAG, "Posting hr value to hrStringLiveData")
                         hrStringLiveData.postValue(hr.toString())
-                        //repository.storeLatestHeartRate(hr)
+//                        dataRepository.storeLatestHeartRate(hr)
+                        sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
+
                     }
                 }
             }
         }
     }
-
+/*
     fun sendBiometrics(callsign: String, heartrate: Int) {
         // Parse and manipulate timestamps
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
@@ -192,9 +201,15 @@ class HeartrateService: Service() {
 
         // Send the CoT message
         //Log.d(TAG, "Sending biometric COT msg: $cotMsg")
-        sendDataTAKServer(cotMsg)
+        // sendDataTAKServer(cotMsg)
     }
+*/
 
+    private fun processHeartRate(heartRate: Int) {
+        CoroutineScope(Dispatchers.IO).launch {
+            sharedRepository.storeLatestHeartRate(heartRate)
+        }
+    }
 
     private fun checkPermissions(): Boolean {
         if (ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") != PackageManager.PERMISSION_GRANTED) {
