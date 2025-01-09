@@ -157,6 +157,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettin
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
@@ -205,6 +207,8 @@ class MainActivity : ComponentActivity() {
         final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
         var team = ""
         var role = ""
+        var license = ""
+
         var teamValue = ""
         var roleValue = ""
         lateinit var teamEntriesValuesList : TeamsJson
@@ -214,6 +218,7 @@ class MainActivity : ComponentActivity() {
         val teamSettingsState = MutableLiveData<String>("")
         val roleState = MutableLiveData<String>("")
         val roleSettingsState = MutableLiveData<String>("")
+        val licenseSettingsState = MutableLiveData<String>("AscentLicense")
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -318,6 +323,7 @@ class MainActivity : ComponentActivity() {
 
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
+    val licenseState = MutableLiveData<String>("")
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
 
@@ -428,7 +434,14 @@ class MainActivity : ComponentActivity() {
             roleValue = roleEntriesValuesList.lrValues[roleIndex]
             roleState.postValue(role)
             roleSettingsState.postValue(role)
+
+            license = dataRepository.getLicense.first()
+            licenseState.postValue(license)
+            licenseSettingsState.postValue(license)
+
             Log.d(TAG, "Setting callsign: $callsign")
+            Log.d(TAG, "Setting license: $license")
+
             enableLocationService = dataRepository.getEnableLocationService.first()
             Log.d(TAG, "Setting enableLocationService to $enableLocationService")
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
@@ -553,16 +566,19 @@ class MainActivity : ComponentActivity() {
         startBatteryService()
         
         setContent {
-            WearTAKCivApp(callsignState)
+            WearTAKCivApp(callsignState, licenseState)
         }
     }
 }
 
 //Contains functionality for all watch screens
 @Composable
-fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
+fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     val navController = rememberNavController()
-    NavHost(navController, startDestination = "main_screen") {
+    NavHost(
+        navController,
+        startDestination = if (license == "AscentLicense") "main_screen" else "invalid_license_screen"
+    ) {
         composable("main_screen",
             enterTransition = { fadeIn() },
             exitTransition = { fadeOut() }) {
@@ -572,7 +588,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             "settings_screen",
             enterTransition = { slideInVertically() },
             exitTransition = { slideOutVertically() }) {
-            SettingsScreen(navController, callsignLiveDataState)
+            SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState)
         }
         composable(
             "callsign_screen",
@@ -603,6 +619,18 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             enterTransition = { slideInVertically() },
             exitTransition = { slideOutVertically() }) {
             NewServerPage(navController)
+        }
+        composable(
+            "license_setting_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            LicenseKeyScreen(navController, licenseSettingsState)
+        }
+        composable(
+            "invalid_license_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            InvalidLicenseScreen(navController)
         }
     }
 }
@@ -1133,6 +1161,98 @@ fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: N
     }
 
 @Composable
+fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
+    var licenseTextFieldValue by remember { mutableStateOf(TextFieldValue(licenseLiveDataState.value ?: "null")) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        OutlinedTextField(
+            value = licenseTextFieldValue,
+            onValueChange = {
+                licenseTextFieldValue = it
+            },
+            maxLines = 1,
+            label = { Text(text = "License Key", color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "Settings NOT saved")
+                        if (licenseTextFieldValue.text == "AscentLicense") {
+                            navController.navigate("settings_screen")
+                        } else {
+                            navController.navigate("invalid_license_screen")
+                        }
+                    })
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "licenseTextFieldValue=" + licenseTextFieldValue.text)
+
+                        licenseLiveDataState.postValue(licenseTextFieldValue.text)
+                        if (licenseTextFieldValue.text == "AscentLicense") {
+                            navController.navigate("settings_screen")
+                        } else {
+                            navController.navigate("invalid_license_screen")
+                        }
+                    })
+        }
+    }
+}
+
+@Composable
+fun InvalidLicenseScreen (navController: NavController) {
+    WearTAKCIVTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Invalid License Key",
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(5.dp))
+            //Maybe add info here for how to contact Ascent for the key?
+            Text(
+                text = "Please add correct key to use WearTAK",
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(10.dp))
+            Button(
+                onClick = { navController.navigate("license_setting_screen") },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.primary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text (
+                    text = "Update License",
+                    color = Color.Black,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun HeartRate () {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
@@ -1366,7 +1486,7 @@ fun SettingSwitchToggle(
 
 //Contains functionality for settings screen
 @Composable
-fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
+fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -1494,6 +1614,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                         .fillMaxWidth()
                         .padding(bottom = 3.dp)
                 )
+
+                CallsignRoleTeamChip("license_setting_screen", "License Key", licenseSettingsState, navController)
+
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -1516,6 +1639,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             var callsignChanged: Boolean = false
                             var teamChanged = false
                             var roleChanged = false
+                            var licenseChanged: Boolean= false
+
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
                             var locationSendingIntervalChanged = false
@@ -1553,6 +1678,12 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 roleValue = roleEntriesValuesList.lrValues[roleIndex]
                                 roleState.postValue(role)
                             }
+                            if (!license.equals(licenseSettingsState.value)) {
+                                settingsChanged = true; licenseChanged = true
+                                license = licenseSettingsState.value ?: license
+                                licenseLiveDataState.postValue(license)
+                            }
+
                             if (enableLocationService != locationChecked) {
                                 settingsChanged = true; locationCheckedChanged = true
                                 enableLocationService = locationChecked
@@ -1636,6 +1767,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                         Log.d(TAG, "Storing Role ($role)")
                                         dataRepository.storeRole(role)
                                     }
+                                    if(licenseChanged) {
+                                        dataRepository.storeLicense(license)
+
+                                    }
                                     if (locationCheckedChanged) {
                                         Log.d(
                                             TAG,
@@ -1684,7 +1819,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
 @Composable
 fun DefaultPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
-    WearTAKCivApp(callsignState)
+    var licenseState = MutableLiveData<String>("WEAROS-0")
+
+    WearTAKCivApp(callsignState, licenseState)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
@@ -1698,7 +1835,9 @@ fun CallsignSettingsPreview() {
 @Composable
 fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
-    SettingsScreen(rememberNavController(),callsignState)
+    var licenseState = MutableLiveData<String>("AscentLicense")
+
+    SettingsScreen(rememberNavController(),callsignState, licenseState)
 }
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
@@ -1717,4 +1856,17 @@ fun NewServerPreview() {
 fun DeleteServerPreview() {
     val shouldShowDialog = remember { mutableStateOf(true) }
     DeleteServerDialog(shouldShowDialog, rememberNavController())
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun InvalidLicensePreview() {
+    InvalidLicenseScreen(rememberNavController())
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun LicenseKeyPreview() {
+    var licenseState = MutableLiveData<String>("License Key")
+    LicenseKeyScreen(rememberNavController(), licenseState)
 }

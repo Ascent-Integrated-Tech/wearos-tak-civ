@@ -100,6 +100,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getLicense: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[LICENSE] ?: "License"
+    }
+
+    suspend fun storeLicense(license: String) {
+        context.dataStore.edit { prefs ->
+            prefs[LICENSE] = license
+        }
+    }
+
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_LOCATION_SERVICE] ?: true
     }
@@ -146,6 +156,7 @@ class DataRepository(private val context: Context) {
         private val CALLSIGN = stringPreferencesKey("callsign")
         private val TEAM = stringPreferencesKey("team")
         private val ROLE = stringPreferencesKey("role")
+        private val LICENSE = stringPreferencesKey("license")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
