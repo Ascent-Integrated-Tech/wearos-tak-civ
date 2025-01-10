@@ -280,7 +280,6 @@ class MainActivity : ComponentActivity() {
         fun startCotDispatchService() {
             Log.d(TAG, "Starting CotDispatchService")
             mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
-//            mainActivity.startService(Intent(CotDispatchService.Actions.START.toString()))
         }
 
     }
@@ -303,6 +302,7 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
+        mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
 
         networkManager.deInit()
         /*

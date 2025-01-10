@@ -135,7 +135,6 @@ class HeartrateService: Service() {
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > heartrateSendIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
-//                    sendBiometrics(callsign, hr)
                     runBlocking {
                         //Log.d(TAG, "Posting hr value to hrStringLiveData")
                         hrStringLiveData.postValue(hr.toString())
@@ -145,69 +144,6 @@ class HeartrateService: Service() {
                     }
                 }
             }
-        }
-    }
-/*
-    fun sendBiometrics(callsign: String, heartrate: Int) {
-        // Parse and manipulate timestamps
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-        val bioDateTime = Date()
-        val bioTimeStr = dateTimeFormatter.format(bioDateTime)
-
-        // Create a Calendar object and set it to the given date
-        val calendar: Calendar = Calendar.getInstance()
-        calendar.setTime(bioDateTime)
-
-        // 3 times the heartrateSendIntervalSecs to the calendar
-        calendar.add(Calendar.SECOND, heartrateSendIntervalSecs*3)
-
-        val bioDateTimeFuture = calendar.time
-        val bioFutureTimeStr = dateTimeFormatter.format(bioDateTimeFuture)
-        //Log.d(TAG, "Current biometrics time string: $bioTimeStr")
-
-        // Construct CoT message
-        var cotMsg: String = BIO_PART1 + device_uid + BIO_PART2 +
-                bioTimeStr + "' start='" + bioTimeStr + "' stale='" + bioFutureTimeStr + BIO_PART3
-        if ((null != lat) && (null != lon)) {
-            val haeActual = hae ?: "0.0"
-            val ceActual = ce ?: "9999999.0"
-            val leActual = le ?: "9999999.0"
-            // TODO: Serial number should be unique. Hash android id to it
-            cotMsg = cotMsg + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                haeActual
-            ) +
-                    "' ce='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                ceActual
-            ) + "' le='" + java.lang.String.format(
-                Locale.ENGLISH, "%.2f", leActual
-            ) +
-                    BIO_PART4 + "WOS-" + callsign +
-                    "' heartRate='$heartrate' " +
-                    "callsign='" + callsign +
-                    "' model='WEAROS" +
-                    "' batteryLevel='$batteryPercentage" + BIO_PART5
-        } else {
-            cotMsg = cotMsg + "0.0' lon='0.0' hae='9999999.0' ce='9999999.0' le='9999999.0" +
-                    BIO_PART4 + "WOS-" + callsign +
-                    "' heartRate='$heartrate' " +
-                    "callsign='" + callsign +
-                    "' model='WEAROS" +
-                    "' batteryLevel='$batteryPercentage" + BIO_PART5
-        }
-
-        // Send the CoT message
-        //Log.d(TAG, "Sending biometric COT msg: $cotMsg")
-        // sendDataTAKServer(cotMsg)
-    }
-*/
-
-    private fun processHeartRate(heartRate: Int) {
-        CoroutineScope(Dispatchers.IO).launch {
-            sharedRepository.storeLatestHeartRate(heartRate)
         }
     }
 

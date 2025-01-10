@@ -69,7 +69,6 @@ class LocationService : Service() {
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     private var heartrate: Int = -1
     private var scheduler: ScheduledExecutorService? = null
-    private val sendLocationRunnable = SendLocationRunnable()
     private val firstLocationSent = AtomicBoolean(false)
 
     override fun onCreate() {
@@ -174,94 +173,11 @@ class LocationService : Service() {
         return binder
     }
 
-    private fun startScheduler() {
-        if (scheduler == null || scheduler!!.isShutdown()) {
-            scheduler = Executors.newScheduledThreadPool(1)
-            scheduler!!.scheduleWithFixedDelay(sendLocationRunnable, 500, locationUpdateIntervalSecs * 1000L, TimeUnit.MILLISECONDS)
-            Log.d(TAG, "Scheduler started.")
-        }
-    }
-
-    private inner class SendLocationRunnable: Runnable {
-        override fun run() {
-            //Log.d(TAG, "SendLocationRunnable called")
-            CoroutineScope(Dispatchers.IO).launch {
-//                sendLocation(MainActivity.device_uid, callsign, roleValue, teamValue)
-            }
-        }
-    }
-
-    fun stopScheduler() {
-        if (scheduler != null && !scheduler!!.isShutdown()) {
-            scheduler!!.shutdownNow()
-            Log.d(TAG, "Scheduler stopped.")
-        }
-    }
-
-//    fun sendLocation(uid: String, callsign: String, role: String, teamColor: String) {
-//        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-//        val locDateTime = Date()
-//        lat = currentLocation?.latitude
-//        lon = currentLocation?.longitude
-//        hae = currentLocation?.altitude
-//        ce = currentLocation?.accuracy
-//        le = currentLocation?.verticalAccuracyMeters
-//        val speed = currentLocation?.speed
-//        val bearing = currentLocation?.bearing
-//        //Log.d(TAG, "sendLocation called with location ${currentLocation?.toString()}")
-//        //Log.d(TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
-//        if ((null != lat) && (null != lon)) {
-//            // Parse and manipulate timestamps
-//            dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-//            val locTimeStr = dateTimeFormatter.format(locDateTime)
-//
-//            // Create a Calendar object and set it to the given date
-//            val calendar: Calendar = Calendar.getInstance()
-//            calendar.setTime(locDateTime)
-//
-//            // 3 times locationUpdateIntervalSecs to the calendar
-//            calendar.add(Calendar.SECOND, locationUpdateIntervalSecs * 3)
-//
-//            val locDateTimeFuture = calendar.time
-//            val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
-//            //Log.d(LOG_TAG, "Current location time string: $locTimeStr")
-//
-//            // Construct CoT message
-//            val haeActual = hae ?: "0.0"
-//            val ceActual = ce ?: "9999999.0"
-//            val leActual = le ?: "9999999.0"
-//            val speedActual = speed ?: "0.0"
-//            val bearingActual = bearing ?: "0.0"
-//
-//            CoroutineScope(Dispatchers.Default).launch {
-//                dataRepository.latestHeartRate.collect { hr -> heartrate = hr }
-//            }
-//            val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
-//                    LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
-//                    LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
-//                Locale.ENGLISH,
-//                "%.2f",
-//                haeActual
-//            ) +
-//                    "' ce='" + java.lang.String.format(
-//                Locale.ENGLISH,
-//                "%.2f",
-//                ceActual
-//            ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
-//                    LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-//                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + "model=" + "'WEAROS'" + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
-//            //Log.d(TAG, "Sending location COT message: $cotMsg")
-//            sendDataTAKServer(cotMsg)
-//        } else {
-//            Log.d(TAG, "Not sending location as lat ($lat), lon ($lon)")
-//        }
-//    }
-
     private inner class MyLocationCallback : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
-                dataRepository.storeLatestLocation(location)
+                dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
             }
         }
     }
@@ -277,7 +193,6 @@ class LocationService : Service() {
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
-        stopScheduler()
         Log.d(TAG, "Location Service Destroyed")
     }
 
@@ -309,6 +224,8 @@ class LocationService : Service() {
         var hae : Double? = null
         var ce : Float? = null
         var le : Float? = null
+        var bearing: Float? = null
+        var speed: Float? = null
         val LOC_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
         val LOC_PART2 = "' type='a-f-G-U-C' time='"
         const val LOC_PART3 = "' how='m-g' access='Undefined'><point lat='"
@@ -323,23 +240,3 @@ class LocationService : Service() {
         var locationUpdateFastestIntervalSecs = 2
     }
 }
-
-// TODO: change the biometrics child of details to seperate into arrays called "device". This way a cot with multiple devices connected to it can dispatch various biometrics in one cot message (ie biostrap + oura ring).
-/*
-<detail>
-    <biometrics>
-        <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-         <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-        <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-    </biometrics>
-</detail>
- */

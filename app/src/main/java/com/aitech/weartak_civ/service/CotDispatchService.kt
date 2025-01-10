@@ -26,7 +26,10 @@ import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
 import com.aitech.weartak_civ.service.LocationService.Companion.ce
 import com.aitech.weartak_civ.service.LocationService.Companion.hae
 import com.aitech.weartak_civ.service.LocationService.Companion.lat
+import com.aitech.weartak_civ.service.LocationService.Companion.lon
 import com.aitech.weartak_civ.service.LocationService.Companion.le
+import com.aitech.weartak_civ.service.LocationService.Companion.speed
+import com.aitech.weartak_civ.service.LocationService.Companion.bearing
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,13 +59,14 @@ class CotDispatchService : Service() {
         Log.d(TAG, "CotDispatchService onStartCommand()")
 
         startForegroundService()
+        startDispatchScheduler()
 
         return START_NOT_STICKY
     }
 
     // starting requires notification to the user
     private fun startForegroundService() {
-        Log.d(TAG, "Starting $TAG ForegroundServices")
+        Log.d(TAG, "Starting $TAG as a ForegroundService")
         val channelId = createNotificationChannel()
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
@@ -93,17 +97,17 @@ class CotDispatchService : Service() {
     override fun onCreate() {
         super.onCreate()
         dataRepository = MainActivity.dataRepository  // or another injection approach
-        startDispatchScheduler()
         Log.d(TAG, "CotDispatchService onCreate()")
     }
 
     private fun startDispatchScheduler() {
+        Log.d(TAG, "Starting the dispatch scheduler")
         cotDispatchThread = HandlerThread("CotDispatchThread")
         cotDispatchThread?.start()
         cotDispatchHandler = cotDispatchThread?.looper?.let { Handler(it) }
 
         // Schedule the first run
-        cotDispatchHandler?.postDelayed(cotDispatchRunnable, locationUpdateIntervalSecs * 1000L)
+        cotDispatchHandler?.postDelayed(cotDispatchRunnable, DISPATCH_INTERVAL)
     }
 
     private val cotDispatchRunnable = object : Runnable {
@@ -114,10 +118,10 @@ class CotDispatchService : Service() {
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
 
-'                if (location != null && battery != null) {
+                if (location != null && battery != null) {
                     if (heartRate == null) {
                         heartRate = -1
-                    }'
+                    }
                     val cotMessage = buildCotMessage(location, heartRate, battery)
                     sendDataTAKServer(cotMessage)
 //                    Log.d(TAG, "CoT message sent: $cotMessage")
@@ -144,28 +148,55 @@ class CotDispatchService : Service() {
         val startTime = dateTimeFormatter.format(calendar.time)
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.HOUR, 3*locationUpdateIntervalSecs)
+        calendar.add(Calendar.SECOND, 3*locationUpdateIntervalSecs)
         val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
+        val latActual = location?.latitude ?: "0.00000"
+        val lonActual = location?.longitude ?: "0.00000"
+        val haeActual = location?.altitude ?: "0.0"
+        val ceActual = location?.accuracy ?: "0.0"
+        val leActual = if (location?.verticalAccuracyMeters?.isNaN() == false) location.verticalAccuracyMeters else "Unknown"
+        val bearingActual = location?.bearing ?: "0.0"
+        val speedActual = location?.speed ?: "0.0"
 
         val uid = MainActivity.device_uid
 
-        val haeActual = hae ?: "0.0"
-        val ceActual = ce ?: "9999999.0"
-        val leActual = le ?: "9999999.0"
-
         return """
-            <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
-            <event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
-                <point lat='${location.latitude}' lon='${location.longitude}' hae='$haeActual' ce='$ceActual' le='$leActual' />
-                <detail>
-                    <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
-                    <__group role='$roleValue' name='$teamValue'/>
-                    <biometrics hr='$heartRate'/>
-                    <status battery='$battery' model='WEAROS'/>
-                    <track course='${location.bearing}' speed='${location.speed}'/>
-                </detail>
-            </event>
+        <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
+        <event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
+            <point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+            <detail>
+                <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
+                <__group role='$roleValue' name='$teamValue'/>
+                <biometrics>
+                    <device>
+                        <model>WEAROS</model>
+                        <uid>$uid</uid>
+                        <hr>$heartRate</hr>
+                        <bat>$battery</bat>
+                    </device>
+                </biometrics>
+                <track course='$bearingActual' speed='$speedActual'/>
+            </detail>
+        </event>
         """.trimIndent()
+
+        /*
+                return """
+                    <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
+                    <event version="2.0" uid='${MainActivity.device_uid}' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
+                        <point lat='${location.latitude}' lon='${location.longitude}' hae='${location.altitude}' ce='${location.accuracy}' le='${location.verticalAccuracyMeters}' />
+                        <detail>
+                            <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
+                            <__group role='$roleValue' name='$teamValue'/>
+                            <biometrics hr='$heartRate'/>
+                            <status battery='$battery' model='WEAROS'/>
+                            <track course='${location.bearing}' speed='${location.speed}'/>
+                        </detail>
+                    </event>
+                """.trimIndent()
+         */
     }
 
     override fun onDestroy() {
@@ -176,28 +207,29 @@ class CotDispatchService : Service() {
 
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
-//        private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
+        private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
         var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 2
     }
 }
 
-
+// TODO: change the biometrics child of details to seperate into arrays called "device". This way a cot with multiple devices connected to it can dispatch various biometrics in one cot message (ie biostrap + oura ring).
 /*
-
-Power Efficiency:
-    Use StateFlow because it does not actively observe changes unless required, reducing unnecessary processing.
-    Schedule dispatches with an appropriate interval (DISPATCH_INTERVAL) to balance real-time data needs and battery usage.
-
-Extensibility:
-    Adding a new data source (e.g., temperature) is as simple as adding a new MutableStateFlow to DataRepository and updating the buildCotMessage function.
-
-Readability:
-    The repository acts as a clean intermediary between services and the dispatcher.
-    Each service is responsible for collecting data, while the CotDispatchService focuses on message creation and transmission.
-
-Thread Safety:
-    StateFlow and coroutines ensure thread-safe updates and retrievals of data.
-
+<detail>
+    <biometrics>
+        <device>
+            <model>WEAROS</model>
+            <hr>94</hr>
+        </device>
+         <device>
+            <model>WEAROS</model>
+            <hr>94</hr>
+        </device>
+        <device>
+            <model>WEAROS</model>
+            <hr>94</hr>
+        </device>
+    </biometrics>
+</detail>
  */

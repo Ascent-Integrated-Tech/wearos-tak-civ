@@ -108,7 +108,7 @@ class BatteryService: Service() {
     private inner class BatteryMonitorRunnable : Runnable {
         override fun run() {
 //            batteryPercentage = getBatteryPercentage(applicationContext).toInt()
-//            batteryPercentageLiveData.postValue(batteryPercentage)
+            batteryPercentageLiveData.postValue(batteryPercentage)
 //            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
 //            batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
             val batteryPercentage = getBatteryPercentage(applicationContext).toInt()
