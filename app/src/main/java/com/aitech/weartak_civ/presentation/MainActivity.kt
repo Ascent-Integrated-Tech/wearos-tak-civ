@@ -154,6 +154,7 @@ import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.correctLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
@@ -208,7 +209,7 @@ class MainActivity : ComponentActivity() {
         var team = ""
         var role = ""
         var license = ""
-
+        var correctLicense = "AscentLicense"
         var teamValue = ""
         var roleValue = ""
         lateinit var teamEntriesValuesList : TeamsJson
@@ -218,7 +219,7 @@ class MainActivity : ComponentActivity() {
         val teamSettingsState = MutableLiveData<String>("")
         val roleState = MutableLiveData<String>("")
         val roleSettingsState = MutableLiveData<String>("")
-        val licenseSettingsState = MutableLiveData<String>("AscentLicense")
+        val licenseSettingsState = MutableLiveData<String>("")
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -577,7 +578,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
     val navController = rememberNavController()
     NavHost(
         navController,
-        startDestination = if (license == "AscentLicense") "main_screen" else "invalid_license_screen"
+        startDestination = if (license == correctLicense) "main_screen" else "invalid_license_screen"
     ) {
         composable("main_screen",
             enterTransition = { fadeIn() },
@@ -1162,8 +1163,6 @@ fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: N
 
 @Composable
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
-    var licenseTextFieldValue by remember { mutableStateOf(TextFieldValue(licenseLiveDataState.value ?: "null")) }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1172,6 +1171,8 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
+        var licenseTextFieldValue by remember { mutableStateOf(TextFieldValue(licenseLiveDataState.value ?: "null")) }
+
         OutlinedTextField(
             value = licenseTextFieldValue,
             onValueChange = {
@@ -1182,12 +1183,15 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
             textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            var settingsChanged: Boolean = false
+            var licenseChanged: Boolean = false
             Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
                 modifier = Modifier
                     .size(40.dp)
                     .clickable {
                         Log.d(TAG, "Settings NOT saved")
-                        if (licenseTextFieldValue.text == "AscentLicense") {
+                        settingsChanged = false; licenseChanged = false
+                        if (license == correctLicense) {
                             navController.navigate("settings_screen")
                         } else {
                             navController.navigate("invalid_license_screen")
@@ -1199,14 +1203,30 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                     .size(40.dp)
                     .clickable {
                         Log.d(TAG, "licenseTextFieldValue=" + licenseTextFieldValue.text)
+                        if (!licenseTextFieldValue.text.equals(licenseSettingsState.value)) {
+                            settingsChanged = true; licenseChanged = true
+                            license = licenseTextFieldValue.text ?: license
+                            licenseSettingsState.postValue(license)
+                            licenseLiveDataState.postValue(license)
+                        }
 
-                        licenseLiveDataState.postValue(licenseTextFieldValue.text)
-                        if (licenseTextFieldValue.text == "AscentLicense") {
-                            navController.navigate("settings_screen")
+                        if (licenseTextFieldValue.text == correctLicense) {
+                                navController.navigate("settings_screen")
                         } else {
                             navController.navigate("invalid_license_screen")
                         }
+                        if (settingsChanged) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                if (licenseChanged) {
+                                    dataRepository.storeLicense(license)
+                                }
+                            }
+                        }
                     })
+            Log.d(TAG, "license stuff-license " + license)
+            Log.d(TAG, "license stuff-setting " + licenseSettingsState.value)
+            Log.d(TAG, "license stuff-live data " + licenseLiveDataState.value)
+            Log.d(TAG, "license stuff-textfield " + licenseTextFieldValue.text)
         }
     }
 }
@@ -1678,11 +1698,11 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 roleValue = roleEntriesValuesList.lrValues[roleIndex]
                                 roleState.postValue(role)
                             }
-                            if (!license.equals(licenseSettingsState.value)) {
-                                settingsChanged = true; licenseChanged = true
-                                license = licenseSettingsState.value ?: license
-                                licenseLiveDataState.postValue(license)
-                            }
+//                            if (!license.equals(licenseSettingsState.value)) {
+//                                settingsChanged = true; licenseChanged = true
+//                                license = licenseSettingsState.value ?: license
+//                                licenseLiveDataState.postValue(license)
+//                            }
 
                             if (enableLocationService != locationChecked) {
                                 settingsChanged = true; locationCheckedChanged = true
@@ -1767,10 +1787,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                         Log.d(TAG, "Storing Role ($role)")
                                         dataRepository.storeRole(role)
                                     }
-                                    if(licenseChanged) {
-                                        dataRepository.storeLicense(license)
-
-                                    }
+//                                    if(licenseChanged) {
+//                                        dataRepository.storeLicense(license)
+//
+//                                    }
                                     if (locationCheckedChanged) {
                                         Log.d(
                                             TAG,
