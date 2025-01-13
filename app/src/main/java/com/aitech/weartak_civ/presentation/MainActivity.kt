@@ -177,6 +177,8 @@ import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HeartrateService
+import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
@@ -576,9 +578,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     val navController = rememberNavController()
+    validateLicense(license)
     NavHost(
         navController,
-        startDestination = if (license == correctLicense) "main_screen" else "invalid_license_screen"
+        startDestination = if (isLicenseValid()) "main_screen" else "invalid_license_screen"
     ) {
         composable("main_screen",
             enterTransition = { fadeIn() },
@@ -1191,7 +1194,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                     .clickable {
                         Log.d(TAG, "Settings NOT saved")
                         settingsChanged = false; licenseChanged = false
-                        if (license == correctLicense) {
+                        if (isLicenseValid()) {
                             navController.navigate("settings_screen")
                         } else {
                             navController.navigate("invalid_license_screen")
@@ -1208,13 +1211,10 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             license = licenseTextFieldValue.text ?: license
                             licenseSettingsState.postValue(license)
                             licenseLiveDataState.postValue(license)
+                            validateLicense(license)
+                            Log.d(TAG, "license stuff-boolean " + isLicenseValid())
                         }
 
-                        if (licenseTextFieldValue.text == correctLicense) {
-                                navController.navigate("settings_screen")
-                        } else {
-                            navController.navigate("invalid_license_screen")
-                        }
                         if (settingsChanged) {
                             CoroutineScope(Dispatchers.Main).launch {
                                 if (licenseChanged) {
@@ -1222,7 +1222,13 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 }
                             }
                         }
+                        if (isLicenseValid()) {
+                            navController.navigate("settings_screen")
+                        } else {
+                            navController.navigate("invalid_license_screen")
+                        }
                     })
+
             Log.d(TAG, "license stuff-license " + license)
             Log.d(TAG, "license stuff-setting " + licenseSettingsState.value)
             Log.d(TAG, "license stuff-live data " + licenseLiveDataState.value)
