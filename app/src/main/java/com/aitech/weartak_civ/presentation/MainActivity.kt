@@ -63,18 +63,22 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -100,6 +104,7 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.concurrent.futures.await
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -185,6 +190,7 @@ import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -211,8 +217,8 @@ class MainActivity : ComponentActivity() {
         final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
         var team = ""
         var role = ""
-        var license = ""
-        var correctLicense = "AscentLicense"
+        var license = "AscentFreeLicense"
+        var correctLicense = "AscentFreeLicense"
         var teamValue = ""
         var roleValue = ""
         lateinit var teamEntriesValuesList : TeamsJson
@@ -1411,6 +1417,59 @@ fun TroubleshootingIcons() {
 }
 
 @Composable
+fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>) {
+    if (shouldShowDialog.value) {
+        Dialog(onDismissRequest = { shouldShowDialog.value = false }) {
+            LaunchedEffect(Unit) {
+                delay(2000) // Delay for 5 seconds
+                shouldShowDialog.value = false // Dismiss the dialog
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .height(200.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.background)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (successBoolean.value) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Green
+                        )
+
+                        Text(
+                            text = "Marker Sent Successfully",
+                            textAlign = TextAlign.Center,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.Clear,
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Red
+                        )
+
+                        Text(
+                            text = "Error Sending Marker",
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun Callsign(navController: NavController, callsignState: MutableLiveData<String>) {
     val greetingName: String? by callsignState.observeAsState()
     val maxChar = 10
@@ -1456,8 +1515,15 @@ fun SOSButton() {
 
 @Composable
 fun MarkerDropButton() {
+    val shouldShowDialog = remember { mutableStateOf(false) }
+    val successBoolean = remember {mutableStateOf(false)}
+
+    if (shouldShowDialog.value) {
+        MarkerDropDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean)
+    }
+
     IconButton(
-        onClick = { /* doSomething() */ },
+        onClick = { shouldShowDialog.value = true; successBoolean.value = true},
         modifier = Modifier
             .border(
                 width = 2.dp,
@@ -1880,9 +1946,10 @@ fun NewServerPreview() {
 }
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
-fun DeleteServerPreview() {
+fun MarkerDropPreview() {
     val shouldShowDialog = remember { mutableStateOf(true) }
-    DeleteServerDialog(shouldShowDialog, rememberNavController())
+    val successBoolean = remember { mutableStateOf(false) }
+    MarkerDropDialog(shouldShowDialog, successBoolean)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
