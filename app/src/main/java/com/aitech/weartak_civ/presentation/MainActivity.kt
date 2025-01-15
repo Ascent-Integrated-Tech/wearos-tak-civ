@@ -353,12 +353,16 @@ class MainActivity : ComponentActivity() {
     private fun refreshPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Refreshing LocationService...")
-            startLocationService()
+            if (isLicenseValid()) {
+                startLocationService()
+            }
         }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Refreshing BiometricService...")
-            startBiometericService()
+            if (isLicenseValid()) {
+                startBiometericService()
+            }
         }
     }
 
@@ -570,11 +574,13 @@ class MainActivity : ComponentActivity() {
         // Request all necessary permissions
         checkAndRequestPermissions()
         startHealthCapabilitiesCollection()
-        startLocationService()
-        startCotDispatchService()
-        startBiometericService()
-        startBatteryService()
-        
+
+        if (isLicenseValid()) {
+            startCotDispatchService()
+            startLocationService()
+            startBiometericService()
+            startBatteryService()
+        } 
         setContent {
             WearTAKCivApp(callsignState, licenseState)
         }
@@ -1231,15 +1237,25 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         }
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
+                            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+                            if (enableBiometricsService) {
+                                mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
+                            }
+                            if (enableLocationService) {
+                                mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                            }
                         } else {
+                            mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
+                            if (enableBiometricsService) {
+                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                            }
+                            if (enableLocationService) {
+                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                            }
                             navController.navigate("invalid_license_screen")
                         }
                     })
 
-            Log.d(TAG, "license stuff-license " + license)
-            Log.d(TAG, "license stuff-setting " + licenseSettingsState.value)
-            Log.d(TAG, "license stuff-live data " + licenseLiveDataState.value)
-            Log.d(TAG, "license stuff-textfield " + licenseTextFieldValue.text)
         }
     }
 }
