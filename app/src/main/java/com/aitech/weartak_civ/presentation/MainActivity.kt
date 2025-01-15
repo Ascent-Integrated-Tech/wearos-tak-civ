@@ -20,8 +20,10 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings.Secure
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -422,6 +424,98 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val requestPermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            val grantedPermissions = permissions.filter { it.value }.map { it.key }
+            val deniedPermissions = permissions.filter { !it.value }.map { it.key }
+
+            if (deniedPermissions.isEmpty()) {
+                // All permissions granted
+                onPermissionsGranted()
+            } else {
+                // Handle denied permissions
+                onPermissionsDenied(deniedPermissions)
+            }
+        }
+
+    private fun checkAndRequestPermissions() {
+        val requiredPermissions = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.BODY_SENSORS
+        )
+
+        val permissionsToRequest = requiredPermissions.filter {
+            ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            // Request missing permissions
+            requestPermissionsLauncher.launch(permissionsToRequest.toTypedArray())
+        } else {
+            // All permissions are already granted
+            onPermissionsGranted()
+        }
+    }
+
+    private fun onPermissionsGranted() {
+        // Start any services or logic that depend on the permissions
+        Log.d("MainActivity", "All permissions granted")
+        startHealthCapabilitiesCollection()
+        if (enableLocationService) { startLocationService() }
+        if (enableBiometricsService) { startBiometericService() }
+        startTAKConnectService()
+        startBatteryService()
+        // You can also start your Ditto service here if it depends on BLE or Wi-Fi permissions.
+        // startDittoService()
+    }
+
+    private fun onPermissionsDenied(deniedPermissions: List<String>) {
+        Log.w("MainActivity", "Permissions denied: $deniedPermissions")
+        Toast.makeText(
+            this,
+            "The following permissions are required: $deniedPermissions",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun startHealthCapabilitiesCollection() {
+        val healthClient = HealthServices.getClient(this)
+        val passiveMonitoringClient = healthClient.passiveMonitoringClient
+        measureClient = healthClient.measureClient
+
+        lifecycleScope.launch {
+            try {
+                // Await the Passive Monitoring capabilities
+                val capabilities = passiveMonitoringClient.getCapabilitiesAsync().await()
+                val supportedDataTypes = capabilities.supportedDataTypesPassiveMonitoring
+
+                Log.d(TAG, "Supported passive monitoring data: $supportedDataTypes")
+
+                val supportsHeartRate = DataType.HEART_RATE_BPM in supportedDataTypes
+                val supportsVo2Max = DataType.VO2_MAX in supportedDataTypes
+                val supportsLocation = DataType.LOCATION in supportedDataTypes
+
+                Log.d(TAG, "supportsHeartRate: $supportsHeartRate; supportsVo2Max: $supportsVo2Max; supportsLocation: $supportsLocation")
+
+                // Await the Measure capabilities
+                val measureCapabilities = measureClient?.getCapabilitiesAsync()?.await()
+                val measureSupportsHeartRate = DataType.HEART_RATE_BPM in (measureCapabilities?.supportedDataTypesMeasure ?: emptySet())
+
+                Log.d(TAG, "measureCapabilities: $measureCapabilities")
+                Log.d(TAG, "measureSupportsHeartRate: $measureSupportsHeartRate")
+
+                // If needed, register callbacks
+                // measureClient?.registerMeasureCallback(DataType.HEART_RATE_BPM, heartRateCallback)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching health capabilities: ${e.message}")
+            }
+        }
+    }
+
+    private fun startTAKConnectService() {
+        mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainActivity = this
@@ -431,68 +525,14 @@ class MainActivity : ComponentActivity() {
         readTeamsJson()
         readRolesJson()
         installSplashScreen()
-
         setDataFromDatastore()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
-
-        } else {
-            mainActivity.startService(Intent(mainActivity, TAKConnectService::class.java))
-        }
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
-        /*
-        healthServicesRepository = HealthServicesRepository(this)
-        lifecycleScope.launch {
-            healthServicesRepository.registerForHeartRateData()
-        }
-
-         */
-
         setTheme(android.R.style.Theme_DeviceDefault)
-
         printSensorDetails(this)
 
-        val healthClient = HealthServices.getClient(this /*context*/)
-        val passiveMonitoringClient = healthClient.passiveMonitoringClient
-        measureClient = healthClient.measureClient
-        lifecycleScope.launch {
-            val capabilities = passiveMonitoringClient.getCapabilitiesAsync()
-            capabilities.awaitWithException()
-            capabilities.await()
-            // Supported types for passive data collection
-            val passiveMonitoringDataTypes = capabilities.get().supportedDataTypesPassiveMonitoring
-            Log.d(TAG, "passiveMonitoringDataTypes: " + passiveMonitoringDataTypes.toString())
-            val supportsHeartRate = DataType.HEART_RATE_BPM in passiveMonitoringDataTypes
-            val supportsVo2Max = DataType.VO2_MAX in passiveMonitoringDataTypes
-            val supportsLocation = DataType.LOCATION in passiveMonitoringDataTypes
-            Log.d(TAG, "supportsHeartRate: " + supportsHeartRate + "; supportsVo2Max: " + supportsVo2Max + "; supportsLocation: " + supportsLocation)
-            val measureCapabilities = measureClient.getCapabilitiesAsync().await()
-            val measureSupportsHeartRate = DataType.HEART_RATE_BPM in measureCapabilities.supportedDataTypesMeasure
-            Log.d(TAG, "measureCapabilities: $measureCapabilities")
-            Log.d(TAG, "measureSupportsHeartRate: " + measureSupportsHeartRate)
-            //measureClient.registerMeasureCallback(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
-        }
-        val listPermissionsNeeded: MutableList<String> = ArrayList()
-        if ((ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
-            (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
-            // TODO: Call ActivityCompat#requestPermissions to request the missing permissions,
-            // and then override:
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants/deny the permission.
-            listPermissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) != PackageManager.PERMISSION_GRANTED) {
-            listPermissionsNeeded.add(Manifest.permission.BODY_SENSORS)
-        }
-        if (listPermissionsNeeded.size > 0) {
-            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
-        }
+        // check for permissions
+        checkAndRequestPermissions()
 
-        startBatteryService()
-        startBiometericService()
-        startLocationService()
         setContent {
             WearTAKCivApp(callsignState)
         }
