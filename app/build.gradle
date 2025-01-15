@@ -83,7 +83,8 @@ dependencies {
     implementation libs.watchface.complications.data.source.ktx
     implementation libs.navigation.compose
     implementation 'com.beust:klaxon:5.5'
-
+    implementation libs.activity.ktx // JetPack runtime permissions handling
+    implementation libs.fragment.ktx // JetPack runtime permissions handling For fragments
 
     // Health Services
     //implementation libs.androidx
