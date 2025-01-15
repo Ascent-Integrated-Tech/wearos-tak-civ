@@ -25,6 +25,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.expandHorizontally
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -117,6 +118,7 @@ import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.protolayout.LayoutElementBuilders.HorizontalAlignment
 import androidx.wear.protolayout.LayoutElementBuilders.VerticalAlignment
+import com.aitech.weartak_civ.DittoApplication
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
@@ -143,6 +145,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
+import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
@@ -153,7 +156,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.net.ssl.SSLSocket
-
+import live.ditto.transports.DittoSyncPermissions // helper class to request user permissions for ditto
+import live.ditto.Ditto
 
 class MainActivity : ComponentActivity() {
 
@@ -282,11 +286,30 @@ class MainActivity : ComponentActivity() {
             mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
         }
 
+        fun startDittoService() {
+            Log.d(TAG, "Starting DittoService")
+            mainActivity.startService(Intent(mainActivity, DittoService::class.java ))
+        }
+
     }
+
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
+
+//    private val requestPermissionsLauncher =
+//        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+//            this.ditto.refreshPermissions()
+//        }
+//    fun requestPermissions() {
+//        val missing = DittoSyncPermissions(this).missingPermissions()
+//        if (missing.isNotEmpty()) {
+//            this.requestPermissions(missing, 0)
+//        }
+//    }
+
+
 
     override fun onDestroy() {
         super.onDestroy()
@@ -440,7 +463,6 @@ class MainActivity : ComponentActivity() {
         readTeamsJson()
         readRolesJson()
         installSplashScreen()
-
         setDataFromDatastore()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -457,6 +479,14 @@ class MainActivity : ComponentActivity() {
         }
 
          */
+
+        // ask user to accept ditto permissions
+        fun requestPermissions() {
+            val missing = DittoSyncPermissions(this).missingPermissions()
+            if (missing.isNotEmpty()) {
+                this.requestPermissions(missing, 0)
+            }
+        }
 
         setTheme(android.R.style.Theme_DeviceDefault)
 
@@ -499,16 +529,20 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
         }
 
+        val ditto = DittoApplication.getDittoInstance()
+
         startBatteryService()
         startBiometericService()
         startLocationService()
         startCotDispatchService()
+        startDittoService()
 
         setContent {
             WearTAKCivApp(callsignState)
         }
     }
 }
+
 
 //Contains functionality for all watch screens
 @Composable

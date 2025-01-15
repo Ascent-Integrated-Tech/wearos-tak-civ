@@ -89,10 +89,11 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        secureSocket?.close()
+        CoroutineScope(Dispatchers.IO).launch {
+            secureSocket?.close()
+        }
         Log.d(TAG, "TAK Connect Service Destroyed")
     }
-
 
     companion object {
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
