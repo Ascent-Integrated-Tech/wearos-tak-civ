@@ -529,7 +529,7 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), 1)
         }
 
-        val ditto = DittoApplication.getDittoInstance()
+//        val ditto = DittoApplication.getDittoInstance()
 
         startBatteryService()
         startBiometericService()

@@ -41,8 +41,8 @@ class DittoApplication : Application() {
             val androidDependencies = DefaultAndroidDittoDependencies(applicationContext)
             val identity = DittoIdentity.OnlinePlayground(
                 androidDependencies,
-                appId = "YOUR_APP_ID",
-                token = "YOUR_PLAYGROUND_TOKEN"
+                appId = "21abd8b3-71a5-4a0b-a813-35d44c78204e",
+                token = "02b57bc3-915c-46aa-ad71-6643f7778a71"
             )
             ditto = Ditto(androidDependencies, identity)
         } catch (e: DittoError) {
