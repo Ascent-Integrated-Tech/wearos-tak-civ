@@ -145,6 +145,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
@@ -162,8 +163,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesVal
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBatteryService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
@@ -174,6 +178,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettin
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
+import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
@@ -189,19 +194,28 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import live.ditto.Ditto
+import org.checkerframework.checker.units.qual.C
 import javax.net.ssl.SSLSocket
-
+import live.ditto.transports.DittoSyncPermissions
 
 class MainActivity : ComponentActivity() {
 
     companion object Constants {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
+        val PTAG = "Peermissions"
         lateinit var mainActivity : MainActivity
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
+        var locationServiceRunning : Boolean = false
+
         var enableBiometricsService : Boolean = true
+        var biometricServiceRunning : Boolean = false
         var enableTAKConnectService : Boolean = true
+        var enableDittoService : Boolean = true
+        var dittoServiceRunning : Boolean = false
+
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
@@ -274,14 +288,48 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking requestLocationUpdates")
                 } else {
-                    Log.d(TAG, "Starting hearrate service")
-                    mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
+                    if (!HeartrateService.isRunning) {
+                        Log.d(TAG, "Starting hearrate service")
+                        mainActivity.startService(
+                            Intent(
+                                mainActivity,
+                                HeartrateService::class.java
+                            )
+                        )
+                    } else {
+                        Log.d(TAG, "HeartRateService is already running." )
+                    }
                 }
             }  else {
-                Log.d(TAG, "startBiometricsService is false. So NOT starting location service")
+                Log.d(TAG, "BiometricServices are disabled. Not starting HeartRateService")
             }
         }
         private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
+
+        fun startDittoService() {
+            if ((ActivityCompat.checkSelfPermission(
+                mainActivity.applicationContext,
+                Manifest.permission.NEARBY_WIFI_DEVICES
+            ) != PackageManager.PERMISSION_GRANTED) && (ActivityCompat.checkSelfPermission(
+                mainActivity.applicationContext,
+                Manifest.permission.BLUETOOTH
+            ) != PackageManager.PERMISSION_GRANTED))
+            {
+                Log.d(TAG, "Missing Nearby WiFi permissions or Bluetooth. So NOT invoking DittoService")
+//                ActivityCompat.requestPermissions(this, Manifest.permission.BLUETOOTH)
+            } else {
+                if (enableDittoService) {
+                    if (!DittoService.isRunning) {
+                        Log.d(TAG, "Starting DittoServices")
+                        mainActivity.startForegroundService(Intent(mainActivity, DittoService::class.java))
+                    } else {
+                        Log.d(TAG, "DittoService is already running")
+                    }
+                } else {
+                    Log.d(TAG, "DittoServices are disabled")
+                }
+            }
+        }
 
         fun startLocationService() {
             if (hasGps()) {
@@ -305,21 +353,48 @@ class MainActivity : ComponentActivity() {
             } else {
                 if (enableLocationService) {
                     Log.d(TAG, "Starting LocationService")
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
 
+                    if (!LocationService.isRunning) {
+                        Log.d(TAG, "Starting LocationService")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            mainActivity.startForegroundService(
+                                Intent(
+                                    mainActivity,
+                                    LocationService::class.java
+                                )
+                            )
+                        } else {
+                            mainActivity.startService(
+                                Intent(
+                                    mainActivity,
+                                    LocationService::class.java
+                                )
+                            )
+                        }
                     } else {
-                        mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                        Log.d(
+                            TAG,
+                            "enableLocationService is false. So NOT starting location service"
+                        )
                     }
-                } else {
-                    Log.d(TAG, "enableLocationService is false. So NOT starting location service")
                 }
             }
         }
 
+        fun startBatteryService() {
+            if (!BatteryService.isRunning) {
+                Log.d(TAG, "Starting Battery Service")
+                mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
+            }
+        }
+
         fun startCotDispatchService() {
-            Log.d(TAG, "Starting CotDispatchService")
-            mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
+            if (!CotDispatchService.isRunning) {
+                Log.d(TAG, "Starting CotDispatchService")
+                mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
+            } else {
+                Log.d(TAG, "Cot DispatchService is already running")
+            }
         }
 
     }
@@ -339,28 +414,40 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissionsMap ->
             val deniedPermissions = permissionsMap.filterValues { !it }.keys
-
+            permissionsMap.entries.forEach {
+                Log.d(TAG, "${it.key} = ${it.value}")
+            }
             if (deniedPermissions.isEmpty()) {
-                Log.d(TAG, "All permissions granted. Refreshing services...")
-                refreshPermissions()
+                Log.d(TAG, "All permissions granted.")
             } else {
                 Log.w(TAG, "Permissions denied: $deniedPermissions")
-                // Optionally guide the user to settings if necessary
             }
         }
 
     private fun refreshPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "Refreshing LocationService...")
+        if ((ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) && (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)) {
             if (isLicenseValid()) {
+                Log.d(PTAG, "Starting LocationService...")
                 startLocationService()
             }
+        } else {
+            Log.d(TAG, "ContextCompat.checkSelfPermission for Location did not work. Trying to manually request")
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 0
+            )
         }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "Refreshing BiometricService...")
             if (isLicenseValid()) {
+                Log.d(TAG, "Refreshing BiometricService...")
                 startBiometericService()
+            }
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED) {
+            if (isLicenseValid()) {
+                Log.d(TAG, "Refreshing DittoService...")
+                startDittoService()
             }
         }
     }
@@ -382,6 +469,7 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
+        if (DittoService.isRunning) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
         networkManager.deInit()
         /*
@@ -413,14 +501,6 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             resSensorList = ArrayList()
             Log.e(TAG, "Sensor List ERROR: Unable to obtain", e)
-        }
-    }
-
-    fun startBatteryService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
-        } else {
-            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
         }
     }
 
@@ -549,15 +629,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startTAKConnectService() {
-        mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+        if (!TAKConnectService.isRunning) {
+            Log.d(TAG, "Starting TAKConnectService")
+            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+        } else {
+            Log.d(TAG, "TAKConnectService is already running.")
+        }
     }
-
 
     private fun checkAndRequestPermissions() {
         val requiredPermissions = listOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BODY_SENSORS
-        )
+            Manifest.permission.BODY_SENSORS,
+            Manifest.permission.NEARBY_WIFI_DEVICES,
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_ADVERTISE
+            )
+        Log.d(PTAG, "Permissions List: $requiredPermissions")
 
         /*
         val requiredPermissions = listOf(
@@ -575,14 +665,15 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Requesting missing permissions: $missingPermissions")
             requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
         } else {
-            Log.d(TAG, "All permissions already granted. Starting services...")
-            //refreshPermissions()
+            Log.d(PTAG, "All permissions already granted.")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainActivity = this
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        Log.d(TAG, "Device UID is $device_uid")
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
@@ -596,13 +687,11 @@ class MainActivity : ComponentActivity() {
         setDataFromDatastore()
         validateLicense(license)
         if (enableTAKConnectService) { startTAKConnectService() }
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
         setTheme(android.R.style.Theme_DeviceDefault)
 
-        //printSensorDetails(this)
+//        printSensorDetails(this)
 
-        // check for permissions & start services if permissions are enabled.
         // Request all necessary permissions
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
@@ -612,6 +701,8 @@ class MainActivity : ComponentActivity() {
             startLocationService()
             startBiometericService()
             startBatteryService()
+            startDittoService()
+            Log.d(TAG, "isLicensevalid oncreate check")
         }
 
         /*
@@ -880,7 +971,11 @@ fun TeamSetting(navController: NavController) {
         val index : Int = findTeamIndex(teamSettingsState.value)
         var selectedRadioIndex by remember { mutableStateOf(index) }
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -946,7 +1041,11 @@ fun RoleSetting (navController: NavController) {
         var selectedRadioIndex by remember { mutableStateOf(index) }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1214,7 +1313,9 @@ fun NewServerPage (navController: NavController) {
                     modifier = Modifier
                         .size(40.dp)
                         .clickable {
-                            settingsChanged = false; nameChanged = false; addressChanged = false; portChanged = false; usernameChanged = false; passwordChanged = false
+                            settingsChanged = false; nameChanged = false; addressChanged =
+                            false; portChanged = false; usernameChanged = false; passwordChanged =
+                            false
                             Log.d(TAG, "Settings NOT saved")
                             navController.navigate("tak_server_screen")
                         })
@@ -1268,7 +1369,9 @@ fun NewServerPage (navController: NavController) {
                                     if (passwordChanged) {
                                         dataRepository.storePassword(password)
                                     }
-                                    EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED))
+                                    EventBus
+                                        .getDefault()
+                                        .post(MessageEvent(SERVER_DETAILS_CHANGED))
                                 }
                             }
                             navController.navigate("tak_server_screen")
@@ -1422,7 +1525,6 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             validateLicense(license)
                             Log.d(TAG, "license stuff-boolean " + isLicenseValid())
                         }
-
                         if (settingsChanged) {
                             CoroutineScope(Dispatchers.Main).launch {
                                 if (licenseChanged) {
@@ -1430,24 +1532,50 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 }
                             }
                         }
-                        Log.d(TAG, license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text)
+                        Log.d(
+                            TAG,
+                            license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text
+                        )
 
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
-                            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
-                            if (enableBiometricsService) {
-                                mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
-                            }
-                            if (enableLocationService) {
-                                mainActivity.startService(Intent(mainActivity, LocationService::class.java))
-                            }
+                            startBatteryService()
+                            startLocationService()
+                            startCotDispatchService()
+                            startBiometericService()
+                            startDittoService()
                         } else {
-                            mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
-                            if (enableBiometricsService) {
-                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                            if (BatteryService.isRunning) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        BatteryService::class.java
+                                    )
+                                )
                             }
-                            if (enableLocationService) {
-                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                            if (enableBiometricsService && HeartrateService.isRunning) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        HeartrateService::class.java
+                                    )
+                                )
+                            }
+                            if (enableLocationService && LocationService.isRunning) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        LocationService::class.java
+                                    )
+                                )
+                            }
+                            if (enableDittoService && DittoService.isRunning) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        DittoService::class.java
+                                    )
+                                )
                             }
                             navController.navigate("invalid_license_screen")
                         }
@@ -1818,7 +1946,9 @@ fun SettingSwitchToggle(
     // The primary label should have a maximum 3 lines of text
     // and the secondary label should have max 2 lines of text.
     ToggleChip(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
         label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis,) },
         secondaryLabel = {
             Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1970,7 +2100,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             var callsignChanged: Boolean = false
                             var teamChanged = false
                             var roleChanged = false
-                            var licenseChanged: Boolean= false
+                            var licenseChanged: Boolean = false
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
@@ -1986,7 +2116,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
                                 // This cannot happen, but still...
                                 if (teamIndex == -1) {
-                                    Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
+                                    Log.e(
+                                        TAG,
+                                        "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0"
+                                    )
                                     teamIndex = 0
                                     team = teamEntriesValuesList.ltEntries[0]
                                     teamSettingsState.postValue(team)
@@ -2000,7 +2133,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
                                 // This cannot happen, but still...
                                 if (roleIndex == -1) {
-                                    Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
+                                    Log.e(
+                                        TAG,
+                                        "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0"
+                                    )
                                     roleIndex = 0
                                     role = roleEntriesValuesList.lrEntries[0]
                                     roleSettingsState.postValue(role)
@@ -2103,7 +2239,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                             TAG,
                                             "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})"
                                         )
-                                        dataRepository.storeReportingUpdateInterval(CotDispatchService.reportingUpdateIntervalSecs)
+                                        dataRepository.storeReportingUpdateInterval(
+                                            CotDispatchService.reportingUpdateIntervalSecs
+                                        )
                                     }
                                     if (biometricsCheckedChanged) {
                                         Log.d(

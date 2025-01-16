@@ -43,21 +43,21 @@ class CotDispatchService : Service() {
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     var lastLocationUpdateRcvd : Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
+    private val ioScope = CoroutineScope(Dispatchers.IO)
+    private val uid = MainActivity.device_uid
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
 
-    //
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.d(TAG, "CotDispatchService onStartCommand()")
-
         startForegroundService()
         startDispatchScheduler()
-
+        isRunning = true
         return START_NOT_STICKY
     }
 
@@ -318,31 +318,14 @@ class CotDispatchService : Service() {
         }
         cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
         cotDispatchThread?.quitSafely()
+        isRunning = false
     }
 
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
+        var isRunning : Boolean = false
         var reportingUpdateIntervalSecs = 10
     }
 }
-
-/*
-<detail>
-    <biometrics>
-        <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-         <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-        <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-    </biometrics>
-</detail>
- */

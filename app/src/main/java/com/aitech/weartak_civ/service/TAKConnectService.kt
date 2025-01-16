@@ -97,6 +97,7 @@ class TAKConnectService: Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+        isRunning = true
         startForegroundService()
         setFromDatastore()
         getClientCertificateAndConnect(takServer, username, password, port)
@@ -149,6 +150,7 @@ class TAKConnectService: Service() {
                 secureSocket = null
             }
             Log.d(TAG, "TAK Connect Service Destroyed")
+            isRunning = false
         }
     }
 
@@ -173,6 +175,7 @@ class TAKConnectService: Service() {
         const private val TAK_CERT_PASSWORD = "atakatak"
         var isConnected : Boolean = false // Overall isConnected flag. This includes getting client cert and connecting to COT message port
         val isConnectedLiveData = MutableLiveData<Boolean>(false)
+        var isRunning : Boolean = false
         val obtainingClientCert = AtomicBoolean(false)
         val obtainedClientCert  = AtomicBoolean(false)
         val isConnectingToCotMsgPort : AtomicBoolean = AtomicBoolean(false) // This is only for the process of connecting to COT message port

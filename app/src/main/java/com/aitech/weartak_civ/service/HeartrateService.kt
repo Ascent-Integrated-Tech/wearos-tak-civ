@@ -40,12 +40,14 @@ class HeartrateService: Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        isRunning = true
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopSensors()
+        isRunning = false
         Log.d(TAG, "Heartrate Service Destroyed")
     }
 
@@ -145,5 +147,6 @@ class HeartrateService: Service() {
         var hr: Int = -1
 //        var heartrateSendIntervalSecs : Int = 5
         val hrStringLiveData = MutableLiveData<String>("N/A")
+        var isRunning : Boolean = false
     }
 }
