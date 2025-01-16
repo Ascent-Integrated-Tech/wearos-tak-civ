@@ -29,6 +29,10 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class BatteryService: Service() {
     private var batteryMonitorHandler: Handler? = null
@@ -105,7 +109,11 @@ class BatteryService: Service() {
         override fun run() {
             batteryPercentage = getBatteryPercentage(applicationContext).toInt()
             batteryPercentageLiveData.postValue(batteryPercentage)
-            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
+//            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
+//            batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
+            CoroutineScope(Dispatchers.IO).launch {
+                dataRepository.storeLatestBatteryPercentage(batteryPercentage) // TODO: can we remove coroutine scope
+            }
             batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
         }
     }

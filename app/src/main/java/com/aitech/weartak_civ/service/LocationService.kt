@@ -29,13 +29,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -47,11 +41,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
-import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -66,10 +55,6 @@ class LocationService : Service() {
     private var handler: Handler? = null
     private var currentLocation: Location? = null
     // TODO: move this to main / use main
-    private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    private var heartrate: Int = -1
-    private var scheduler: ScheduledExecutorService? = null
-    private val sendLocationRunnable = SendLocationRunnable()
     private val firstLocationSent = AtomicBoolean(false)
 
     override fun onCreate() {
@@ -174,101 +159,15 @@ class LocationService : Service() {
         return binder
     }
 
-    private fun startScheduler() {
-        if (scheduler == null || scheduler!!.isShutdown()) {
-            scheduler = Executors.newScheduledThreadPool(1)
-            scheduler!!.scheduleWithFixedDelay(sendLocationRunnable, 500, locationUpdateIntervalSecs * 1000L, TimeUnit.MILLISECONDS)
-            Log.d(TAG, "Scheduler started.")
-        }
-    }
-
-    private inner class SendLocationRunnable: Runnable {
-        override fun run() {
-            //Log.d(TAG, "SendLocationRunnable called")
-            CoroutineScope(Dispatchers.IO).launch {
-                sendLocation(MainActivity.device_uid, callsign, roleValue, teamValue)
-            }
-        }
-    }
-
-    fun stopScheduler() {
-        if (scheduler != null && !scheduler!!.isShutdown()) {
-            scheduler!!.shutdownNow()
-            Log.d(TAG, "Scheduler stopped.")
-        }
-    }
-
-    fun sendLocation(uid: String, callsign: String, role: String, teamColor: String) {
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-        val locDateTime = Date()
-        lat = currentLocation?.latitude
-        lon = currentLocation?.longitude
-        hae = currentLocation?.altitude
-        ce = currentLocation?.accuracy
-        le = currentLocation?.verticalAccuracyMeters
-        val speed = currentLocation?.speed
-        val bearing = currentLocation?.bearing
-        //Log.d(TAG, "sendLocation called with location ${currentLocation?.toString()}")
-        //Log.d(TAG, "sendLocation w/ lat: ($lat); lon: ($lon); horizontalAccuracy: ($ce); alt: ($hae); verticalAccuracy: ($le); speed: ($speed); bearing: ($bearing)")
-        if ((null != lat) && (null != lon)) {
-            // Parse and manipulate timestamps
-            dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-            val locTimeStr = dateTimeFormatter.format(locDateTime)
-
-            // Create a Calendar object and set it to the given date
-            val calendar: Calendar = Calendar.getInstance()
-            calendar.setTime(locDateTime)
-
-            // 3 times locationUpdateIntervalSecs to the calendar
-            calendar.add(Calendar.SECOND, locationUpdateIntervalSecs * 3)
-
-            val locDateTimeFuture = calendar.time
-            val locFutureTimeStr = dateTimeFormatter.format(locDateTimeFuture)
-            //Log.d(LOG_TAG, "Current location time string: $locTimeStr")
-
-            // Construct CoT message
-            val haeActual = hae ?: "0.0"
-            val ceActual = ce ?: "9999999.0"
-            val leActual = le ?: "9999999.0"
-            val speedActual = speed ?: "0.0"
-            val bearingActual = bearing ?: "0.0"
-
-            CoroutineScope(Dispatchers.Default).launch {
-                dataRepository.latestHeartRate.collect { hr -> heartrate = hr }
-            }
-            val cotMsg: String = LOC_PART1 + MainActivity.device_uid +
-                    LOC_PART2 + locTimeStr + "' start='" + locTimeStr + "' stale='" + locFutureTimeStr +
-                    LOC_PART3 + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                haeActual
-            ) +
-                    "' ce='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                ceActual
-            ) + "' le='" + java.lang.String.format(Locale.ENGLISH, "%.2f", leActual) +
-                    LOC_PART4 + callsign + LOC_PART5 + uid + LOC_PART6 + role + "' name='" + teamColor +
-                    LOC_PART7 + batteryPercentage + "'/>" + DETAILS_META_KEY_HEART_RATE + heartrate + LOC_PART_8 + bearingActual + "' speed='" + speedActual + LOC_PART_9
-            //Log.d(TAG, "Sending location COT message: $cotMsg")
-            sendDataTAKServer(cotMsg)
-        } else {
-            Log.d(TAG, "Not sending location as lat ($lat), lon ($lon)")
-        }
-    }
-
     private inner class MyLocationCallback : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
-            if (locationResult != null && locationResult.lastLocation != null) {
-                val location = locationResult.lastLocation
-                currentLocation = location
-                Log.d(TAG, "Received location: " + location.toString())
-                if(!firstLocationSent.getAndSet(true)) {
-                    startScheduler()
-                }
+            val location = locationResult.lastLocation ?: return
+            CoroutineScope(Dispatchers.IO).launch {
+                dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
             }
         }
     }
+
 
     inner class LocationServiceBinder : Binder() {
         val service: LocationService
@@ -280,7 +179,6 @@ class LocationService : Service() {
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
-        stopScheduler()
         Log.d(TAG, "Location Service Destroyed")
     }
 
@@ -307,21 +205,12 @@ class LocationService : Service() {
     companion object {
         private val TAG = "WearTAK-" + LocationService::class.java.simpleName
         private val LOCATION_SERVICE_NOTIFICATION_ID = 1234
+        // TODO: remove lat, lon, hae, ce, le after removing/refactoring PassiveDataService.kt
         var lat : Double? = null
         var lon : Double? = null
         var hae : Double? = null
         var ce : Float? = null
         var le : Float? = null
-        val LOC_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
-        val LOC_PART2 = "' type='a-f-G-U-C' time='"
-        const val LOC_PART3 = "' how='m-g' access='Undefined'><point lat='"
-        const val LOC_PART4 = "' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='"
-        const val LOC_PART5 = "'/><uid Droid='"
-        const val LOC_PART6 = "'/><__group role='"
-        const val LOC_PART7 = "'/><status battery='"
-        const val LOC_PART_8 = "'/><track course='"
-        const val LOC_PART_9 = "'/></detail></event>"
-        const val DETAILS_META_KEY_HEART_RATE: String = "<HEART_RATE_COT_KEY com.aitech.atak.biometrics.heartrate.HeartRate='"
         var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 2
     }

@@ -16,37 +16,23 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Handler
 import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
-import com.aitech.weartak_civ.service.LocationService.Companion.ce
-import com.aitech.weartak_civ.service.LocationService.Companion.hae
-import com.aitech.weartak_civ.service.LocationService.Companion.lat
-import com.aitech.weartak_civ.service.LocationService.Companion.le
-import com.aitech.weartak_civ.service.LocationService.Companion.lon
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import kotlinx.coroutines.runBlocking
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 class HeartrateService: Service() {
     // TODO: Change to https://developer.android.com/reference/android/hardware/Sensor
     private lateinit var sensorManager: SensorManager
     private var heartRateSensor: Sensor? = null
-    private val handler = Handler()
     var permission: Boolean = false
-    private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    private val repository = DataRepository(this)
+
+    // Instead of creating a new DataRepository, reference the same one from MainActivity
+    private val sharedRepository: DataRepository // TODO: Use Constructor Injection for a more robust use of a shared DataRepository. Using hilt or dagger, you’d define a single @Singleton repository and annotate each service as @AndroidEntryPoint. Then each service receives the same repository instance automatically.
+        get() = MainActivity.dataRepository
 
     override fun onCreate() {
         super.onCreate()
@@ -128,73 +114,17 @@ class HeartrateService: Service() {
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > heartrateSendIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
-                    sendBiometrics(callsign, hr)
                     runBlocking {
                         //Log.d(TAG, "Posting hr value to hrStringLiveData")
                         hrStringLiveData.postValue(hr.toString())
-                        //repository.storeLatestHeartRate(hr)
+//                        dataRepository.storeLatestHeartRate(hr)
+                        sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
+
                     }
                 }
             }
         }
     }
-
-    fun sendBiometrics(callsign: String, heartrate: Int) {
-        // Parse and manipulate timestamps
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-        val bioDateTime = Date()
-        val bioTimeStr = dateTimeFormatter.format(bioDateTime)
-
-        // Create a Calendar object and set it to the given date
-        val calendar: Calendar = Calendar.getInstance()
-        calendar.setTime(bioDateTime)
-
-        // 3 times the heartrateSendIntervalSecs to the calendar
-        calendar.add(Calendar.SECOND, heartrateSendIntervalSecs*3)
-
-        val bioDateTimeFuture = calendar.time
-        val bioFutureTimeStr = dateTimeFormatter.format(bioDateTimeFuture)
-        //Log.d(TAG, "Current biometrics time string: $bioTimeStr")
-
-        // Construct CoT message
-        var cotMsg: String = BIO_PART1 + device_uid + BIO_PART2 +
-                bioTimeStr + "' start='" + bioTimeStr + "' stale='" + bioFutureTimeStr + BIO_PART3
-        if ((null != lat) && (null != lon)) {
-            val haeActual = hae ?: "0.0"
-            val ceActual = ce ?: "9999999.0"
-            val leActual = le ?: "9999999.0"
-            // TODO: Serial number should be unique. Hash android id to it
-            cotMsg = cotMsg + lat + "' lon='" + lon + "' hae='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                haeActual
-            ) +
-                    "' ce='" + java.lang.String.format(
-                Locale.ENGLISH,
-                "%.2f",
-                ceActual
-            ) + "' le='" + java.lang.String.format(
-                Locale.ENGLISH, "%.2f", leActual
-            ) +
-                    BIO_PART4 + "WOS-" + callsign +
-                    "' heartRate='$heartrate' " +
-                    "callsign='" + callsign +
-                    "' model='WEAROS" +
-                    "' batteryLevel='$batteryPercentage" + BIO_PART5
-        } else {
-            cotMsg = cotMsg + "0.0' lon='0.0' hae='9999999.0' ce='9999999.0' le='9999999.0" +
-                    BIO_PART4 + "WOS-" + callsign +
-                    "' heartRate='$heartrate' " +
-                    "callsign='" + callsign +
-                    "' model='WEAROS" +
-                    "' batteryLevel='$batteryPercentage" + BIO_PART5
-        }
-
-        // Send the CoT message
-        //Log.d(TAG, "Sending biometric COT msg: $cotMsg")
-        sendDataTAKServer(cotMsg)
-    }
-
 
     private fun checkPermissions(): Boolean {
         if (ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") != PackageManager.PERMISSION_GRANTED) {
