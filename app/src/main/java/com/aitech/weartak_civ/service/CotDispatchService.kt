@@ -22,6 +22,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.service.DittoService.Companion.localPeerKeyString
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,21 +44,21 @@ class CotDispatchService : Service() {
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     var lastLocationUpdateRcvd : Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
+    private val ioScope = CoroutineScope(Dispatchers.IO)
+    private val uid = MainActivity.device_uid
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
 
-    //
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.d(TAG, "CotDispatchService onStartCommand()")
-
         startForegroundService()
         startDispatchScheduler()
-
+        isRunning = true
         return START_NOT_STICKY
     }
 
@@ -93,6 +94,7 @@ class CotDispatchService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -156,6 +158,11 @@ class CotDispatchService : Service() {
         return """
         <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
         """.trimIndent()
+//        return """
+//        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><ditto ip='0.0.0.0' pks='$localPeerKeyString' deviceName='$callsign' version='AndJ4.8.1_9afa7353b2'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
+//        """.trimIndent()
+
+
 
         /*
                 return """
@@ -215,7 +222,7 @@ class CotDispatchService : Service() {
             <detail>
                 <status readiness="true"/>
                 <precisionlocation altsrc="SRTM1"/>
-                <link uid="$linkUid" production_time="$startTime" type="a-f-G-Ux-C" parent_callsign="$callsign" relation="p-p"/>
+                <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
                 <usericon iconsetpath="COT_MAPPING_2525C/a-u/a-u-G"/>
                 <remarks>HeartRate: $heartRate bpm; Battery Level: $battery%</remarks>
@@ -262,7 +269,7 @@ class CotDispatchService : Service() {
         Log.d(TAG, "Marker CoT message sent: $cotMessage")
     }
 
-    private fun buildAndSendLocationBiometricCotMessage() {
+    fun buildAndSendLocationBiometricCotMessage() {
         CoroutineScope(Dispatchers.IO).launch {
             val location = dataRepository.latestLocation.value
             var heartRate = dataRepository.latestHeartRate.value
@@ -281,7 +288,7 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
-        //Log.d(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        Log.d(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
@@ -318,31 +325,15 @@ class CotDispatchService : Service() {
         }
         cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
         cotDispatchThread?.quitSafely()
+        isRunning = false
     }
 
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
+        var isRunning : Boolean = false
         var reportingUpdateIntervalSecs = 10
+        lateinit var instance: CotDispatchService
     }
 }
-
-/*
-<detail>
-    <biometrics>
-        <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-         <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-        <device>
-            <model>WEAROS</model>
-            <hr>94</hr>
-        </device>
-    </biometrics>
-</detail>
- */
