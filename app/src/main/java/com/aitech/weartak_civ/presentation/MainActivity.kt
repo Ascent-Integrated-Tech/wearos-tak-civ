@@ -530,7 +530,7 @@ class MainActivity : ComponentActivity() {
         setTheme(android.R.style.Theme_DeviceDefault)
         printSensorDetails(this)
 
-        // check for permissions
+        // check for permissions & start services if permissions are enabled.
         checkAndRequestPermissions()
 
         setContent {
