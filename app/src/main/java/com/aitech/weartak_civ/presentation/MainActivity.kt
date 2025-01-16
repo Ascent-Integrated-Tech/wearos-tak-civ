@@ -34,9 +34,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,6 +50,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -55,17 +58,29 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -74,11 +89,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -87,6 +108,7 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.concurrent.futures.await
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -105,20 +127,35 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
+import androidx.wear.compose.foundation.SwipeToDismissBoxState
+import androidx.wear.compose.foundation.edgeSwipeToDismiss
+import androidx.wear.compose.foundation.rememberRevealState
+import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
+import androidx.wear.compose.material.Checkbox
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.ContentAlpha
+import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
+import androidx.wear.compose.material.SplitSelectableChip
+import androidx.wear.compose.material.SplitToggleChip
+import androidx.wear.compose.material.SwipeToRevealChip
+import androidx.wear.compose.material.SwipeToRevealDefaults
+import androidx.wear.compose.material.SwipeToRevealPrimaryAction
+import androidx.wear.compose.material.SwipeToRevealSecondaryAction
+import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.protolayout.LayoutElementBuilders.HorizontalAlignment
 import androidx.wear.protolayout.LayoutElementBuilders.VerticalAlignment
+import androidx.wear.protolayout.material.ButtonColors
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
@@ -126,10 +163,14 @@ import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.correctLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
@@ -146,14 +187,18 @@ import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HeartrateService
+import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.checkerframework.checker.units.qual.C
 import javax.net.ssl.SSLSocket
 
 
@@ -176,6 +221,8 @@ class MainActivity : ComponentActivity() {
         final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
         var team = ""
         var role = ""
+        var license = "AscentFreeLicense"
+        var correctLicense = "AscentFreeLicense"
         var teamValue = ""
         var roleValue = ""
         lateinit var teamEntriesValuesList : TeamsJson
@@ -185,6 +232,7 @@ class MainActivity : ComponentActivity() {
         val teamSettingsState = MutableLiveData<String>("")
         val roleState = MutableLiveData<String>("")
         val roleSettingsState = MutableLiveData<String>("")
+        val licenseSettingsState = MutableLiveData<String>("")
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -289,6 +337,7 @@ class MainActivity : ComponentActivity() {
 
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
+    val licenseState = MutableLiveData<String>("")
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
 
@@ -308,12 +357,16 @@ class MainActivity : ComponentActivity() {
     private fun refreshPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Refreshing LocationService...")
-            startLocationService()
+            if (isLicenseValid()) {
+                startLocationService()
+            }
         }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Refreshing BiometricService...")
-            startBiometericService()
+            if (isLicenseValid()) {
+                startBiometericService()
+            }
         }
     }
 
@@ -354,7 +407,7 @@ class MainActivity : ComponentActivity() {
     fun printSensorDetails(context: Context?) {
         var resSensorList: MutableList<Sensor> = ArrayList()
         try {
-            val smm = context?.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            val smm = context?.getSystemService(SENSOR_SERVICE) as SensorManager
             resSensorList.addAll(smm.getSensorList(Sensor.TYPE_ALL))
             Log.d(TAG, "Sensor List: ${resSensorList.size}")
             resSensorList.forEach { sensor ->
@@ -399,7 +452,14 @@ class MainActivity : ComponentActivity() {
             roleValue = roleEntriesValuesList.lrValues[roleIndex]
             roleState.postValue(role)
             roleSettingsState.postValue(role)
+
+            license = dataRepository.getLicense.first()
+            licenseState.postValue(license)
+            licenseSettingsState.postValue(license)
+
             Log.d(TAG, "Setting callsign: $callsign")
+            Log.d(TAG, "Setting license: $license")
+
             enableLocationService = dataRepository.getEnableLocationService.first()
             Log.d(TAG, "Setting enableLocationService to $enableLocationService")
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
@@ -518,22 +578,28 @@ class MainActivity : ComponentActivity() {
         // Request all necessary permissions
         checkAndRequestPermissions()
         startHealthCapabilitiesCollection()
-        startLocationService()
-        startCotDispatchService()
-        startBiometericService()
-        startBatteryService()
-        
+
+        if (isLicenseValid()) {
+            startCotDispatchService()
+            startLocationService()
+            startBiometericService()
+            startBatteryService()
+        } 
         setContent {
-            WearTAKCivApp(callsignState)
+            WearTAKCivApp(callsignState, licenseState)
         }
     }
 }
 
 //Contains functionality for all watch screens
 @Composable
-fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
+fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     val navController = rememberNavController()
-    NavHost(navController, startDestination = "main_screen") {
+    validateLicense(license)
+    NavHost(
+        navController,
+        startDestination = if (isLicenseValid()) "main_screen" else "invalid_license_screen"
+    ) {
         composable("main_screen",
             enterTransition = { fadeIn() },
             exitTransition = { fadeOut() }) {
@@ -543,7 +609,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             "settings_screen",
             enterTransition = { slideInVertically() },
             exitTransition = { slideOutVertically() }) {
-            SettingsScreen(navController, callsignLiveDataState)
+            SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState)
         }
         composable(
             "callsign_screen",
@@ -563,6 +629,30 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>) {
             exitTransition = { slideOutVertically() }) {
             TeamSetting(navController)
         }
+        composable(
+            "tak_server_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            TakServerSetting(navController)
+        }
+        composable(
+            "new_server_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            NewServerPage(navController)
+        }
+        composable(
+            "license_setting_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            LicenseKeyScreen(navController, licenseSettingsState)
+        }
+        composable(
+            "invalid_license_screen",
+            enterTransition = { slideInVertically() },
+            exitTransition = { slideOutVertically() }) {
+            InvalidLicenseScreen(navController)
+        }
     }
 }
 
@@ -572,13 +662,13 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
     WearTAKCIVTheme {
         Box (
             modifier = Modifier
-                .background(MaterialTheme.colors.background)
+                .background(colors.background)
                 .fillMaxSize()
                 .padding(5.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .background(MaterialTheme.colors.background)
+                    .background(colors.background)
                     .padding(5.dp),
         //                horizontalAlignment = Alignment.CenterHorizontally,
         //                verticalArrangement = Arrangement.Center
@@ -599,10 +689,11 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    SOSButton()
-                    Spacer(
-                        modifier = Modifier.width(10.dp)
-                    )
+                    //TODO: Uncomment when ready to add SOS functionality
+//                    SOSButton()
+//                    Spacer(
+//                        modifier = Modifier.width(10.dp)
+//                    )
                     MarkerDropButton()
                 }
 
@@ -654,13 +745,14 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background)
+            .background(colors.background)
             .padding(bottom = 16.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsignLiveDataState.value ?: "null")) }
         Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+
         OutlinedTextField(
             value = callsignTextFieldValue,
             onValueChange = {
@@ -669,7 +761,7 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
             maxLines = 1,
             label = { Text(text = "Callsign", color = colors.primary) },
             placeholder = { Text(text = "Your Callsign", color = colors.primary) },
-            textStyle = TextStyle(color = MaterialTheme.colors.primary)
+            textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
@@ -708,7 +800,7 @@ fun TeamSetting(navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background)
+            .background(colors.background)
             .padding(top = 20.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
@@ -773,7 +865,7 @@ fun RoleSetting (navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colors.background)
+            .background(colors.background)
             .padding(top = 20.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
@@ -823,6 +915,397 @@ fun RoleSetting (navController: NavController) {
     }
 }
 
+@Composable
+fun TakServerSetting(navController: NavController) {
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .align(Alignment.TopCenter)
+                .padding(bottom = 30.dp)
+                .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "TAK Servers",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                TakServerChip()
+                TakServerChip()
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Chip(
+                    onClick = { navController.navigate("new_server_screen") },
+                    enabled = true,
+                    label = { Text(text = "Add New Server", fontSize = 13.sp) },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    icon = { Icon(Icons.Filled.Add, contentDescription = "Localized description") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp)
+                )
+            }
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                Button(
+                    onClick = { navController.navigate("settings_screen") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                        contentColor = Color.Red
+                    ),
+                ) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowLeft,
+                        contentDescription = "Localized description",
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TakServerChip(
+
+) {
+    var checked by remember { mutableStateOf(true) }
+    SplitToggleChip(
+        label = {
+            Image(
+                painter = painterResource(R.drawable.tak_server),
+                contentDescription = "Top Left Icon",
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .size(22.dp)
+                    .padding(end = 2.dp),
+            )
+                Text("Server", maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier
+                    .align(Alignment.CenterVertically))
+                },
+        secondaryLabel = {
+            Text("1122211111", maxLines = 2, overflow = TextOverflow.Ellipsis)
+        },
+        checked = checked,
+        toggleControl = {
+            Checkbox(
+                checked = checked,
+                enabled = true,
+            )
+        },
+        onCheckedChange = { checked = it },
+        onClick = {
+            /* Do something */
+        },
+        enabled = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+fun NewServerPage (navController: NavController) {
+    WearTAKCIVTheme {
+        val shouldShowDialog = remember { mutableStateOf(false) }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (shouldShowDialog.value) {
+                DeleteServerDialog(shouldShowDialog = shouldShowDialog, navController)
+            }
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .align(Alignment.TopCenter)
+                .padding(bottom = 20.dp)
+                .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = /* add if statement for new server vs editing current server */ "Add New Server",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                NewServerSettingText("Connection Name", callsignSettingsState)
+                NewServerSettingText("Address/URL", callsignSettingsState)
+                NewServerSettingText("Port", callsignSettingsState)
+                NewServerSettingText("Username", callsignSettingsState)
+                NewServerSettingText("Password", callsignSettingsState)
+
+                // Change if to create button when settings are edited
+                if (callsignSettingsState.value == "E2-FF1") {
+                    Button(
+                        onClick = { shouldShowDialog.value = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                            contentColor = Color.Red
+                        ),
+                        modifier = Modifier.padding(top = 5.dp)
+                    ) {
+                        Text(
+                            text = "Delete Server",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(5.dp)
+                        )
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                Icon(imageVector = Icons.Default.Close,
+                    tint = Color.Red,
+                    contentDescription = "Close",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable {
+                            Log.d(TAG, "Settings NOT saved")
+                            navController.navigate("tak_server_screen")
+                        })
+                Spacer(modifier = Modifier.width(12.dp))
+                Icon(imageVector = Icons.Default.Check,
+                    tint = Color.Green,
+                    contentDescription = "Save",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable {
+//                            callsignLiveDataState.postValue(callsignTextFieldValue.text)
+//                            Log.d(
+//                                TAG,
+//                                "Settings saved with callsign: ${callsignLiveDataState.value}"
+//                            )
+                            navController.navigate("tak_server_screen")
+                        })
+            }
+        }
+    }
+}
+
+@Composable
+fun NewServerSettingText (
+    label: String,
+    textState: MutableLiveData<String>,
+) {
+    var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(textState.value ?: "null")) }
+//    Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+    OutlinedTextField(
+        value = callsignTextFieldValue,
+        onValueChange = {
+            callsignTextFieldValue = it
+        },
+        maxLines = 1,
+        label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
+        textStyle = TextStyle(color = colors.primary),
+        modifier = Modifier.padding(bottom = 5.dp)
+    )
+}
+
+@Composable
+fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: NavController) {
+    if (shouldShowDialog.value) {
+            AlertDialog(
+                containerColor = colors.background,
+                modifier = Modifier.fillMaxSize(),
+                onDismissRequest = {
+                    shouldShowDialog.value = false
+                },
+                icon = {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        modifier = Modifier.size(25.dp),
+                        contentDescription = null,
+                        tint = Color.Red
+                    )
+                },
+                text = {
+                    Text(
+                        "Are you sure you want to delete this server?",
+                        textAlign = TextAlign.Center
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                            navController.navigate("tak_server_screen")
+                        },
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                        ),
+                    ) {
+                        Text(
+                            text = "Confirm",
+                        )
+                    }
+                },
+
+                dismissButton = {
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                        },
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Gray,
+                        )
+                        ) {
+                        Text(
+                            text = "Dismiss",
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+@Composable
+fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var licenseTextFieldValue by remember { mutableStateOf(TextFieldValue(licenseLiveDataState.value ?: "null")) }
+
+        OutlinedTextField(
+            value = licenseTextFieldValue,
+            onValueChange = {
+                licenseTextFieldValue = it
+            },
+            maxLines = 1,
+            label = { Text(text = "License Key", color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            var settingsChanged: Boolean = false
+            var licenseChanged: Boolean = false
+            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "Settings NOT saved")
+                        settingsChanged = false; licenseChanged = false
+                        if (isLicenseValid()) {
+                            navController.navigate("settings_screen")
+                        } else {
+                            navController.navigate("invalid_license_screen")
+                        }
+                    })
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        Log.d(TAG, "licenseTextFieldValue=" + licenseTextFieldValue.text)
+                        if (!licenseTextFieldValue.text.equals(licenseSettingsState.value)) {
+                            settingsChanged = true; licenseChanged = true
+                            license = licenseTextFieldValue.text ?: license
+                            licenseSettingsState.postValue(license)
+                            licenseLiveDataState.postValue(license)
+                            validateLicense(license)
+                            Log.d(TAG, "license stuff-boolean " + isLicenseValid())
+                        }
+
+                        if (settingsChanged) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                if (licenseChanged) {
+                                    dataRepository.storeLicense(license)
+                                }
+                            }
+                        }
+                        if (isLicenseValid()) {
+                            navController.navigate("settings_screen")
+                            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+                            if (enableBiometricsService) {
+                                mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
+                            }
+                            if (enableLocationService) {
+                                mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                            }
+                        } else {
+                            mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
+                            if (enableBiometricsService) {
+                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                            }
+                            if (enableLocationService) {
+                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                            }
+                            navController.navigate("invalid_license_screen")
+                        }
+                    })
+
+        }
+    }
+}
+
+@Composable
+fun InvalidLicenseScreen (navController: NavController) {
+    WearTAKCIVTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Invalid License Key",
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(5.dp))
+            //Maybe add info here for how to contact Ascent for the key?
+            Text(
+                text = "Please add correct key to use WearTAK",
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(10.dp))
+            Button(
+                onClick = { navController.navigate("license_setting_screen") },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.primary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text (
+                    text = "Update License",
+                    color = Color.Black,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun HeartRate () {
@@ -956,6 +1439,59 @@ fun TroubleshootingIcons() {
 }
 
 @Composable
+fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>) {
+    if (shouldShowDialog.value) {
+        Dialog(onDismissRequest = { shouldShowDialog.value = false }) {
+            LaunchedEffect(Unit) {
+                delay(2000) // Delay for 5 seconds
+                shouldShowDialog.value = false // Dismiss the dialog
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .height(200.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.background)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (successBoolean.value) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Green
+                        )
+
+                        Text(
+                            text = "Marker Sent Successfully",
+                            textAlign = TextAlign.Center,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.Clear,
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Red
+                        )
+
+                        Text(
+                            text = "Error Sending Marker",
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun Callsign(navController: NavController, callsignState: MutableLiveData<String>) {
     val greetingName: String? by callsignState.observeAsState()
     val maxChar = 10
@@ -1001,8 +1537,15 @@ fun SOSButton() {
 
 @Composable
 fun MarkerDropButton() {
+    val shouldShowDialog = remember { mutableStateOf(false) }
+    val successBoolean = remember {mutableStateOf(false)}
+
+    if (shouldShowDialog.value) {
+        MarkerDropDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean)
+    }
+
     IconButton(
-        onClick = { /* doSomething() */ },
+        onClick = { shouldShowDialog.value = true; successBoolean.value = true},
         modifier = Modifier
             .border(
                 width = 2.dp,
@@ -1058,12 +1601,12 @@ fun SettingSwitchToggle(
 
 //Contains functionality for settings screen
 @Composable
-fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
+fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colors.background)
+                .background(colors.background)
                 .padding(bottom = 16.dp, top = 15.dp)
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
@@ -1077,6 +1620,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
                 .align(Alignment.TopCenter)
+                .padding(bottom = 20.dp)
                 .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -1125,7 +1669,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 style = MaterialTheme.typography.caption3
                             )
                         },
-                        textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                        textStyle = TextStyle(color = colors.primary)
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1159,10 +1703,37 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 style = MaterialTheme.typography.caption3
                             )
                         },
-                        textStyle = TextStyle(color = MaterialTheme.colors.primary)
+                        textStyle = TextStyle(color = colors.primary)
                     )
                 }
+
+                Text(
+                    text = "Connection Settings",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                Chip(
+                    onClick = { navController.navigate("tak_server_screen") },
+                    enabled = true,
+                    label = { Text(text = "TAK Servers") },
+                    secondaryLabel = { Text(text = "X" + " Connected") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp)
+                )
+
+                CallsignRoleTeamChip("license_setting_screen", "License Key", licenseSettingsState, navController)
+
             }
+
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
                     modifier = Modifier
@@ -1183,6 +1754,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             var callsignChanged: Boolean = false
                             var teamChanged = false
                             var roleChanged = false
+                            var licenseChanged: Boolean= false
+
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
                             var locationSendingIntervalChanged = false
@@ -1220,6 +1793,12 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 roleValue = roleEntriesValuesList.lrValues[roleIndex]
                                 roleState.postValue(role)
                             }
+//                            if (!license.equals(licenseSettingsState.value)) {
+//                                settingsChanged = true; licenseChanged = true
+//                                license = licenseSettingsState.value ?: license
+//                                licenseLiveDataState.postValue(license)
+//                            }
+
                             if (enableLocationService != locationChecked) {
                                 settingsChanged = true; locationCheckedChanged = true
                                 enableLocationService = locationChecked
@@ -1303,6 +1882,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                         Log.d(TAG, "Storing Role ($role)")
                                         dataRepository.storeRole(role)
                                     }
+//                                    if(licenseChanged) {
+//                                        dataRepository.storeLicense(license)
+//
+//                                    }
                                     if (locationCheckedChanged) {
                                         Log.d(
                                             TAG,
@@ -1351,7 +1934,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
 @Composable
 fun DefaultPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
-    WearTAKCivApp(callsignState)
+    var licenseState = MutableLiveData<String>("WEAROS-0")
+
+    WearTAKCivApp(callsignState, licenseState)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
@@ -1361,15 +1946,43 @@ fun CallsignSettingsPreview() {
     CallsignSetting(rememberNavController(),callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 600)
+@Preview(widthDp = 192, heightDp = 800)
 @Composable
 fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
-    SettingsScreen(rememberNavController(),callsignState)
+    var licenseState = MutableLiveData<String>("AscentLicense")
+
+    SettingsScreen(rememberNavController(),callsignState, licenseState)
 }
 
-@Preview(widthDp = 192, heightDp = 500)
+@Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
-fun ChipPreview() {
-   RoleSetting(rememberNavController())
+fun TAKSettingsPreview() {
+    TakServerSetting(rememberNavController())
+}
+
+@Preview(widthDp = 192, heightDp = 600, showBackground = true)
+@Composable
+fun NewServerPreview() {
+    NewServerPage(rememberNavController())
+}
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun MarkerDropPreview() {
+    val shouldShowDialog = remember { mutableStateOf(true) }
+    val successBoolean = remember { mutableStateOf(false) }
+    MarkerDropDialog(shouldShowDialog, successBoolean)
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun InvalidLicensePreview() {
+    InvalidLicenseScreen(rememberNavController())
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun LicenseKeyPreview() {
+    var licenseState = MutableLiveData<String>("License Key")
+    LicenseKeyScreen(rememberNavController(), licenseState)
 }

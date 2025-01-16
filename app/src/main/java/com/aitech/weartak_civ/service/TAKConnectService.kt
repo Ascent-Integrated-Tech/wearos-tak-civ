@@ -24,6 +24,7 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,6 +52,11 @@ class TAKConnectService: Service() {
             connectTAKServer(TAK_CERT, TAK_CERT_PASSWORD, TAK_SERVER)
         }
         return START_NOT_STICKY
+    }
+
+    fun connectTAKServerUsernamePassword(server: String, username: String, password: String, port: Int): Boolean {
+        //connectTAKServer(TAK_CERT, TAK_CERT_PASSWORD, TAK_SERVER)
+        return true
     }
 
     private fun startForegroundService() {
@@ -89,9 +95,12 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        secureSocket?.close()
-        Log.d(TAG, "TAK Connect Service Destroyed")
+        CoroutineScope(Dispatchers.IO).launch {
+            secureSocket?.close()
+            Log.d(TAG, "TAK Connect Service Destroyed")
+        }
     }
+
 
 
     companion object {
@@ -180,12 +189,33 @@ class TAKConnectService: Service() {
                 return
             }
             CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    if ((null != secureSocket) && secureSocket!!.isConnected) {
-                        val outputStream = secureSocket!!.getOutputStream()
-                        outputStream.write(msg.toByteArray(charset("UTF-8")))
-                        outputStream.flush()
-                    } else {
+                if (isLicenseValid()) {
+                    Log.d(TAG,"License Valid - Connecting to Server")
+                    try {
+                        if ((null != secureSocket) && secureSocket!!.isConnected) {
+                            val outputStream = secureSocket!!.getOutputStream()
+                            outputStream.write(msg.toByteArray(charset("UTF-8")))
+                            outputStream.flush()
+                        } else {
+                            secureSocket?.close()
+                            connectTAKServer(
+                                TAK_CERT,
+                                TAK_CERT_PASSWORD,
+                                TAK_SERVER
+                            )
+                        }
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        System.err.println("Error sending biometric COT message: " + e.message)
+                        secureSocket?.close()
+                        connectTAKServer(
+                            TAK_CERT,
+                            TAK_CERT_PASSWORD,
+                            TAK_SERVER
+                        )
+                    } catch (e: java.lang.Exception) {
+                        e.printStackTrace()
+                        System.err.println("Unexpected error sending biometric COT message: " + e.message)
                         secureSocket?.close()
                         connectTAKServer(
                             TAK_CERT,
@@ -193,24 +223,8 @@ class TAKConnectService: Service() {
                             TAK_SERVER
                         )
                     }
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                    System.err.println("Error sending biometric COT message: " + e.message)
-                    secureSocket?.close()
-                    connectTAKServer(
-                        TAK_CERT,
-                        TAK_CERT_PASSWORD,
-                        TAK_SERVER
-                    )
-                } catch (e: java.lang.Exception) {
-                    e.printStackTrace()
-                    System.err.println("Unexpected error sending biometric COT message: " + e.message)
-                    secureSocket?.close()
-                    connectTAKServer(
-                        TAK_CERT,
-                        TAK_CERT_PASSWORD,
-                        TAK_SERVER
-                    )
+                } else {
+                    Log.d(TAG,"License Invalid - no Connection to Server")
                 }
             }
         }
