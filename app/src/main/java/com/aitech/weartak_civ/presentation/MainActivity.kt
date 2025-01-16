@@ -154,6 +154,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
@@ -172,8 +173,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsSt
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.serverSettingsChanged
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBatteryService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
@@ -184,6 +188,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettin
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
+import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
@@ -201,6 +206,8 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import live.ditto.Ditto
+import org.checkerframework.checker.units.qual.C
 import javax.net.ssl.SSLSocket
 
 
@@ -212,8 +219,13 @@ class MainActivity : ComponentActivity() {
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
+        var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
+        var biometricServiceRunning : Boolean = false
         var enableTAKConnectService : Boolean = true
+        var enableDittoService : Boolean = false
+        var dittoServiceRunning : Boolean = false
+
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
@@ -287,14 +299,48 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking requestLocationUpdates")
                 } else {
-                    Log.d(TAG, "Starting hearrate service")
-                    mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
+                    if (!HeartrateService.isRunning) {
+                        Log.d(TAG, "Starting hearrate service")
+                        mainActivity.startService(
+                            Intent(
+                                mainActivity,
+                                HeartrateService::class.java
+                            )
+                        )
+                    } else {
+                        Log.d(TAG, "HeartRateService is already running." )
+                    }
                 }
             }  else {
-                Log.d(TAG, "startBiometricsService is false. So NOT starting location service")
+                Log.d(TAG, "BiometricServices are disabled. Not starting HeartRateService")
             }
         }
         private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
+
+        fun startDittoService() {
+            if ((ActivityCompat.checkSelfPermission(
+                mainActivity.applicationContext,
+                Manifest.permission.NEARBY_WIFI_DEVICES
+            ) != PackageManager.PERMISSION_GRANTED) && (ActivityCompat.checkSelfPermission(
+                mainActivity.applicationContext,
+                Manifest.permission.BLUETOOTH
+            ) != PackageManager.PERMISSION_GRANTED))
+            {
+                Log.d(TAG, "Missing Nearby WiFi permissions or Bluetooth. So NOT invoking DittoService")
+//                ActivityCompat.requestPermissions(this, Manifest.permission.BLUETOOTH)
+            } else {
+                if (enableDittoService) {
+                    if (!DittoService.isRunning) {
+                        Log.d(TAG, "Starting DittoServices")
+                        mainActivity.startForegroundService(Intent(mainActivity, DittoService::class.java))
+                    } else {
+                        Log.d(TAG, "DittoService is already running")
+                    }
+                } else {
+                    Log.d(TAG, "DittoServices are disabled")
+                }
+            }
+        }
 
         fun startLocationService() {
             if (hasGps()) {
@@ -330,9 +376,20 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startBatteryService() {
+            if (!BatteryService.isRunning) {
+                Log.d(TAG, "Starting Battery Service")
+                mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
+            }
+        }
+
         fun startCotDispatchService() {
-            Log.d(TAG, "Starting CotDispatchService")
-            mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
+            if (!CotDispatchService.isRunning) {
+                Log.d(TAG, "Starting CotDispatchService")
+                mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
+            } else {
+                Log.d(TAG, "Cot DispatchService is already running")
+            }
         }
 
     }
@@ -352,28 +409,40 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissionsMap ->
             val deniedPermissions = permissionsMap.filterValues { !it }.keys
-
+            permissionsMap.entries.forEach {
+                Log.d(TAG, "${it.key} = ${it.value}")
+            }
             if (deniedPermissions.isEmpty()) {
-                Log.d(TAG, "All permissions granted. Refreshing services...")
-                refreshPermissions()
+                Log.d(TAG, "All permissions granted.")
             } else {
                 Log.w(TAG, "Permissions denied: $deniedPermissions")
-                // Optionally guide the user to settings if necessary
             }
         }
 
     private fun refreshPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "Refreshing LocationService...")
+        if ((ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) && (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)) {
             if (isLicenseValid()) {
+                Log.d(TAG, "Starting LocationService...")
                 startLocationService()
             }
+        } else {
+            Log.d(TAG, "ContextCompat.checkSelfPermission for Location did not work. Trying to manually request")
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 0
+            )
         }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "Refreshing BiometricService...")
             if (isLicenseValid()) {
+                Log.d(TAG, "Refreshing BiometricService...")
                 startBiometericService()
+            }
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED) {
+            if (isLicenseValid()) {
+                Log.d(TAG, "Refreshing DittoService...")
+                startDittoService()
             }
         }
     }
@@ -395,6 +464,7 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
+        if (DittoService.isRunning) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
         networkManager.deInit()
         /*
@@ -426,14 +496,6 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             resSensorList = ArrayList()
             Log.e(TAG, "Sensor List ERROR: Unable to obtain", e)
-        }
-    }
-
-    fun startBatteryService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
-        } else {
-            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
         }
     }
 
@@ -495,6 +557,8 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Setting enableBiometricsService to $enableBiometricsService")
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             Log.d(TAG, "Setting enableTAKConnectService to $enableTAKConnectService")
+            enableDittoService = dataRepository.getEnableDittoService.first()
+            Log.d(TAG, "Setting enableDittoService to $enableDittoService")
             CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
             LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
             Log.d(TAG, "Setting ReportingUpdateInterval to ${CotDispatchService.reportingUpdateIntervalSecs} seconds")
@@ -562,15 +626,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startTAKConnectService() {
-        mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+        if (!TAKConnectService.isRunning) {
+            Log.d(TAG, "Starting TAKConnectService")
+            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+        } else {
+            Log.d(TAG, "TAKConnectService is already running.")
+        }
     }
-
 
     private fun checkAndRequestPermissions() {
         val requiredPermissions = listOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BODY_SENSORS
-        )
+            Manifest.permission.BODY_SENSORS,
+            Manifest.permission.NEARBY_WIFI_DEVICES,
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_ADVERTISE
+            )
+        Log.d(TAG, "Permissions List: $requiredPermissions")
 
         /*
         val requiredPermissions = listOf(
@@ -588,14 +662,15 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Requesting missing permissions: $missingPermissions")
             requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
         } else {
-            Log.d(TAG, "All permissions already granted. Starting services...")
-            //refreshPermissions()
+            Log.d(TAG, "All permissions already granted.")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainActivity = this
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        Log.d(TAG, "Device UID is $device_uid")
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
@@ -609,13 +684,11 @@ class MainActivity : ComponentActivity() {
         setDataFromDatastore()
         validateLicense(license)
         if (enableTAKConnectService) { startTAKConnectService() }
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
         setTheme(android.R.style.Theme_DeviceDefault)
 
         //printSensorDetails(this)
 
-        // check for permissions & start services if permissions are enabled.
         // Request all necessary permissions
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
@@ -625,6 +698,8 @@ class MainActivity : ComponentActivity() {
             startLocationService()
             startBiometericService()
             startBatteryService()
+            startDittoService()
+            Log.d(TAG, "isLicensevalid oncreate check")
         }
 
         /*
@@ -1604,36 +1679,21 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
 
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
-                            mainActivity.startService(
-                                Intent(
-                                    mainActivity,
-                                    BatteryService::class.java
-                                )
-                            )
-                            if (enableBiometricsService) {
-                                mainActivity.startService(
-                                    Intent(
-                                        mainActivity,
-                                        HeartrateService::class.java
-                                    )
-                                )
-                            }
-                            if (enableLocationService) {
-                                mainActivity.startService(
-                                    Intent(
-                                        mainActivity,
-                                        LocationService::class.java
-                                    )
-                                )
-                            }
+                            startBatteryService()
+                            startLocationService()
+                            startCotDispatchService()
+                            startBiometericService()
+                            startDittoService()
                         } else {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    BatteryService::class.java
+                            if (BatteryService.isRunning) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        BatteryService::class.java
+                                    )
                                 )
-                            )
-                            if (enableBiometricsService) {
+                            }
+                            if (enableBiometricsService && HeartrateService.isRunning) {
                                 mainActivity.stopService(
                                     Intent(
                                         mainActivity,
@@ -1641,11 +1701,19 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                     )
                                 )
                             }
-                            if (enableLocationService) {
+                            if (enableLocationService && LocationService.isRunning) {
                                 mainActivity.stopService(
                                     Intent(
                                         mainActivity,
                                         LocationService::class.java
+                                    )
+                                )
+                            }
+                            if (enableDittoService && DittoService.isRunning) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        DittoService::class.java
                                     )
                                 )
                             }
@@ -2061,6 +2129,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
             var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+            var dittoChecked by remember{ mutableStateOf(enableDittoService)}
+
 
             Column(modifier = Modifier
                 .fillMaxWidth()
@@ -2169,6 +2239,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     title = "Biometrics",
                     description = "Service ON/OFF",)
 
+                SettingSwitchToggle(checked = dittoChecked, onCheckedChange =  { dittoChecked = it },
+                    title = "Ditto",
+                    description = "Service ON/OFF",)
+
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -2197,6 +2271,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
+                            var dittoCheckedChanged: Boolean = false
+
                             var reportingUpdateIntervalChanged = false
                             if (!callsign.equals(callsignSettingsState.value)) {
                                 settingsChanged = true; callsignChanged = true
@@ -2261,8 +2337,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             }
                             val reportingUpdateIntervalText = reportingUpdateInterval.text
                             if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
-                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
-                                ) && reportingUpdateInterval.text.toInt() >= minReportRate
+                                    CotDispatchService.reportingUpdateIntervalSecs.toString()) && reportingUpdateInterval.text.toInt() >= minReportRate
                             ) {
                                 settingsChanged = true; reportingUpdateIntervalChanged = true
                                 CotDispatchService.reportingUpdateIntervalSecs =
@@ -2296,6 +2371,23 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                         Intent(
                                             mainActivity,
                                             HeartrateService::class.java
+                                        )
+                                    )
+                                }
+                            }
+
+                            if (enableDittoService != dittoChecked) {
+                                settingsChanged = true; dittoCheckedChanged = true
+                                enableDittoService = dittoChecked
+                                if (enableDittoService) {
+                                    Log.d(TAG, "Starting ditto service")
+                                    startDittoService()
+                                } else {
+                                    Log.d(TAG, "Stopping ditto service")
+                                    mainActivity.stopService(
+                                        Intent(
+                                            mainActivity,
+                                            DittoService::class.java
                                         )
                                     )
                                 }
@@ -2346,35 +2438,28 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                             enableBiometricsService
                                         )
                                     }
+
+                                    if (dittoCheckedChanged) {
+                                        Log.d(
+                                            TAG,
+                                            "Storing enableDittoService $enableDittoService"
+                                        )
+                                        dataRepository.storeEnableDittoService(
+                                            enableDittoService
+                                        )
+                                    }
+
                                     Log.d(TAG, "Finished saving settings")
                                 }
                             } else {
                                 Log.d(TAG, "Settings not changed and hence NOT saved")
                             }
-                            if (reportingUpdateIntervalText.equals("")) {
-                                Toast
-                                    .makeText(
-                                        mainActivity,
-                                        "Reporting Rate Empty, Enter Again",
-                                        Toast.LENGTH_SHORT
-                                    )
-                                    .show()
+                            if (reportingUpdateIntervalText.equals("")){
+                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateIntervalText.equals("0")) {
-                                Toast
-                                    .makeText(
-                                        mainActivity,
-                                        "Reporting Rate 0, Enter Again",
-                                        Toast.LENGTH_SHORT
-                                    )
-                                    .show()
+                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                Toast
-                                    .makeText(
-                                        mainActivity,
-                                        "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate",
-                                        Toast.LENGTH_SHORT
-                                    )
-                                    .show()
+                                Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                             } else {
                                 navController.navigate("main_screen")
                             }

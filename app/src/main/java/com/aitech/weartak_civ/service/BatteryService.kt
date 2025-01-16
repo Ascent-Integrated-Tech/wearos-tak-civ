@@ -30,6 +30,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.service.LocationService.Companion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,6 +48,7 @@ class BatteryService: Service() {
         val hardwarePropertiesManager = MainActivity.getActivity().getSystemService(Context.HARDWARE_PROPERTIES_SERVICE) as HardwarePropertiesManager
         startForegroundService()
         startBatteryMonitor()
+        isRunning = true
         return START_NOT_STICKY
     }
 
@@ -130,6 +132,7 @@ class BatteryService: Service() {
             batteryMonitorHandler?.looper?.quit()
             batteryMonitorThread?.quitSafely()
         }
+        isRunning = false
         Log.d(LOG_TAG, "BatteryService Destroyed")
     }
 
@@ -141,5 +144,6 @@ class BatteryService: Service() {
         const private val BATTERY_MONITOR_SERVICE_NOTIFICATION_ID = 102
         var batteryPercentage : Int = 100
         val batteryPercentageLiveData = MutableLiveData<Int>(100)
+        var isRunning : Boolean = false
     }
 }

@@ -69,6 +69,7 @@ android {
 
 dependencies {
     //implementation libs.androidx.activity.compose
+    implementation "live.ditto:ditto:4.8.1"
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
     implementation libs.ui

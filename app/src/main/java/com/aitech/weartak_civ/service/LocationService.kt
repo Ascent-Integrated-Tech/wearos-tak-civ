@@ -76,6 +76,7 @@ class LocationService : Service() {
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         initializeLocation()
+        isRunning = true
         return START_NOT_STICKY
     }
 
@@ -244,6 +245,7 @@ class LocationService : Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        isRunning = false
         Log.d(TAG, "Location Service Destroyed")
     }
 
@@ -278,5 +280,6 @@ class LocationService : Service() {
         var le : Float? = null
         //var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 1
+        var isRunning : Boolean = false
     }
 }
