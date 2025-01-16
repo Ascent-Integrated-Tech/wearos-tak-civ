@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
         var enableBiometricsService : Boolean = true
+        var enableTAKConnectService : Boolean = true
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
@@ -315,28 +316,6 @@ class MainActivity : ComponentActivity() {
         //fusedLocationClient?.removeLocationUpdates(locationCallback)
     }
 
-    val heartRateCallback = object : MeasureCallback {
-        override fun onAvailabilityChanged(dataType: DeltaDataType<*, *>, availability: Availability) {
-            Log.d(TAG, "onAvailabilityChanged called w/ availability: $availability")
-            if (availability is DataTypeAvailability) {
-                // Handle availability change.
-            }
-        }
-
-        override fun onDataReceived(dataPoints: DataPointContainer) {
-            // Inspect data points.
-            var latestHeartRate: Double? = null
-            Log.d(TAG, "onDataReceived")
-            runBlocking {
-                dataPoints.getData(DataType.HEART_RATE_BPM).latestHeartRate()?.let {
-                    //repository.storeLatestHeartRate(it)
-                    latestHeartRate = it
-                }
-            }
-            Log.d(TAG, "onDataReceived: hr: $latestHeartRate")
-        }
-    }
-
     fun printSensorDetails(context: Context?) {
         var resSensorList: MutableList<Sensor> = ArrayList()
         try {
@@ -424,60 +403,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val requestPermissionsLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            val grantedPermissions = permissions.filter { it.value }.map { it.key }
-            val deniedPermissions = permissions.filter { !it.value }.map { it.key }
-
-            if (deniedPermissions.isEmpty()) {
-                // All permissions granted
-                onPermissionsGranted()
-            } else {
-                // Handle denied permissions
-                onPermissionsDenied(deniedPermissions)
-            }
-        }
-
-    private fun checkAndRequestPermissions() {
-        val requiredPermissions = listOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BODY_SENSORS
-        )
-
-        val permissionsToRequest = requiredPermissions.filter {
-            ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (permissionsToRequest.isNotEmpty()) {
-            // Request missing permissions
-            requestPermissionsLauncher.launch(permissionsToRequest.toTypedArray())
-        } else {
-            // All permissions are already granted
-            onPermissionsGranted()
-        }
-    }
-
-    private fun onPermissionsGranted() {
-        // Start any services or logic that depend on the permissions
-        Log.d("MainActivity", "All permissions granted")
-        startHealthCapabilitiesCollection()
-        if (enableLocationService) { startLocationService() }
-        if (enableBiometricsService) { startBiometericService() }
-        startTAKConnectService()
-        startBatteryService()
-        // You can also start your Ditto service here if it depends on BLE or Wi-Fi permissions.
-        // startDittoService()
-    }
-
-    private fun onPermissionsDenied(deniedPermissions: List<String>) {
-        Log.w("MainActivity", "Permissions denied: $deniedPermissions")
-        Toast.makeText(
-            this,
-            "The following permissions are required: $deniedPermissions",
-            Toast.LENGTH_LONG
-        ).show()
-    }
-
     private fun startHealthCapabilitiesCollection() {
         val healthClient = HealthServices.getClient(this)
         val passiveMonitoringClient = healthClient.passiveMonitoringClient
@@ -531,7 +456,11 @@ class MainActivity : ComponentActivity() {
         printSensorDetails(this)
 
         // check for permissions & start services if permissions are enabled.
-        checkAndRequestPermissions()
+        startHealthCapabilitiesCollection()
+        if (enableLocationService) { startLocationService() }
+        if (enableBiometricsService) { startBiometericService() }
+        if (enableTAKConnectService) { startTAKConnectService() }
+        startBatteryService()
 
         setContent {
             WearTAKCivApp(callsignState)
