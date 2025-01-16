@@ -1,5 +1,7 @@
 [versions]
+activityKtx = "1.10.0"
 agp = "8.7.2"
+fragmentKtx = "1.8.5"
 kotlin = "1.9.25"
 playServicesWearable = "18.2.0"
 composeBom = "2024.10.01"
@@ -18,6 +20,8 @@ runtimeLivedata = "1.7.5"
 material3Android = "1.3.1"
 
 [libraries]
+activity-ktx = { module = "androidx.activity:activity-ktx", version.ref = "activityKtx" }
+fragment-ktx = { module = "androidx.fragment:fragment-ktx", version.ref = "fragmentKtx" }
 play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 ui = { group = "androidx.compose.ui", name = "ui" }
