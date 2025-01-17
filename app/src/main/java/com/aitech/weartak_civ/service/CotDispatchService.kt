@@ -114,7 +114,7 @@ class CotDispatchService : Service() {
                     }
                     val cotMessage = buildCotMessage(location, heartRate, battery)
                     sendDataTAKServer(cotMessage)
-                    Log.d(TAG, "CoT message sent ($cotMessage)")
+                    //Log.d(TAG, "CoT message sent ($cotMessage)")
                 } else {
                     Log.w(TAG, "Missing data for CoT message. Not sending.")
                 }

@@ -73,7 +73,7 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
     }
 
     companion object {
-        private val TAG = "WearTAK-" + NetworkManager::class.java.simpleName
+        private val TAG = "WearTAK-NetworkManager"
         private val NETWORK_MANAGER = NetworkManager()
         public fun getInstance() : NetworkManager {
             return NETWORK_MANAGER

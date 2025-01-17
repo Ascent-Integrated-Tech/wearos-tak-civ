@@ -7,4 +7,6 @@
     <string name="hello_world">From WearTAK-CIV,\nHello, %1$s!</string>
     <string name="tile_label">WearTAK-CIV tile</string>
     <string name="complication_label">WearTAK-CIV complication</string>
+    <string name="no_permission_message">Body Sensors permission is required. Grant permission in App settings.</string>
+    <string name="sdk_policy_error">SDK Policy Error occurred</string>
 </resources>

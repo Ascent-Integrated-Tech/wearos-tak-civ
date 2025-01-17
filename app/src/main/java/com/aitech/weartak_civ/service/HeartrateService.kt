@@ -108,6 +108,8 @@ class HeartrateService: Service() {
                     return
                 }
                 hr = localHr
+                //Log.d(TAG, "Received heartrate value (HeartrateService): $hr")
+
                 //heartRateTextView.text = "Heart rate: $hr"
                 //Log.d(TAG, "Obtained heartrate: $hr")
 

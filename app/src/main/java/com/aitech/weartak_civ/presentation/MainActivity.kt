@@ -10,22 +10,21 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Paint
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings.Secure
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -34,7 +33,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,14 +45,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -62,22 +57,18 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -88,18 +79,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -114,63 +97,38 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.health.services.client.HealthServices
-import androidx.health.services.client.MeasureCallback
 import androidx.health.services.client.MeasureClient
-import androidx.health.services.client.awaitWithException
-import androidx.health.services.client.data.Availability
-import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
-import androidx.health.services.client.data.DataTypeAvailability
-import androidx.health.services.client.data.DeltaDataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
-import androidx.wear.compose.foundation.SwipeToDismissBoxState
-import androidx.wear.compose.foundation.edgeSwipeToDismiss
-import androidx.wear.compose.foundation.rememberRevealState
-import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Checkbox
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.ContentAlpha
-import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
-import androidx.wear.compose.material.SplitSelectableChip
 import androidx.wear.compose.material.SplitToggleChip
-import androidx.wear.compose.material.SwipeToRevealChip
-import androidx.wear.compose.material.SwipeToRevealDefaults
-import androidx.wear.compose.material.SwipeToRevealPrimaryAction
-import androidx.wear.compose.material.SwipeToRevealSecondaryAction
-import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
-import androidx.wear.protolayout.LayoutElementBuilders.HorizontalAlignment
-import androidx.wear.protolayout.LayoutElementBuilders.VerticalAlignment
-import androidx.wear.protolayout.material.ButtonColors
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
-import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.correctLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
@@ -198,7 +156,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.checkerframework.checker.units.qual.C
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLSocket
 
 
@@ -340,6 +298,35 @@ class MainActivity : ComponentActivity() {
     val licenseState = MutableLiveData<String>("")
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
+    lateinit var sensorManager : SensorManager
+    private val samsungHealthSensorSDKConnected = AtomicBoolean(false)
+    private val hearthRateTrackerStarted = AtomicBoolean(false)
+    private var heartRateAvailable = false
+    private val trackerDataSubject: TrackerDataSubject? = null
+    private var heartRateListener: HeartRateListener? = null
+    private var connectionManager: ConnectionManager? = null
+    private val connectionObserver: ConnectionObserver = object : ConnectionObserver {
+        override fun onConnectionResult(isConnected: Boolean) {
+            Log.d(TAG, "onConnectionResult: $isConnected")
+            samsungHealthSensorSDKConnected.set(isConnected)
+        }
+
+        override fun onHeartRateAvailability(isAvailable: Boolean) {
+            heartRateAvailable = isAvailable
+            Log.d(TAG, "onHeartRateAvailability: $isAvailable")
+            if (isAvailable) {
+                heartRateListener = HeartRateListener()
+                heartRateListener?.setTrackerDataSubject(trackerDataSubject)
+                connectionManager?.initHeartRate(heartRateListener)
+                if (!hearthRateTrackerStarted.getAndSet(true)) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    heartRateListener?.startTracker()
+                    Log.d(TAG, "Started heart rate tracker")
+                    // TODO: After some seconds turn off screen
+                }
+            }
+        }
+    }
 
     private val requestPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissionsMap ->
@@ -353,6 +340,18 @@ class MainActivity : ComponentActivity() {
                 // Optionally guide the user to settings if necessary
             }
         }
+
+    fun createConnectionManager() {
+        try {
+            connectionManager = ConnectionManager(connectionObserver)
+            connectionManager?.connect(this, applicationContext)
+        } catch (t: Throwable) {
+            val errMsg =
+                if (t.message == null) "Error in creating connection manager" else t.message!!
+            Log.e(TAG, errMsg)
+        }
+        Log.d(TAG, "Successfully created connection manager")
+    }
 
     private fun refreshPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -368,6 +367,15 @@ class MainActivity : ComponentActivity() {
                 startBiometericService()
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     override fun onDestroy() {
@@ -552,7 +560,6 @@ class MainActivity : ComponentActivity() {
             requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
         } else {
             Log.d(TAG, "All permissions already granted. Starting services...")
-            //refreshPermissions()
         }
     }
 
@@ -562,11 +569,14 @@ class MainActivity : ComponentActivity() {
         dataRepository = DataRepository(this)
         networkManager = NetworkManager.getInstance()
         networkManager.init()
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         readTeamsJson()
         readRolesJson()
+        createConnectionManager()
         installSplashScreen()
 
         setDataFromDatastore()
+        validateLicense(license)
         if (enableTAKConnectService) { startTAKConnectService() }
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
@@ -584,10 +594,23 @@ class MainActivity : ComponentActivity() {
             startLocationService()
             startBiometericService()
             startBatteryService()
-        } 
+        }
+
         setContent {
             WearTAKCivApp(callsignState, licenseState)
         }
+        /*
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (samsungHealthSensorSDKConnected.get() && heartRateAvailable) {
+                Log.d(TAG, "Starting tracker")
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                heartRateListener?.startTracker()
+            } else {
+                Log.d(TAG, "Could not start tracker")
+            }
+        }, 10000)
+
+         */
     }
 }
 
@@ -808,7 +831,11 @@ fun TeamSetting(navController: NavController) {
         val index : Int = findTeamIndex(teamSettingsState.value)
         var selectedRadioIndex by remember { mutableStateOf(index) }
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -874,7 +901,11 @@ fun RoleSetting (navController: NavController) {
         var selectedRadioIndex by remember { mutableStateOf(index) }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1573,8 +1604,10 @@ fun SettingSwitchToggle(
     // The primary label should have a maximum 3 lines of text
     // and the secondary label should have max 2 lines of text.
     ToggleChip(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis,) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
         secondaryLabel = {
             Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
         },
@@ -1675,13 +1708,16 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                SettingSwitchToggle(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
+                SettingSwitchToggle(
+                    checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
                     title = "Biometrics",
-                    description = "Service ON/OFF",)
+                    description = "Service ON/OFF",
+                )
 
                 if (biometricsChecked) {
                     OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 5.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
@@ -1754,7 +1790,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             var callsignChanged: Boolean = false
                             var teamChanged = false
                             var roleChanged = false
-                            var licenseChanged: Boolean= false
+                            var licenseChanged: Boolean = false
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false

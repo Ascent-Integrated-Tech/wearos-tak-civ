@@ -13,8 +13,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 33
         targetSdk 34
-        versionCode 9
-        versionName "0.31"
+        versionCode 11
+        versionName "0.34"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -42,6 +42,7 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
     compileOptions {
@@ -67,6 +68,7 @@ android {
 }
 
 dependencies {
+    implementation fileTree(dir: 'libs', include: '*.aar')
     //implementation libs.androidx.activity.compose
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
