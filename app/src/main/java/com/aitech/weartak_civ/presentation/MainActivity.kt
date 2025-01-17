@@ -567,6 +567,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
 
         setDataFromDatastore()
+        validateLicense(license)
         if (enableTAKConnectService) { startTAKConnectService() }
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
@@ -584,6 +585,7 @@ class MainActivity : ComponentActivity() {
             startLocationService()
             startBiometericService()
             startBatteryService()
+            Log.d(TAG, "isLicensevalid oncreate check")
         } 
         setContent {
             WearTAKCivApp(callsignState, licenseState)
