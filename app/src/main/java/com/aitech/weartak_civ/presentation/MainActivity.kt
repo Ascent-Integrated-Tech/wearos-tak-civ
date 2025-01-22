@@ -10,22 +10,21 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Paint
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Vibrator
+import android.os.VibrationEffect
 import android.provider.Settings.Secure
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -34,7 +33,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,37 +45,31 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -85,21 +77,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -114,63 +101,39 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.health.services.client.HealthServices
-import androidx.health.services.client.MeasureCallback
 import androidx.health.services.client.MeasureClient
-import androidx.health.services.client.awaitWithException
-import androidx.health.services.client.data.Availability
-import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
-import androidx.health.services.client.data.DataTypeAvailability
-import androidx.health.services.client.data.DeltaDataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
-import androidx.wear.compose.foundation.SwipeToDismissBoxState
-import androidx.wear.compose.foundation.edgeSwipeToDismiss
-import androidx.wear.compose.foundation.rememberRevealState
-import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Checkbox
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.ContentAlpha
-import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
-import androidx.wear.compose.material.SplitSelectableChip
 import androidx.wear.compose.material.SplitToggleChip
-import androidx.wear.compose.material.SwipeToRevealChip
-import androidx.wear.compose.material.SwipeToRevealDefaults
-import androidx.wear.compose.material.SwipeToRevealPrimaryAction
-import androidx.wear.compose.material.SwipeToRevealSecondaryAction
-import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
-import androidx.wear.protolayout.LayoutElementBuilders.HorizontalAlignment
-import androidx.wear.protolayout.LayoutElementBuilders.VerticalAlignment
-import androidx.wear.protolayout.material.ButtonColors
+import com.aitech.weartak_civ.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
-import com.aitech.weartak_civ.data.latestHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.correctLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
@@ -192,13 +155,14 @@ import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
+import com.google.common.eventbus.Subscribe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.checkerframework.checker.units.qual.C
+import org.greenrobot.eventbus.EventBus
 import javax.net.ssl.SSLSocket
 
 
@@ -585,8 +549,8 @@ class MainActivity : ComponentActivity() {
             startLocationService()
             startBiometericService()
             startBatteryService()
-            Log.d(TAG, "isLicensevalid oncreate check")
         } 
+
         setContent {
             WearTAKCivApp(callsignState, licenseState)
         }
@@ -597,6 +561,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     val navController = rememberNavController()
+    val context = LocalContext.current
     validateLicense(license)
     NavHost(
         navController,
@@ -605,7 +570,12 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         composable("main_screen",
             enterTransition = { fadeIn() },
             exitTransition = { fadeOut() }) {
-            MainScreen(navController, callsignLiveDataState)
+            MainScreen(
+                navController = navController,
+                callsignState = callsignLiveDataState,
+                dataRepository = dataRepository,
+                context = context
+            )
         }
         composable(
             "settings_screen",
@@ -660,7 +630,12 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 
 //Contains functionality for main screen
 @Composable
-fun MainScreen(navController: NavController, callsignState: MutableLiveData<String>) {
+fun MainScreen(
+    navController: NavController,
+    callsignState: MutableLiveData<String>,
+    dataRepository: DataRepository, // Add dataRepository parameter
+    context: Context // Add context parameter
+) {
     WearTAKCIVTheme {
         Box (
             modifier = Modifier
@@ -696,7 +671,7 @@ fun MainScreen(navController: NavController, callsignState: MutableLiveData<Stri
 //                    Spacer(
 //                        modifier = Modifier.width(10.dp)
 //                    )
-                    MarkerDropButton()
+                    MarkerDropButton(dataRepository = dataRepository, context = context)
                 }
 
                 Row(
@@ -1024,6 +999,8 @@ fun TakServerChip(
 fun NewServerPage (navController: NavController) {
     WearTAKCIVTheme {
         val shouldShowDialog = remember { mutableStateOf(false) }
+        val isConfirmed = remember { mutableStateOf(false) }
+
 
         Box(
             modifier = Modifier
@@ -1034,7 +1011,15 @@ fun NewServerPage (navController: NavController) {
             contentAlignment = Alignment.Center
         ) {
             if (shouldShowDialog.value) {
-                DeleteServerDialog(shouldShowDialog = shouldShowDialog, navController)
+                ConfirmationDialog(
+                    shouldShowDialog = shouldShowDialog,
+                    navController,
+                    "Are you sure you want to delete this server?",
+                    Icons.Default.Delete,
+                    Color.Red,
+                    "main",
+                    isConfirmed
+                )
             }
             Column(modifier = Modifier
                 .fillMaxWidth()
@@ -1125,7 +1110,15 @@ fun NewServerSettingText (
 }
 
 @Composable
-fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: NavController) {
+fun ConfirmationDialog(
+    shouldShowDialog: MutableState<Boolean>,
+    navController: NavController,
+    description: String,
+    icon: ImageVector,
+    confirmColor: Color,
+    path: String,
+    isConfirmed: MutableState<Boolean>
+    ) {
     if (shouldShowDialog.value) {
             AlertDialog(
                 containerColor = colors.background,
@@ -1135,32 +1128,30 @@ fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: N
                 },
                 icon = {
                     Icon(
-                        Icons.Rounded.Delete,
+                        icon,
                         modifier = Modifier.size(25.dp),
                         contentDescription = null,
-                        tint = Color.Red
+                        tint = Color.LightGray
                     )
                 },
                 text = {
-                    Text(
-                        "Are you sure you want to delete this server?",
-                        textAlign = TextAlign.Center
-                    )
+                    Text(description, textAlign = TextAlign.Center)
                 },
                 confirmButton = {
                     Button(
                         onClick = {
                             shouldShowDialog.value = false
-                            navController.navigate("tak_server_screen")
+                            isConfirmed.value = true
                         },
                         modifier = Modifier.fillMaxWidth(0.45f),
                         contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Red,
+                            containerColor = confirmColor,
                         ),
                     ) {
                         Text(
                             text = "Confirm",
+                            color = Color.Black
                         )
                     }
                 },
@@ -1169,6 +1160,7 @@ fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: N
                     Button(
                         onClick = {
                             shouldShowDialog.value = false
+                            isConfirmed.value = false
                         },
                         contentPadding = PaddingValues(0.dp),
                         modifier = Modifier.fillMaxWidth(0.45f),
@@ -1183,7 +1175,7 @@ fun DeleteServerDialog(shouldShowDialog: MutableState<Boolean>, navController: N
                 }
             )
         }
-    }
+}
 
 @Composable
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
@@ -1441,12 +1433,13 @@ fun TroubleshootingIcons() {
 }
 
 @Composable
-fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>) {
+fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>, isConfirmed : MutableState<Boolean>) {
     if (shouldShowDialog.value) {
         Dialog(onDismissRequest = { shouldShowDialog.value = false }) {
             LaunchedEffect(Unit) {
                 delay(2000) // Delay for 5 seconds
                 shouldShowDialog.value = false // Dismiss the dialog
+                isConfirmed.value = false
             }
 
             Card(
@@ -1538,16 +1531,64 @@ fun SOSButton() {
 }
 
 @Composable
-fun MarkerDropButton() {
+fun MarkerDropButton(
+    dataRepository: DataRepository,
+    context: Context
+) {
     val shouldShowDialog = remember { mutableStateOf(false) }
     val successBoolean = remember {mutableStateOf(false)}
+    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
+    val isConfirmed = remember { mutableStateOf(false) }
+    val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+    val location = dataRepository.latestLocation.value
+    var locationChecked by remember{ mutableStateOf(enableLocationService)}
 
-    if (shouldShowDialog.value) {
-        MarkerDropDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean)
+
+    // State for button color
+    var isPressed by remember { mutableStateOf(false) }
+    val buttonColor by animateColorAsState(
+        targetValue = if (isPressed) Color.Green else Color.White,
+        label = "ButtonColorAnimation"
+    )
+
+    val coroutineScope = rememberCoroutineScope()
+
+    if (shouldShowConfirmationDialog.value) {
+        ConfirmationDialog(
+            shouldShowConfirmationDialog,
+            rememberNavController(),
+            "Drop marker at current location?",
+            Icons.Default.LocationOn,
+            Color.Green,
+            "main_screen",
+            isConfirmed
+        )
+    }
+    if (isConfirmed.value) {
+        shouldShowDialog.value = true
+        if (takServer == true) {
+            if (location != null && locationChecked) {
+                successBoolean.value = true
+                EventBus.getDefault().post(MessageEvent("DropMarker"))
+            }
+        } else {
+            successBoolean.value = false
+        }
+        MarkerDropDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
     }
 
     IconButton(
-        onClick = { shouldShowDialog.value = true; successBoolean.value = true},
+        onClick = {
+		    shouldShowConfirmationDialog.value = true
+            vibrateWatch(context)
+
+            isPressed = true
+            coroutineScope.launch {
+                delay(500)  // temporary color change
+                isPressed = false
+            }
+            Log.d(TAG, "DropMarkerButton Clicked")
+        },
         modifier = Modifier
             .border(
                 width = 2.dp,
@@ -1970,10 +2011,19 @@ fun NewServerPreview() {
 }
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
-fun MarkerDropPreview() {
+fun ConfirmationDialogPreview() {
     val shouldShowDialog = remember { mutableStateOf(true) }
-    val successBoolean = remember { mutableStateOf(false) }
-    MarkerDropDialog(shouldShowDialog, successBoolean)
+    val isConfirmed = remember { mutableStateOf(false) }
+
+    ConfirmationDialog(
+        shouldShowDialog = shouldShowDialog,
+        rememberNavController(),
+        "Drop marker at current location?",
+        Icons.Default.LocationOn,
+        Color.Green,
+        "pp",
+        isConfirmed
+    )
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
@@ -1988,3 +2038,19 @@ fun LicenseKeyPreview() {
     var licenseState = MutableLiveData<String>("License Key")
     LicenseKeyScreen(rememberNavController(), licenseState)
 }
+
+
+fun vibrateWatch(context: Context) {
+    val vibrator = context.getSystemService(Vibrator::class.java)
+    vibrator?.let {
+        if (it.hasVibrator()) {
+            val vibrationEffect = VibrationEffect.createOneShot(
+                100, // Duration in milliseconds
+                VibrationEffect.DEFAULT_AMPLITUDE
+            )
+            it.vibrate(vibrationEffect)
+        }
+    }
+}
+
+

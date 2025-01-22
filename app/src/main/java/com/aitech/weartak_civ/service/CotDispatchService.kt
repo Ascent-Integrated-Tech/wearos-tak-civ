@@ -8,12 +8,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.location.Location
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -24,10 +25,14 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKSer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
+import java.util.UUID
 
 
 class CotDispatchService : Service() {
@@ -35,7 +40,7 @@ class CotDispatchService : Service() {
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-
+    private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -86,7 +91,10 @@ class CotDispatchService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        dataRepository = MainActivity.dataRepository  // or another injection approach
+        dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
         Log.d(TAG, "CotDispatchService onCreate()")
     }
 
@@ -107,28 +115,33 @@ class CotDispatchService : Service() {
                 val location = dataRepository.latestLocation.value
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
-
+                val currentMarkerId = dataRepository.markerEventId.value
+                Log.d(TAG, "CurrentMarkerId: " + currentMarkerId + ", lastHandledMarkerId: " + lastHandledMarkerId)
                 if (location != null && battery != null) {
                     if (heartRate == null) {
                         heartRate = -1
                     }
-                    val cotMessage = buildCotMessage(location, heartRate, battery)
-                    sendDataTAKServer(cotMessage)
-                    Log.d(TAG, "CoT message sent ($cotMessage)")
+                    sendLocationBiometricCotMessage(location, heartRate, battery)
+                    // TODO: Directly send the marker with the UI sending out an event (using Greenrobot EventBus) and not in this runnable
+//                    if (currentMarkerId != lastHandledMarkerId) {
+//                        // There's a new click -> send marker
+//                        sendMarkerCotMessage(location, heartRate, battery)
+//                        lastHandledMarkerId = currentMarkerId
+//                    }
                 } else {
                     Log.w(TAG, "Missing data for CoT message. Not sending.")
                 }
             }
 
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, locationUpdateIntervalSecs * 1000L)
+            cotDispatchHandler?.postDelayed(this, LocationService.locationUpdateIntervalSecs * 1000L)
         }
     }
 
 
-    private fun buildCotMessage(location: Location, heartRate: Int, battery: Int): String {
+    private fun buildLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int): String {
 
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
         // Set the current time
@@ -138,7 +151,7 @@ class CotDispatchService : Service() {
         val startTime = dateTimeFormatter.format(calendar.time)
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.SECOND, 3*locationUpdateIntervalSecs)
+        calendar.add(Calendar.SECOND, 3*LocationService.locationUpdateIntervalSecs)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
@@ -176,7 +189,126 @@ class CotDispatchService : Service() {
          */
     }
 
+    private fun buildMarkerCotMessage(location: Location, heartRate: Int, battery: Int): String {
+
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+
+        // Set the current time
+        calendar.setTime(Date())
+
+        // Format and set the startTime with the currentTime
+        val startTime = dateTimeFormatter.format(calendar.time)
+        val markerCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
+        markerCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val markerCallsignAppendTime = markerCallsignDateTimeFormatter.format(calendar.time)
+        val markerCallsign = "${callsign}_$markerCallsignAppendTime"
+
+        // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
+        calendar.add(Calendar.YEAR, 1)
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
+        val latActual = location?.latitude ?: 0.0
+        val lonActual = location?.longitude ?: 0.0
+        val haeActual = location?.altitude ?: 0.0
+        var ceActual = location?.accuracy ?: 9999999.0F
+        if (ceActual.isNaN() == true) ceActual = 9999999.0F
+        var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
+        if (leActual.isNaN() == true) leActual = 9999999.0F
+        val bearingActual = location?.bearing ?: 0.0F
+        val speedActual = location?.speed ?: 0.0F
+
+        val uid = UUID.randomUUID().toString()
+        val linkUid = MainActivity.device_uid
+        val cotType = "b-m-p-s-m"
+
+        return """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <event version="2.0" uid="$uid" type="a-u-G" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
+            <point lat="$latActual" lon="$lonActual" hae="$haeActual" ce="$ceActual" le="$leActual"/>
+            <detail>
+                <status readiness="true"/>
+                <precisionlocation altsrc="SRTM1"/>
+                <link uid="$linkUid" production_time="$startTime" type="a-f-G-Ux-C" parent_callsign="$callsign" relation="p-p"/>
+                <color argb="-1"/>
+                <usericon iconsetpath="COT_MAPPING_2525C/a-u/a-u-G"/>
+                <remarks>HeartRate: $heartRate bpm; Battery Level: $battery%</remarks>
+                <contact callsign="$markerCallsign"/>
+            </detail>
+        </event>
+        """.trimIndent()
+/*
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='8b1c80ed-aa14-4747-9bdc-7f931807c9bd' type='a-u-G' time='2025-01-14T17:00:49.286Z' start='2025-01-14T17:00:49.286Z' stale='2025-01-14T17:05:49.286Z' how='h-g-i-g-o' access='Undefined'>
+            <point lat='41.886874' lon='-87.659409' hae='126.631' ce='10.5' le='9999999.0' />
+            <detail>
+                <status readiness='true'/>
+                <archive/>
+                <color argb='-1'/>
+                <remarks/>
+                <link uid='ANDROID-4cbffc120e174b01' production_time='2024-10-31T16:41:29.018Z' type='a-f-G-U-C' parent_callsign='MAYHEMINDIA-TAB' relation='p-p'/>
+                <archive/>
+                <contact callsign='MAYHEMINDIA-TAB SSband_1031_164129'/>
+            </detail>
+        </event>
+*/
+
+        /*
+                return """
+                    <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
+                    <event version="2.0" uid='${MainActivity.device_uid}' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
+                        <point lat='${location.latitude}' lon='${location.longitude}' hae='${location.altitude}' ce='${location.accuracy}' le='${location.verticalAccuracyMeters}' />
+                        <detail>
+                            <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
+                            <__group role='$roleValue' name='$teamValue'/>
+                            <biometrics hr='$heartRate'/>
+                            <status battery='$battery' model='WEAROS'/>
+                            <track course='${location.bearing}' speed='${location.speed}'/>
+                        </detail>
+                    </event>
+                """.trimIndent()
+         */
+    }
+
+    private fun sendMarkerCotMessage(location: Location, heartRate: Int, battery: Int) {
+        val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
+        sendDataTAKServer(cotMessage)
+        Log.d(TAG, "Marker CoT message sent: $cotMessage")
+    }
+
+    private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
+        val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
+        sendDataTAKServer(cotMessage)
+        //Log.d(TAG, "Location/Biometric CoT message sent: $cotMessage")
+    }
+
+    // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onMessageEvent(event: MessageEvent) {
+        if ("DropMarker" == event.message) {
+            CoroutineScope(Dispatchers.IO).launch {
+            val location = dataRepository.latestLocation.value
+            var heartRate = dataRepository.latestHeartRate.value
+            var battery = dataRepository.latestBatteryPercentage.value
+            if (location != null) {
+                if (heartRate == null) {
+                    heartRate = -1
+                }
+                if (battery == null) {
+                    battery = -1
+                }
+                    sendMarkerCotMessage(location, heartRate, battery)
+                }
+            }
+        }
+        Log.d(TAG, "onMessageEventCalled")
+    }
+
     override fun onDestroy() {
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
         super.onDestroy()
         cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
         cotDispatchThread?.quitSafely()
@@ -186,12 +318,11 @@ class CotDispatchService : Service() {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
-        var locationUpdateIntervalSecs = 2
-        var locationUpdateFastestIntervalSecs = 2
+        //var locationBiometricUpdateIntervalSecs = 2
+        //var locationUpdateFastestIntervalSecs = 2
     }
 }
 
-// TODO: change the biometrics child of details to seperate into arrays called "device". This way a cot with multiple devices connected to it can dispatch various biometrics in one cot message (ie biostrap + oura ring).
 /*
 <detail>
     <biometrics>

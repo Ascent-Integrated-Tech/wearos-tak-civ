@@ -190,7 +190,7 @@ class TAKConnectService: Service() {
             }
             CoroutineScope(Dispatchers.IO).launch {
                 if (isLicenseValid()) {
-                    Log.d(TAG,"License Valid - Connecting to Server")
+                    //Log.d(TAG,"License Valid - Connecting to Server")
                     try {
                         if ((null != secureSocket) && secureSocket!!.isConnected) {
                             val outputStream = secureSocket!!.getOutputStream()
