@@ -40,7 +40,7 @@ class CotDispatchService : Service() {
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-    private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
+    //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -115,14 +115,14 @@ class CotDispatchService : Service() {
                 val location = dataRepository.latestLocation.value
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
-                val currentMarkerId = dataRepository.markerEventId.value
-                Log.d(TAG, "CurrentMarkerId: " + currentMarkerId + ", lastHandledMarkerId: " + lastHandledMarkerId)
+                //val currentMarkerId = dataRepository.markerEventId.value
+                //Log.d(TAG, "CurrentMarkerId: " + currentMarkerId + ", lastHandledMarkerId: " + lastHandledMarkerId)
                 if (location != null && battery != null) {
                     if (heartRate == null) {
                         heartRate = -1
                     }
                     sendLocationBiometricCotMessage(location, heartRate, battery)
-                    // TODO: Directly send the marker with the UI sending out an event (using Greenrobot EventBus) and not in this runnable
+                    // We now directly send the marker with the UI sending out an EventBus message
 //                    if (currentMarkerId != lastHandledMarkerId) {
 //                        // There's a new click -> send marker
 //                        sendMarkerCotMessage(location, heartRate, battery)

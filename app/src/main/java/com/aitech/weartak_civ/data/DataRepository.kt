@@ -61,6 +61,7 @@ class DataRepository(private val context: Context) {
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
 
+    /*
     private val _markerEventId = MutableStateFlow<Int>(0)
     val markerEventId: StateFlow<Int> = _markerEventId
 
@@ -69,6 +70,8 @@ class DataRepository(private val context: Context) {
         _markerEventId.value = _markerEventId.value + 1
         Log.d(TAG, "dropMarker Called")
     }
+
+     */
 
     // Functions to update the data
     suspend fun storeLatestHeartRate(heartRate: Int) {
