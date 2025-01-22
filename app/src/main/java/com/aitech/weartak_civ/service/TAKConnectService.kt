@@ -24,9 +24,12 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.security.KeyStore
@@ -189,7 +192,7 @@ class TAKConnectService: Service() {
                 return
             }
             CoroutineScope(Dispatchers.IO).launch {
-                if (isLicenseValid()) {
+                if (isLicenseValid() && enableTAKConnectService) {
                     //Log.d(TAG,"License Valid - Connecting to Server")
                     try {
                         if ((null != secureSocket) && secureSocket!!.isConnected) {

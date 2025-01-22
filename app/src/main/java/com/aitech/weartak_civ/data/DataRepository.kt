@@ -125,6 +125,57 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    //Server textfields
+    val getName: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[NAME] ?: "name"
+    }
+
+    suspend fun storeName(name: String) {
+        context.dataStore.edit { prefs ->
+            prefs[NAME] = name
+        }
+    }
+
+    val getAddress: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[ADDRESS] ?: "address"
+    }
+
+    suspend fun storeAddress(address: String) {
+        context.dataStore.edit { prefs ->
+            prefs[ADDRESS] = address
+        }
+    }
+
+    val getPort: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PORT] ?: "port"
+    }
+
+    suspend fun storePort(port: String) {
+        context.dataStore.edit { prefs ->
+            prefs[PORT] = port
+        }
+    }
+
+    val getUsername: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[USERNAME] ?: "username"
+    }
+
+    suspend fun storeUsername(username: String) {
+        context.dataStore.edit { prefs ->
+            prefs[USERNAME] = username
+        }
+    }
+
+    val getPassword: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PASSWORD] ?: "password"
+    }
+
+    suspend fun storePassword(password: String) {
+        context.dataStore.edit { prefs ->
+            prefs[PASSWORD] = password
+        }
+    }
+
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_LOCATION_SERVICE] ?: true
     }
@@ -142,6 +193,16 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableBiometricsService(enableBiometricsService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_BIOMETRICS_SERVICE] = enableBiometricsService
+        }
+    }
+
+    val getEnableTAKConnectService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_TAKCONNECT_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableTAKConnectService(enableTAKConnectService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_TAKCONNECT_SERVICE] = enableTAKConnectService
         }
     }
 
@@ -172,8 +233,14 @@ class DataRepository(private val context: Context) {
         private val TEAM = stringPreferencesKey("team")
         private val ROLE = stringPreferencesKey("role")
         private val LICENSE = stringPreferencesKey("license")
+        private val NAME = stringPreferencesKey("name")
+        private val ADDRESS = stringPreferencesKey("address")
+        private val PORT = stringPreferencesKey("port")
+        private val USERNAME = stringPreferencesKey("username")
+        private val PASSWORD = stringPreferencesKey("password")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
+        private val ENABLE_TAKCONNECT_SERVICE = booleanPreferencesKey("enable_takconnect_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
     }

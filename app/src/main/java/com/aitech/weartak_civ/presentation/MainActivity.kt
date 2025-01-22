@@ -22,6 +22,7 @@ import android.os.Vibrator
 import android.os.VibrationEffect
 import android.provider.Settings.Secure
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,9 +53,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation.Companion.keyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -89,7 +90,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
@@ -110,7 +113,6 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.wear.compose.material.Checkbox
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Icon
@@ -127,14 +129,23 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.name
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.nameSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.password
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.passwordSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.port
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.portSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
@@ -147,6 +158,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesVal
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.username
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettingsState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
@@ -156,7 +169,6 @@ import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
-import com.google.common.eventbus.Subscribe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -190,6 +202,11 @@ class MainActivity : ComponentActivity() {
         var correctLicense = "AscentFreeLicense"
         var teamValue = ""
         var roleValue = ""
+        var name = "Test.Tak"
+        var address = "tak.test.ops.ascentitech.com"
+        var port = "8089"
+        var username = "TEST.AIT"
+        var password = "TEST.AIT.Password01"
         lateinit var teamEntriesValuesList : TeamsJson
         lateinit var roleEntriesValuesList : RolesJson
         var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
@@ -198,6 +215,12 @@ class MainActivity : ComponentActivity() {
         val roleState = MutableLiveData<String>("")
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
+        val nameSettingsState = MutableLiveData<String>("Test.Tak")
+        val addressSettingsState = MutableLiveData<String>("tak.test.ops.ascentitech.com")
+        val portSettingsState = MutableLiveData<String>("8089")
+        val usernameSettingsState = MutableLiveData<String>("TEST.AIT")
+        val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
+
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -303,6 +326,12 @@ class MainActivity : ComponentActivity() {
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
     val licenseState = MutableLiveData<String>("")
+    val nameState = MutableLiveData<String>("")
+    val addressState = MutableLiveData<String>("")
+    val portState = MutableLiveData<String>("")
+    val usernameState = MutableLiveData<String>("")
+    val passwordState = MutableLiveData<String>("")
+
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
 
@@ -422,6 +451,26 @@ class MainActivity : ComponentActivity() {
             licenseState.postValue(license)
             licenseSettingsState.postValue(license)
 
+            name = dataRepository.getName.first()
+            nameState.postValue(name)
+            nameSettingsState.postValue(name)
+
+            address = dataRepository.getAddress.first()
+            addressState.postValue(address)
+            addressSettingsState.postValue(address)
+
+            port = dataRepository.getPort.first()
+            portState.postValue(port)
+            portSettingsState.postValue(port)
+
+            username = dataRepository.getUsername.first()
+            usernameState.postValue(username)
+            usernameSettingsState.postValue(username)
+
+            password = dataRepository.getPassword.first()
+            passwordState.postValue(password)
+            passwordSettingsState.postValue(password)
+
             Log.d(TAG, "Setting callsign: $callsign")
             Log.d(TAG, "Setting license: $license")
 
@@ -429,6 +478,8 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Setting enableLocationService to $enableLocationService")
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
             Log.d(TAG, "Setting enableBiometricsService to $enableBiometricsService")
+            enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
+            Log.d(TAG, "Setting enableTAKConnectService to $enableTAKConnectService")
             LocationService.locationUpdateIntervalSecs = dataRepository.getLocationUpdateInterval.first()
             LocationService.locationUpdateFastestIntervalSecs = LocationService.locationUpdateIntervalSecs
             Log.d(TAG, "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs} seconds")
@@ -912,6 +963,10 @@ fun TakServerSetting(navController: NavController) {
                 .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                var takServerChecked by remember{ mutableStateOf(enableTAKConnectService)}
+                var takServerCheckedChanged : Boolean = false
+
+
                 Text(
                     text = "TAK Servers",
                     textAlign = TextAlign.Center,
@@ -919,25 +974,53 @@ fun TakServerSetting(navController: NavController) {
                     modifier = Modifier.padding(7.dp)
                 )
 
-                TakServerChip()
-                TakServerChip()
+                TakServerChip(
+                    navController,
+                    "new_server_screen",
+                    name,
+                    address,
+                    checked = takServerChecked,
+                    onCheckedChange =  { takServerChecked = it },
+                )
+
+                if (enableTAKConnectService != takServerChecked) {
+                    enableTAKConnectService = takServerChecked ; takServerCheckedChanged = true
+                    if (enableTAKConnectService) {
+                        Log.d(TAG, "Connecting to tak server")
+                        mainActivity.startService(Intent(mainActivity, TAKConnectService::class.java))
+
+                    } else {
+                        Log.d(TAG, "Disconnecting from tak server")
+                        mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                    }
+                }
+
+                if (takServerCheckedChanged) {
+                    EventBus.getDefault().post(MessageEvent("ServerToggled"))
+                    Log.d(TAG, "Storing enableLocationService $enableTAKConnectService")
+                    CoroutineScope(Dispatchers.Main).launch {
+                        dataRepository.storeEnableTAKConnectService(
+                            enableTAKConnectService
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Chip(
-                    onClick = { navController.navigate("new_server_screen") },
-                    enabled = true,
-                    label = { Text(text = "Add New Server", fontSize = 13.sp) },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    icon = { Icon(Icons.Filled.Add, contentDescription = "Localized description") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
-                )
+//                Chip(
+//                    onClick = { navController.navigate("new_server_screen") },
+//                    enabled = true,
+//                    label = { Text(text = "Add New Server", fontSize = 13.sp) },
+//                    colors = ChipDefaults.chipColors(
+//                        backgroundColor = Color.DarkGray,
+//                        contentColor = Color.White,
+//                        secondaryContentColor = Color.LightGray
+//                    ),
+//                    icon = { Icon(Icons.Filled.Add, contentDescription = "Localized description") },
+//                    modifier = Modifier
+//                        .fillMaxWidth()
+//                        .padding(bottom = 3.dp)
+//                )
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Button(
@@ -959,37 +1042,44 @@ fun TakServerSetting(navController: NavController) {
 
 @Composable
 fun TakServerChip(
-
+    navController: NavController,
+    route: String,
+    title: String,
+    address: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
-    var checked by remember { mutableStateOf(true) }
     SplitToggleChip(
         label = {
             Image(
-                painter = painterResource(R.drawable.tak_server),
+                painter = if (checked) (painterResource(R.drawable.tak_server)) else (painterResource(R.drawable.tak_server_disconnected)),
                 contentDescription = "Top Left Icon",
                 modifier = Modifier
                     .align(Alignment.CenterVertically)
                     .size(22.dp)
                     .padding(end = 2.dp),
             )
-                Text("Server", maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier
+                Text(title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier
                     .align(Alignment.CenterVertically))
                 },
         secondaryLabel = {
-            Text("1122211111", maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(address, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         checked = checked,
         toggleControl = {
-            Checkbox(
+            Switch(
                 checked = checked,
-                enabled = true,
+                onCheckedChange = null,
+                enabled = enabled,
+                modifier = Modifier.size(25.dp)
             )
         },
-        onCheckedChange = { checked = it },
-        onClick = {
-            /* Do something */
-        },
+        onCheckedChange = onCheckedChange,
         enabled = true,
+        onClick = {
+            navController.navigate(route)
+        },
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 3.dp)
@@ -1001,7 +1091,11 @@ fun NewServerPage (navController: NavController) {
     WearTAKCIVTheme {
         val shouldShowDialog = remember { mutableStateOf(false) }
         val isConfirmed = remember { mutableStateOf(false) }
-
+        val nameTextState = remember { mutableStateOf(nameSettingsState.value ?: "null") }
+        val addressTextState = remember { mutableStateOf(addressSettingsState.value ?: "null") }
+        val portTextState = remember { mutableStateOf(portSettingsState.value ?: "null") }
+        val usernameTextState = remember { mutableStateOf(usernameSettingsState.value ?: "null") }
+        val passwordTextState = remember { mutableStateOf(passwordSettingsState.value ?: "null") }
 
         Box(
             modifier = Modifier
@@ -1037,38 +1131,49 @@ fun NewServerPage (navController: NavController) {
                     modifier = Modifier.padding(7.dp)
                 )
 
-                NewServerSettingText("Connection Name", callsignSettingsState)
-                NewServerSettingText("Address/URL", callsignSettingsState)
-                NewServerSettingText("Port", callsignSettingsState)
-                NewServerSettingText("Username", callsignSettingsState)
-                NewServerSettingText("Password", callsignSettingsState)
+                NewServerSettingText("Connection Name", nameSettingsState, nameTextState, false, false)
+                NewServerSettingText("Address/URL", addressSettingsState, addressTextState, false, false)
+                NewServerSettingText("Port", portSettingsState, portTextState, false, true)
+                NewServerSettingText("Username", usernameSettingsState, usernameTextState, false, false)
+                NewServerSettingText("Password", passwordSettingsState, passwordTextState, true, false)
 
                 // Change if to create button when settings are edited
-                if (callsignSettingsState.value == "E2-FF1") {
-                    Button(
-                        onClick = { shouldShowDialog.value = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Red,
-                            contentColor = Color.Red
-                        ),
-                        modifier = Modifier.padding(top = 5.dp)
-                    ) {
-                        Text(
-                            text = "Delete Server",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(5.dp)
-                        )
-                    }
-                }
+//                if (callsignSettingsState.value == "E2-FF1") {
+//                    Button(
+//                        onClick = { shouldShowDialog.value = true },
+//                        colors = ButtonDefaults.buttonColors(
+//                            containerColor = Color.Red,
+//                            contentColor = Color.Red
+//                        ),
+//                        modifier = Modifier.padding(top = 5.dp)
+//                    ) {
+//                        Text(
+//                            text = "Delete Server",
+//                            textAlign = TextAlign.Center,
+//                            modifier = Modifier.padding(5.dp)
+//                        )
+//                    }
+//                }
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                var settingsChanged: Boolean = false
+                var nameChanged: Boolean = false
+                var addressChanged: Boolean = false
+                var portChanged: Boolean = false
+                var usernameChanged: Boolean = false
+                var passwordChanged: Boolean = false
+                val context = LocalContext.current
+                var toastText : String = ""
+                val serverConnectionVariable : String = "Success"
+
                 Icon(imageVector = Icons.Default.Close,
                     tint = Color.Red,
                     contentDescription = "Close",
                     modifier = Modifier
                         .size(40.dp)
                         .clickable {
+                            settingsChanged = false; nameChanged = false; addressChanged = false; portChanged = false; usernameChanged = false; passwordChanged = false
                             Log.d(TAG, "Settings NOT saved")
                             navController.navigate("tak_server_screen")
                         })
@@ -1079,11 +1184,64 @@ fun NewServerPage (navController: NavController) {
                     modifier = Modifier
                         .size(40.dp)
                         .clickable {
-//                            callsignLiveDataState.postValue(callsignTextFieldValue.text)
-//                            Log.d(
-//                                TAG,
-//                                "Settings saved with callsign: ${callsignLiveDataState.value}"
-//                            )
+                            if (!nameTextState.value.equals(nameSettingsState.value)) {
+                                settingsChanged = true; nameChanged = true
+                                name = nameTextState.value ?: name
+                                nameSettingsState.postValue(name)
+                            }
+                            if (!addressTextState.value.equals(addressSettingsState.value)) {
+                                settingsChanged = true; addressChanged = true
+                                address = addressTextState.value ?: address
+                                addressSettingsState.postValue(address)
+                            }
+                            if (!portTextState.value.equals(portSettingsState.value)) {
+                                settingsChanged = true; portChanged = true
+                                port = portTextState.value ?: port
+                                portSettingsState.postValue(port)
+                            }
+                            if (!usernameTextState.value.equals(usernameSettingsState.value)) {
+                                settingsChanged = true; usernameChanged = true
+                                username = usernameTextState.value ?: username
+                                usernameSettingsState.postValue(username)
+                            }
+                            if (!passwordTextState.value.equals(passwordSettingsState.value)) {
+                                settingsChanged = true; passwordChanged = true
+                                password = passwordTextState.value ?: password
+                                passwordSettingsState.postValue(password)
+                            }
+
+                            if (settingsChanged) {
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    if (nameChanged) {
+                                        dataRepository.storeName(name)
+                                    }
+                                    if (addressChanged) {
+                                        dataRepository.storeAddress(address)
+                                    }
+                                    if (portChanged) {
+                                        dataRepository.storePort(port)
+                                    }
+                                    if (usernameChanged) {
+                                        dataRepository.storeUsername(username)
+                                    }
+                                    if (passwordChanged) {
+                                        dataRepository.storePassword(password)
+                                    }
+                                }
+
+                                //May need to move this
+                                if (serverConnectionVariable == "Connecting") {
+                                    toastText = "Connecting to $name"
+                                } else if (serverConnectionVariable == "Success") {
+                                    toastText = "Connected to $name"
+                                } else if (serverConnectionVariable == "Fail") {
+                                    toastText = "Connection Failed"
+                                } else {
+                                    toastText = "Error Connecting to $name"
+                                }
+                                Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                            }
+                            EventBus.getDefault().post(MessageEvent("ServerDetailsChanged"))
                             navController.navigate("tak_server_screen")
                         })
             }
@@ -1094,20 +1252,26 @@ fun NewServerPage (navController: NavController) {
 @Composable
 fun NewServerSettingText (
     label: String,
-    textState: MutableLiveData<String>,
+    liveDataState: MutableLiveData<String>,
+    textState: MutableState<String>,
+    isPassword : Boolean,
+    isPort : Boolean,
 ) {
-    var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(textState.value ?: "null")) }
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(liveDataState.value ?: "null")) }
 //    Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
     OutlinedTextField(
-        value = callsignTextFieldValue,
+        value = textFieldValue,
         onValueChange = {
-            callsignTextFieldValue = it
+            textFieldValue = it
         },
         maxLines = 1,
         label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
         textStyle = TextStyle(color = colors.primary),
-        modifier = Modifier.padding(bottom = 5.dp)
+        modifier = Modifier.padding(bottom = 5.dp),
+        keyboardOptions = if (isPort) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions(keyboardType = KeyboardType.Text),
+        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
+    textState.value = textFieldValue.text
 }
 
 @Composable
@@ -1236,6 +1400,8 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 }
                             }
                         }
+                        Log.d(TAG, license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text)
+
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
                             mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
@@ -1365,12 +1531,12 @@ fun TroubleshootingIcons() {
     ) {
         var locationChecked by remember{ mutableStateOf(enableLocationService)}
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
-        val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+        val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val cellChecked by remember{ mutableStateOf(enableLocationService)}
 
         // Icon on the top left curve
         Image(
-            painter = if (takServer == true) painterResource(R.drawable.tak_server) else painterResource(R.drawable.tak_server_disconnected),
+            painter = if (takServer) painterResource(R.drawable.tak_server) else painterResource(R.drawable.tak_server_disconnected),
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -1635,7 +1801,7 @@ fun SettingSwitchToggle(
             Switch(
                 checked = checked,
                 onCheckedChange = null,
-                enabled = enabled
+                enabled = enabled,
             )
         },
         onCheckedChange = onCheckedChange,
@@ -1764,7 +1930,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     onClick = { navController.navigate("tak_server_screen") },
                     enabled = true,
                     label = { Text(text = "TAK Servers") },
-                    secondaryLabel = { Text(text = "X" + " Connected") },
+//                    secondaryLabel = { Text(text = "X" + " Connected") },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
@@ -2000,7 +2166,7 @@ fun SettingsPreview() {
     SettingsScreen(rememberNavController(),callsignState, licenseState)
 }
 
-@Preview(widthDp = 192, heightDp = 400, showBackground = true)
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun TAKSettingsPreview() {
     TakServerSetting(rememberNavController())
