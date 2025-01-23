@@ -28,8 +28,14 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.events.NwConnEvent
+import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
+import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.NetworkManager
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -40,6 +46,9 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
 import java.text.SimpleDateFormat
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -55,10 +64,14 @@ class LocationService : Service() {
     private var handler: Handler? = null
     private var currentLocation: Location? = null
     // TODO: move this to main / use main
-    private val firstLocationSent = AtomicBoolean(false)
+    private var mNwConnected : Boolean = false
+    private var mNwTransport : Int = -1
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -70,7 +83,11 @@ class LocationService : Service() {
         //Start Foreground Service
         startForegroundService()
         //Initialize a new handler thread to start the location updates
-        startLocationUpdates()
+        // TODO: check same logic as @Subsribe
+        val nwManager = NetworkManager.getInstance()
+        mNwConnected = nwManager.isNetworkConnected
+        mNwTransport = if (nwManager.isWifi) { WIFI } else { CELLULAR }
+        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.reportingUpdateIntervalSecs * 1000L, locationUpdateFastestIntervalSecs * 1000L)
     }
 
     private fun startForegroundService() {
@@ -96,24 +113,25 @@ class LocationService : Service() {
 
     private fun createNotificationChannel(): String {
         val channelId = "Location_Service"
-        val channelName = "Location Background Service"
+        val channelName = "Location Foreground Service"
         val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
         chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
+        chan.importance = NotificationManager.IMPORTANCE_HIGH
         chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
         val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         service.createNotificationChannel(chan)
         return channelId
     }
 
-    private fun startLocationUpdates() {
+    private fun startLocationUpdates(priority: Int, interval: Long, fastestInterval: Long) {
         locationThread = HandlerThread("Location Thread")
         try {
             locationThread?.start()
             //handler = Handler(locationThread?.looper)
             handler = locationThread?.looper?.let { Handler(it) }
-            if (handler!!.looper.thread.isAlive) {
-                handler!!.post { this.createLocationRequest() }
+            if ((handler != null) && (handler?.looper?.thread?.isAlive ?: false)) {
+                handler?.post { this.createLocationRequest(priority, interval, fastestInterval)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Not able to Start the Location Update thread ", e)
@@ -121,13 +139,13 @@ class LocationService : Service() {
 
     }
 
-    private fun createLocationRequest() {
+    private fun createLocationRequest(priority: Int, interval: Long, fastestInterval: Long) {
         val locationRequest = LocationRequest.create()
-        locationRequest.interval = CotDispatchService.reportingUpdateIntervalSecs * 1000L
-        locationRequest.fastestInterval = locationUpdateFastestIntervalSecs * 1000L
+        locationRequest.interval = interval
+        locationRequest.fastestInterval = fastestInterval
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
-        locationRequest.priority = Priority.PRIORITY_HIGH_ACCURACY
+        locationRequest.priority = priority
         /*
         if (getBatteryPercentage(this) < 25.0) {
             locationRequest.priority = LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
@@ -135,8 +153,10 @@ class LocationService : Service() {
             locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
         }PRIORITY_HIGH_ACCURACY
          */
-        Log.d(TAG, "LocationRequest params: fastestInterval(" + locationRequest.fastestInterval + "), interval(" + locationRequest.interval + "), maxWaitTime(" + locationRequest.maxWaitTime +
-                "), priority(" + locationRequest.priority + "), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")
+
+        Log.d(TAG, "LocationRequest params: priority(${locationRequest.priority}), interval(${locationRequest.intervalMillis}), maxUpdateDelay(${locationRequest.maxUpdateDelayMillis}), " +
+                "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")
+        /*
         val builder = LocationSettingsRequest.Builder()
         builder.addLocationRequest(locationRequest)
         val request = builder.build()
@@ -146,13 +166,17 @@ class LocationService : Service() {
             ContextCompat.checkSelfPermission(applicationContext,
                     Manifest.permission.ACCESS_COARSE_LOCATION)
         }
+         */
         Log.d(TAG, "Fine Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION)))
         Log.d(TAG, "Coarse Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION)))
         locationCallback = MyLocationCallback()
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
-        val simpleLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
-        fusedLocationProviderClient?.requestLocationUpdates(simpleLocationRequest, locationCallback, Looper.myLooper())
+        //val simpleLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(CotDispatchService.reportingUpdateIntervalSecs.toLong())).build()
+        fusedLocationProviderClient?.requestLocationUpdates(locationRequest, locationCallback, Looper.myLooper())
+    }
 
+    private fun printLocationRequest(locReq : LocationRequest) {
+        Log.d(TAG, "locReq: $locReq, ${locReq.priority}, ${locReq.durationMillis}, ${locReq.maxUpdates}, ${locReq.intervalMillis}, ${locReq.maxUpdateDelayMillis}, ${locReq.minUpdateIntervalMillis}, ${locReq.minUpdateDistanceMeters}")
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -164,6 +188,8 @@ class LocationService : Service() {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
+                Log.d(TAG, "Received location update: $location")
+                EventBus.getDefault().post(MessageEvent(RECV_LOCATION))
             }
         }
     }
@@ -174,11 +200,50 @@ class LocationService : Service() {
             get() = this@LocationService
     }
 
+    // This method will be called when a NwConnEvent is posted from NetworkManager
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onMessageEvent(nwConnEvent: NwConnEvent) {
+        Log.d(TAG, "Received nwConnEvent (${nwConnEvent.isConn}, ${nwConnEvent.transport})")
+        // TODO
+    }
+
+    private fun dynamicLocationUpdate(onStart: Boolean, nwConnected: Boolean, nwTransport: Int) {
+        if (onStart) {
+
+        }
+        if (nwConnected) {
+            // TODO: check mNwConnected
+            if ((mNwConnected) && (nwTransport == mNwTransport)) {
+                // Previous connectivity is same as now. Nothing to do
+                return
+            }
+            if (!onStart) {
+                stopLocationProvider()
+                destroyLocationThread()
+            }
+            if (nwTransport == WIFI) {
+                // Slow down the GPS update as we assume that the device is at the fire station or at Ascent
+            } else { // It will be CELLULAR
+                // Fast GPS update
+            }
+        } else {
+            // Not connected. Slow down the GPS update
+            // TODO: check mNwConnected
+            if (!onStart) {
+                stopLocationProvider()
+                destroyLocationThread()
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
         Log.d(TAG, "Location Service Destroyed")
     }
 
@@ -212,6 +277,6 @@ class LocationService : Service() {
         var ce : Float? = null
         var le : Float? = null
         //var locationUpdateIntervalSecs = 2
-        var locationUpdateFastestIntervalSecs = 2
+        var locationUpdateFastestIntervalSecs = 1
     }
 }

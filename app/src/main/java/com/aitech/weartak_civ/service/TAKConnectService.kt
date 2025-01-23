@@ -24,13 +24,13 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
-import com.aitech.weartak_civ.MessageEvent
-import com.aitech.weartak_civ.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.TakServerConnEvent
-import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTING
-import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTION_FAILURE
-import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.events.TakServerConnEvent
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
@@ -477,7 +477,7 @@ class TAKConnectService: Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 if (isLicenseValid() && enableTAKConnectService) {
                     // TODO: Remove in the next release. Keeping this for release 0.33
-                    Log.d(TAG,"License Valid and enableTAKConnectService true. Trying to send data: $msg")
+                    Log.d(TAG,"License Valid and enableTAKConnectService true. Sending data: $msg")
                     try {
                         if ((null != secureSocket) && (secureSocket?.isConnected == true)) {
                             val outputStream = secureSocket!!.getOutputStream()
