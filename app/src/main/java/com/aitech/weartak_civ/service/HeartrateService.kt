@@ -112,7 +112,7 @@ class HeartrateService: Service() {
                 //Log.d(TAG, "Obtained heartrate: $hr")
 
                 val currTime = System.currentTimeMillis()
-                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > heartrateSendIntervalSecs * 1000L)) {
+                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.reportingUpdateIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     runBlocking {
                         //Log.d(TAG, "Posting hr value to hrStringLiveData")
@@ -143,7 +143,7 @@ class HeartrateService: Service() {
         private const val BIO_PART4 = "' /><detail><status serialNumber='"
         private const val BIO_PART5 = "'/></detail></event>"
         var hr: Int = -1
-        var heartrateSendIntervalSecs : Int = 5
+//        var heartrateSendIntervalSecs : Int = 5
         val hrStringLiveData = MutableLiveData<String>("N/A")
     }
 }

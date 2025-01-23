@@ -454,7 +454,6 @@ class MainActivity : ComponentActivity() {
             name = dataRepository.getName.first()
             nameState.postValue(name)
             nameSettingsState.postValue(name)
-
             address = dataRepository.getAddress.first()
             addressState.postValue(address)
             addressSettingsState.postValue(address)
@@ -480,11 +479,9 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Setting enableBiometricsService to $enableBiometricsService")
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             Log.d(TAG, "Setting enableTAKConnectService to $enableTAKConnectService")
-            LocationService.locationUpdateIntervalSecs = dataRepository.getLocationUpdateInterval.first()
-            LocationService.locationUpdateFastestIntervalSecs = LocationService.locationUpdateIntervalSecs
-            Log.d(TAG, "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs} seconds")
-            HeartrateService.heartrateSendIntervalSecs = dataRepository.getBiometricsSendInterval.first()
-            Log.d(TAG, "Setting heartrateSendInterval to ${HeartrateService.heartrateSendIntervalSecs} seconds")
+            CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
+            LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+            Log.d(TAG, "Setting ReportingUpdateInterval to ${CotDispatchService.reportingUpdateIntervalSecs} seconds")
         }
     }
 
@@ -968,7 +965,7 @@ fun TakServerSetting(navController: NavController) {
 
 
                 Text(
-                    text = "TAK Servers",
+                    text = "TAK Server",
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -1258,17 +1255,18 @@ fun NewServerSettingText (
     isPort : Boolean,
 ) {
     var textFieldValue by remember { mutableStateOf(TextFieldValue(liveDataState.value ?: "null")) }
-//    Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+    val maxChar = 20
+
     OutlinedTextField(
         value = textFieldValue,
         onValueChange = {
             textFieldValue = it
         },
-        maxLines = 1,
+//        maxLines = 1,
         label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
-        textStyle = TextStyle(color = colors.primary),
+        textStyle = TextStyle(color = colors.primary, fontSize = if (textFieldValue.text!!.length <= maxChar) 12.sp else 10.sp),
         modifier = Modifier.padding(bottom = 5.dp),
-        keyboardOptions = if (isPort) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions(keyboardType = KeyboardType.Text),
+        keyboardOptions = KeyboardOptions(keyboardType = if (isPort) KeyboardType.Number else KeyboardType.Text),
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
     textState.value = textFieldValue.text
@@ -1823,9 +1821,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
             contentAlignment = Alignment.Center
         ) {
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
-            var locationUpdateInterval by remember{ mutableStateOf(TextFieldValue(LocationService.locationUpdateIntervalSecs.toString()))}
+            var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
-            var biometricsSendingInterval by remember{ mutableStateOf(TextFieldValue(HeartrateService.heartrateSendIntervalSecs.toString()))}
 
             Column(modifier = Modifier
                 .fillMaxWidth()
@@ -1849,76 +1846,6 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "General Settings",
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                SettingSwitchToggle(checked = locationChecked, onCheckedChange =  { locationChecked = it },
-                    title = "Location Service", description = "Service ON/OFF")
-                if (locationChecked) {
-                    OutlinedTextField(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        value = locationUpdateInterval,
-                        onValueChange = {
-                            locationUpdateInterval = it
-                        },
-                        label = {
-                            Text(
-                                text = "Location Update Interval",
-                                color = colors.primary,
-                                style = MaterialTheme.typography.caption3
-                            )
-                        },
-                        placeholder = {
-                            Text(
-                                text = "Interval in secs",
-                                color = colors.primary,
-                                style = MaterialTheme.typography.caption3
-                            )
-                        },
-                        textStyle = TextStyle(color = colors.primary)
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                SettingSwitchToggle(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
-                    title = "Biometrics",
-                    description = "Service ON/OFF",)
-
-                if (biometricsChecked) {
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        value = biometricsSendingInterval,
-                        onValueChange = {
-                            biometricsSendingInterval = it
-                        },
-                        label = {
-                            Text(
-                                text = "Biometrics Send Interval",
-                                color = colors.primary,
-                                style = MaterialTheme.typography.caption3
-                            )
-                        },
-                        placeholder = {
-                            Text(
-                                text = "Interval in secs",
-                                color = colors.primary,
-                                style = MaterialTheme.typography.caption3
-                            )
-                        },
-                        textStyle = TextStyle(color = colors.primary)
-                    )
-                }
-
-                Text(
                     text = "Connection Settings",
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
@@ -1929,8 +1856,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 Chip(
                     onClick = { navController.navigate("tak_server_screen") },
                     enabled = true,
-                    label = { Text(text = "TAK Servers") },
-//                    secondaryLabel = { Text(text = "X" + " Connected") },
+                    label = { Text(text = "TAK Server") },
+                    secondaryLabel = { Text(text = name) },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
@@ -1942,6 +1869,48 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                 )
 
                 CallsignRoleTeamChip("license_setting_screen", "License Key", licenseSettingsState, navController)
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "General Settings",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                OutlinedTextField(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    value = reportingUpdateInterval,
+                    onValueChange = {
+                        reportingUpdateInterval = it
+                    },
+                    label = {
+                        Text(
+                            text = "Update Interval",
+                            color = colors.primary,
+                            style = MaterialTheme.typography.caption3
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            text = "Interval in secs",
+                            color = colors.primary,
+                            style = MaterialTheme.typography.caption3
+                        )
+                    },
+                    textStyle = TextStyle(color = colors.primary)
+                )
+
+                SettingSwitchToggle(checked = locationChecked, onCheckedChange =  { locationChecked = it },
+                    title = "Location Service", description = "Service ON/OFF")
+
+
+                SettingSwitchToggle(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
+                    title = "Biometrics",
+                    description = "Service ON/OFF",)
 
             }
 
@@ -1969,8 +1938,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
-                            var locationSendingIntervalChanged = false
-                            var biometricsSendingIntervalChanged = false
+                            var reportingUpdateIntervalChanged = false
                             if (!callsign.equals(callsignSettingsState.value)) {
                                 settingsChanged = true; callsignChanged = true
                                 callsign = callsignSettingsState.value ?: callsign
@@ -2026,19 +1994,19 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                     )
                                 }
                             }
-                            val locationUpdateIntervalText = locationUpdateInterval.text
-                            if (!locationUpdateIntervalText.equals("") && (locationUpdateIntervalText.toInt() != 0) && !locationUpdateIntervalText.equals(
-                                    LocationService.locationUpdateIntervalSecs.toString()
+                            val reportingUpdateIntervalText = reportingUpdateInterval.text
+                            if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
+                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
                                 )
                             ) {
-                                settingsChanged = true; locationSendingIntervalChanged = true
-                                LocationService.locationUpdateIntervalSecs =
-                                    locationUpdateIntervalText.toInt()
+                                settingsChanged = true; reportingUpdateIntervalChanged = true
+                                CotDispatchService.reportingUpdateIntervalSecs =
+                                    reportingUpdateIntervalText.toInt()
                                 LocationService.locationUpdateFastestIntervalSecs =
-                                    LocationService.locationUpdateIntervalSecs
+                                    CotDispatchService.reportingUpdateIntervalSecs
                                 Log.d(
                                     TAG,
-                                    "Setting locationUpdateIntervalSecs to ${LocationService.locationUpdateIntervalSecs}"
+                                    "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}"
                                 )
                                 if (enableLocationService) {
                                     mainActivity.stopService(
@@ -2066,19 +2034,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                     )
                                 }
                             }
-                            val biometricsSendingIntervalText = biometricsSendingInterval.text
-                            if (!biometricsSendingIntervalText.equals("") && (biometricsSendingIntervalText.toInt() != 0) && !biometricsSendingIntervalText.equals(
-                                    HeartrateService.heartrateSendIntervalSecs.toString()
-                                )
-                            ) {
-                                settingsChanged = true; biometricsSendingIntervalChanged = true
-                                HeartrateService.heartrateSendIntervalSecs =
-                                    biometricsSendingIntervalText.toInt()
-                                Log.d(
-                                    TAG,
-                                    "Setting heartrateSendIntervalSecs to ${HeartrateService.heartrateSendIntervalSecs}"
-                                )
-                            }
+
                             if (settingsChanged) {
                                 CoroutineScope(Dispatchers.Main).launch {
                                     if (callsignChanged) {
@@ -2106,12 +2062,12 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                             enableLocationService
                                         )
                                     }
-                                    if (locationSendingIntervalChanged) {
+                                    if (reportingUpdateIntervalChanged) {
                                         Log.d(
                                             TAG,
-                                            "Storing locationSendingInterval (${LocationService.locationUpdateIntervalSecs})"
+                                            "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})"
                                         )
-                                        dataRepository.storeLocationUpdateInterval(LocationService.locationUpdateIntervalSecs)
+                                        dataRepository.storeReportingUpdateInterval(CotDispatchService.reportingUpdateIntervalSecs)
                                     }
                                     if (biometricsCheckedChanged) {
                                         Log.d(
@@ -2121,13 +2077,6 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                         dataRepository.storeEnableBiometricsService(
                                             enableBiometricsService
                                         )
-                                    }
-                                    if (biometricsSendingIntervalChanged) {
-                                        Log.d(
-                                            TAG,
-                                            "Storing biometricsSendingInterval (${HeartrateService.heartrateSendIntervalSecs})"
-                                        )
-                                        dataRepository.storeBiometricsSendInterval(HeartrateService.heartrateSendIntervalSecs)
                                     }
                                     Log.d(TAG, "Finished saving settings")
                                 }

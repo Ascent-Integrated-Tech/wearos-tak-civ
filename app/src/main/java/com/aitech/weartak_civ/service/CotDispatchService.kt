@@ -134,7 +134,7 @@ class CotDispatchService : Service() {
             }
 
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, LocationService.locationUpdateIntervalSecs * 1000L)
+            cotDispatchHandler?.postDelayed(this, reportingUpdateIntervalSecs * 1000L)
         }
     }
 
@@ -151,7 +151,7 @@ class CotDispatchService : Service() {
         val startTime = dateTimeFormatter.format(calendar.time)
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.SECOND, 3*LocationService.locationUpdateIntervalSecs)
+        calendar.add(Calendar.SECOND, 3*reportingUpdateIntervalSecs)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
@@ -318,8 +318,7 @@ class CotDispatchService : Service() {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
-        //var locationBiometricUpdateIntervalSecs = 2
-        //var locationUpdateFastestIntervalSecs = 2
+        var reportingUpdateIntervalSecs = 2
     }
 }
 
