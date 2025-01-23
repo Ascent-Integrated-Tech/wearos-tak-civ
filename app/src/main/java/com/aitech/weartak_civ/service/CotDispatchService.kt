@@ -15,6 +15,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.MessageEvent
+import com.aitech.weartak_civ.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -286,7 +287,7 @@ class CotDispatchService : Service() {
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onMessageEvent(event: MessageEvent) {
-        if ("DropMarker" == event.message) {
+        if (DROP_MARKER == event.message) {
             CoroutineScope(Dispatchers.IO).launch {
             val location = dataRepository.latestLocation.value
             var heartRate = dataRepository.latestHeartRate.value
@@ -306,10 +307,10 @@ class CotDispatchService : Service() {
     }
 
     override fun onDestroy() {
+        super.onDestroy()
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
-        super.onDestroy()
         cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
         cotDispatchThread?.quitSafely()
     }
@@ -318,7 +319,7 @@ class CotDispatchService : Service() {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
-        var reportingUpdateIntervalSecs = 2
+        var reportingUpdateIntervalSecs = 10
     }
 }
 

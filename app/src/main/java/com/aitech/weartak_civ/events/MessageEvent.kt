@@ -6,7 +6,5 @@ class MessageEvent(val message: String) {
         public val DROP_MARKER = "DropMarker"
         public val SERVER_DETAILS_CHANGED = "ServerDetailsChanged"
         public val SERVER_TOGGLED = "ServerToggled"
-
     }
-
 }
