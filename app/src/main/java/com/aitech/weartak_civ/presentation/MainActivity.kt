@@ -125,7 +125,14 @@ import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
 import com.aitech.weartak_civ.MessageEvent
+import com.aitech.weartak_civ.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.TakServerConnEvent
+import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTING
+import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTION_FAILURE
+import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
@@ -176,6 +183,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
 import javax.net.ssl.SSLSocket
 
 
@@ -366,7 +375,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
         mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
         if (enableBiometricsService) {
@@ -572,6 +583,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainActivity = this
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
         dataRepository = DataRepository(this)
         networkManager = NetworkManager.getInstance()
         networkManager.init()
@@ -586,12 +600,12 @@ class MainActivity : ComponentActivity() {
 
         setTheme(android.R.style.Theme_DeviceDefault)
 
-        printSensorDetails(this)
+        //printSensorDetails(this)
 
         // check for permissions & start services if permissions are enabled.
         // Request all necessary permissions
         checkAndRequestPermissions()
-        startHealthCapabilitiesCollection()
+        //startHealthCapabilitiesCollection()
 
         if (isLicenseValid()) {
             startCotDispatchService()
@@ -604,7 +618,25 @@ class MainActivity : ComponentActivity() {
             WearTAKCivApp(callsignState, licenseState)
         }
     }
+
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onMessageEvent(event: TakServerConnEvent) {
+        var toastText = ""
+        val connEvent = event.connEvent
+        Log.d(TAG, "Received TakServerConnEvent $connEvent")
+        if (connEvent == CONNECTING) {
+            toastText = "Connecting to $name"
+        } else if (connEvent == CONNECTION_SUCCESS) {
+            toastText = "Connected to $name"
+        } else if (connEvent == CONNECTION_FAILURE) {
+            toastText = "Connection Failed"
+        }
+        Log.d(TAG, "Showing toast w/ text: $toastText")
+        Toast.makeText(mainActivity, toastText, Toast.LENGTH_SHORT).show()
+    }
 }
+
 
 //Contains functionality for all watch screens
 @Composable
@@ -941,6 +973,7 @@ fun RoleSetting (navController: NavController) {
     }
 }
 
+@SuppressLint("CoroutineCreationDuringComposition")
 @Composable
 fun TakServerSetting(navController: NavController) {
     WearTAKCIVTheme {
@@ -993,12 +1026,10 @@ fun TakServerSetting(navController: NavController) {
                 }
 
                 if (takServerCheckedChanged) {
-                    EventBus.getDefault().post(MessageEvent("ServerToggled"))
                     Log.d(TAG, "Storing enableLocationService $enableTAKConnectService")
                     CoroutineScope(Dispatchers.Main).launch {
-                        dataRepository.storeEnableTAKConnectService(
-                            enableTAKConnectService
-                        )
+                        dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
+                        EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED))
                     }
                 }
 
@@ -1047,10 +1078,11 @@ fun TakServerChip(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
 ) {
+    val takServerConnected by TAKConnectService.isConnectedLiveData.observeAsState()
     SplitToggleChip(
         label = {
             Image(
-                painter = if (checked) (painterResource(R.drawable.tak_server)) else (painterResource(R.drawable.tak_server_disconnected)),
+                painter = if (takServerConnected == true) (painterResource(R.drawable.tak_server)) else (painterResource(R.drawable.tak_server_disconnected)),
                 contentDescription = "Top Left Icon",
                 modifier = Modifier
                     .align(Alignment.CenterVertically)
@@ -1161,8 +1193,6 @@ fun NewServerPage (navController: NavController) {
                 var usernameChanged: Boolean = false
                 var passwordChanged: Boolean = false
                 val context = LocalContext.current
-                var toastText : String = ""
-                val serverConnectionVariable : String = "Success"
 
                 Icon(imageVector = Icons.Default.Close,
                     tint = Color.Red,
@@ -1224,21 +1254,9 @@ fun NewServerPage (navController: NavController) {
                                     if (passwordChanged) {
                                         dataRepository.storePassword(password)
                                     }
+                                    EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED))
                                 }
-
-                                //May need to move this
-                                if (serverConnectionVariable == "Connecting") {
-                                    toastText = "Connecting to $name"
-                                } else if (serverConnectionVariable == "Success") {
-                                    toastText = "Connected to $name"
-                                } else if (serverConnectionVariable == "Fail") {
-                                    toastText = "Connection Failed"
-                                } else {
-                                    toastText = "Error Connecting to $name"
-                                }
-                                Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
                             }
-                            EventBus.getDefault().post(MessageEvent("ServerDetailsChanged"))
                             navController.navigate("tak_server_screen")
                         })
             }
@@ -1529,12 +1547,14 @@ fun TroubleshootingIcons() {
     ) {
         var locationChecked by remember{ mutableStateOf(enableLocationService)}
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
-        val takServer by remember{ mutableStateOf(enableTAKConnectService)}
+        //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
+        val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+
         val cellChecked by remember{ mutableStateOf(enableLocationService)}
 
         // Icon on the top left curve
         Image(
-            painter = if (takServer) painterResource(R.drawable.tak_server) else painterResource(R.drawable.tak_server_disconnected),
+            painter = if (takServer == true) painterResource(R.drawable.tak_server) else painterResource(R.drawable.tak_server_disconnected),
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -1735,7 +1755,7 @@ fun MarkerDropButton(
         if (takServer == true) {
             if (location != null && locationChecked) {
                 successBoolean.value = true
-                EventBus.getDefault().post(MessageEvent("DropMarker"))
+                EventBus.getDefault().post(MessageEvent(DROP_MARKER))
             }
         } else {
             successBoolean.value = false

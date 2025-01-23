@@ -127,7 +127,7 @@ class DataRepository(private val context: Context) {
 
     //Server textfields
     val getName: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[NAME] ?: "name"
+        prefs[NAME] ?: "TAK"
     }
 
     suspend fun storeName(name: String) {
@@ -137,7 +137,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getAddress: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[ADDRESS] ?: "address"
+        prefs[ADDRESS] ?: "tak.il.ops.ascentitech.com"
     }
 
     suspend fun storeAddress(address: String) {
@@ -147,7 +147,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPort: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[PORT] ?: "port"
+        prefs[PORT] ?: "8089"
     }
 
     suspend fun storePort(port: String) {
@@ -207,7 +207,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[REPORTING_UPDATE_INTERVAL] ?: 2
+        prefs[REPORTING_UPDATE_INTERVAL] ?: 10
     }
 
     suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {
