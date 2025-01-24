@@ -206,23 +206,13 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getLocationUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[LOCATION_UPDATE_INTERVAL] ?: 2
+    val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[REPORTING_UPDATE_INTERVAL] ?: 2
     }
 
-    suspend fun storeLocationUpdateInterval(locationUpdateInterval: Int) {
+    suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {
         context.dataStore.edit { prefs ->
-            prefs[LOCATION_UPDATE_INTERVAL] = locationUpdateInterval
-        }
-    }
-
-    val getBiometricsSendInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[BIOMETRICS_SEND_INTERVAL] ?: 5
-    }
-
-    suspend fun storeBiometricsSendInterval(biometricsSendInterval: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[BIOMETRICS_SEND_INTERVAL] = biometricsSendInterval
+            prefs[REPORTING_UPDATE_INTERVAL] = reportingUpdateInterval
         }
     }
 
@@ -243,5 +233,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_TAKCONNECT_SERVICE = booleanPreferencesKey("enable_takconnect_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
+        private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
+
     }
 }

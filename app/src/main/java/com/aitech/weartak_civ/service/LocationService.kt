@@ -123,7 +123,7 @@ class LocationService : Service() {
 
     private fun createLocationRequest() {
         val locationRequest = LocationRequest.create()
-        locationRequest.interval = locationUpdateIntervalSecs * 1000L
+        locationRequest.interval = CotDispatchService.reportingUpdateIntervalSecs * 1000L
         locationRequest.fastestInterval = locationUpdateFastestIntervalSecs * 1000L
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
@@ -211,7 +211,7 @@ class LocationService : Service() {
         var hae : Double? = null
         var ce : Float? = null
         var le : Float? = null
-        var locationUpdateIntervalSecs = 2
+        //var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 2
     }
 }
