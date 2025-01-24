@@ -152,6 +152,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSetting
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.name
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.nameSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.password
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.passwordSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.port
@@ -1551,6 +1552,7 @@ fun TroubleshootingIcons() {
     //TODO: Connect cell
 
     val iconSizeSmall= 20.dp
+    networkManager.checkNetworkConnected()
 
     Box(
         modifier = Modifier
@@ -1562,8 +1564,7 @@ fun TroubleshootingIcons() {
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
-
-        val cellChecked by remember{ mutableStateOf(enableLocationService)}
+        val cellConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
 
         // Icon on the top left curve
         Image(
@@ -1580,7 +1581,7 @@ fun TroubleshootingIcons() {
 
 //         Icon on the bottom left curve
         Icon(
-            painterResource(R.drawable.cell), // Replace with your icon
+            painter = if (cellConnected == true) painterResource(R.drawable.cell) else painterResource(R.drawable.signal_cellular_nodata), // Replace with your icon
             contentDescription = "Bottom Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -1588,7 +1589,8 @@ fun TroubleshootingIcons() {
                     x = (15).dp, // Adjust this value
                     y = (15).dp // Adjust this value
                 )
-                .size(iconSizeSmall)
+                .size(if (cellConnected == true) 15.dp else 25.dp),
+            tint = if (cellConnected == true) Color.White else Color.Gray
         )
 
         // Icon on the top right curve
@@ -1627,6 +1629,7 @@ fun TroubleshootingIcons() {
                 .size(iconSizeSmall)
 
         )
+        Log.d("Iscellconnected", cellConnected.toString())
     }
 }
 
