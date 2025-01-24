@@ -84,9 +84,9 @@ class LocationService : Service() {
         startForegroundService()
         //Initialize a new handler thread to start the location updates
         // TODO: check same logic as @Subsribe
-        val nwManager = NetworkManager.getInstance()
-        mNwConnected = nwManager.isNetworkConnected
-        mNwTransport = if (nwManager.isWifi) { WIFI } else { CELLULAR }
+        //val nwManager = NetworkManager.getInstance()
+        mNwConnected = NetworkManager.isNetworkConnected
+        mNwTransport = if (NetworkManager.isWifi) { WIFI } else { CELLULAR }
         startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.reportingUpdateIntervalSecs * 1000L, locationUpdateFastestIntervalSecs * 1000L)
     }
 

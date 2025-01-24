@@ -9,15 +9,18 @@ import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
 import org.greenrobot.eventbus.EventBus
+import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.isConnected
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.isConnectedLiveData
 
 
 class NetworkManager : ConnectivityManager.NetworkCallback()  {
 
     private var mainActivity : MainActivity? = null
     private var connectivityManager : ConnectivityManager? = null
-    var isNetworkConnected = false
-    var isWifi = false
-    var isCellular = false
+//    var isNetworkConnected : Boolean = false
+//    private var isWifi = false
+//    private var isCellular = false
 
 
     fun init() {
@@ -37,15 +40,24 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
     fun checkNetworkConnected() {
         val activeNetwork = connectivityManager?.activeNetwork
         val networkCapabilities = connectivityManager?.getNetworkCapabilities(activeNetwork)
-        //Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); networkCapabilities (${networkCapabilities?.toString()})")
+        Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); networkCapabilities (${networkCapabilities?.toString()})")
         if ((null != activeNetwork) && (null != networkCapabilities)) {
             isNetworkConnected = true
+            isNetworkConnectedLiveData.postValue(isNetworkConnected)
+
             isWifi = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
             isCellular = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+            isWifiConnectedLiveData.postValue(isWifi)
+            isCellularConnectedLiveData.postValue(isCellular)
+
         } else {
             isNetworkConnected = false
+            isNetworkConnectedLiveData.postValue(isNetworkConnected)
+
             isWifi = false
             isCellular = false
+            isWifiConnectedLiveData.postValue(isWifi)
+            isCellularConnectedLiveData.postValue(isCellular)
         }
         Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         EventBus.getDefault().post(NwConnEvent(isNetworkConnected, if (isWifi == true) { WIFI } else {CELLULAR}))
@@ -89,5 +101,13 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
         public fun getInstance() : NetworkManager {
             return NETWORK_MANAGER
         }
+        var isNetworkConnected : Boolean = false
+        val isNetworkConnectedLiveData = MutableLiveData<Boolean>(false)
+        var isWifi : Boolean = false
+        val isWifiConnectedLiveData = MutableLiveData<Boolean>(false)
+        var isCellular : Boolean = false
+        val isCellularConnectedLiveData = MutableLiveData<Boolean>(false)
+
+
     }
 }
