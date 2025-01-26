@@ -1,10 +1,11 @@
-package com.aitech.weartak_civ
+package com.aitech.weartak_civ.events
 
 class MessageEvent(val message: String) {
 
     companion object {
-        public val DROP_MARKER = "DropMarker"
-        public val SERVER_DETAILS_CHANGED = "ServerDetailsChanged"
-        public val SERVER_TOGGLED = "ServerToggled"
+        val RECV_LOCATION = "RecvLocation"
+        val DROP_MARKER = "DropMarker"
+        val SERVER_DETAILS_CHANGED = "ServerDetailsChanged"
+        val SERVER_TOGGLED = "ServerToggled"
     }
 }

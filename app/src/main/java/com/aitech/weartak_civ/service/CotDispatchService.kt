@@ -12,10 +12,10 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.MessageEvent
-import com.aitech.weartak_civ.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -41,6 +41,7 @@ class CotDispatchService : Service() {
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+    var lastLocationUpdateRcvd : Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
 
     // Acquire DataRepository from a global or singleton reference
@@ -111,37 +112,20 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
-            CoroutineScope(Dispatchers.IO).launch {
-
-                val location = dataRepository.latestLocation.value
-                var heartRate = dataRepository.latestHeartRate.value
-                val battery = dataRepository.latestBatteryPercentage.value
-                //val currentMarkerId = dataRepository.markerEventId.value
-                //Log.d(TAG, "CurrentMarkerId: " + currentMarkerId + ", lastHandledMarkerId: " + lastHandledMarkerId)
-                if (location != null && battery != null) {
-                    if (heartRate == null) {
-                        heartRate = -1
-                    }
-                    sendLocationBiometricCotMessage(location, heartRate, battery)
-                    // We now directly send the marker with the UI sending out an EventBus message
-//                    if (currentMarkerId != lastHandledMarkerId) {
-//                        // There's a new click -> send marker
-//                        sendMarkerCotMessage(location, heartRate, battery)
-//                        lastHandledMarkerId = currentMarkerId
-//                    }
-                } else {
-                    Log.w(TAG, "Missing data for CoT message. Not sending.")
-                }
+            if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > reportingUpdateIntervalSecs * 1000L) {
+                // Somehow location update did not happen within the last reportingUpdateIntervalSecs.
+                // Maybe locationService is using fused indoor and reportingUpdateIntervalSecs < 5s OR some other reason
+                Log.d(TAG, "Sending locationBiometricUpdate via cotDispatchRunnable")
+                buildAndSendLocationBiometricCotMessage()
             }
-
             // Schedule the next run
             cotDispatchHandler?.postDelayed(this, reportingUpdateIntervalSecs * 1000L)
         }
+
     }
 
 
     private fun buildLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int): String {
-
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -278,6 +262,22 @@ class CotDispatchService : Service() {
         Log.d(TAG, "Marker CoT message sent: $cotMessage")
     }
 
+    private fun buildAndSendLocationBiometricCotMessage() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val location = dataRepository.latestLocation.value
+            var heartRate = dataRepository.latestHeartRate.value
+            val battery = dataRepository.latestBatteryPercentage.value
+            if (location != null && battery != null) {
+                if (heartRate == null) {
+                    heartRate = -1
+                }
+                sendLocationBiometricCotMessage(location, heartRate, battery)
+            } else {
+                Log.w(TAG, "Missing data for CoT message. Not sending.")
+            }
+        }
+    }
+
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
@@ -287,7 +287,13 @@ class CotDispatchService : Service() {
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onMessageEvent(event: MessageEvent) {
-        if (DROP_MARKER == event.message) {
+        val msg = event.message
+        //Log.d(TAG, "onMessageEvent w/ msg($msg)")
+        if (RECV_LOCATION == msg) {
+            // We would like to send the "freshest" location especially if location update is 10s or greater
+            lastLocationUpdateRcvd = System.currentTimeMillis()
+            buildAndSendLocationBiometricCotMessage()
+        } else if (DROP_MARKER == msg) {
             CoroutineScope(Dispatchers.IO).launch {
             val location = dataRepository.latestLocation.value
             var heartRate = dataRepository.latestHeartRate.value
@@ -303,7 +309,6 @@ class CotDispatchService : Service() {
                 }
             }
         }
-        Log.d(TAG, "onMessageEventCalled")
     }
 
     override fun onDestroy() {

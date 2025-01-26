@@ -16,10 +16,13 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.Vibrator
 import android.os.VibrationEffect
+import android.provider.Settings
 import android.provider.Settings.Secure
 import android.util.Log
 import android.widget.Toast
@@ -124,15 +127,15 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
-import com.aitech.weartak_civ.MessageEvent
-import com.aitech.weartak_civ.MessageEvent.Companion.DROP_MARKER
-import com.aitech.weartak_civ.MessageEvent.Companion.SERVER_DETAILS_CHANGED
-import com.aitech.weartak_civ.MessageEvent.Companion.SERVER_TOGGLED
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.TakServerConnEvent
-import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTING
-import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTION_FAILURE
-import com.aitech.weartak_civ.TakServerConnEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.events.TakServerConnEvent
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
@@ -302,23 +305,11 @@ class MainActivity : ComponentActivity() {
                 if (enableLocationService) {
                     Log.d(TAG, "Starting LocationService")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        mainActivity.startForegroundService(
-                            Intent(
-                                mainActivity,
-                                LocationService::class.java
-                            )
-                        )
+                        mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
 
                     } else {
                         mainActivity.startService(Intent(mainActivity, LocationService::class.java))
                     }
-                    /*
-                fusedLocationClient.requestLocationUpdates(
-                    locationRequest,
-                    locationCallback,
-                    Looper.getMainLooper()
-                )
-                 */
                 } else {
                     Log.d(TAG, "enableLocationService is false. So NOT starting location service")
                 }
@@ -567,6 +558,14 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BODY_SENSORS
         )
 
+        /*
+        val requiredPermissions = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.BODY_SENSORS,
+            Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+        )
+         */
+
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -612,7 +611,21 @@ class MainActivity : ComponentActivity() {
             startLocationService()
             startBiometericService()
             startBatteryService()
-        } 
+        }
+
+        /*
+        val intent = Intent()
+        val pm : PowerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (pm.isIgnoringBatteryOptimizations(this.packageName)) {
+            intent.action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+            Log.d(TAG, "pm.isIgnoringBatteryOptimizations is TRUE: Going to call startActivity to ignore battery optimizations")
+        } else {
+            intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+            intent.data = Uri.parse("package:${this.packageName}")
+            Log.d(TAG, "Going to call startActivity to request ignore battery optimizations")
+        }
+        this.startActivity(intent)
+         */
 
         setContent {
             WearTAKCivApp(callsignState, licenseState)

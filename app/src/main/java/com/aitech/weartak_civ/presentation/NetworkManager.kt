@@ -5,15 +5,19 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Log
+import com.aitech.weartak_civ.events.NwConnEvent
+import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
+import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
+import org.greenrobot.eventbus.EventBus
 
 
 class NetworkManager : ConnectivityManager.NetworkCallback()  {
 
     private var mainActivity : MainActivity? = null
     private var connectivityManager : ConnectivityManager? = null
-    private var isNetworkConnected = false
-    private var isWifi = false
-    private var isCellular = false
+    var isNetworkConnected = false
+    var isWifi = false
+    var isCellular = false
 
 
     fun init() {
@@ -44,6 +48,7 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
             isCellular = false
         }
         Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
+        EventBus.getDefault().post(NwConnEvent(isNetworkConnected, if (isWifi == true) { WIFI } else {CELLULAR}))
         // TODO: Just for testing. Please remove
         //Toast.makeText(mainActivity?.applicationContext, "nwConn = $isNetworkConnected; wifi = $isWifi; cell = $isCellular", Toast.LENGTH_LONG).show()
     }
@@ -63,7 +68,13 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
     override fun onLost(network: Network) {
         super.onLost(network)
         Log.d(TAG, "onLost called")
+        // TODO: Check below
         checkNetworkConnected()
+        /*
+        isNetworkConnected = false
+        isWifi = false
+        isCellular = false
+         */
     }
 
     override fun onUnavailable() {
