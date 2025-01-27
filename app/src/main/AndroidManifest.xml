@@ -23,6 +23,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!--
 <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
@@ -55,6 +56,14 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.BROADCAST_PACKAGE_REMOVED"
+        tools:ignore="ProtectedPermissions" />
+
+
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="true" />
 
     <application
         android:name=".WearTakApplication"
@@ -127,6 +136,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
+        <service
+            android:name=".service.OffBodyDetectService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
         <!--
        <service
            android:name=".service.PassiveDataService"
@@ -145,14 +160,27 @@
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
 
+        <receiver android:name=".WearTakInitOnUpdate" android:exported="true" android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".WearTakInitOnBoot" android:exported="true" android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
-            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>

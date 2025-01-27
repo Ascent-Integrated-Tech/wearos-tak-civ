@@ -181,6 +181,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometeri
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startOffBodyDetectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
@@ -196,6 +197,7 @@ import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
+import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectStatusLiveData
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectionStatus
@@ -302,7 +304,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking requestLocationUpdates")
                 } else {
-                    if (!HeartrateService.isRunning) {
+                    if (!HeartrateService.isRunning.get()) {
                         Log.d(TAG, "Starting hearrate service")
                         mainActivity.startService(
                             Intent(
@@ -395,6 +397,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startOffBodyDetectService() {
+            Log.d(TAG, "Starting OffBodyDetectService")
+            mainActivity.startService(Intent(mainActivity, OffBodyDetectService::class.java))
+        }
+
     }
 
     var secureSocket : SSLSocket? = null
@@ -450,6 +457,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action}")
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (EventBus.getDefault().isRegistered(this)) {
@@ -460,6 +472,7 @@ class MainActivity : ComponentActivity() {
         if (enableBiometricsService) {
             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
         }
+        mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
         if (enableLocationService) {
             mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
         }
@@ -678,13 +691,14 @@ class MainActivity : ComponentActivity() {
             EventBus.getDefault().register(this)
         }
         dataRepository = DataRepository(this)
-        networkManager = NetworkManager.getInstance()
-        networkManager.init()
         readTeamsJson()
         readRolesJson()
+        setDataFromDatastore()
+        networkManager = NetworkManager.getInstance()
+        networkManager.init()
+
         installSplashScreen()
 
-        setDataFromDatastore()
         validateLicense(license)
         if (enableTAKConnectService) { startTAKConnectService() }
 
@@ -697,6 +711,7 @@ class MainActivity : ComponentActivity() {
         //startHealthCapabilitiesCollection()
 
         if (isLicenseValid()) {
+            startOffBodyDetectService()
             startCotDispatchService()
             startLocationService()
             startBiometericService()
@@ -1685,6 +1700,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
 
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
+                            startOffBodyDetectService()
                             startBatteryService()
                             startLocationService()
                             startCotDispatchService()
@@ -1699,11 +1715,19 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                     )
                                 )
                             }
-                            if (enableBiometricsService && HeartrateService.isRunning) {
+                            if (enableBiometricsService && HeartrateService.isRunning.get()) {
                                 mainActivity.stopService(
                                     Intent(
                                         mainActivity,
                                         HeartrateService::class.java
+                                    )
+                                )
+                            }
+                            if (OffBodyDetectService.isRunning.get()) {
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        OffBodyDetectService::class.java
                                     )
                                 )
                             }

@@ -61,6 +61,9 @@ class DataRepository(private val context: Context) {
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
 
+    private val _latestIsDeviceWorn = MutableStateFlow<Boolean>(false)
+    val latestIsDeviceWorn: StateFlow<Boolean> = _latestIsDeviceWorn
+
     /*
     private val _markerEventId = MutableStateFlow<Int>(0)
     val markerEventId: StateFlow<Int> = _markerEventId
@@ -84,6 +87,10 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeLatestBatteryPercentage(batteryPercentage: Int) {
         _latestBatteryPercentage.emit(batteryPercentage)
+    }
+
+    suspend fun storeLatestIsDeviceWorn(isDeviceWorn: Boolean) {
+        _latestIsDeviceWorn.emit(isDeviceWorn)
     }
 
     val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->
