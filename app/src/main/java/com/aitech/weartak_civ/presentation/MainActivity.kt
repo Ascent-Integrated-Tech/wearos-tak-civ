@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.InputTransformation.Companion.keyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -86,12 +87,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
@@ -1914,10 +1918,29 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
+                val focusManager = LocalFocusManager.current
 
                 OutlinedTextField(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (reportingUpdateInterval.text.isEmpty()) {
+                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else if (reportingUpdateInterval.text == "0") {
+                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else {
+                                // If there is valid input, we can clear focus
+                                // (which typically dismisses the keyboard)
+                                focusManager.clearFocus()
+
+                                // Now you can navigate or do the next action
+                            }
+                        }
+                    ),
                     singleLine = true,
                     value = reportingUpdateInterval,
                     onValueChange = {
@@ -1937,7 +1960,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             style = MaterialTheme.typography.caption3
                         )
                     },
-                    textStyle = TextStyle(color = colors.primary)
+                    textStyle = TextStyle(color = colors.primary),
                 )
 
                 SettingSwitchToggle(checked = locationChecked, onCheckedChange =  { locationChecked = it },
@@ -1971,6 +1994,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             var teamChanged = false
                             var roleChanged = false
                             var licenseChanged: Boolean= false
+                            val maxReportRate: Int = 100000000
+                            val minReportRate: Int = 1
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
@@ -2032,8 +2057,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             }
                             val reportingUpdateIntervalText = reportingUpdateInterval.text
                             if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
-                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
-                                )
+                                    CotDispatchService.reportingUpdateIntervalSecs.toString()) && reportingUpdateInterval.text.toInt() >= minReportRate
                             ) {
                                 settingsChanged = true; reportingUpdateIntervalChanged = true
                                 CotDispatchService.reportingUpdateIntervalSecs =
@@ -2054,6 +2078,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                     startLocationService()
                                 }
                             }
+
                             if (enableBiometricsService != biometricsChecked) {
                                 settingsChanged = true; biometricsCheckedChanged = true
                                 enableBiometricsService = biometricsChecked
@@ -2119,7 +2144,15 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             } else {
                                 Log.d(TAG, "Settings not changed and hence NOT saved")
                             }
-                            navController.navigate("main_screen")
+                            if (reportingUpdateIntervalText.equals("")){
+                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else if (reportingUpdateIntervalText.equals("0")) {
+                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
+                                Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                            } else {
+                                navController.navigate("main_screen")
+                            }
                         })
             }
         }
