@@ -157,6 +157,8 @@ class TAKConnectService: Service() {
         if (SERVER_DETAILS_CHANGED == event.message) {
             Log.d(TAG, "Received SERVER_DETAILS_CHANGED message")
             EventBus.getDefault().post(TakServerConnEvent(CONNECTING))
+            takConnectionStatus = "CONNECTING"
+            takConnectStatusLiveData.postValue(takConnectionStatus)
             numConnFailureEventSentAfterConnecting = 0
             setFromDatastore()
             getClientCertificateAndConnect(takServer, username, password, port)
@@ -164,8 +166,8 @@ class TAKConnectService: Service() {
     }
 
     companion object {
-        private val NUM_CONN_FAILURE_TOASTS = 2
-        private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 4
+        private val NUM_CONN_FAILURE_TOASTS = 1
+        private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 1
         private var numConnFailureEventSentAfterConnecting = 0
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
@@ -176,6 +178,8 @@ class TAKConnectService: Service() {
         val obtainingClientCert = AtomicBoolean(false)
         val obtainedClientCert  = AtomicBoolean(false)
         val isConnectingToCotMsgPort : AtomicBoolean = AtomicBoolean(false) // This is only for the process of connecting to COT message port
+        var takConnectionStatus: String = "null"
+        val takConnectStatusLiveData = MutableLiveData<String>("null")
 
         var privateKey: PrivateKey? = null
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12")
@@ -352,6 +356,8 @@ class TAKConnectService: Service() {
         private fun sendConnectionFailureEvent() {
             if (numConnFailureEventSentAfterConnecting < NUM_CONN_FAILURE_TOASTS) {
                 EventBus.getDefault().post(TakServerConnEvent(CONNECTION_FAILURE))
+                takConnectionStatus = "CONNECTION_FAILURE"
+                takConnectStatusLiveData.postValue(takConnectionStatus)
             }
         }
 
@@ -452,6 +458,8 @@ class TAKConnectService: Service() {
                         isConnected = true
                         isConnectedLiveData.postValue(isConnected)
                         EventBus.getDefault().post(TakServerConnEvent(CONNECTION_SUCCESS))
+                        takConnectionStatus = "CONNECTION_SUCCESS"
+                        takConnectStatusLiveData.postValue(takConnectionStatus)
                         Log.d(TAG, "Successfully connected to $takServer on port $port")
                     } catch (e: Exception) {
                         isConnected = false
