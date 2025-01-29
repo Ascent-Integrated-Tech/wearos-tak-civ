@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import live.ditto.DittoDocumentId
 import live.ditto.DittoError
+import live.ditto.DittoIdentity
 import live.ditto.DittoSyncSubscription
 import live.ditto.transports.DittoTransportConfig
 import java.text.SimpleDateFormat
@@ -70,7 +71,8 @@ class DittoService : Service() {
 
     private fun configureDitto() {
         val config = DittoTransportConfig()
-        config.enableAllPeerToPeer() //Enable all peer to peer transports
+        config.enableAllPeerToPeer() // Enable all peer to peer transports on WearTAK
+        ditto.deviceName = callsign // set deviceName for presence viewer
         ditto.transportConfig = config
     }
 
@@ -127,28 +129,6 @@ class DittoService : Service() {
             val bearingActual = location?.bearing ?: 0.0F
             val speedActual = location?.speed ?: 0.0F
             val deviceModel = manufacturer + " " + model
-
-            val cotStringValue = "{a=Undefined, c=null, d={0={a={}, d={0={a={device=$deviceModel, os=34, platform=WEARTAK-CIV, version=5.3.0.10 (37fe1ccd) [playstore].1737557220-CIV}, d={}, i=null, n=takv}, 1={a={callsign=$callsign, endpoint=0.0.0.0:4242:tcp, phone=123456789}, d={}, i=null, n=contact}, 2={a={Droid=$callsign}, d={}, i=null, n=uid},3={a={altsrc=NETD, geopointsrc=NETD}, d={}, i=null, n=precisionlocation},4={a={name=$teamValue, role=$roleValue}, d={}, i=null, n=_group},5={a={battery=$battery}, d={}, i=null, n=status},6={a={deviceName=$callsign, ip=0.0.0.0, pks=$localPeerKeyString, version=AndJ4.8.1_9afa7353b2), d={}, i=null, n=ditto},7={a={course=$bearingActual, speed=$speedActual}, d={}, i=null, n=track}}, i=null, n=detail}}, h=m-g, o=null, p={c=$ceActual, h=$haeActual, la=$latActual,le=$leActual, 1o=$lonActual}, q=null, r=null, t={ms=$timeMs}, t1={ms=$timeMs}, t2={ms=$staleTimeMs}, u=$uuid, v=2.0, y=a-f-G-U-C}"
-
-            // _id: WEAROS_2fffd2c2438ca082
-//            val trackDocument = mapOf(
-//                "_id" to uuid,
-//                "authorCs" to callsign,
-//                "authorId" to uuid,
-//                "authorType" to "a-f-G-U-C",
-//                "cs" to callsign,
-//                "lat" to latActual,
-//                "lon" to lonActual,
-//                "pks" to localPeerKeyString,
-//                "removed" to false,
-//                "schver" to 1,
-//                "staleMs" to staleMsOffset,
-//                "takUid" to uuid,
-//                "timeMs" to timeMs.toDouble(),
-//                "type" to "a-f-G-U-C",
-//                "visible" to "true",
-//                "cot" to cotStringValue
-//            )
 
             val cotMap = mapOf(
                 "a" to "Undefined",
@@ -267,6 +247,7 @@ class DittoService : Service() {
                 "authorCs" to callsign,
                 "authorId" to uuid,
                 "authorType" to "a-f-G-U-C",
+                "cot" to cotMap,
                 "cs" to callsign,
                 "lat" to latActual,
                 "lon" to lonActual,
@@ -277,26 +258,10 @@ class DittoService : Service() {
                 "takUid" to uuid,
                 "timeMs" to timeMs.toDouble(),
                 "type" to "a-f-G-U-C",
-                "cot" to cotMap
                 )
 
-//            val trackDocument = mapOf(
-//                "_id" to uuid,
-//                "removed" to false,
-//                "la" to latActual,
-//                "lo" to lonActual,
-//                "authorId" to uuid,
-//                "uid" to uuid,
-//                "y" to "a-f-G",
-//                "t" to timeMs.toDouble(),
-//                "t1" to 0,
-//                "t2" to 60000,
-//                "authorCs" to "Test Track",
-//                "authorType" to "a-f-G-U-G",
-//                "cs" to "Tak Test $callsign",
-//                "pks" to localPeerKeyString,
-//            )
             val insertQuery = "INSERT INTO track DOCUMENTS (:trackDocument) ON ID CONFLICT DO UPDATE"
+            Log.d(TAG, "Updating track document: $trackDocument")
             ditto.store.execute(insertQuery, mapOf("trackDocument" to trackDocument))
         }
     }
