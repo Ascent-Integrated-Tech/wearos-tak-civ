@@ -268,6 +268,7 @@ class DittoService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         // Stop syncing when the service is destroyed
         try {
             ditto.stopSync()

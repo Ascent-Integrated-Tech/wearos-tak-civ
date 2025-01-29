@@ -562,6 +562,8 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Setting enableBiometricsService to $enableBiometricsService")
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             Log.d(TAG, "Setting enableTAKConnectService to $enableTAKConnectService")
+            enableDittoService = dataRepository.getEnableDittoService.first()
+            Log.d(TAG, "Setting enableDittoService to $enableDittoService")
             CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
             LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
             Log.d(TAG, "Setting ReportingUpdateInterval to ${CotDispatchService.reportingUpdateIntervalSecs} seconds")
@@ -1989,6 +1991,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
             var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+            var dittoChecked by remember{ mutableStateOf(enableDittoService)}
+
 
             Column(modifier = Modifier
                 .fillMaxWidth()
@@ -2078,6 +2082,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     title = "Biometrics",
                     description = "Service ON/OFF",)
 
+                SettingSwitchToggle(checked = dittoChecked, onCheckedChange =  { dittoChecked = it },
+                    title = "Ditto",
+                    description = "Service ON/OFF",)
+
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -2104,6 +2112,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
+                            var dittoCheckedChanged: Boolean = false
+
                             var reportingUpdateIntervalChanged = false
                             if (!callsign.equals(callsignSettingsState.value)) {
                                 settingsChanged = true; callsignChanged = true
@@ -2207,6 +2217,23 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 }
                             }
 
+                            if (enableDittoService != dittoChecked) {
+                                settingsChanged = true; dittoCheckedChanged = true
+                                enableDittoService = dittoChecked
+                                if (enableDittoService) {
+                                    Log.d(TAG, "Starting ditto service")
+                                    startDittoService()
+                                } else {
+                                    Log.d(TAG, "Stopping ditto service")
+                                    mainActivity.stopService(
+                                        Intent(
+                                            mainActivity,
+                                            DittoService::class.java
+                                        )
+                                    )
+                                }
+                            }
+
                             if (settingsChanged) {
                                 CoroutineScope(Dispatchers.Main).launch {
                                     if (callsignChanged) {
@@ -2252,6 +2279,17 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                             enableBiometricsService
                                         )
                                     }
+
+                                    if (dittoCheckedChanged) {
+                                        Log.d(
+                                            TAG,
+                                            "Storing enableDittoService $enableDittoService"
+                                        )
+                                        dataRepository.storeEnableDittoService(
+                                            enableDittoService
+                                        )
+                                    }
+
                                     Log.d(TAG, "Finished saving settings")
                                 }
                             } else {

@@ -206,6 +206,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableDittoService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_DITTO_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableDittoService(enableDittoService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_DITTO_SERVICE] = enableDittoService
+        }
+    }
+
     val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[REPORTING_UPDATE_INTERVAL] ?: 10
     }
@@ -231,6 +241,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val ENABLE_TAKCONNECT_SERVICE = booleanPreferencesKey("enable_takconnect_service")
+        private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
