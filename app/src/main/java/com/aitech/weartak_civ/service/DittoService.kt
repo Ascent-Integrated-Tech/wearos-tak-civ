@@ -32,6 +32,9 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,10 +57,13 @@ class DittoService : Service() {
     private val ditto = DittoApplication.getDittoInstance()
     private val uuid = MainActivity.device_uid
     private var subscription: DittoSyncSubscription? = null
-    private var localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
+    private val model = android.os.Build.MODEL
+    private val manufacturer = android.os.Build.MANUFACTURER
+
 
     override fun onCreate() {
         super.onCreate()
+        localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
         dataRepository = MainActivity.dataRepository // or another injection approach
         Log.d(TAG, "Oncreate Called")
     }
@@ -88,7 +94,7 @@ class DittoService : Service() {
             }
 
             // Schedule the next run
-            dittoUpdateHandler?.postDelayed(this, dittoUpdateIntervalSecs * 1000L)
+            dittoUpdateHandler?.postDelayed(this, CotDispatchService.reportingUpdateIntervalSecs * 1000L)
         }
     }
 
@@ -106,25 +112,190 @@ class DittoService : Service() {
         ioScope.launch{
 //            val timeMs = Calendar.getInstance().timeInMillis
             val timeMs = System.currentTimeMillis()
+            val staleMsOffset = 10000
+            val staleTimeMs = timeMs+staleMsOffset
+            val location = dataRepository.latestLocation.value
+            var heartRate = dataRepository.latestHeartRate.value
+            val battery = dataRepository.latestBatteryPercentage.value
+            val latActual = location?.latitude ?: 0.0
+            val lonActual = location?.longitude ?: 0.0
+            val haeActual = location?.altitude ?: 0.0
+            var ceActual = location?.accuracy ?: 9999999.0F
+            if (ceActual.isNaN() == true) ceActual = 9999999.0F
+            var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
+            if (leActual.isNaN() == true) leActual = 9999999.0F
+            val bearingActual = location?.bearing ?: 0.0F
+            val speedActual = location?.speed ?: 0.0F
+            val deviceModel = manufacturer + " " + model
 
-            Log.d(TAG, "timeMs is $timeMs type is: " + timeMs.javaClass.kotlin)
+            val cotStringValue = "{a=Undefined, c=null, d={0={a={}, d={0={a={device=$deviceModel, os=34, platform=WEARTAK-CIV, version=5.3.0.10 (37fe1ccd) [playstore].1737557220-CIV}, d={}, i=null, n=takv}, 1={a={callsign=$callsign, endpoint=0.0.0.0:4242:tcp, phone=123456789}, d={}, i=null, n=contact}, 2={a={Droid=$callsign}, d={}, i=null, n=uid},3={a={altsrc=NETD, geopointsrc=NETD}, d={}, i=null, n=precisionlocation},4={a={name=$teamValue, role=$roleValue}, d={}, i=null, n=_group},5={a={battery=$battery}, d={}, i=null, n=status},6={a={deviceName=$callsign, ip=0.0.0.0, pks=$localPeerKeyString, version=AndJ4.8.1_9afa7353b2), d={}, i=null, n=ditto},7={a={course=$bearingActual, speed=$speedActual}, d={}, i=null, n=track}}, i=null, n=detail}}, h=m-g, o=null, p={c=$ceActual, h=$haeActual, la=$latActual,le=$leActual, 1o=$lonActual}, q=null, r=null, t={ms=$timeMs}, t1={ms=$timeMs}, t2={ms=$staleTimeMs}, u=$uuid, v=2.0, y=a-f-G-U-C}"
+
+            // _id: WEAROS_2fffd2c2438ca082
+//            val trackDocument = mapOf(
+//                "_id" to uuid,
+//                "authorCs" to callsign,
+//                "authorId" to uuid,
+//                "authorType" to "a-f-G-U-C",
+//                "cs" to callsign,
+//                "lat" to latActual,
+//                "lon" to lonActual,
+//                "pks" to localPeerKeyString,
+//                "removed" to false,
+//                "schver" to 1,
+//                "staleMs" to staleMsOffset,
+//                "takUid" to uuid,
+//                "timeMs" to timeMs.toDouble(),
+//                "type" to "a-f-G-U-C",
+//                "visible" to "true",
+//                "cot" to cotStringValue
+//            )
+
+            val cotMap = mapOf(
+                "a" to "Undefined",
+                "c" to null,
+                "d" to mapOf(
+                    "0" to mapOf(
+                        "a" to emptyMap<String, Any?>(),
+                        "d" to mapOf(
+                            "0" to mapOf(
+                                "a" to mapOf(
+                                    "device" to deviceModel,
+                                    "os" to "34",
+                                    "platform" to "WearTAK-CIV",
+                                    "version" to "0.34"
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "takv"
+                            ),
+                            "1" to mapOf(
+                                "a" to mapOf(
+                                    "callsign" to callsign,
+                                    "endpoint" to "0.0.0.0:4242:tcp",
+                                    "phone" to "1234567890"
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "contact"
+                            ),
+                            "2" to mapOf(
+                                "a" to mapOf(
+                                    "Droid" to callsign
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "uid"
+                            ),
+                            "3" to mapOf(
+                                "a" to mapOf(
+                                    "altsrc" to "GPS",
+                                    "geopointsrc" to "GPS"
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "precisionlocation"
+                            ),
+                            "4" to mapOf(
+                                "a" to mapOf(
+                                    "name" to teamValue,
+                                    "role" to roleValue,
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "__group"
+                            ),
+                            "5" to mapOf(
+                                "a" to mapOf(
+                                    "battery" to battery.toString(),
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "status"
+                            ),
+                            "6" to mapOf(
+                                "a" to mapOf(
+                                    "deviceName" to callsign,
+                                    "ip" to "0.0.0.0",
+                                    "pks" to localPeerKeyString,
+                                    "version" to "AndJ4.8.1_9afa7353b2"
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "ditto"
+                            ),
+                            "7" to mapOf(
+                                "a" to mapOf(
+                                    "course" to bearingActual.toString(),
+                                    "speed" to speedActual.toString()
+                                ),
+                                "d" to emptyMap<String, Any?>(),
+                                "i" to null,
+                                "n" to "track"
+                            ),
+                        ),
+                        "i" to null,
+                        "n" to "detail"
+                    ),
+                ),
+                "h" to "m-g",
+                "o" to null,
+                "p" to mapOf(
+                    "c" to ceActual.toString(),
+                    "h" to haeActual.toString(),
+                    "la" to latActual.toString(),
+                    "le" to leActual.toString(),
+                    "lo" to lonActual.toString()
+                ),
+                "q" to null,
+                "r" to null,
+                "t" to mapOf(
+                    "ms" to timeMs.toString(),
+                ),
+                "t1" to mapOf(
+                    "ms" to timeMs.toString()
+                ),
+                "t2" to mapOf(
+                    "ms" to staleTimeMs.toString()
+                ),
+                "u" to uuid,
+                "v" to "2.0",
+                "y" to "a-f-G-U-C"
+            )
+
             val trackDocument = mapOf(
                 "_id" to uuid,
                 "authorCs" to callsign,
                 "authorId" to uuid,
                 "authorType" to "a-f-G-U-C",
                 "cs" to callsign,
-                "lat" to location?.latitude,
-                "lon" to location?.longitude,
+                "lat" to latActual,
+                "lon" to lonActual,
                 "pks" to localPeerKeyString,
                 "removed" to false,
                 "schver" to 1,
-                "staleMs" to 100000,
+                "staleMs" to staleMsOffset,
                 "takUid" to uuid,
-                "timeMs" to timeMs,
+                "timeMs" to timeMs.toDouble(),
                 "type" to "a-f-G-U-C",
-                "visible" to "true"
-            )
+                "cot" to cotMap
+                )
+
+//            val trackDocument = mapOf(
+//                "_id" to uuid,
+//                "removed" to false,
+//                "la" to latActual,
+//                "lo" to lonActual,
+//                "authorId" to uuid,
+//                "uid" to uuid,
+//                "y" to "a-f-G",
+//                "t" to timeMs.toDouble(),
+//                "t1" to 0,
+//                "t2" to 60000,
+//                "authorCs" to "Test Track",
+//                "authorType" to "a-f-G-U-G",
+//                "cs" to "Tak Test $callsign",
+//                "pks" to localPeerKeyString,
+//            )
             val insertQuery = "INSERT INTO track DOCUMENTS (:trackDocument) ON ID CONFLICT DO UPDATE"
             ditto.store.execute(insertQuery, mapOf("trackDocument" to trackDocument))
         }
@@ -205,7 +376,7 @@ class DittoService : Service() {
         private val DITTO_SERVICE_NOTIFICATION_ID = 3333
         var isRunning : Boolean = false
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
-        var dittoUpdateIntervalSecs = 5
+        lateinit var localPeerKeyString: String
     }
 
 }
