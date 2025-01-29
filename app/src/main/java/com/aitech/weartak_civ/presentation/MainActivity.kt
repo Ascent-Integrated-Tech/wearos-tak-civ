@@ -52,6 +52,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -107,6 +109,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.concurrent.futures.await
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -122,6 +125,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
@@ -142,6 +146,7 @@ import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAI
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
@@ -166,6 +171,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesVal
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.serverSettingsChanged
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
@@ -183,6 +189,8 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.TAKConnectService
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectStatusLiveData
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectionStatus
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -237,6 +245,7 @@ class MainActivity : ComponentActivity() {
         val portSettingsState = MutableLiveData<String>("8089")
         val usernameSettingsState = MutableLiveData<String>("TEST.AIT")
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
+        var serverSettingsChanged: Boolean = false
 
 
         data class RolesJson (
@@ -637,7 +646,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onMessageEvent(event: TakServerConnEvent) {
         var toastText = ""
@@ -651,7 +659,7 @@ class MainActivity : ComponentActivity() {
             toastText = "Connection Failed"
         }
         Log.d(TAG, "Showing toast w/ text: $toastText")
-        Toast.makeText(mainActivity, toastText, Toast.LENGTH_SHORT).show()
+//        Toast.makeText(mainActivity, toastText, Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -742,6 +750,7 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(5.dp)
         ) {
+
             Column(
                 modifier = Modifier
                     .background(colors.background)
@@ -884,7 +893,11 @@ fun TeamSetting(navController: NavController) {
         val index : Int = findTeamIndex(teamSettingsState.value)
         var selectedRadioIndex by remember { mutableStateOf(index) }
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -950,7 +963,11 @@ fun RoleSetting (navController: NavController) {
         var selectedRadioIndex by remember { mutableStateOf(index) }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp).padding(bottom = 40.dp).verticalScroll(state = rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -994,6 +1011,7 @@ fun RoleSetting (navController: NavController) {
 @SuppressLint("CoroutineCreationDuringComposition")
 @Composable
 fun TakServerSetting(navController: NavController) {
+
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -1082,6 +1100,36 @@ fun TakServerSetting(navController: NavController) {
                     )
                 }
             }
+            var pp = remember {mutableStateOf(TAKConnectService.takConnectionStatus)}
+            val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
+            val shouldShowLoadingDialog = remember { mutableStateOf(false) }
+            val shouldShowConfirmDialog = remember { mutableStateOf(false) }
+            val isServerConnected = remember { mutableStateOf(false) }
+
+            takConnectionStatus = "NULL"
+            takConnectStatusLiveData.postValue(takConnectionStatus)
+
+            if (serverSettingsChanged) {
+                if (loadingDialog.equals("CONNECTING")) {
+                    shouldShowLoadingDialog.value = true
+                    shouldShowConfirmDialog.value = false
+                } else if (loadingDialog.equals("CONNECTION_SUCCESS")) {
+                    shouldShowLoadingDialog.value = false
+                    shouldShowConfirmDialog.value = true
+                    isServerConnected.value = true
+                } else if (loadingDialog.equals("CONNECTION_FAILURE")) {
+                    shouldShowLoadingDialog.value = false
+                    shouldShowConfirmDialog.value = true
+                    isServerConnected.value = false
+                }
+                LoadingDialog(shouldShowLoadingDialog)
+                ServerRegistrationDialog(
+                    shouldShowConfirmDialog,
+                    navController,
+                    isServerConnected
+                )
+                Log.d(TAG, loadingDialog.toString())
+            }
         }
     }
 }
@@ -1152,6 +1200,7 @@ fun NewServerPage (navController: NavController) {
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
+
             if (shouldShowDialog.value) {
                 ConfirmationDialog(
                     shouldShowDialog = shouldShowDialog,
@@ -1204,7 +1253,6 @@ fun NewServerPage (navController: NavController) {
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                var settingsChanged: Boolean = false
                 var nameChanged: Boolean = false
                 var addressChanged: Boolean = false
                 var portChanged: Boolean = false
@@ -1218,7 +1266,9 @@ fun NewServerPage (navController: NavController) {
                     modifier = Modifier
                         .size(40.dp)
                         .clickable {
-                            settingsChanged = false; nameChanged = false; addressChanged = false; portChanged = false; usernameChanged = false; passwordChanged = false
+                            serverSettingsChanged = false; nameChanged = false; addressChanged =
+                            false; portChanged = false; usernameChanged = false; passwordChanged =
+                            false
                             Log.d(TAG, "Settings NOT saved")
                             navController.navigate("tak_server_screen")
                         })
@@ -1230,32 +1280,32 @@ fun NewServerPage (navController: NavController) {
                         .size(40.dp)
                         .clickable {
                             if (!nameTextState.value.equals(nameSettingsState.value)) {
-                                settingsChanged = true; nameChanged = true
+                                serverSettingsChanged = true; nameChanged = true
                                 name = nameTextState.value ?: name
                                 nameSettingsState.postValue(name)
                             }
                             if (!addressTextState.value.equals(addressSettingsState.value)) {
-                                settingsChanged = true; addressChanged = true
+                                serverSettingsChanged = true; addressChanged = true
                                 address = addressTextState.value ?: address
                                 addressSettingsState.postValue(address)
                             }
                             if (!portTextState.value.equals(portSettingsState.value)) {
-                                settingsChanged = true; portChanged = true
+                                serverSettingsChanged = true; portChanged = true
                                 port = portTextState.value ?: port
                                 portSettingsState.postValue(port)
                             }
                             if (!usernameTextState.value.equals(usernameSettingsState.value)) {
-                                settingsChanged = true; usernameChanged = true
+                                serverSettingsChanged = true; usernameChanged = true
                                 username = usernameTextState.value ?: username
                                 usernameSettingsState.postValue(username)
                             }
                             if (!passwordTextState.value.equals(passwordSettingsState.value)) {
-                                settingsChanged = true; passwordChanged = true
+                                serverSettingsChanged = true; passwordChanged = true
                                 password = passwordTextState.value ?: password
                                 passwordSettingsState.postValue(password)
                             }
 
-                            if (settingsChanged) {
+                            if (serverSettingsChanged) {
                                 CoroutineScope(Dispatchers.Main).launch {
                                     if (nameChanged) {
                                         dataRepository.storeName(name)
@@ -1272,7 +1322,9 @@ fun NewServerPage (navController: NavController) {
                                     if (passwordChanged) {
                                         dataRepository.storePassword(password)
                                     }
-                                    EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED))
+                                    EventBus
+                                        .getDefault()
+                                        .post(MessageEvent(SERVER_DETAILS_CHANGED))
                                 }
                             }
                             navController.navigate("tak_server_screen")
@@ -1306,6 +1358,117 @@ fun NewServerSettingText (
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
     textState.value = textFieldValue.text
+}
+
+@Composable
+fun LoadingDialog(
+    shouldShowDialog: MutableState<Boolean>,
+) {
+    if (shouldShowDialog.value) {
+        Dialog(
+            onDismissRequest = { shouldShowDialog.value = false },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+
+            Card(
+             colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Registering device with TAK Server",
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ServerRegistrationDialog(
+    shouldShowDialog: MutableState<Boolean>,
+    navController: NavController,
+    isServerConnected: MutableState<Boolean>
+) {
+    if (shouldShowDialog.value) {
+        AlertDialog(
+            modifier = Modifier.wrapContentHeight(),
+            containerColor = Color.DarkGray,
+            onDismissRequest = {
+                shouldShowDialog.value = false
+            },
+            title = {
+                if (isServerConnected.value) {
+                    Text("Registration Complete", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                } else {
+                    Text("Registration Failed", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 15.dp))
+                }
+            },
+            text = {
+                if (isServerConnected.value) {
+                    Text("TAK Server registration succeeded", textAlign = TextAlign.Center)
+                } else {
+                    Text("Invalid Credentials, try again", textAlign = TextAlign.Center)
+                }
+            },
+            confirmButton = {
+                if (isServerConnected.value) {
+                    //Don't create retry button
+                } else {
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                            navController.navigate("new_server_screen")
+                        },
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.LightGray,
+                        ),
+                    ) {
+                        Text(
+                            text = "Retry",
+                            color = Color.Black
+                        )
+                    }
+                }
+            },
+
+            dismissButton = {
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                        },
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = if (isServerConnected.value) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(0.45f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Gray,
+                        )
+                    ) {
+                        if (isServerConnected.value) {
+                            Text(
+                                text = "Okay",
+                            )
+                        } else {
+                            Text(
+                                text = "Cancel",
+                            )
+                        }
+                    }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1434,24 +1597,57 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 }
                             }
                         }
-                        Log.d(TAG, license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text)
+                        Log.d(
+                            TAG,
+                            license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text
+                        )
 
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
-                            mainActivity.startService(Intent(mainActivity, BatteryService::class.java))
+                            mainActivity.startService(
+                                Intent(
+                                    mainActivity,
+                                    BatteryService::class.java
+                                )
+                            )
                             if (enableBiometricsService) {
-                                mainActivity.startService(Intent(mainActivity, HeartrateService::class.java))
+                                mainActivity.startService(
+                                    Intent(
+                                        mainActivity,
+                                        HeartrateService::class.java
+                                    )
+                                )
                             }
                             if (enableLocationService) {
-                                mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                                mainActivity.startService(
+                                    Intent(
+                                        mainActivity,
+                                        LocationService::class.java
+                                    )
+                                )
                             }
                         } else {
-                            mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
+                            mainActivity.stopService(
+                                Intent(
+                                    mainActivity,
+                                    BatteryService::class.java
+                                )
+                            )
                             if (enableBiometricsService) {
-                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        HeartrateService::class.java
+                                    )
+                                )
                             }
                             if (enableLocationService) {
-                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        LocationService::class.java
+                                    )
+                                )
                             }
                             navController.navigate("invalid_license_screen")
                         }
@@ -1822,7 +2018,9 @@ fun SettingSwitchToggle(
     // The primary label should have a maximum 3 lines of text
     // and the secondary label should have max 2 lines of text.
     ToggleChip(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
         label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis,) },
         secondaryLabel = {
             Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1993,7 +2191,7 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             var callsignChanged: Boolean = false
                             var teamChanged = false
                             var roleChanged = false
-                            var licenseChanged: Boolean= false
+                            var licenseChanged: Boolean = false
                             val maxReportRate: Int = 100000000
                             val minReportRate: Int = 1
 
@@ -2011,7 +2209,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
                                 // This cannot happen, but still...
                                 if (teamIndex == -1) {
-                                    Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
+                                    Log.e(
+                                        TAG,
+                                        "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0"
+                                    )
                                     teamIndex = 0
                                     team = teamEntriesValuesList.ltEntries[0]
                                     teamSettingsState.postValue(team)
@@ -2025,7 +2226,10 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
                                 // This cannot happen, but still...
                                 if (roleIndex == -1) {
-                                    Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
+                                    Log.e(
+                                        TAG,
+                                        "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0"
+                                    )
                                     roleIndex = 0
                                     role = roleEntriesValuesList.lrEntries[0]
                                     roleSettingsState.postValue(role)
@@ -2057,7 +2261,8 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             }
                             val reportingUpdateIntervalText = reportingUpdateInterval.text
                             if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
-                                    CotDispatchService.reportingUpdateIntervalSecs.toString()) && reportingUpdateInterval.text.toInt() >= minReportRate
+                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
+                                ) && reportingUpdateInterval.text.toInt() >= minReportRate
                             ) {
                                 settingsChanged = true; reportingUpdateIntervalChanged = true
                                 CotDispatchService.reportingUpdateIntervalSecs =
@@ -2128,7 +2333,9 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                             TAG,
                                             "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})"
                                         )
-                                        dataRepository.storeReportingUpdateInterval(CotDispatchService.reportingUpdateIntervalSecs)
+                                        dataRepository.storeReportingUpdateInterval(
+                                            CotDispatchService.reportingUpdateIntervalSecs
+                                        )
                                     }
                                     if (biometricsCheckedChanged) {
                                         Log.d(
@@ -2144,12 +2351,30 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                             } else {
                                 Log.d(TAG, "Settings not changed and hence NOT saved")
                             }
-                            if (reportingUpdateIntervalText.equals("")){
-                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                            if (reportingUpdateIntervalText.equals("")) {
+                                Toast
+                                    .makeText(
+                                        mainActivity,
+                                        "Reporting Rate Empty, Enter Again",
+                                        Toast.LENGTH_SHORT
+                                    )
+                                    .show()
                             } else if (reportingUpdateIntervalText.equals("0")) {
-                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast
+                                    .makeText(
+                                        mainActivity,
+                                        "Reporting Rate 0, Enter Again",
+                                        Toast.LENGTH_SHORT
+                                    )
+                                    .show()
                             } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                                Toast
+                                    .makeText(
+                                        mainActivity,
+                                        "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate",
+                                        Toast.LENGTH_SHORT
+                                    )
+                                    .show()
                             } else {
                                 navController.navigate("main_screen")
                             }
@@ -2195,6 +2420,26 @@ fun TAKSettingsPreview() {
 fun NewServerPreview() {
     NewServerPage(rememberNavController())
 }
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun LoadingDialogPreview() {
+    val shouldShowDialog = remember { mutableStateOf(true) }
+    LoadingDialog(shouldShowDialog)
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun ServerRegistrationPreview() {
+    val shouldShowDialog = remember { mutableStateOf(true) }
+    val isConfirmed = remember { mutableStateOf(false) }
+
+    ServerRegistrationDialog(
+        shouldShowDialog,
+        rememberNavController(),
+        isConfirmed
+    )
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun ConfirmationDialogPreview() {
