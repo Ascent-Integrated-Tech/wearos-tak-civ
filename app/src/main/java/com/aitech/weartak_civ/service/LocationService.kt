@@ -10,9 +10,12 @@
 package com.aitech.weartak_civ.service
 
 import android.Manifest
+import android.app.AlarmManager
+import android.app.AlarmManager.AlarmClockInfo
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -25,15 +28,17 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings.Global
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
+import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.NetworkManager
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -41,7 +46,6 @@ import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,10 +53,6 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.text.SimpleDateFormat
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 
 class LocationService : Service() {
@@ -72,6 +72,7 @@ class LocationService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+        instance = this
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -87,7 +88,8 @@ class LocationService : Service() {
         //val nwManager = NetworkManager.getInstance()
         mNwConnected = NetworkManager.isNetworkConnected
         mNwTransport = if (NetworkManager.isWifi) { WIFI } else { CELLULAR }
-        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.reportingUpdateIntervalSecs * 1000L, locationUpdateFastestIntervalSecs * 1000L)
+        //startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.reportingUpdateIntervalSecs * 1000L, locationUpdateFastestIntervalSecs * 1000L)
+        runTimerJob(applicationContext)
     }
 
     private fun startForegroundService() {
@@ -267,6 +269,37 @@ class LocationService : Service() {
         }
     }
 
+    private fun runTimerJob(context: Context) {
+        object : Thread() {
+            override fun run() {
+                super.run()
+
+                startGlobalTimer()
+
+                while (true) {
+                }
+            }
+        }.start()
+    }
+
+
+    fun startGlobalTimer() {
+        Log.d(TAG, "startGlobalTimer called")
+        val alarmIntent = Intent(this.applicationContext, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(this.applicationContext,
+            234324243,
+            alarmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = this.applicationContext.getSystemService(ALARM_SERVICE) as AlarmManager
+
+        // 60 Seconds
+        val ac = AlarmClockInfo(System.currentTimeMillis() + 20000, pendingIntent)
+        alarmManager.setAlarmClock(ac, pendingIntent)
+
+        Log.d(TAG, "Current time in milliseconds: ${System.currentTimeMillis()}")
+    }
+
     companion object {
         private val TAG = "WearTAK-" + LocationService::class.java.simpleName
         private val LOCATION_SERVICE_NOTIFICATION_ID = 1234
@@ -278,5 +311,7 @@ class LocationService : Service() {
         var le : Float? = null
         //var locationUpdateIntervalSecs = 2
         var locationUpdateFastestIntervalSecs = 1
+
+        lateinit var instance : LocationService
     }
 }

@@ -309,8 +309,11 @@ class MainActivity : ComponentActivity() {
             } else {
                 if (enableLocationService) {
                     Log.d(TAG, "Starting LocationService")
+                    val serviceIntent = Intent(mainActivity, LocationService::class.java)
+                    serviceIntent.addFlags((Intent.FLAG_ACTIVITY_SINGLE_TOP))
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
+                       // mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
+                        mainActivity.startForegroundService(serviceIntent)
 
                     } else {
                         mainActivity.startService(Intent(mainActivity, LocationService::class.java))

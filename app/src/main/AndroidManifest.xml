@@ -17,14 +17,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!--
+
 <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
     tools:ignore="ProtectedPermissions" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 <uses-permission android:name="android.permission.TURN_SCREEN_ON"
     tools:ignore="ProtectedPermissions" />
--->
 
 <!--
 <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
@@ -100,6 +99,10 @@
            android:exported="true"
            android:permission="com.google.android.wearable.healthservices.permission.PASSIVE_DATA_BINDING" />
            -->
+        <receiver
+            android:name=".service.AlarmReceiver"
+            android:exported="false">
+        </receiver>
 
         <uses-library
             android:name="com.google.android.wearable"

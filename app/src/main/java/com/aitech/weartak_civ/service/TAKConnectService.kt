@@ -413,7 +413,7 @@ class TAKConnectService: Service() {
         fun connectTAKServer(takServer: String, username: String, password: String, port: Int) {
             isConnected = false
             isConnectedLiveData.postValue(isConnected)
-            Log.d(TAG,"connectTAKServer called with obtainedClientCert = ${obtainedClientCert.get()} & isConnecting = ${isConnectingToCotMsgPort.get()}")
+            Log.d(TAG,"connectTAKServer called with obtainedClientCert = ${obtainedClientCert.get()}, obtainingClientCert = ${obtainedClientCert.get()} & isConnecting = ${isConnectingToCotMsgPort.get()}")
             if (obtainedClientCert.get()) {
                 if (isConnectingToCotMsgPort.getAndSet(true) == false) {
                     try {
@@ -462,6 +462,7 @@ class TAKConnectService: Service() {
                 }
                 isConnectingToCotMsgPort.set(false)
             } else {
+                Log.d(TAG, "obtainingClientCert = ${obtainingClientCert.get()}")
                 if (!obtainingClientCert.get()) {
                     Log.d(TAG, "Going to obtain client cert and then connect as obtainedClientCert and obtainingClientCert are false")
                     getClientCertificateAndConnect(takServer, username, password, port)
