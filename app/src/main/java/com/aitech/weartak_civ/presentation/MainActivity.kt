@@ -76,7 +76,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonColors
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -924,22 +927,17 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
             textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("settings_screen")
-                    })
-            Spacer(modifier = Modifier.width(12.dp))
-            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        callsignLiveDataState.postValue(callsignTextFieldValue.text)
-                        Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
-                        navController.navigate("settings_screen")
-                    })
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("settings_screen")
+                },
+                onClickConfirm = {
+                    callsignLiveDataState.postValue(callsignTextFieldValue.text)
+                    Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
+                    navController.navigate("settings_screen")
+
+                })
         }
     }
 }
@@ -961,7 +959,7 @@ fun TeamSetting(navController: NavController) {
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(top = 20.dp)
+            .padding(top = 20.dp,bottom = 16.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -991,24 +989,20 @@ fun TeamSetting(navController: NavController) {
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(15.dp))
         }
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("settings_screen")
-                    })
-            Spacer(modifier = Modifier.width(12.dp))
-            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        teamSettingsState.postValue(teamEntriesValuesList.ltEntries[selectedRadioIndex])
-                        Log.d(TAG, "Settings saved with team: ${teamSettingsState.value}")
-                        navController.navigate("settings_screen")
-                    })
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("settings_screen")
+                },
+            onClickConfirm = {
+                teamSettingsState.postValue(teamEntriesValuesList.ltEntries[selectedRadioIndex])
+                Log.d(TAG, "Settings saved with team: ${teamSettingsState.value}")
+                navController.navigate("settings_screen")
+                }
+            )
         }
     }
 }
@@ -1030,7 +1024,7 @@ fun RoleSetting (navController: NavController) {
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(top = 20.dp)
+            .padding(top = 20.dp, bottom = 16.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -1061,24 +1055,19 @@ fun RoleSetting (navController: NavController) {
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(15.dp))
         }
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("settings_screen")
-                    })
-            Spacer(modifier = Modifier.width(12.dp))
-            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
-                        Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
-                        navController.navigate("settings_screen")
-                    })
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("settings_screen")
+                },
+                onClickConfirm = {
+                    roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
+                    Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
+                    navController.navigate("settings_screen")
+                })
         }
     }
 }
@@ -1257,7 +1246,7 @@ fun TakServerChip(
 }
 
 @Composable
-fun NewServerPage (navController: NavController) {
+fun NewServerPage(navController: NavController) {
     WearTAKCIVTheme {
         val shouldShowDialog = remember { mutableStateOf(false) }
         val isConfirmed = remember { mutableStateOf(false) }
@@ -1287,12 +1276,13 @@ fun NewServerPage (navController: NavController) {
                     isConfirmed
                 )
             }
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .align(Alignment.TopCenter)
-                .padding(bottom = 20.dp)
-                .verticalScroll(rememberScrollState()),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 20.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -1302,11 +1292,37 @@ fun NewServerPage (navController: NavController) {
                     modifier = Modifier.padding(7.dp)
                 )
 
-                NewServerSettingText("Connection Name", nameSettingsState, nameTextState, false, false)
-                NewServerSettingText("Address/URL", addressSettingsState, addressTextState, false, false)
+                NewServerSettingText(
+                    "Connection Name",
+                    nameSettingsState,
+                    nameTextState,
+                    false,
+                    false
+                )
+                NewServerSettingText(
+                    "Address/URL",
+                    addressSettingsState,
+                    addressTextState,
+                    false,
+                    false
+                )
                 NewServerSettingText("Port", portSettingsState, portTextState, false, true)
-                NewServerSettingText("Username", usernameSettingsState, usernameTextState, false, false)
-                NewServerSettingText("Password", passwordSettingsState, passwordTextState, true, false)
+                NewServerSettingText(
+                    "Username",
+                    usernameSettingsState,
+                    usernameTextState,
+                    false,
+                    false
+                )
+                NewServerSettingText(
+                    "Password",
+                    passwordSettingsState,
+                    passwordTextState,
+                    true,
+                    false
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Change if to create button when settings are edited
 //                if (callsignSettingsState.value == "E2-FF1") {
@@ -1335,75 +1351,65 @@ fun NewServerPage (navController: NavController) {
                 var passwordChanged: Boolean = false
                 val context = LocalContext.current
 
-                Icon(imageVector = Icons.Default.Close,
-                    tint = Color.Red,
-                    contentDescription = "Close",
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable {
-                            serverSettingsChanged = false; nameChanged = false; addressChanged =
-                            false; portChanged = false; usernameChanged = false; passwordChanged =
-                            false
-                            Log.d(TAG, "Settings NOT saved")
-                            navController.navigate("tak_server_screen")
-                        })
-                Spacer(modifier = Modifier.width(12.dp))
-                Icon(imageVector = Icons.Default.Check,
-                    tint = Color.Green,
-                    contentDescription = "Save",
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable {
-                            if (!nameTextState.value.equals(nameSettingsState.value)) {
-                                serverSettingsChanged = true; nameChanged = true
-                                name = nameTextState.value ?: name
-                                nameSettingsState.postValue(name)
-                            }
-                            if (!addressTextState.value.equals(addressSettingsState.value)) {
-                                serverSettingsChanged = true; addressChanged = true
-                                address = addressTextState.value.trim() ?: address
-                                addressSettingsState.postValue(address)
-                            }
-                            if (!portTextState.value.equals(portSettingsState.value)) {
-                                serverSettingsChanged = true; portChanged = true
-                                port = portTextState.value ?: port
-                                portSettingsState.postValue(port)
-                            }
-                            if (!usernameTextState.value.equals(usernameSettingsState.value)) {
-                                serverSettingsChanged = true; usernameChanged = true
-                                username = usernameTextState.value ?: username
-                                usernameSettingsState.postValue(username)
-                            }
-                            if (!passwordTextState.value.equals(passwordSettingsState.value)) {
-                                serverSettingsChanged = true; passwordChanged = true
-                                password = passwordTextState.value ?: password
-                                passwordSettingsState.postValue(password)
-                            }
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        serverSettingsChanged = false; nameChanged = false; addressChanged =
+                        false; portChanged = false; usernameChanged = false; passwordChanged =
+                        false
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("tak_server_screen")
+                    },
+                    onClickConfirm = {
+                        if (!nameTextState.value.equals(nameSettingsState.value)) {
+                            serverSettingsChanged = true; nameChanged = true
+                            name = nameTextState.value ?: name
+                            nameSettingsState.postValue(name)
+                        }
+                        if (!addressTextState.value.equals(addressSettingsState.value)) {
+                            serverSettingsChanged = true; addressChanged = true
+                            address = addressTextState.value.trim() ?: address
+                            addressSettingsState.postValue(address)
+                        }
+                        if (!portTextState.value.equals(portSettingsState.value)) {
+                            serverSettingsChanged = true; portChanged = true
+                            port = portTextState.value ?: port
+                            portSettingsState.postValue(port)
+                        }
+                        if (!usernameTextState.value.equals(usernameSettingsState.value)) {
+                            serverSettingsChanged = true; usernameChanged = true
+                            username = usernameTextState.value ?: username
+                            usernameSettingsState.postValue(username)
+                        }
+                        if (!passwordTextState.value.equals(passwordSettingsState.value)) {
+                            serverSettingsChanged = true; passwordChanged = true
+                            password = passwordTextState.value ?: password
+                            passwordSettingsState.postValue(password)
+                        }
 
-                            if (serverSettingsChanged) {
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    if (nameChanged) {
-                                        dataRepository.storeName(name)
-                                    }
-                                    if (addressChanged) {
-                                        dataRepository.storeAddress(address)
-                                    }
-                                    if (portChanged) {
-                                        dataRepository.storePort(port)
-                                    }
-                                    if (usernameChanged) {
-                                        dataRepository.storeUsername(username)
-                                    }
-                                    if (passwordChanged) {
-                                        dataRepository.storePassword(password)
-                                    }
-                                    EventBus
-                                        .getDefault()
-                                        .post(MessageEvent(SERVER_DETAILS_CHANGED))
+                        if (serverSettingsChanged) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                if (nameChanged) {
+                                    dataRepository.storeName(name)
                                 }
+                                if (addressChanged) {
+                                    dataRepository.storeAddress(address)
+                                }
+                                if (portChanged) {
+                                    dataRepository.storePort(port)
+                                }
+                                if (usernameChanged) {
+                                    dataRepository.storeUsername(username)
+                                }
+                                if (passwordChanged) {
+                                    dataRepository.storePassword(password)
+                                }
+                                EventBus
+                                    .getDefault()
+                                    .post(MessageEvent(SERVER_DETAILS_CHANGED))
                             }
-                            navController.navigate("tak_server_screen")
-                        })
+                        }
+                        navController.navigate("tak_server_screen")
+                    })
             }
         }
     }
@@ -1624,7 +1630,13 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        var licenseTextFieldValue by remember { mutableStateOf(TextFieldValue(licenseLiveDataState.value ?: "null")) }
+        var licenseTextFieldValue by remember {
+            mutableStateOf(
+                TextFieldValue(
+                    licenseLiveDataState.value ?: "null"
+                )
+            )
+        }
 
         OutlinedTextField(
             value = licenseTextFieldValue,
@@ -1638,44 +1650,38 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             var settingsChanged: Boolean = false
             var licenseChanged: Boolean = false
-            Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        Log.d(TAG, "Settings NOT saved")
-                        settingsChanged = false; licenseChanged = false
-                        if (isLicenseValid()) {
-                            navController.navigate("settings_screen")
-                        } else {
-                            navController.navigate("invalid_license_screen")
-                        }
-                    })
-            Spacer(modifier = Modifier.width(12.dp))
-            Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable {
-                        Log.d(TAG, "licenseTextFieldValue=" + licenseTextFieldValue.text)
-                        if (!licenseTextFieldValue.text.equals(licenseSettingsState.value)) {
-                            settingsChanged = true; licenseChanged = true
-                            license = licenseTextFieldValue.text ?: license
-                            licenseSettingsState.postValue(license)
-                            licenseLiveDataState.postValue(license)
-                            validateLicense(license)
-                            Log.d(TAG, "license stuff-boolean " + isLicenseValid())
-                        }
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    settingsChanged = false; licenseChanged = false
+                    if (isLicenseValid()) {
+                        navController.navigate("settings_screen")
+                    } else {
+                        navController.navigate("invalid_license_screen")
+                    }
+                },
+                onClickConfirm = {
+                    Log.d(TAG, "licenseTextFieldValue=" + licenseTextFieldValue.text)
+                    if (!licenseTextFieldValue.text.equals(licenseSettingsState.value)) {
+                        settingsChanged = true; licenseChanged = true
+                        license = licenseTextFieldValue.text ?: license
+                        licenseSettingsState.postValue(license)
+                        licenseLiveDataState.postValue(license)
+                        validateLicense(license)
+                        Log.d(TAG, "license stuff-boolean " + isLicenseValid())
+                    }
 
-                        if (settingsChanged) {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                if (licenseChanged) {
-                                    dataRepository.storeLicense(license)
-                                }
+                    if (settingsChanged) {
+                        CoroutineScope(Dispatchers.Main).launch {
+                            if (licenseChanged) {
+                                dataRepository.storeLicense(license)
                             }
                         }
-                        Log.d(
-                            TAG,
-                            license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text
-                        )
+                    }
+                    Log.d(
+                        TAG,
+                        license + " " + licenseSettingsState.value + " " + licenseTextFieldValue.text
+                    )
 
                         if (isLicenseValid()) {
                             navController.navigate("settings_screen")
@@ -2116,7 +2122,11 @@ fun SettingSwitchToggle(
 
 //Contains functionality for settings screen
 @Composable
-fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
+fun SettingsScreen(
+    navController: NavController,
+    callsignLiveDataState: MutableLiveData<String>,
+    licenseLiveDataState: MutableLiveData<String>
+) {
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -2132,12 +2142,13 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
 
 
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .align(Alignment.TopCenter)
-                .padding(bottom = 20.dp)
-                .verticalScroll(rememberScrollState()),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 20.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -2147,7 +2158,12 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     modifier = Modifier.padding(7.dp)
                 )
 
-                CallsignRoleTeamChip("callsign_screen", "Callsign", callsignSettingsState, navController)
+                CallsignRoleTeamChip(
+                    "callsign_screen",
+                    "Callsign",
+                    callsignSettingsState,
+                    navController
+                )
                 CallsignRoleTeamChip("team_screen", "Team", teamSettingsState, navController)
                 CallsignRoleTeamChip("role_screen", "Role", roleSettingsState, navController)
 
@@ -2176,7 +2192,12 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                         .padding(bottom = 3.dp)
                 )
 
-                CallsignRoleTeamChip("license_setting_screen", "License Key", licenseSettingsState, navController)
+                CallsignRoleTeamChip(
+                    "license_setting_screen",
+                    "License Key",
+                    licenseSettingsState,
+                    navController
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -2197,9 +2218,17 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.text.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate Empty, Enter Again",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             } else if (reportingUpdateInterval.text == "0") {
-                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate 0, Enter Again",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2231,11 +2260,13 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     textStyle = TextStyle(color = colors.primary),
                 )
 
-                SettingSwitchToggle(checked = locationChecked, onCheckedChange =  { locationChecked = it },
-                    title = "Location Service", description = "Service ON/OFF")
+                SettingSwitchToggle(
+                    checked = locationChecked, onCheckedChange = { locationChecked = it },
+                    title = "Location Service", description = "Service ON/OFF"
+                )
 
-
-                SettingSwitchToggle(checked = biometricsChecked, onCheckedChange =  { biometricsChecked = it },
+                SettingSwitchToggle(
+                    checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
                     title = "Biometrics",
                     description = "Service ON/OFF",)
 
@@ -2243,31 +2274,26 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                     title = "Ditto",
                     description = "Service ON/OFF",)
 
+                Spacer(modifier = Modifier.height(15.dp))
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                Icon(imageVector = Icons.Default.Close, tint = Color.Red, contentDescription = "Close",
-                    modifier = Modifier
-                        .size(25.dp)
-                        .clickable {
-                            callsignSettingsState.postValue(callsign)
-                            teamSettingsState.postValue(team)
-                            roleSettingsState.postValue(role)
-                            Log.d(TAG, "Settings NOT saved")
-                            navController.navigate("main_screen")
-                        })
-                Spacer(modifier = Modifier.width(20.dp))
-                Icon(imageVector = Icons.Default.Check, tint = Color.Green, contentDescription = "Save",
-                    modifier = Modifier
-                        .size(25.dp)
-                        .clickable {
-                            var settingsChanged: Boolean = false
-                            var callsignChanged: Boolean = false
-                            var teamChanged = false
-                            var roleChanged = false
-                            var licenseChanged: Boolean = false
-                            val maxReportRate: Int = 100000000
-                            val minReportRate: Int = 1
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        callsignSettingsState.postValue(callsign)
+                        teamSettingsState.postValue(team)
+                        roleSettingsState.postValue(role)
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("main_screen")
+                    },
+                    onClickConfirm = {
+                        var settingsChanged: Boolean = false
+                        var callsignChanged: Boolean = false
+                        var teamChanged = false
+                        var roleChanged = false
+                        var licenseChanged: Boolean = false
+                        val maxReportRate: Int = 100000000
+                        val minReportRate: Int = 1
 
                             var locationCheckedChanged: Boolean = false
                             var biometricsCheckedChanged: Boolean = false
@@ -2359,22 +2385,22 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 }
                             }
 
-                            if (enableBiometricsService != biometricsChecked) {
-                                settingsChanged = true; biometricsCheckedChanged = true
-                                enableBiometricsService = biometricsChecked
-                                if (enableBiometricsService) {
-                                    Log.d(TAG, "Starting biometric service")
-                                    startBiometericService()
-                                } else {
-                                    Log.d(TAG, "Stopping biometric service")
-                                    mainActivity.stopService(
-                                        Intent(
-                                            mainActivity,
-                                            HeartrateService::class.java
-                                        )
+                        if (enableBiometricsService != biometricsChecked) {
+                            settingsChanged = true; biometricsCheckedChanged = true
+                            enableBiometricsService = biometricsChecked
+                            if (enableBiometricsService) {
+                                Log.d(TAG, "Starting biometric service")
+                                startBiometericService()
+                            } else {
+                                Log.d(TAG, "Stopping biometric service")
+                                mainActivity.stopService(
+                                    Intent(
+                                        mainActivity,
+                                        HeartrateService::class.java
                                     )
-                                }
+                                )
                             }
+                        }
 
                             if (enableDittoService != dittoChecked) {
                                 settingsChanged = true; dittoCheckedChanged = true
@@ -2464,6 +2490,42 @@ fun SettingsScreen(navController: NavController, callsignLiveDataState: MutableL
                                 navController.navigate("main_screen")
                             }
                         })
+            }
+
+        }
+    }
+}
+
+@Composable
+fun ConfirmCancelButtons(
+    onClickCancel: () -> Unit,
+    onClickConfirm: () -> Unit
+) {
+    Box(
+        contentAlignment = Alignment.Center
+    ) {
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            IconButton(
+                onClick = onClickCancel,
+                modifier = Modifier.size(50.dp).border(1.dp, color = Color.Black, shape = CircleShape),
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = Color.Red,
+                    containerColor = Color.DarkGray,
+                ),
+            ) {
+                Icon(imageVector = Icons.Filled.Close, contentDescription = "Close icon")
+
+            }
+            Spacer(modifier = Modifier.width(20.dp))
+            IconButton(
+                onClick = onClickConfirm,
+                modifier = Modifier.size(50.dp).border(1.dp, color = Color.Black, shape = CircleShape),
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = Color.Black,
+                    containerColor = colors.primary
+                )) {
+                Icon(imageVector = Icons.Filled.Check, contentDescription = "Confirm icon", tint = Color.Black)
+
             }
         }
     }
