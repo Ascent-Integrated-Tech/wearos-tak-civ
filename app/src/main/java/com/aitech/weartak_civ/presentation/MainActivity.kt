@@ -1188,7 +1188,7 @@ fun NewServerPage (navController: NavController) {
         val isConfirmed = remember { mutableStateOf(false) }
         val nameTextState = remember { mutableStateOf(nameSettingsState.value ?: "null") }
         val addressTextState = remember { mutableStateOf(addressSettingsState.value ?: "null") }
-        val portTextState = remember { mutableStateOf(portSettingsState.value ?: "null") }
+        var portTextState = remember { mutableStateOf(portSettingsState.value ?: "null") }
         val usernameTextState = remember { mutableStateOf(usernameSettingsState.value ?: "null") }
         val passwordTextState = remember { mutableStateOf(passwordSettingsState.value ?: "null") }
 
@@ -1286,7 +1286,7 @@ fun NewServerPage (navController: NavController) {
                             }
                             if (!addressTextState.value.equals(addressSettingsState.value)) {
                                 serverSettingsChanged = true; addressChanged = true
-                                address = addressTextState.value ?: address
+                                address = addressTextState.value.trim() ?: address
                                 addressSettingsState.postValue(address)
                             }
                             if (!portTextState.value.equals(portSettingsState.value)) {
