@@ -83,7 +83,7 @@ class TAKConnectService: Service() {
 
     fun setFromDatastore() {
         runBlocking {
-            takServer = dataRepository.getAddress.first()
+            takServer = dataRepository.getAddress.first().trim()
             username = dataRepository.getUsername.first()
             password = dataRepository.getPassword.first()
             try {
@@ -99,6 +99,7 @@ class TAKConnectService: Service() {
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         startForegroundService()
         setFromDatastore()
+        numConnFailureEventSentAfterConnecting = 0
         getClientCertificateAndConnect(takServer, username, password, port)
         return START_NOT_STICKY
     }
@@ -362,6 +363,7 @@ class TAKConnectService: Service() {
         }
 
         fun getClientCertificateAndConnect(takServer: String, username: String, password: String, port: Int) {
+            Log.d(TAG, "getClientCertificateAndConnect called with numConnFailureEventSentAfterConnecting $numConnFailureEventSentAfterConnecting")
             isConnected = false
             isConnectedLiveData.postValue(isConnected)
             //isConnecting.set(true)
