@@ -298,6 +298,14 @@ class DittoService : Service() {
         }
     }
 
+    private fun removeDittoTrackDocument() {
+        Log.d(TAG, "removing local peer track document for _id= $uuid")
+        ioScope.launch{
+            val evictQuery = "EVICT FROM track WHERE _id = :uuid"
+            ditto.store.execute(evictQuery, mapOf("uuid" to uuid))
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
@@ -312,6 +320,9 @@ class DittoService : Service() {
         Log.d(TAG, "Subscription has been closed.")
         subscription?.close() // stop subscribing to track collection
         subscription = null
+
+        removeDittoTrackDocument()
+
         ioScope.cancel() // cancel all coroutines when service is destroyed
     }
 
