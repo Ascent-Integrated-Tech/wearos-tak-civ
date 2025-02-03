@@ -100,7 +100,7 @@ class TAKConnectService: Service() {
         isRunning = true
         startForegroundService()
         setFromDatastore()
-        numConnFailureEventSentAfterConnecting = 0
+        numConnAttemptsAfterFailure = 0
         getClientCertificateAndConnect(takServer, username, password, port)
         return START_NOT_STICKY
     }
@@ -163,7 +163,7 @@ class TAKConnectService: Service() {
             EventBus.getDefault().post(TakServerConnEvent(CONNECTING))
             takConnectionStatus = "CONNECTING"
             takConnectStatusLiveData.postValue(takConnectionStatus)
-            numConnFailureEventSentAfterConnecting = 0
+            numConnAttemptsAfterFailure = 0
             setFromDatastore()
             getClientCertificateAndConnect(takServer, username, password, port)
         }
@@ -171,8 +171,8 @@ class TAKConnectService: Service() {
 
     companion object {
         private val NUM_CONN_FAILURE_TOASTS = 1
-        private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 1
-        private var numConnFailureEventSentAfterConnecting = 0
+        private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
+        private var numConnAttemptsAfterFailure = 0
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         private var secureSocket : SSLSocket? = null
@@ -359,7 +359,7 @@ class TAKConnectService: Service() {
         }
 
         private fun sendConnectionFailureEvent() {
-            if (numConnFailureEventSentAfterConnecting < NUM_CONN_FAILURE_TOASTS) {
+            if (numConnAttemptsAfterFailure < NUM_CONN_FAILURE_TOASTS) {
                 EventBus.getDefault().post(TakServerConnEvent(CONNECTION_FAILURE))
                 takConnectionStatus = "CONNECTION_FAILURE"
                 takConnectStatusLiveData.postValue(takConnectionStatus)
@@ -367,7 +367,7 @@ class TAKConnectService: Service() {
         }
 
         fun getClientCertificateAndConnect(takServer: String, username: String, password: String, port: Int) {
-            Log.d(TAG, "getClientCertificateAndConnect called with numConnFailureEventSentAfterConnecting $numConnFailureEventSentAfterConnecting")
+            Log.d(TAG, "getClientCertificateAndConnect called with numConnAttemptsAfterFailure $numConnAttemptsAfterFailure")
             isConnected = false
             isConnectedLiveData.postValue(isConnected)
             //isConnecting.set(true)
@@ -379,7 +379,7 @@ class TAKConnectService: Service() {
                     Log.d(TAG, "Closing socket")
                     secureSocket?.close()
                 }
-                if (numConnFailureEventSentAfterConnecting < NUM_CONN_ATTEMPS_AFTER_FAILURE) {
+                if (numConnAttemptsAfterFailure < NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                     val base64CSR = generateBase64CSR(
                         organization, organizationUnit,
                         username
@@ -418,7 +418,7 @@ class TAKConnectService: Service() {
                         sendConnectionFailureEvent()
                     }
                 }
-                numConnFailureEventSentAfterConnecting++
+                numConnAttemptsAfterFailure++
             }
         }
 
@@ -476,8 +476,9 @@ class TAKConnectService: Service() {
                 }
                 isConnectingToCotMsgPort.set(false)
             } else {
+                // TODO: Change logic to not send data unless connected
                 if (!obtainingClientCert.get()) {
-                    Log.d(TAG, "Going to obtain client cert and then connect as obtainedClientCert and obtainingClientCert are false")
+                    Log.d(TAG, "Going to obtain client cert and then connect as obtainedClientCert=false and obtainingClientCert=false")
                     getClientCertificateAndConnect(takServer, username, password, port)
                 }
             }
