@@ -1845,10 +1845,6 @@ fun HeartRate () {
 
 @Composable
 fun TroubleshootingIcons() {
-    //TODO: Add icons with slashes
-    //TODO: Add values to function instead of one giant function
-    //TODO: Connect cell
-
     val iconSizeSmall= 20.dp
     networkManager.checkNetworkConnected()
 
@@ -1862,7 +1858,10 @@ fun TroubleshootingIcons() {
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
-        val cellConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
+        val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
+        val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
+        val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
+
 
         // Icon on the top left curve
         Image(
@@ -1879,7 +1878,16 @@ fun TroubleshootingIcons() {
 
 //         Icon on the bottom left curve
         Icon(
-            painter = if (cellConnected == true) painterResource(R.drawable.cell) else painterResource(R.drawable.signal_cellular_nodata), // Replace with your icon
+            painter =
+            if (isConnected == true) {
+                if (cellConnected == true) {
+                    painterResource(R.drawable.cell)
+                } else {
+                    painterResource(R.drawable.wifi) // Replace with your icon
+                }
+            } else {
+                painterResource(R.drawable.no_cell_wifi) // Replace with your icon
+            },
             contentDescription = "Bottom Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -1888,7 +1896,7 @@ fun TroubleshootingIcons() {
                     y = (15).dp // Adjust this value
                 )
                 .size(if (cellConnected == true) 15.dp else 25.dp),
-            tint = if (cellConnected == true) Color.White else Color.Gray
+            tint = if (isConnected == true) Color.White else Color.Unspecified
         )
 
         // Icon on the top right curve
@@ -1902,7 +1910,7 @@ fun TroubleshootingIcons() {
                     y = (-10).dp // Adjust this value
                 )
                 .size(iconSizeSmall),
-            tint = if (locationChecked) Color.White else Color.Gray
+            tint = if (locationChecked) Color.White else Color.DarkGray
         )
 
         // Icon on the bottom right curve
