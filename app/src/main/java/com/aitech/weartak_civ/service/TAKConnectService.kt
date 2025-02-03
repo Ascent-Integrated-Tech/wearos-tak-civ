@@ -492,7 +492,7 @@ class TAKConnectService: Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 if (isLicenseValid() && enableTAKConnectService) {
                     // TODO: Remove in the next release. Keeping this for release 0.33
-                    Log.d(TAG,"License Valid and enableTAKConnectService true. Sending data: $msg")
+                    //Log.d(TAG,"License Valid and enableTAKConnectService true. Sending data: $msg")
                     try {
                         if ((null != secureSocket) && (secureSocket?.isConnected == true)) {
                             val outputStream = secureSocket!!.getOutputStream()

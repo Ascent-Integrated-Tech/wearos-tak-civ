@@ -751,7 +751,7 @@ class MainActivity : ComponentActivity() {
         } else if (connEvent == CONNECTION_FAILURE) {
             toastText = "Connection Failed"
         }
-        Log.d(TAG, "Showing toast w/ text: $toastText")
+        //Log.d(TAG, "Showing toast w/ text: $toastText")
 //        Toast.makeText(mainActivity, toastText, Toast.LENGTH_SHORT).show()
     }
 }
