@@ -27,8 +27,14 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStreamReader
+import java.io.OutputStream
+import java.net.Socket
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.util.concurrent.atomic.AtomicBoolean
@@ -38,8 +44,8 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-class TAKConnectService: Service() {
 
+class TAKConnectService: Service() {
     override fun onCreate() {
         Log.d(TAG, "TAKConnectService onCreate")
         return super.onCreate()
@@ -113,6 +119,13 @@ class TAKConnectService: Service() {
         private val TAK_CERT = R.raw.tak_test_ascent_user
         var isConnected : Boolean = false
         val isConnectedLiveData = MutableLiveData<Boolean>(false)
+        val SERVER_CONNECTED: String = "Server connected successfully"
+        val DEFAULT_PERIOD: Int = 30000 // 30 seconds
+
+        private val sslSocket: Socket? = null
+        //private val outputStream: OutputStream? = null
+        private var inputReader: BufferedReader? = null
+        private val period = DEFAULT_PERIOD // Default period for sending data
 
         /*
         const private val TAK_SERVER = "56.136.23.111"
@@ -171,7 +184,20 @@ class TAKConnectService: Service() {
                     isConnected = true
                     isConnectedLiveData.postValue(isConnected)
 
+                    inputReader = BufferedReader(InputStreamReader(secureSocket!!.getInputStream()))
+
+                    isConnectedLiveData.postValue(true)
+                    isConnecting.set(false)
+
+                    Log.d(TAG, SERVER_CONNECTED)
+
                     Log.d(TAG, "Successfully connected to $takServer on port 8089")
+
+                    // Start a thread to read messages from the server
+                    Thread {
+                        Log.d(TAG, "Trying to receive")
+                        this.receiveDataTAKServer()
+                    }.start()
                 } catch (e: Exception) {
                     e.printStackTrace()
                     isConnected = false
@@ -183,14 +209,14 @@ class TAKConnectService: Service() {
             isConnecting.set(false)
         }
 
-        fun sendDataTAKServer(msg: String) {
+        fun sendDataTAKServer(msg: String, period: Int? = 30000) {
             if (isConnecting.get()) {
                 Log.i(TAG, "Connecting to TAK server. Hence not sending this message: $msg")
                 return
             }
             CoroutineScope(Dispatchers.IO).launch {
                 if (isLicenseValid()) {
-                    Log.d(TAG,"License Valid - Connecting to Server")
+                    //Log.d(TAG,"License Valid - Connecting to Server")
                     try {
                         if ((null != secureSocket) && secureSocket!!.isConnected) {
                             val outputStream = secureSocket!!.getOutputStream()
@@ -226,6 +252,56 @@ class TAKConnectService: Service() {
                 } else {
                     Log.d(TAG,"License Invalid - no Connection to Server")
                 }
+
+                if (period != null) {
+                    delay(period.toLong())
+                }
+            }
+        }
+
+        private fun receiveDataTAKServer() {
+            /*try {
+                var message: String
+                while ((inputReader!!.readLine().also { message = it }) != null) {
+                    Log.d(TAG, "Message received: $message")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to receive data from TAK server", e)
+                isConnectedLiveData.postValue(false)
+            }*/
+
+            try {
+                val buffer = CharArray(1024)
+                var numChars: Int
+                while (inputReader!!.read(buffer).also { numChars = it } != -1) {
+                    val message = String(buffer, 0, numChars)
+                    Log.d(TAG, "Message received: $message")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to receive data from TAK server", e)
+                isConnectedLiveData.postValue(false)
+            }
+
+            try {
+                val buffer = CharArray(4096)
+                val messageBuilder = StringBuilder()
+                var numChars: Int
+
+                while (inputReader!!.read(buffer).also { numChars = it } != -1) {
+                    messageBuilder.append(buffer, 0, numChars)
+
+                    // Check if the complete XML has been received
+                    if (messageBuilder.contains("</event>")) {
+                        val completeMessage = messageBuilder.toString()
+                        Log.d(TAG, "Complete Message received: $completeMessage")
+
+                        // Reset the builder for the next message
+                        messageBuilder.clear()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to receive data from TAK server", e)
+                isConnectedLiveData.postValue(false)
             }
         }
     }
