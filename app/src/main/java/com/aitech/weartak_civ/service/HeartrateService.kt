@@ -145,7 +145,7 @@ class HeartrateService: Service() {
     }
 
     fun startSensors() {
-        Log.d(TAG, "startSensors called")
+        Log.d(TAG, "HeartrateService startSensors called")
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         permission = checkPermissions()
@@ -178,7 +178,7 @@ class HeartrateService: Service() {
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
                 localHr = event.values[0].toInt()
-                Log.d(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
+                //Log.d(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
                 if ((accuracyVal != 3)) {
                     //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
                     return

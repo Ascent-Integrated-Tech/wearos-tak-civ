@@ -189,7 +189,7 @@ class LocationService : Service() {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
-                Log.d(TAG, "Received location update: $location")
+                //Log.d(TAG, "Received location update: $location")
                 EventBus.getDefault().post(MessageEvent(RECV_LOCATION))
             }
         }

@@ -288,7 +288,7 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
-        Log.d(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        //Log.d(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
