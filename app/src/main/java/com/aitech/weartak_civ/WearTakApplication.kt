@@ -38,7 +38,7 @@ class WearTakApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "WearTakApplication created")
+        Log.v(TAG, "WearTakApplication created")
         // Initialize Ditto
         try {
             val androidDependencies = DefaultAndroidDittoDependencies(applicationContext)

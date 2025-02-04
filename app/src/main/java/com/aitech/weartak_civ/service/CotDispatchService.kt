@@ -18,6 +18,9 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.TakServerConnEvent
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.DISCONNECTED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
@@ -55,16 +58,16 @@ class CotDispatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        Log.d(TAG, "CotDispatchService onStartCommand()")
+        Log.v(TAG, "CotDispatchService onStartCommand()")
         startForegroundService()
-        startDispatchScheduler()
+        // startDispatchScheduler()
         isRunning = true
         return START_NOT_STICKY
     }
 
     // starting requires notification to the user
     private fun startForegroundService() {
-        Log.d(TAG, "Starting $TAG as a ForegroundService")
+        Log.v(TAG, "Starting $TAG as a ForegroundService")
         val channelId = createNotificationChannel()
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
@@ -99,11 +102,11 @@ class CotDispatchService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-        Log.d(TAG, "CotDispatchService onCreate()")
+        Log.v(TAG, "CotDispatchService onCreate()")
     }
 
     private fun startDispatchScheduler() {
-        Log.d(TAG, "Starting the dispatch scheduler")
+        Log.v(TAG, "Starting the dispatch scheduler")
         cotDispatchThread = HandlerThread("CotDispatchThread")
         cotDispatchThread?.start()
         cotDispatchHandler = cotDispatchThread?.looper?.let { Handler(it) }
@@ -112,18 +115,23 @@ class CotDispatchService : Service() {
         cotDispatchHandler?.postDelayed(cotDispatchRunnable, DISPATCH_INTERVAL)
     }
 
+    private fun stopDispatchScheduler() {
+        Log.v(TAG, "Stopping the dispatch Scheduler")
+        cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
+        cotDispatchThread?.quitSafely()
+    }
+
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > reportingUpdateIntervalSecs * 1000L) {
                 // Somehow location update did not happen within the last reportingUpdateIntervalSecs.
                 // Maybe locationService is using fused indoor and reportingUpdateIntervalSecs < 5s OR some other reason
-                Log.d(TAG, "Sending locationBiometricUpdate via cotDispatchRunnable")
+                Log.v(TAG, "Somehow location update did not happen within the last reportingUpdateIntervalSecs. Sending Biometric Cot via cotDispatchRunnable")
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
             cotDispatchHandler?.postDelayed(this, reportingUpdateIntervalSecs * 1000L)
         }
-
     }
 
 
@@ -266,29 +274,34 @@ class CotDispatchService : Service() {
     private fun sendMarkerCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
-        Log.d(TAG, "Marker CoT message sent: $cotMessage")
+        Log.v(TAG, "Marker CoT message sent: $cotMessage")
     }
 
     fun buildAndSendLocationBiometricCotMessage() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            var heartRate = dataRepository.latestHeartRate.value
-            val battery = dataRepository.latestBatteryPercentage.value
-            if (location != null && battery != null) {
-                if (heartRate == null) {
-                    heartRate = -1
+        if (!TAKConnectService.isConnected) {
+            Log.w(TAG, "Not connected to server. Not sending Cot message")
+        } else {
+            CoroutineScope(Dispatchers.IO).launch {
+                val location = dataRepository.latestLocation.value
+                var heartRate = dataRepository.latestHeartRate.value
+                val battery = dataRepository.latestBatteryPercentage.value
+                if (location != null && battery != null) {
+                    if (heartRate == null) {
+                        heartRate = -1
+                    }
+                    sendLocationBiometricCotMessage(location, heartRate, battery)
+                } else {
+                    Log.w(TAG, "Missing data for CoT message. Not sending.")
                 }
-                sendLocationBiometricCotMessage(location, heartRate, battery)
-            } else {
-                Log.w(TAG, "Missing data for CoT message. Not sending.")
             }
         }
+
     }
 
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
-        //Log.d(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
@@ -296,25 +309,38 @@ class CotDispatchService : Service() {
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
         //Log.d(TAG, "onMessageEvent w/ msg($msg)")
-        if (RECV_LOCATION == msg) {
-            // We would like to send the "freshest" location especially if location update is 10s or greater
-            lastLocationUpdateRcvd = System.currentTimeMillis()
-            buildAndSendLocationBiometricCotMessage()
-        } else if (DROP_MARKER == msg) {
-            CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            var heartRate = dataRepository.latestHeartRate.value
-            var battery = dataRepository.latestBatteryPercentage.value
-            if (location != null) {
-                if (heartRate == null) {
-                    heartRate = -1
-                }
-                if (battery == null) {
-                    battery = -1
-                }
-                    sendMarkerCotMessage(location, heartRate, battery)
+        if (TAKConnectService.isConnected) {
+            if (RECV_LOCATION == msg) {
+                // We would like to send the "freshest" location especially if location update is 10s or greater
+                lastLocationUpdateRcvd = System.currentTimeMillis()
+                buildAndSendLocationBiometricCotMessage()
+            } else if (DROP_MARKER == msg) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    val location = dataRepository.latestLocation.value
+                    var heartRate = dataRepository.latestHeartRate.value
+                    var battery = dataRepository.latestBatteryPercentage.value
+                    if (location != null) {
+                        if (heartRate == null) {
+                            heartRate = -1
+                        }
+                        if (battery == null) {
+                            battery = -1
+                        }
+                        sendMarkerCotMessage(location, heartRate, battery)
+                    }
                 }
             }
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onTakConnectionSuccess(event: TakServerConnEvent) {
+        if (event.connEvent == CONNECTION_SUCCESS) {
+            Log.d(TAG, "TAKConnectService connected. Starting to dispatch cots...")
+            startDispatchScheduler()
+        } else {
+            Log.v(TAG, "Disconnected from TAK Server. Wasn't Success message. Not dispatching Cots.")
+            stopDispatchScheduler()
         }
     }
 
@@ -323,8 +349,7 @@ class CotDispatchService : Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
-        cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
-        cotDispatchThread?.quitSafely()
+        stopDispatchScheduler()
         isRunning = false
     }
 
