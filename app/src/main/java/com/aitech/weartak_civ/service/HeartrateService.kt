@@ -50,6 +50,7 @@ class HeartrateService: Service() {
         get() = MainActivity.dataRepository
 
     override fun onCreate() {
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         super.onCreate()
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -146,7 +147,7 @@ class HeartrateService: Service() {
 
     fun startSensors() {
         Log.d(TAG, "HeartrateService startSensors called")
-        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+//        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         permission = checkPermissions()
         if (null != heartRateSensor) {
