@@ -19,6 +19,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.util.Xml
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
@@ -29,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.xmlpull.v1.XmlPullParser
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -127,6 +129,13 @@ class TAKConnectService: Service() {
         private var inputReader: BufferedReader? = null
         private val period = DEFAULT_PERIOD // Default period for sending data
 
+        //Custom Geofence Data
+        var FENCE_TYPE: String = ""
+        var FENCE_PERIOD: String = "5"
+        var FENCE_UID: String = ""
+        var FENCE_BEHAVIOUR: String = ""
+
+
         /*
         const private val TAK_SERVER = "56.136.23.111"
         const private val TAK_CERT_PASSWORD = "QeD6HaCYlQ6l1Tr"
@@ -209,7 +218,7 @@ class TAKConnectService: Service() {
             isConnecting.set(false)
         }
 
-        fun sendDataTAKServer(msg: String, period: Int? = 30000) {
+        fun sendDataTAKServer(msg: String) {
             if (isConnecting.get()) {
                 Log.i(TAG, "Connecting to TAK server. Hence not sending this message: $msg")
                 return
@@ -252,53 +261,36 @@ class TAKConnectService: Service() {
                 } else {
                     Log.d(TAG,"License Invalid - no Connection to Server")
                 }
-
-                if (period != null) {
-                    delay(period.toLong())
-                }
             }
         }
 
         private fun receiveDataTAKServer() {
-            /*try {
-                var message: String
-                while ((inputReader!!.readLine().also { message = it }) != null) {
-                    Log.d(TAG, "Message received: $message")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to receive data from TAK server", e)
-                isConnectedLiveData.postValue(false)
-            }*/
-
             try {
                 val buffer = CharArray(1024)
                 var numChars: Int
                 while (inputReader!!.read(buffer).also { numChars = it } != -1) {
                     val message = String(buffer, 0, numChars)
                     Log.d(TAG, "Message received: $message")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to receive data from TAK server", e)
-                isConnectedLiveData.postValue(false)
-            }
 
-            try {
-                val buffer = CharArray(4096)
-                val messageBuilder = StringBuilder()
-                var numChars: Int
+                    val parser = Xml.newPullParser();
+                    parser.setInput(message.reader())
 
-                while (inputReader!!.read(buffer).also { numChars = it } != -1) {
-                    messageBuilder.append(buffer, 0, numChars)
+                    var eventType = parser.eventType
 
-                    // Check if the complete XML has been received
-                    if (messageBuilder.contains("</event>")) {
-                        val completeMessage = messageBuilder.toString()
-                        Log.d(TAG, "Complete Message received: $completeMessage")
-
-                        // Reset the builder for the next message
-                        messageBuilder.clear()
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        val tagName = parser.name
+                        if (eventType == XmlPullParser.START_TAG && tagName == "geofence") {
+                            FENCE_UID = parser.getAttributeValue(null, "uid") ?: ""
+                            FENCE_PERIOD = parser.getAttributeValue(null, "period") ?: ""
+                            FENCE_BEHAVIOUR = parser.getAttributeValue(null, "behaviour") ?: ""
+                            FENCE_TYPE = parser.getAttributeValue(null, "type") ?: ""
+                        }
+                        eventType = parser.next()
                     }
+
+                    Log.d(TAG, "Changing period to ${FENCE_PERIOD}")
                 }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to receive data from TAK server", e)
                 isConnectedLiveData.postValue(false)

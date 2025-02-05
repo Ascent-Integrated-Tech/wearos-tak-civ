@@ -113,8 +113,10 @@ class CotDispatchService : Service() {
                         heartRate = -1
                     }
                     val cotMessage = buildCotMessage(location, heartRate, battery)
-                    sendDataTAKServer(cotMessage, 30000)
+                    sendDataTAKServer(cotMessage)
                     Log.d(TAG, "CoT message sent: " + cotMessage)
+
+                    Log.d(TAG, TAKConnectService.FENCE_PERIOD)
                 } else {
                     //val arbitraryLocale = Location
 
@@ -122,8 +124,12 @@ class CotDispatchService : Service() {
                 }
             }
 
+            var newPeriod = TAKConnectService.FENCE_PERIOD.toInt() * 1000L
+
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, locationUpdateIntervalSecs * 1000L)
+            //cotDispatchHandler?.postDelayed(this, locationUpdateIntervalSecs * 1000L)
+
+            cotDispatchHandler?.postDelayed(this, newPeriod)
         }
     }
 
@@ -184,11 +190,13 @@ class CotDispatchService : Service() {
         cotDispatchThread?.quitSafely()
     }
 
+
+
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
-        private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
+        private const val DISPATCH_INTERVAL = 3_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
-        var locationUpdateIntervalSecs = 2
+        var locationUpdateIntervalSecs = 5
         var locationUpdateFastestIntervalSecs = 2
     }
 }
