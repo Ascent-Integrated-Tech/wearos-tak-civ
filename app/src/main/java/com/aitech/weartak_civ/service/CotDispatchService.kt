@@ -18,14 +18,13 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.DISCONNECTED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.service.DittoService.Companion.localPeerKeyString
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -189,6 +188,60 @@ class CotDispatchService : Service() {
          */
     }
 
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val location = dataRepository.latestLocation.value
+            if (location != null) {
+                sendEmergencyAlertCotMessage(location, event.category, event.description)
+            }
+        }
+    }
+
+    private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String): String {
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+
+        // Set the current time
+        calendar.setTime(Date())
+
+        // Format and set the startTime with the currentTime
+        val startTime = dateTimeFormatter.format(calendar.time)
+        val emergencyCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
+        emergencyCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val emergencyCallsignAppendTime = emergencyCallsignDateTimeFormatter.format(calendar.time)
+        val emergencyCallsign = "${callsign}_$emergencyCallsignAppendTime"
+
+        // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
+//        calendar.add(Calendar.YEAR, 1)
+        calendar.add(Calendar.SECOND, 10)
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
+        val latActual = location?.latitude ?: 0.0
+        val lonActual = location?.longitude ?: 0.0
+        val haeActual = location?.altitude ?: 0.0
+        var ceActual = location?.accuracy ?: 9999999.0F
+        if (ceActual.isNaN() == true) ceActual = 9999999.0F
+        var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
+        if (leActual.isNaN() == true) leActual = 9999999.0F
+
+        val uid = UUID.randomUUID().toString()
+        val linkUid = MainActivity.device_uid
+
+        return """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='$uid' type='b-a-u-a' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
+        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+        	<detail>
+        		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
+        		<contact callsign='$emergencyCallsign&#10;$emergencyCategory'/>
+        		<emergency type='$emergencyDesc'>$callsign</emergency>
+        	</detail>
+        </event>
+        """.trimIndent()
+    }
+
     private fun buildMarkerCotMessage(location: Location, heartRate: Int, battery: Int): String {
 
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
@@ -275,6 +328,12 @@ class CotDispatchService : Service() {
         val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
         Log.v(TAG, "Marker CoT message sent: $cotMessage")
+    }
+
+    private fun sendEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String) {
+        val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
+        sendDataTAKServer(cotMessage)
+        Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
     }
 
     fun buildAndSendLocationBiometricCotMessage() {

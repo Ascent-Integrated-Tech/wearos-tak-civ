@@ -16,13 +16,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
 import android.os.Vibrator
 import android.os.VibrationEffect
-import android.provider.Settings
 import android.provider.Settings.Secure
 import android.util.Log
 import android.widget.Toast
@@ -37,7 +34,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,13 +49,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.input.InputTransformation.Companion.keyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -67,6 +61,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
@@ -76,10 +71,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,7 +85,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -149,7 +141,9 @@ import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAI
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
@@ -212,8 +206,6 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import live.ditto.Ditto
-import org.checkerframework.checker.units.qual.C
 import javax.net.ssl.SSLSocket
 
 
@@ -920,11 +912,10 @@ fun MainScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    //TODO: Uncomment when ready to add SOS functionality
-//                    SOSButton()
-//                    Spacer(
-//                        modifier = Modifier.width(10.dp)
-//                    )
+                    SOSButton()
+                    Spacer(
+                        modifier = Modifier.width(10.dp)
+                    )
                     MarkerDropButton(dataRepository = dataRepository, context = context)
                 }
 
@@ -2021,7 +2012,7 @@ fun TroubleshootingIcons() {
 }
 
 @Composable
-fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>, isConfirmed : MutableState<Boolean>) {
+fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>, isConfirmed : MutableState<Boolean>) {
     if (shouldShowDialog.value) {
         Dialog(onDismissRequest = { shouldShowDialog.value = false }) {
             LaunchedEffect(Unit) {
@@ -2050,9 +2041,9 @@ fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : M
                             contentDescription = null,
                             tint = Color.Green
                         )
-
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Marker Sent Successfully",
+                            text = "Success!",
                             textAlign = TextAlign.Center,
                         )
                     } else {
@@ -2062,9 +2053,9 @@ fun MarkerDropDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : M
                             contentDescription = null,
                             tint = Color.Red
                         )
-
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Error Sending Marker",
+                            text = "Error",
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -2092,10 +2083,45 @@ fun Callsign(navController: NavController, callsignState: MutableLiveData<String
         )
 }
 
+@SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun SOSButton() {
+    val shouldShowDialog = remember { mutableStateOf(false) }
+    val successBoolean = remember {mutableStateOf(false)}
+    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
+    val isConfirmed = remember { mutableStateOf(false) }
+    val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+    val location = dataRepository.latestLocation.value
+    var locationChecked by remember{ mutableStateOf(enableLocationService)}
+
+
+    if (shouldShowConfirmationDialog.value) {
+        ConfirmationDialog(
+            shouldShowConfirmationDialog,
+            rememberNavController(),
+            "Do you want to trigger an SOS alert at your location?",
+            Icons.Default.Warning,
+            Color.Red,
+            "main_screen",
+            isConfirmed
+        )
+    }
+    if (isConfirmed.value) {
+        shouldShowDialog.value = true
+        if (takServer == true) {
+            if (location != null && locationChecked) {
+                successBoolean.value = true
+                SOSButtonEmergencyMessage()            }
+        } else {
+            successBoolean.value = false
+        }
+        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
+    }
+
     Button(
-        onClick = { /* Do something! */ },
+        onClick = {
+            shouldShowConfirmationDialog.value = true
+        },
         modifier = Modifier
             .border(
                 width = 4.dp,
@@ -2116,6 +2142,10 @@ fun SOSButton() {
             color = Color.Red
         )
     }
+}
+
+fun SOSButtonEmergencyMessage(){
+    EventBus.getDefault().post(CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true))
 }
 
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")
@@ -2163,7 +2193,7 @@ fun MarkerDropButton(
         } else {
             successBoolean.value = false
         }
-        MarkerDropDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
+        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
     }
 
     IconButton(
@@ -2709,9 +2739,9 @@ fun ConfirmationDialogPreview() {
     ConfirmationDialog(
         shouldShowDialog = shouldShowDialog,
         rememberNavController(),
-        "Drop marker at current location?",
-        Icons.Default.LocationOn,
-        Color.Green,
+        "Do you want to trigger an SOS alert at your location?",
+        Icons.Default.Warning,
+        Color.Red,
         "pp",
         isConfirmed
     )
