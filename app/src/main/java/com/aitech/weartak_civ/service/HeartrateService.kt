@@ -171,6 +171,8 @@ class HeartrateService: Service() {
         var localHr = 0
         var accuracyVal = -1
         var lastTimeHrSent : Long = 0L
+        var highAlertThreshold : Int = 140
+        var lowAlertThreshold : Int = 40
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
             Log.d(TAG, "onAccuracyChanged called w/ accuracy: $accuracy")
             accuracyVal = accuracy
@@ -198,6 +200,30 @@ class HeartrateService: Service() {
                         sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
 
                     }
+
+//                    val stickyEvent = EventBus.getDefault().getStickyEvent(
+//                        MessageEvent::class.java
+//                    )
+//                    if (stickyEvent == null) {
+//                        if (hr > highAlertThreshold) {
+//                            emergency = "HIGH HEART RATE"
+//                            EventBus.getDefault().postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
+//                        } else if (hr < lowAlertThreshold) {
+//                            emergency = "LOW HEART RATE"
+//                            EventBus.getDefault().postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
+//                        }
+//                    } else {
+//                        if (hr > highAlertThreshold && emergency != "HIGH HEART RATE") {
+//                            emergency = "HIGH HEART RATE"
+//                            EventBus.getDefault()
+//                                .postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
+//                        } else if (hr < lowAlertThreshold && emergency != "LOW HEART RATE") {
+//                            emergency = "LOW HEART RATE"
+//                            EventBus.getDefault()
+//                                .postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
+//                        }
+//                        Log.d(TAG, stickyEvent.message)
+//                    }
                 }
             }
         }
