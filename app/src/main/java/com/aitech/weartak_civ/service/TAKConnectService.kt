@@ -84,8 +84,10 @@ class TAKConnectService: Service() {
     fun setFromDatastore() {
         runBlocking {
             takServer = dataRepository.getAddress.first()
-            username = dataRepository.getUsername.first()
-            password = dataRepository.getPassword.first()
+//            username = dataRepository.getUsername.first()
+//            password = dataRepository.getPassword.first()
+            username = "IL.NORTHPARK.FD"
+            password = "IL.NORTHPARK.FD.Password01"
             try {
                 port = dataRepository.getPort.first().toInt()
             } catch (e: Exception) {

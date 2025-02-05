@@ -464,11 +464,13 @@ class MainActivity : ComponentActivity() {
             portState.postValue(port)
             portSettingsState.postValue(port)
 
-            username = dataRepository.getUsername.first()
+//            username = dataRepository.getUsername.first()
+            username = "IL.NORTHPARK.FD"
             usernameState.postValue(username)
             usernameSettingsState.postValue(username)
 
-            password = dataRepository.getPassword.first()
+//            password = dataRepository.getPassword.first()
+            password = "IL.NORTHPARK.FD.Password01"
             passwordState.postValue(password)
             passwordSettingsState.postValue(password)
 
