@@ -138,6 +138,7 @@ import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
@@ -614,9 +615,10 @@ class MainActivity : ComponentActivity() {
 
             Log.d(TAG, """
                 === Device Configuration Settings === 
-                DeviceID: $device_uid
-                Callsign: $callsign
-                License:  $license
+                DeviceID:                $device_uid
+                Callsign:                $callsign
+                License:                 $license
+                Department:              $username
                 enableLocationService:   $enableLocationService
                 enableBiometricsService: $enableBiometricsService
                 enableTAKConnectService: $enableTAKConnectService
@@ -627,31 +629,136 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun readTeamsJson() {
-        val inputStream = mainActivity.resources.openRawResource(R.raw.teams_json_config)
-        try {
-            var bytes  = inputStream.readAllBytes()
-            teamEntriesValuesList = TeamsJson.fromJson(String(bytes, charset("UTF-8")))!!
-//            Log.d(TAG, "Team Entries List: ${teamEntriesValuesList?.ltEntries.toString()}")
-//            Log.d(TAG, "Team Values List: ${teamEntriesValuesList?.ltValues.toString()}")
-        } catch (e: Exception) {
-            Log.e(TAG, "ERROR when reading Team json config", e)
-            teamEntriesValuesList = TeamsJson(DEFAULT_TEAMS_LIST, DEFAULT_TEAMS_LIST)
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onTakConnectionSuccess(event: TakServerConnEvent) {
+        if (event.connEvent == CONNECTION_SUCCESS) {
+            Log.v(TAG, "TAKConnectService connected. Getting Roles & Teams Configurations from Server...")
+            getRolesAndTeamsJson()
         }
     }
 
-    fun readRolesJson() {
-        val inputStream = mainActivity.resources.openRawResource(R.raw.roles_json_config)
-        try {
-            var bytes  = inputStream.readAllBytes()
-            roleEntriesValuesList = RolesJson.fromJson(String(bytes, charset("UTF-8")))!!
-//            Log.d(TAG, "Roles Entries List: ${roleEntriesValuesList?.lrEntries.toString()}")
-//            Log.d(TAG, "Roles Values List: ${roleEntriesValuesList?.lrValues.toString()}")
-        } catch (e: Exception) {
-            Log.e(TAG, "ERROR when reading Role json config", e)
-            roleEntriesValuesList = RolesJson(DEFAULT_ROLES_LIST, DEFAULT_ROLES_LIST)
+    private fun setTeamsJson() {
+        val (teamEntries, teamValues) = readJson("teams")
+        if (teamEntries.isEmpty() || teamValues.isEmpty()) {
+            Log.v(TAG, "Teams JSON empty or failed to parse. Using default teams.")
+            teamEntriesValuesList = TeamsJson(DEFAULT_TEAMS_LIST, DEFAULT_TEAMS_LIST)
+        } else {
+            teamEntriesValuesList = TeamsJson(teamEntries, teamValues)
+            Log.v(TAG, "Team Entries List: ${teamEntriesValuesList.ltEntries}")
+            Log.v(TAG, "Team Values List: ${teamEntriesValuesList.ltValues}")
         }
     }
+
+    private fun setRolesJson() {
+        val (roleEntries, roleValues) = readJson("roles")
+        if (roleEntries.isEmpty() || roleValues.isEmpty()) {
+            Log.v(TAG, "Roles JSON empty or failed to parse. Using default roles.")
+            roleEntriesValuesList = RolesJson(DEFAULT_ROLES_LIST, DEFAULT_ROLES_LIST)
+        } else {
+            roleEntriesValuesList = RolesJson(roleEntries, roleValues)
+            Log.v(TAG, "Roles Entries List: ${roleEntriesValuesList.lrEntries}")
+            Log.v(TAG, "Roles Values List: ${roleEntriesValuesList.lrValues}")
+        }
+    }
+
+    private fun getDepartmentId(): String {
+        return "TEST.AIT"
+    }
+
+    private fun getRolesAndTeamsJson() {
+        CoroutineScope(Dispatchers.IO).launch {
+            // need ip to build url endpoint
+            val takServerIp = dataRepository.getAddress.first().toString().trim()
+            val departmentIdentifier = dataRepository.getUsername.first().toString() // e.g., "TEST.AIT" or "$state.$department.$departmentType
+
+            // build the url endpoint to obtain config.json (e.g. https://$ip/$departmentIdentifier/teams.json)
+            val teamsJsonUrl = NetworkUtils.buildJsonUrl(takServerIp, departmentIdentifier, "teams")
+            val rolesJsonUrl = NetworkUtils.buildJsonUrl(takServerIp, departmentIdentifier, "roles")
+
+            // fetch the json from the url endpoint
+            val teamsJsonResult = NetworkUtils.fetchJsonFromServer(teamsJsonUrl)
+            val rolesJsonResult = NetworkUtils.fetchJsonFromServer(rolesJsonUrl)
+
+            // if we can get the config, use it. If not, fallback to local.
+            if (teamsJsonResult != null) {
+                val parsedTeams = TeamsJson.fromJson(teamsJsonResult)
+                if (parsedTeams != null) {
+                    // Successfully retrieved & parsed teams config file. Setting values for frontend & store the file locally!
+                    teamEntriesValuesList = parsedTeams
+                    storeJson("teams", teamsJsonResult)
+                } else {
+                    // Fallback to local file if parsing fails
+                    Log.v(TAG, "Could not parse teams Json. Falling back to persistent store teams config")
+                }
+            } else {
+                // Fallback to local file if server call fails
+                Log.v(TAG, "Could not retrieve teams.json file from server. Falling back to persistent store teams config")
+            }
+
+            if (rolesJsonResult != null) {
+                val parsedRoles = RolesJson.fromJson(rolesJsonResult)
+                if (parsedRoles != null) {
+                    // Successfully retrieved & parsed roles config file. Setting values for frontend & store the file locally!
+                    roleEntriesValuesList = parsedRoles
+                    storeJson("roles", rolesJsonResult)
+                } else {
+                    // Fallback to local file if parsing fails
+                    Log.v(TAG, "Could not parse roles Json. Falling back to persistent store roles config.")
+                }
+            } else {
+                // Fallback to local file if server call fails
+                Log.v(TAG, "Could not retrieve roles.json file from server. Falling back to persistent store roles config")
+            }
+        }
+    }
+
+    private fun storeJson(configType: String, json: String) {
+        val fileName = "$configType.json"
+//        Log.v(TAG, "Storing $fileName to persistent store")
+//        val filesDir = this.filesDir.absolutePath
+//        Log.v(TAG, "Files directory: $filesDir")
+
+        try {
+            // open the file in private mode
+            openFileOutput(fileName, Context.MODE_PRIVATE).use { outputStream ->
+                outputStream.write(json.toByteArray(Charsets.UTF_8))
+            }
+            Log.v(TAG, "Successfully stored $fileName")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error storing JSON to $fileName", e)
+        }
+    }
+
+    private fun readJson(configType: String): Pair<List<String>, List<String>> {
+        val fileName = "$configType.json"
+        return try {
+            openFileInput(fileName).use { inputStream ->
+                val bytes = inputStream.readBytes()
+                val jsonString = String(bytes, Charsets.UTF_8)
+                if (configType.equals("teams", ignoreCase = true)) {
+                    val teamsJson = TeamsJson.fromJson(jsonString)
+                    if (teamsJson != null) {
+                        Pair(teamsJson.ltEntries, teamsJson.ltValues)
+                    } else {
+                        Pair(emptyList(), emptyList())
+                    }
+                } else if (configType.equals("roles", ignoreCase = true)) {
+                    val rolesJson = RolesJson.fromJson(jsonString)
+                    if (rolesJson != null) {
+                        Pair(rolesJson.lrEntries, rolesJson.lrValues)
+                    } else {
+                        Pair(emptyList(), emptyList())
+                    }
+                } else {
+                    Pair(emptyList(), emptyList())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading $fileName from internal storage", e)
+            Pair(emptyList(), emptyList())
+        }
+    }
+
 
     private fun startHealthCapabilitiesCollection() {
         val healthClient = HealthServices.getClient(this)
@@ -737,8 +844,10 @@ class MainActivity : ComponentActivity() {
             EventBus.getDefault().register(this)
         }
         dataRepository = DataRepository(this)
-        readTeamsJson()
-        readRolesJson()
+
+        Log.d(TAG, " === === Teams And Roles === ===")
+        setTeamsJson()
+        setRolesJson()
         setDataFromDatastore()
         networkManager = NetworkManager.getInstance()
         networkManager.init()
@@ -1010,7 +1119,7 @@ fun TeamSetting(navController: NavController) {
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(top = 20.dp,bottom = 16.dp)
+            .padding(top = 20.dp, bottom = 16.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -2642,7 +2751,9 @@ fun ConfirmCancelButtons(
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             IconButton(
                 onClick = onClickCancel,
-                modifier = Modifier.size(50.dp).border(1.dp, color = Color.Black, shape = CircleShape),
+                modifier = Modifier
+                    .size(50.dp)
+                    .border(1.dp, color = Color.Black, shape = CircleShape),
                 colors = IconButtonDefaults.iconButtonColors(
                     contentColor = Color.Red,
                     containerColor = Color.DarkGray,
@@ -2654,7 +2765,9 @@ fun ConfirmCancelButtons(
             Spacer(modifier = Modifier.width(20.dp))
             IconButton(
                 onClick = onClickConfirm,
-                modifier = Modifier.size(50.dp).border(1.dp, color = Color.Black, shape = CircleShape),
+                modifier = Modifier
+                    .size(50.dp)
+                    .border(1.dp, color = Color.Black, shape = CircleShape),
                 colors = IconButtonDefaults.iconButtonColors(
                     contentColor = Color.Black,
                     containerColor = colors.primary
