@@ -24,6 +24,7 @@ import android.provider.Settings.Secure
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -34,6 +35,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.DraggableState
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -115,9 +120,9 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.navOptions
+
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -130,6 +135,9 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
+import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
@@ -778,7 +786,9 @@ class MainActivity : ComponentActivity() {
          */
 
         setContent {
+            WearTAKCIVTheme {
             WearTAKCivApp(callsignState, licenseState)
+                }
         }
     }
 
@@ -805,16 +815,15 @@ class MainActivity : ComponentActivity() {
 //Contains functionality for all watch screens
 @Composable
 fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
-    val navController = rememberNavController()
+    val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
     validateLicense(license)
-    NavHost(
-        navController,
+
+    SwipeDismissableNavHost(
+        navController = navController,
         startDestination = if (isLicenseValid()) "main_screen" else "invalid_license_screen"
     ) {
-        composable("main_screen",
-            enterTransition = { fadeIn() },
-            exitTransition = { fadeOut() }) {
+        composable("main_screen" ) {
             MainScreen(
                 navController = navController,
                 callsignState = callsignLiveDataState,
@@ -823,51 +832,35 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
             )
         }
         composable(
-            "settings_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "settings_screen") {
             SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState)
         }
         composable(
-            "callsign_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "callsign_screen") {
             CallsignSetting(navController, callsignSettingsState)
         }
         composable(
-            "role_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "role_screen") {
             RoleSetting(navController)
         }
         composable(
-            "team_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "team_screen") {
             TeamSetting(navController)
         }
         composable(
-            "tak_server_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "tak_server_screen") {
             TakServerSetting(navController)
         }
         composable(
-            "new_server_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "new_server_screen") {
             NewServerPage(navController)
         }
         composable(
-            "license_setting_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "license_setting_screen") {
             LicenseKeyScreen(navController, licenseSettingsState)
         }
         composable(
-            "invalid_license_screen",
-            enterTransition = { slideInVertically() },
-            exitTransition = { slideOutVertically() }) {
+            "invalid_license_screen") {
             InvalidLicenseScreen(navController)
         }
     }
@@ -989,13 +982,12 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("settings_screen")
+                    navController.navigateUp()
                 },
                 onClickConfirm = {
                     callsignLiveDataState.postValue(callsignTextFieldValue.text)
                     Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
-                    navController.navigate("settings_screen")
-
+                    navController.navigateUp()
                 })
         }
     }
@@ -1054,12 +1046,12 @@ fun TeamSetting(navController: NavController) {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("settings_screen")
+                    navController.navigateUp()
                 },
             onClickConfirm = {
                 teamSettingsState.postValue(teamEntriesValuesList.ltEntries[selectedRadioIndex])
                 Log.d(TAG, "Settings saved with team: ${teamSettingsState.value}")
-                navController.navigate("settings_screen")
+                navController.navigateUp()
                 }
             )
         }
@@ -1120,12 +1112,12 @@ fun RoleSetting (navController: NavController) {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("settings_screen")
+                    navController.navigateUp()
                 },
                 onClickConfirm = {
                     roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
                     Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
-                    navController.navigate("settings_screen")
+                    navController.navigateUp()
                 })
         }
     }
@@ -1134,7 +1126,6 @@ fun RoleSetting (navController: NavController) {
 @SuppressLint("CoroutineCreationDuringComposition")
 @Composable
 fun TakServerSetting(navController: NavController) {
-
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -1211,7 +1202,7 @@ fun TakServerSetting(navController: NavController) {
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Button(
-                    onClick = { navController.navigate("settings_screen") },
+                    onClick = { navController.navigateUp() },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Gray,
                         contentColor = Color.Red
@@ -1415,7 +1406,7 @@ fun NewServerPage(navController: NavController) {
                         false; portChanged = false; usernameChanged = false; passwordChanged =
                         false
                         Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("tak_server_screen")
+                        navController.navigateUp()
                     },
                     onClickConfirm = {
                         if (!nameTextState.value.equals(nameSettingsState.value)) {
@@ -1466,7 +1457,7 @@ fun NewServerPage(navController: NavController) {
                                     .post(MessageEvent(SERVER_DETAILS_CHANGED))
                             }
                         }
-                        navController.navigate("tak_server_screen")
+                        navController.navigateUp()
                     })
             }
         }
@@ -1682,6 +1673,7 @@ fun ConfirmationDialog(
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
     Box(
         modifier = Modifier
+            .unswipeable()
             .fillMaxSize()
             .background(colors.background)
             .padding(bottom = 16.dp)
@@ -1831,7 +1823,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
 fun InvalidLicenseScreen (navController: NavController) {
     WearTAKCIVTheme {
         Column(
-            modifier = Modifier
+            modifier = Modifier.unswipeable()
                 .fillMaxSize()
                 .background(colors.background)
                 .padding(16.dp),
@@ -2098,7 +2090,7 @@ fun SOSButton() {
     if (shouldShowConfirmationDialog.value) {
         ConfirmationDialog(
             shouldShowConfirmationDialog,
-            rememberNavController(),
+            rememberSwipeDismissableNavController(),
             "Do you want to trigger an SOS alert at your location?",
             Icons.Default.Warning,
             Color.Red,
@@ -2175,7 +2167,7 @@ fun MarkerDropButton(
     if (shouldShowConfirmationDialog.value) {
         ConfirmationDialog(
             shouldShowConfirmationDialog,
-            rememberNavController(),
+            rememberSwipeDismissableNavController(),
             "Drop marker at current location?",
             Icons.Default.LocationOn,
             Color.Green,
@@ -2687,7 +2679,7 @@ fun DefaultPreview() {
 @Composable
 fun CallsignSettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
-    CallsignSetting(rememberNavController(),callsignState)
+    CallsignSetting(rememberSwipeDismissableNavController(),callsignState)
 }
 
 @Preview(widthDp = 192, heightDp = 800)
@@ -2696,19 +2688,19 @@ fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     var licenseState = MutableLiveData<String>("AscentLicense")
 
-    SettingsScreen(rememberNavController(),callsignState, licenseState)
+    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun TAKSettingsPreview() {
-    TakServerSetting(rememberNavController())
+    TakServerSetting(rememberSwipeDismissableNavController())
 }
 
 @Preview(widthDp = 192, heightDp = 600, showBackground = true)
 @Composable
 fun NewServerPreview() {
-    NewServerPage(rememberNavController())
+    NewServerPage(rememberSwipeDismissableNavController())
 }
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
@@ -2725,7 +2717,7 @@ fun ServerRegistrationPreview() {
 
     ServerRegistrationDialog(
         shouldShowDialog,
-        rememberNavController(),
+        rememberSwipeDismissableNavController(),
         isConfirmed
     )
 }
@@ -2738,7 +2730,7 @@ fun ConfirmationDialogPreview() {
 
     ConfirmationDialog(
         shouldShowDialog = shouldShowDialog,
-        rememberNavController(),
+        rememberSwipeDismissableNavController(),
         "Do you want to trigger an SOS alert at your location?",
         Icons.Default.Warning,
         Color.Red,
@@ -2750,14 +2742,14 @@ fun ConfirmationDialogPreview() {
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun InvalidLicensePreview() {
-    InvalidLicenseScreen(rememberNavController())
+    InvalidLicenseScreen(rememberSwipeDismissableNavController())
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun LicenseKeyPreview() {
     var licenseState = MutableLiveData<String>("License Key")
-    LicenseKeyScreen(rememberNavController(), licenseState)
+    LicenseKeyScreen(rememberSwipeDismissableNavController(), licenseState)
 }
 
 
@@ -2773,5 +2765,14 @@ fun vibrateWatch(context: Context) {
         }
     }
 }
+
+public fun Modifier.unswipeable() =
+    this.then(
+        Modifier.draggable(
+            orientation = Orientation.Horizontal,
+            enabled = true,
+            state = DraggableState {}
+        )
+    )
 
 
