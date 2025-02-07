@@ -140,6 +140,7 @@ import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.R
@@ -2537,6 +2538,7 @@ fun SettingsScreen(
                                     if (callsignChanged) {
                                         Log.d(TAG, "Storing Callsign ($callsign)")
                                         dataRepository.storeCallsign(callsign)
+                                        EventBus.getDefault().post(MessageEvent(CALLSIGN_CHANGED))
                                     }
                                     if (teamChanged) {
                                         Log.d(TAG, "Storing Team ($team)")

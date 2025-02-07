@@ -29,6 +29,10 @@ import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_CHANGED
+import com.aitech.weartak_civ.events.TakServerConnEvent
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
@@ -41,6 +45,9 @@ import kotlinx.coroutines.launch
 import live.ditto.DittoError
 import live.ditto.DittoSyncSubscription
 import live.ditto.transports.DittoTransportConfig
+import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
 
 class DittoService : Service() {
 
@@ -58,12 +65,45 @@ class DittoService : Service() {
         super.onCreate()
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
         dataRepository = MainActivity.dataRepository // or another injection approach
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
         Log.d(TAG, "Oncreate Called")
     }
+
+    private fun renameDeviceName() {
+        Log.v(TAG, "Sync is active. Stopping.")
+        if (subscription!=null) {
+            Log.v(TAG, "A Subcription is active. closing it to rename the device.") // TODO: check the current subscriptions so we can resubscribe to them. currently only using track.
+            subscription?.close()
+            subscription=null
+            try {
+                ditto.stopSync()
+                Log.d(TAG, "Sync stopped")
+            } catch (e: DittoError) {
+                Log.e(TAG, "Error stopping sync: ${e.message}")
+            }
+            Log.v(TAG, "Renaming the device name.")
+            ditto.deviceName = callsign
+            try {
+                ditto.startSync()
+                Log.d(TAG, "Sync started")
+            } catch (e: DittoError) {
+                Log.e(TAG, "Error restarting sync: ${e.message}")
+            }
+            Log.v(TAG, "Restarting the subscription.")
+            subscription = ditto.sync.registerSubscription("SELECT * FROM track")
+        } else {
+            Log.v(TAG, "NO Subcription is active. Renaming Device.")
+            ditto.deviceName = callsign
+        }
+    }
+
 
     private fun configureDitto() {
         val config = DittoTransportConfig()
         config.enableAllPeerToPeer() //Enable all peer to peer transports
+
         ditto.deviceName = callsign // set deviceName for presence viewer
         ditto.transportConfig = config
     }
@@ -298,6 +338,18 @@ class DittoService : Service() {
         }
     }
 
+
+
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onTakConnectionSuccess(event: MessageEvent) {
+        val msg = event.message
+        if (msg == CALLSIGN_CHANGED) {
+            Log.v(TAG, "Callsign Changed to $callsign. Updating Ditto deviceName for Presence Viewer ")
+            renameDeviceName()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
@@ -312,6 +364,9 @@ class DittoService : Service() {
         Log.d(TAG, "Subscription has been closed.")
         subscription?.close() // stop subscribing to track collection
         subscription = null
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
         ioScope.cancel() // cancel all coroutines when service is destroyed
     }
 
