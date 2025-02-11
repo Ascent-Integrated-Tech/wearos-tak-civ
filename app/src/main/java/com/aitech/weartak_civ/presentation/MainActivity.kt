@@ -33,6 +33,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,6 +88,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -115,7 +117,6 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -1344,8 +1345,8 @@ fun TakServerSetting(navController: NavController) {
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Button(
-                    onClick = { navController.navigate("main_screen") {
-                        popUpTo(("main_screen")) {
+                    onClick = { navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
                             inclusive = true
                         }
                     } },
@@ -1825,6 +1826,7 @@ fun ConfirmationDialog(
 
 @Composable
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
+    var offsetX by remember { mutableStateOf(0f) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1833,7 +1835,8 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        var licenseTextFieldValue by remember {
+
+            var licenseTextFieldValue by remember {
             mutableStateOf(
                 TextFieldValue(
                     licenseLiveDataState.value ?: "null"
@@ -1904,7 +1907,6 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 inclusive = true
                             }
                         }
-//                        navController.popBackStack("settings_screen", false)
 
                         Log.d(
                             TAG, """
@@ -2506,7 +2508,7 @@ fun SettingsScreen(
 
                 Chip(
                     onClick = { navController.navigate("license_setting_screen") {
-                        popUpTo("main_screen") { inclusive = true }
+                        popUpTo("license_setting_screen") { inclusive = true }
                     } },
                     enabled = true,
                     label = { Text(text = "License Key") },
@@ -2618,7 +2620,11 @@ fun SettingsScreen(
                         teamSettingsState.postValue(team)
                         roleSettingsState.postValue(role)
                         Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("main_screen")
+                        navController.navigate("main_screen") {
+                            popUpTo(("main_screen")) {
+                                inclusive = true
+                            }
+                        }
                     },
                     onClickConfirm = {
                         var settingsChanged: Boolean = false
@@ -2821,7 +2827,11 @@ fun SettingsScreen(
                             } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
                                 Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                             } else {
-                                navController.navigate("main_screen")
+                                navController.navigate("main_screen") {
+                                    popUpTo(("main_screen")) {
+                                        inclusive = true
+                                    }
+                                }
                             }
                         })
             }
