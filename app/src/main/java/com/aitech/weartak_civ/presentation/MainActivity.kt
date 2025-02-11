@@ -13,29 +13,24 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Vibrator
 import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings.Secure
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -54,9 +49,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -120,9 +115,6 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.navOptions
-
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -144,15 +136,15 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.events.TakServerConnEvent
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
+import com.aitech.weartak_civ.events.TakServerConnEvent
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
+import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
@@ -181,9 +173,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.serverSettingsChanged
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBatteryService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startOffBodyDetectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
@@ -193,6 +185,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.username
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
@@ -212,6 +205,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.bouncycastle.crypto.params.Blake3Parameters.context
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -266,6 +260,7 @@ class MainActivity : ComponentActivity() {
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
         var serverSettingsChanged: Boolean = false
 
+        var versionNumber : String = ""
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -852,6 +847,15 @@ class MainActivity : ComponentActivity() {
         networkManager = NetworkManager.getInstance()
         networkManager.init()
 
+        //Obtain version # from build.gradle
+        try {
+            val pInfo: PackageInfo =
+                this.getPackageManager().getPackageInfo(this.getPackageName(), 0)
+            versionNumber = pInfo.versionName.toString()
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.d(TAG, "Version number not found")
+        }
+
         installSplashScreen()
 
         validateLicense(license)
@@ -1066,41 +1070,55 @@ fun CallsignRoleTeamChip(
 
 @Composable
 fun CallsignSetting(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        var callsignTextFieldValue by remember { mutableStateOf(TextFieldValue(callsignLiveDataState.value ?: "null")) }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            var callsignTextFieldValue by remember {
+                mutableStateOf(
+                    TextFieldValue(
+                        callsignLiveDataState.value ?: "null"
+                    )
+                )
+            }
 //        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
 
-        OutlinedTextField(
-            value = callsignTextFieldValue,
-            onValueChange = {
-                callsignTextFieldValue = it
-            },
-            maxLines = 1,
-            label = { Text(text = "Callsign", color = colors.primary) },
-            placeholder = { Text(text = "Your Callsign", color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    navController.navigateUp()
+            OutlinedTextField(
+                value = callsignTextFieldValue,
+                onValueChange = {
+                    callsignTextFieldValue = it
                 },
-                onClickConfirm = {
-                    callsignLiveDataState.postValue(callsignTextFieldValue.text)
-                    Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
-                    navController.navigateUp()
-                })
+                maxLines = 1,
+                label = { Text(text = "Callsign", color = colors.primary) },
+                placeholder = { Text(text = "Your Callsign", color = colors.primary) },
+                textStyle = TextStyle(color = colors.primary)
+            )
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onClickConfirm = {
+                        callsignLiveDataState.postValue(callsignTextFieldValue.text)
+                        Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    })
+            }
         }
     }
-}
 
 fun findTeamIndex(teamName: String?) : Int {
     if (null == teamName) {
@@ -1155,12 +1173,20 @@ fun TeamSetting(navController: NavController) {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Settings NOT saved")
-                    navController.navigateUp()
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
                 },
             onClickConfirm = {
                 teamSettingsState.postValue(teamEntriesValuesList.ltEntries[selectedRadioIndex])
                 Log.d(TAG, "Settings saved with team: ${teamSettingsState.value}")
-                navController.navigateUp()
+                navController.navigate("settings_screen") {
+                    popUpTo(("settings_screen")) {
+                        inclusive = true
+                    }
+                }
                 }
             )
         }
@@ -1221,13 +1247,19 @@ fun RoleSetting (navController: NavController) {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Settings NOT saved")
-                    navController.navigateUp()
-                },
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }                },
                 onClickConfirm = {
                     roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
                     Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
-                    navController.navigateUp()
-                })
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }                })
         }
     }
 }
@@ -1311,7 +1343,11 @@ fun TakServerSetting(navController: NavController) {
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Button(
-                    onClick = { navController.navigateUp() },
+                    onClick = { navController.navigate("main_screen") {
+                        popUpTo(("main_screen")) {
+                            inclusive = true
+                        }
+                    } },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Gray,
                         contentColor = Color.Red
@@ -1515,7 +1551,11 @@ fun NewServerPage(navController: NavController) {
                         false; portChanged = false; usernameChanged = false; passwordChanged =
                         false
                         Log.d(TAG, "Settings NOT saved")
-                        navController.navigateUp()
+                        navController.navigate("tak_server_screen") {
+                            popUpTo(("tak_server_screen")) {
+                                inclusive = true
+                            }
+                        }
                     },
                     onClickConfirm = {
                         if (!nameTextState.value.equals(nameSettingsState.value)) {
@@ -1566,7 +1606,11 @@ fun NewServerPage(navController: NavController) {
                                     .post(MessageEvent(SERVER_DETAILS_CHANGED))
                             }
                         }
-                        navController.navigateUp()
+                        navController.navigate("tak_server_screen") {
+                            popUpTo(("tak_server_screen")) {
+                                inclusive = true
+                            }
+                        }
                     })
             }
         }
@@ -1782,7 +1826,6 @@ fun ConfirmationDialog(
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
     Box(
         modifier = Modifier
-            .unswipeable()
             .fillMaxSize()
             .background(colors.background)
             .padding(bottom = 16.dp)
@@ -1814,7 +1857,11 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                     Log.d(TAG, "Settings NOT saved")
                     settingsChanged = false; licenseChanged = false
                     if (isLicenseValid()) {
-                        navController.navigate("settings_screen")
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
                     } else {
                         navController.navigate("invalid_license_screen")
                     }
@@ -1851,7 +1898,13 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         =====================================
                         """.trimIndent()
                         )
-                        navController.navigate("settings_screen")
+                        navController.navigate("settings_screen") {
+                            popUpTo(("invalid_license_screen")) {
+                                inclusive = true
+                            }
+                        }
+//                        navController.popBackStack("settings_screen", false)
+
                         Log.d(
                             TAG, """
                         ===   Application Services Info   ===
@@ -1920,7 +1973,11 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 )
                             )
                         }
-                        navController.navigate("invalid_license_screen")
+
+                        navController.navigate("invalid_license_screen"){
+                            popUpTo("settings_screen") { inclusive = true }
+                        }
+
                     }
                 }
             )
@@ -1932,7 +1989,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
 fun InvalidLicenseScreen (navController: NavController) {
     WearTAKCIVTheme {
         Column(
-            modifier = Modifier.unswipeable()
+            modifier = Modifier
                 .fillMaxSize()
                 .background(colors.background)
                 .padding(16.dp),
@@ -1952,7 +2009,9 @@ fun InvalidLicenseScreen (navController: NavController) {
             )
             Spacer(modifier = Modifier.size(10.dp))
             Button(
-                onClick = { navController.navigate("license_setting_screen") },
+                onClick = { navController.navigate("license_setting_screen") {
+                    popUpTo("invalid_license_screen") { inclusive = true }
+                } },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.primary,
                     contentColor = Color.Black
@@ -2339,7 +2398,7 @@ fun SettingSwitchToggle(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp),
-        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis,) },
+        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
         secondaryLabel = {
             Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
         },
@@ -2436,11 +2495,31 @@ fun SettingsScreen(
                         .padding(bottom = 3.dp)
                 )
 
-                CallsignRoleTeamChip(
-                    "license_setting_screen",
-                    "License Key",
-                    licenseSettingsState,
-                    navController
+//                CallsignRoleTeamChip(
+////                    "license_setting_screen",
+////                    "License Key",
+////                    licenseSettingsState,
+////                    navController
+////                )
+                val licenseText: String? by licenseSettingsState.observeAsState()
+
+                Chip(
+                    onClick = { navController.navigate("license_setting_screen") {
+                        popUpTo("main_screen") { inclusive = true }
+                    } },
+                    enabled = true,
+                    label = { Text(text = "License Key") },
+                    secondaryLabel = {
+                        Text(text = licenseText.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
+                    },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp)
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -2512,13 +2591,23 @@ fun SettingsScreen(
                 SettingSwitchToggle(
                     checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
                     title = "Biometrics",
-                    description = "Service ON/OFF",)
+                    description = "Service ON/OFF",
+                )
 
-                SettingSwitchToggle(checked = dittoChecked, onCheckedChange =  { dittoChecked = it },
+                SettingSwitchToggle(
+                    checked = dittoChecked, onCheckedChange = { dittoChecked = it },
                     title = "Ditto",
-                    description = "Service ON/OFF",)
+                    description = "Service ON/OFF",
+                )
 
-                Spacer(modifier = Modifier.height(15.dp))
+                Text(
+                    modifier = Modifier.padding(top = 7.dp),
+                    text = "Version $versionNumber",
+                    fontSize = 11.sp,
+                    color = colors.primary,
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -2746,7 +2835,7 @@ fun ConfirmCancelButtons(
     onClickConfirm: () -> Unit
 ) {
     Box(
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             IconButton(
@@ -2771,8 +2860,13 @@ fun ConfirmCancelButtons(
                 colors = IconButtonDefaults.iconButtonColors(
                     contentColor = Color.Black,
                     containerColor = colors.primary
-                )) {
-                Icon(imageVector = Icons.Filled.Check, contentDescription = "Confirm icon", tint = Color.Black)
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Confirm icon",
+                    tint = Color.Black
+                )
 
             }
         }
