@@ -22,6 +22,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.util.Xml
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
@@ -57,9 +58,12 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.w3c.dom.Document
 import org.xml.sax.InputSource
+import org.xmlpull.v1.XmlPullParser
+import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.StringReader
+import java.io.InputStreamReader
 import java.security.*
 import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
@@ -244,7 +248,6 @@ class TAKConnectService: Service() {
         private var numConnAttemptsAfterFailure = 0
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
-        private var secureSocket : SSLSocket? = null
         const private val TAK_CERT_PASSWORD = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
         var isNetworkConnected = false
@@ -259,6 +262,8 @@ class TAKConnectService: Service() {
 
         var privateKey: PrivateKey? = null
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12")
+        private var secureSocket : SSLSocket? = null
+        private var inputReader: BufferedReader? = null
 
         var username : String = ""
         var password : String = ""
@@ -674,10 +679,15 @@ class TAKConnectService: Service() {
                         secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket
                         Log.d(TAG, "Starting secureSocket handshake")
                         secureSocket?.startHandshake()
+                        inputReader = BufferedReader(InputStreamReader(secureSocket?.getInputStream()))
+                        CoroutineScope(Dispatchers.IO).launch {
+                            receiveDataTAKServer()
+                        }
                         isTakConnected = true
                         isTakConnectedLiveData.postValue(isTakConnected)
                         sendTakConnectionStatusEvent(CONNECTION_SUCCESS)
                         Log.d(TAG, "Successfully connected to $takServer on port $port")
+
                     } catch (e: Exception) {
                         isTakConnected = false
                         isTakConnectedLiveData.postValue(isTakConnected)
@@ -691,6 +701,46 @@ class TAKConnectService: Service() {
                     Log.d(TAG, "Going to obtain client cert and then connect as obtainedClientCert=false and obtainingClientCert=false")
                     getClientCertificateAndConnect(takServer, username, password, port)
                 }
+            }
+        }
+
+        private fun receiveDataTAKServer() {
+            try {
+                val buffer = CharArray(1024)
+                var numChars: Int = 0
+                while (inputReader?.read(buffer).also {
+                        if (it != null) {
+                            numChars = it
+                        }
+                    } != -1) {
+                    val message = String(buffer, 0, numChars)
+                    Log.d(TAG, "Message received: $message")
+
+                    val parser = Xml.newPullParser();
+                    parser.setInput(message.reader())
+
+                    var eventType = parser.eventType
+
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        val tagName = parser.name
+                        if (eventType == XmlPullParser.START_TAG && tagName == "geofence") {
+                            val fenceUid = parser.getAttributeValue(null, "uid") ?: ""
+                            if (fenceUid == MainActivity.device_uid) {
+                                val fencePeriod = parser.getAttributeValue(null, "period") ?: ""
+                                val fenceBehavior =
+                                    parser.getAttributeValue(null, "behaviour") ?: ""
+                                val fenceType = parser.getAttributeValue(null, "type") ?: ""
+                                Log.d(TAG, "Geofence event received w/ uid=$fenceUid, period=$fencePeriod, behavior=$fenceBehavior, type=$fenceType")
+                            }
+                        }
+                        eventType = parser.next()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to receive data from TAK server", e)
+                // TODO: What to do here??
+                //isTakConnectedLiveData.postValue(false)
             }
         }
 
