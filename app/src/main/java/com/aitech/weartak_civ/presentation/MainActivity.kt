@@ -115,6 +115,7 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
+
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -1402,7 +1403,7 @@ fun TakServerChip(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
 ) {
-    val takServerConnected by TAKConnectService.isConnectedLiveData.observeAsState()
+    val takServerConnected by TAKConnectService.isTakConnectedLiveData.observeAsState()
     SplitToggleChip(
         label = {
             Image(
@@ -2089,7 +2090,7 @@ fun TroubleshootingIcons() {
         var locationChecked by remember{ mutableStateOf(enableLocationService)}
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
-        val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+        val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
@@ -2250,7 +2251,7 @@ fun SOSButton() {
     val successBoolean = remember {mutableStateOf(false)}
     val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
     val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+    val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
     val location = dataRepository.latestLocation.value
     var locationChecked by remember{ mutableStateOf(enableLocationService)}
 
@@ -2318,7 +2319,7 @@ fun MarkerDropButton(
     val successBoolean = remember {mutableStateOf(false)}
     val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
     val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isConnectedLiveData.observeAsState()
+    val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
     val location = dataRepository.latestLocation.value
     var locationChecked by remember{ mutableStateOf(enableLocationService)}
 
