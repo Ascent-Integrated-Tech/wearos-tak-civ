@@ -337,7 +337,7 @@ class CotDispatchService : Service() {
     }
 
     fun buildAndSendLocationBiometricCotMessage() {
-        if (!TAKConnectService.isConnected) {
+        if (!TAKConnectService.isTakConnected) {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             CoroutineScope(Dispatchers.IO).launch {
@@ -368,7 +368,7 @@ class CotDispatchService : Service() {
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
         //Log.d(TAG, "onMessageEvent w/ msg($msg)")
-        if (TAKConnectService.isConnected) {
+        if (TAKConnectService.isTakConnected) {
             if (RECV_LOCATION == msg) {
                 // We would like to send the "freshest" location especially if location update is 10s or greater
                 lastLocationUpdateRcvd = System.currentTimeMillis()
