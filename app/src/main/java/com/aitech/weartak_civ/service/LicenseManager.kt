@@ -67,8 +67,11 @@ object LicenseManager {
     }
 
     private fun initLicense() {
-        LexActivator.SetProductData("MkM3RTU1Q0I1RjY5MjM0NEQ2ODgwRUQyNUY3N0JEMzg=.8gDH04Kj9jfbVMdZzvqWb5ePwfs1pvbnRRKHKnoXYddw/cVHJkFpLN5rNe63NZgBzMlmFGTeZumW9YODYyqJtnLADohzICEZBB8WOpcH+Cr74v5GV5QEsKxlXWcnnQMnSH4ybnGhlSJwaBY+yFCB5XBYtVIq0JVvr90J9qB+cgyKKWSjxwxuCgly0MgdUz6GjhS1Qrz66xP3CGSVOA/NqO+3kDI0yh+HaCM0/x/3lxkP32J+K/NhFupHYuQP6f+cCcvHpYVgiJvBoRH91/Jg/UjeHDWKRiExYboI60bCYUD75HkILuvpG3icPd2u1dePB/A1PSNqntw+l6K3j4hL/0u0/ATsdYDDpkzC8biJuLCViHu6jf7UtufBFa9Z77isqkNzJshN/hRG3ZbEG/VIOzzCmtSP+iQzLfu5ePgILgYmMsJgiwJTUwtwplljJ5B11GjPgMLLRz1kpSl8Jch/I3VJpwSCM7wUz3Lwfrlwo77ATkHdsFzhrY7IqvFHNtXb+n8rjruKbjeltOwzQlAhwoRBRjL7V2x6VKSkyYTXdYlQ1dCdzosSVkyCcY9y32WOLhTrI4xncURoA0D9f/HrrOlJNPo9izrPqYqO9/BgQvXaF3gpXEBJ7ljkcCf4wsBBltntBmLd1cuJflbHcQoDwrfaEynBNc/2xE3TztouGyIxX1gmhxi2/3d0lT8mo1cssnYWsiONvjsDXnfeRcFaA+/5Fip21qWVbRynC9Vi9pSVEo3O4LWRu5ksbM9fay7+2nOdm+S0Rf3sQjaH+65twwVVWSm2yJqmxmWOV3LxMJSUWboyRFF/2L+YxqnZC1RE");
-        LexActivator.SetProductId("a0cd6a11-fd66-4d9f-9793-296ae46500ba", LexActivator.LA_USER);
+//        LexActivator.SetProductData("MkM3RTU1Q0I1RjY5MjM0NEQ2ODgwRUQyNUY3N0JEMzg=.8gDH04Kj9jfbVMdZzvqWb5ePwfs1pvbnRRKHKnoXYddw/cVHJkFpLN5rNe63NZgBzMlmFGTeZumW9YODYyqJtnLADohzICEZBB8WOpcH+Cr74v5GV5QEsKxlXWcnnQMnSH4ybnGhlSJwaBY+yFCB5XBYtVIq0JVvr90J9qB+cgyKKWSjxwxuCgly0MgdUz6GjhS1Qrz66xP3CGSVOA/NqO+3kDI0yh+HaCM0/x/3lxkP32J+K/NhFupHYuQP6f+cCcvHpYVgiJvBoRH91/Jg/UjeHDWKRiExYboI60bCYUD75HkILuvpG3icPd2u1dePB/A1PSNqntw+l6K3j4hL/0u0/ATsdYDDpkzC8biJuLCViHu6jf7UtufBFa9Z77isqkNzJshN/hRG3ZbEG/VIOzzCmtSP+iQzLfu5ePgILgYmMsJgiwJTUwtwplljJ5B11GjPgMLLRz1kpSl8Jch/I3VJpwSCM7wUz3Lwfrlwo77ATkHdsFzhrY7IqvFHNtXb+n8rjruKbjeltOwzQlAhwoRBRjL7V2x6VKSkyYTXdYlQ1dCdzosSVkyCcY9y32WOLhTrI4xncURoA0D9f/HrrOlJNPo9izrPqYqO9/BgQvXaF3gpXEBJ7ljkcCf4wsBBltntBmLd1cuJflbHcQoDwrfaEynBNc/2xE3TztouGyIxX1gmhxi2/3d0lT8mo1cssnYWsiONvjsDXnfeRcFaA+/5Fip21qWVbRynC9Vi9pSVEo3O4LWRu5ksbM9fay7+2nOdm+S0Rf3sQjaH+65twwVVWSm2yJqmxmWOV3LxMJSUWboyRFF/2L+YxqnZC1RE");
+        LexActivator.SetProductData("RDEyNTFCNzVERkNGNzMzRjk1NzFDNUNENDVBODU2MDE=.XliPyzDSLhGDn7P3qy92RmGP1lIgfIAJJglDPcoAjac6wVCYJ1N0vxnNyM2kP0G65l9LUXgGwedr1mKhMs6c8bWi8hKnnYvjmmfwNQDVfy1hNBtHiJKm6AAaHkfy0GZQbKYewQr3lu1Y06fnkXcLW/sccllHG98OoyKRcbrFrcDTudZlGMVa5/oUS3aEphLJ33Pis3NRSScfThJQKiYzWjX6dvKdtG1o3v2cbHrB+0J0VXLFHUBPN1MBhIy5/MhcHXDPxmq21uVp6L1fp8uk8sAOGpgslhbFfgsu8vxELqs0/NrfNvJn3VVlV7GXDAZ4pEWAKMr/nFXiywLX1ic21OijeiOrub1oRb40QSStdluiEluSV5BxLUQdmjd2hUE5nhlZRrIzv+hysqZMBrqsXykKyA5xf84ka63dZr7JzR7lUFcxx0LZnyRbuDQJks/tmn/jVyOaFer7k3yi3jO208IR7KEk2gVV2OmSkGSo969JyMiq4Voe/dh7tDwvZIK7RcwnI7Vv6V5EguWFNJLmkPSmUR+lA4DdTmxtorpwkM8hQ9uBj9WRb+xzL6y2kJzxRzv6rtcDlFt8Ms8/gJeylI2PHsEojqXTS81nEzxKrEkapurCfhnhnQzBLkrEmcdZaN7BXdWImgLrx/Iv4oBZZSxseCUjhE6dNkGt94MgTwfaUOXLavuQWGYLcf7W+lXQjBsTAKcxnYI68tiKKrRFKJ1jVDdiS/+6Acl4nTWTV46Bh8mAH81gtq8tlnQBs9IW6fcLJfcLYk8QSOudOVHidK3KJydUY60cYfGNMeGJFKmes0E3xFxn7chfwaJANrAp")
+//        LexActivator.SetProductId("a0cd6a11-fd66-4d9f-9793-296ae46500ba", LexActivator.LA_USER);
+        LexActivator.SetProductId("20d0b481-a6d1-4a98-9552-7752a360d8b0", LexActivator.LA_IN_MEMORY)
+        LexActivator.SetLicenseKey("5E994E-FC342D-481A9F-486338-9BAC4D-2952B7")
         Log.d("LicenseManager", "Setting Product Data and Product ID for Lex")
     }
 
@@ -78,17 +81,29 @@ object LicenseManager {
 //        LexActivator.SetProductId("20d0b481-a6d1-4a98-9552-7752a360d8b0", LexActivator.LA_USER)
         initLicense()
         try {
-            LexActivator.SetLicenseKey(licenseKey)
-            val status = LexActivator.ActivateLicense();
+//            LexActivator.SetLicenseKey(licenseKey)
+            var status: Int = 10
+
+            try {
+                Log.d("LicenseManager", "Setting Status to ActivateLicense()")
+                status = LexActivator.ActivateLicense();
+            } catch (e:Exception) {
+                Log.d("LicenseManager", "Couldn't set status to activate license error $e")
+            }
             if (LexActivator.LA_OK == status) {
                 Log.d("LicenseManager", "$status License Activated Successfully")
 
             } else if (LexActivator.LA_EXPIRED == status ) {
                 Log.d("LicenseManager", "$status License EXPIRED")
             } else {
-                Log.d("LicenseManager", "$status License was not activated successfully")
+                Log.d("LicenseManager", "$status License was not activated successfully. trying other shit")
+                try {
+                    LexActivator.SetProductId("20d0b481-a6d1-4a98-9552-7752a360d8b0", LexActivator.LA_SYSTEM)
+                    status = LexActivator.ActivateLicense();
+                } catch (e:Exception) {
+                    Log.d("LicenseManager", "$status Other shit didn't work.")
+                }
             }
-
         } catch (e: LexActivatorException) {
             Log.d("LicenseManager", "Fuccck the license didn't activate fuckckkkkkkckkkkcc error code $e")
         }

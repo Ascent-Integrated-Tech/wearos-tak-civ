@@ -860,6 +860,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
 
         validateLicense(license)
+        activateLicense(license) // cryptlex
 
         setTheme(android.R.style.Theme_DeviceDefault)
 
@@ -1885,7 +1886,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             licenseSettingsState.postValue(license)
                             licenseLiveDataState.postValue(license)
                             dataRepository.storeLicense(license)
-                            activateLicense(license)
+//                            activateLicense(license)
                         }
                         Log.d(TAG, "Sending License for Validation.")
                         validateLicense(license)
