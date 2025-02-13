@@ -15,10 +15,10 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
-import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -47,7 +47,6 @@ class CotDispatchService : Service() {
     var lastLocationUpdateRcvd : Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
     private val ioScope = CoroutineScope(Dispatchers.IO)
-    private val uid = MainActivity.device_uid
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -122,14 +121,14 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
-            if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > reportingUpdateIntervalSecs * 1000L) {
-                // Somehow location update did not happen within the last reportingUpdateIntervalSecs.
-                // Maybe locationService is using fused indoor and reportingUpdateIntervalSecs < 5s OR some other reason
-                Log.v(TAG, "Somehow location update did not happen within the last reportingUpdateIntervalSecs. Sending Biometric Cot via cotDispatchRunnable")
+            if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
+                // Somehow location update did not happen within the last currReportingIntevalInSecs.
+                // Maybe locationService is using fused indoor and currReportingIntevalInSecs < 5s OR some other reason
+                Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, reportingUpdateIntervalSecs * 1000L)
+            cotDispatchHandler?.postDelayed(this, currReportingIntervalInSecs * 1000L)
         }
     }
 
@@ -145,7 +144,7 @@ class CotDispatchService : Service() {
         val startTime = dateTimeFormatter.format(calendar.time)
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.SECOND, 3*reportingUpdateIntervalSecs)
+        calendar.add(Calendar.SECOND, 3*currReportingIntervalInSecs)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
@@ -363,17 +362,23 @@ class CotDispatchService : Service() {
         Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    public fun onLocationRcvdEvent(event: LocationRcvd) {
+        Log.d(TAG, "onLocationRcvdEvent called")
+        if (TAKConnectService.isTakConnected) {
+            // We would like to send the "freshest" location especially if location update is 10s or greater
+            lastLocationUpdateRcvd = System.currentTimeMillis()
+            buildAndSendLocationBiometricCotMessage()
+        }
+    }
+
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
-    @Subscribe(threadMode = ThreadMode.MAIN)
+    @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
         //Log.d(TAG, "onMessageEvent w/ msg($msg)")
         if (TAKConnectService.isTakConnected) {
-            if (RECV_LOCATION == msg) {
-                // We would like to send the "freshest" location especially if location update is 10s or greater
-                lastLocationUpdateRcvd = System.currentTimeMillis()
-                buildAndSendLocationBiometricCotMessage()
-            } else if (DROP_MARKER == msg) {
+            if (DROP_MARKER == msg) {
                 CoroutineScope(Dispatchers.IO).launch {
                     val location = dataRepository.latestLocation.value
                     var heartRate = dataRepository.latestHeartRate.value
@@ -418,6 +423,7 @@ class CotDispatchService : Service() {
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
         var isRunning : Boolean = false
         var reportingUpdateIntervalSecs = 10
+        var currReportingIntervalInSecs = 10
         lateinit var instance: CotDispatchService
     }
 }

@@ -88,7 +88,7 @@ class DittoService : Service() {
             }
 
             // Schedule the next run
-            dittoUpdateHandler?.postDelayed(this, CotDispatchService.reportingUpdateIntervalSecs * 1000L)
+            dittoUpdateHandler?.postDelayed(this, CotDispatchService.currReportingIntervalInSecs * 1000L)
         }
     }
 
@@ -106,7 +106,7 @@ class DittoService : Service() {
         ioScope.launch{
 //            val timeMs = Calendar.getInstance().timeInMillis
             val timeMs = System.currentTimeMillis()
-            val staleMsOffset = 3000 * CotDispatchService.reportingUpdateIntervalSecs
+            val staleMsOffset = 3000 * CotDispatchService.currReportingIntervalInSecs
             val staleTimeMs = timeMs+staleMsOffset
             val location = dataRepository.latestLocation.value
             var heartRate = dataRepository.latestHeartRate.value

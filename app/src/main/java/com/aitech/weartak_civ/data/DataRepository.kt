@@ -19,12 +19,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlin.random.Random
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
-import android.util.Log
-import com.aitech.weartak_civ.service.CotDispatchService
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -94,7 +91,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[CALLSIGN] ?: ("WEAROS-" + Random.nextInt(1, 1000).toString())
+        prefs[CALLSIGN] ?: ""
     }
 
     suspend fun storeCallsign(callsign: String) {

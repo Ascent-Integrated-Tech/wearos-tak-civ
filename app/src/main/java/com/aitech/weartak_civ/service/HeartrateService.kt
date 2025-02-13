@@ -191,7 +191,7 @@ class HeartrateService: Service() {
                 //Log.d(TAG, "Obtained heartrate: $hr")
 
                 val currTime = System.currentTimeMillis()
-                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.reportingUpdateIntervalSecs * 1000L)) {
+                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.currReportingIntervalInSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     runBlocking {
                         //Log.d(TAG, "Posting hr value to hrStringLiveData")

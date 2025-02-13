@@ -29,11 +29,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.events.MessageEvent
-import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
+import com.aitech.weartak_civ.events.PowerManagerEvent
+import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.NetworkManager
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -63,9 +65,6 @@ class LocationService : Service() {
     private val binder = LocationServiceBinder()
     private var handler: Handler? = null
     private var currentLocation: Location? = null
-    // TODO: move this to main / use main
-    private var mNwConnected : Boolean = false
-    private var mNwTransport : Int = -1
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
@@ -84,11 +83,7 @@ class LocationService : Service() {
         //Start Foreground Service
         startForegroundService()
         //Initialize a new handler thread to start the location updates
-        // TODO: check same logic as @Subsribe
-        //val nwManager = NetworkManager.getInstance()
-        mNwConnected = NetworkManager.isNetworkConnected
-        mNwTransport = if (NetworkManager.isWifi) { WIFI } else { CELLULAR }
-        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.reportingUpdateIntervalSecs * 1000L, locationUpdateFastestIntervalSecs * 1000L)
+        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
     }
 
     private fun startForegroundService() {
@@ -172,7 +167,7 @@ class LocationService : Service() {
         Log.d(TAG, "Coarse Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION)))
         locationCallback = MyLocationCallback()
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
-        //val simpleLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(CotDispatchService.reportingUpdateIntervalSecs.toLong())).build()
+        //val simpleLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(CotDispatchService.currReportingIntervalInSecs.toLong())).build()
         fusedLocationProviderClient?.requestLocationUpdates(locationRequest, locationCallback, Looper.myLooper())
     }
 
@@ -190,7 +185,7 @@ class LocationService : Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
                 //Log.d(TAG, "Received location update: $location")
-                EventBus.getDefault().post(MessageEvent(RECV_LOCATION))
+                EventBus.getDefault().post(LocationRcvd())
             }
         }
     }
@@ -201,57 +196,37 @@ class LocationService : Service() {
             get() = this@LocationService
     }
 
-    // This method will be called when a NwConnEvent is posted from NetworkManager
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onMessageEvent(nwConnEvent: NwConnEvent) {
-        Log.d(TAG, "Received nwConnEvent (${nwConnEvent.isConn}, ${nwConnEvent.transport})")
-        // TODO
-    }
-
-    private fun dynamicLocationUpdate(onStart: Boolean, nwConnected: Boolean, nwTransport: Int) {
-        if (onStart) {
-
-        }
-        if (nwConnected) {
-            // TODO: check mNwConnected
-            if ((mNwConnected) && (nwTransport == mNwTransport)) {
-                // Previous connectivity is same as now. Nothing to do
-                return
-            }
-            if (!onStart) {
-                stopLocationProvider()
-                destroyLocationThread()
-            }
-            if (nwTransport == WIFI) {
-                // Slow down the GPS update as we assume that the device is at the fire station or at Ascent
-            } else { // It will be CELLULAR
-                // Fast GPS update
-            }
-        } else {
-            // Not connected. Slow down the GPS update
-            // TODO: check mNwConnected
-            if (!onStart) {
-                stopLocationProvider()
-                destroyLocationThread()
-            }
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    public fun onPowerManagerEvent(powerManagerEvent: PowerManagerEvent) {
+        //Log.d(TAG, "Received PowerManagerEvent")
+        if (CHANGED_UPDATE_INTERVAL == powerManagerEvent.eventType) {
+            // We know that CotDispatchService.currReportingIntervalInSecs has been set already
+            // Stop and start Location Updates
+            Log.d(TAG, "Received PowerManagerEvent CHANGED_UPDATE_INTERVAL. Stopping and starting location updates")
+            stopLocationProvider()
+            destroyLocationThread()
+            startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
         }
     }
-
+    
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
-        isRunning = false
         Log.d(TAG, "Location Service Destroyed")
     }
 
     private fun destroyLocationThread() {
-        if (handler != null && locationThread != null) {
+        if (null != handler) {
             handler?.looper?.quitSafely()
+            handler = null
+        }
+        if (null != locationThread) {
             locationThread?.quitSafely()
             try {
                 locationThread?.join()
@@ -259,14 +234,17 @@ class LocationService : Service() {
             } catch (e: InterruptedException) {
                 Log.e(TAG, "ERROR in destroyLocationThread: ", e)
             }
-
+            locationThread = null
         }
     }
 
     private fun stopLocationProvider() {
         if (null != locationCallback) {
-            fusedLocationProviderClient?.removeLocationUpdates(locationCallback!!)
+            if (null != fusedLocationProviderClient) {
+                fusedLocationProviderClient?.removeLocationUpdates(locationCallback)
+            }
         }
+        fusedLocationProviderClient = null
     }
 
     companion object {
@@ -279,7 +257,7 @@ class LocationService : Service() {
         var ce : Float? = null
         var le : Float? = null
         //var locationUpdateIntervalSecs = 2
-        var locationUpdateFastestIntervalSecs = 1
+        //var locationUpdateFastestIntervalSecs = 1
         var isRunning : Boolean = false
     }
 }
