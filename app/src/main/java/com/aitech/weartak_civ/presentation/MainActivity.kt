@@ -191,6 +191,7 @@ import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
+import com.aitech.weartak_civ.service.LicenseManager.activateLicense
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
@@ -210,7 +211,7 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import javax.net.ssl.SSLSocket
-
+import com.aitech.weartak_civ.service.LicenseManagerService
 
 class MainActivity : ComponentActivity() {
 
@@ -1884,6 +1885,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             licenseSettingsState.postValue(license)
                             licenseLiveDataState.postValue(license)
                             dataRepository.storeLicense(license)
+                            activateLicense(license)
                         }
                         Log.d(TAG, "Sending License for Validation.")
                         validateLicense(license)
