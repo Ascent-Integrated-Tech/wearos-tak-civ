@@ -359,12 +359,12 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
-        Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
-        Log.d(TAG, "onLocationRcvdEvent called")
+        //Log.d(TAG, "onLocationRcvdEvent called")
         if (TAKConnectService.isTakConnected) {
             // We would like to send the "freshest" location especially if location update is 10s or greater
             lastLocationUpdateRcvd = System.currentTimeMillis()
