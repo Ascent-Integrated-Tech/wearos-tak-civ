@@ -1593,6 +1593,11 @@ fun NewServerPage(navController: NavController) {
                         if (!addressTextState.value.equals(addressSettingsState.value)) {
                             serverSettingsChanged = true; addressChanged = true
                             address = addressTextState.value.trim() ?: address
+                            // let the user enter shorthand server address (without periods ".")
+                            if (!address.contains(".")) {
+                                Log.v(TAG, "Entered address was $address, setting address to tak.$address.ops.ascentitech.com")
+                                address = "tak.$address.ops.ascentitech.com"
+                            }
                             addressSettingsState.postValue(address)
                         }
                         if (!portTextState.value.equals(portSettingsState.value)) {
