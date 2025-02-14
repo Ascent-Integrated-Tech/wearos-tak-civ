@@ -119,6 +119,11 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"/>
         <service
+            android:name=".service.PowerManagerService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"/>
+        <service
             android:name=".service.HeartrateService"
             android:enabled="true"
             android:exported="false"

@@ -570,7 +570,7 @@ class TAKConnectService: Service() {
         fun connectTAKServer(takServer: String, username: String, password: String, port: Int) {
             isTakConnected = false
             isTakConnectedLiveData.postValue(isTakConnected)
-            Log.d(TAG,"connectTAKServer called with obtainedClientCert = ${obtainedClientCert.get()} & isConnecting = ${isConnectingToCotMsgPort.get()}")
+            Log.d(TAG,"connectTAKServer called with obtainedClientCert = ${obtainedClientCert.get()} & isConnectingToCotMsgPort = ${isConnectingToCotMsgPort.get()}")
             if (obtainedClientCert.get()) {
                 if (isConnectingToCotMsgPort.getAndSet(true) == false) {
                     try {
@@ -601,7 +601,6 @@ class TAKConnectService: Service() {
                             }),
                             null
                         )
-
                         // Create the socket and connect
                         val socketFactory = sslContext.socketFactory
                         secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket

@@ -31,8 +31,6 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_NOT_WORN
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_WORN
-import com.aitech.weartak_civ.events.MessageEvent
-import com.aitech.weartak_civ.events.MessageEvent.Companion.RECV_LOCATION
 import com.aitech.weartak_civ.presentation.MainActivity
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus

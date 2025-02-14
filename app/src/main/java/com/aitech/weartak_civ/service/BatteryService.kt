@@ -21,7 +21,6 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
-import android.os.HardwarePropertiesManager
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -30,7 +29,6 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.service.LocationService.Companion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,7 +43,6 @@ class BatteryService: Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        val hardwarePropertiesManager = MainActivity.getActivity().getSystemService(Context.HARDWARE_PROPERTIES_SERVICE) as HardwarePropertiesManager
         startForegroundService()
         startBatteryMonitor()
         isRunning = true

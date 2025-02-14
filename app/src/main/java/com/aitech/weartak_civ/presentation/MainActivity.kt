@@ -143,6 +143,7 @@ import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
+import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
@@ -179,6 +180,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispat
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startOffBodyDetectService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startPowerManagerService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
@@ -197,6 +199,7 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.OffBodyDetectService
+import com.aitech.weartak_civ.service.PowerManagerService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectStatusLiveData
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectionStatus
@@ -212,6 +215,7 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import javax.net.ssl.SSLSocket
+import kotlin.random.Random
 
 
 class MainActivity : ComponentActivity() {
@@ -393,6 +397,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startPowerManagerService() {
+            if (!PowerManagerService.isRunning.get()) {
+                Log.d(TAG, "Starting PowerManagerService")
+                mainActivity.startForegroundService(Intent(mainActivity, PowerManagerService::class.java))
+            }
+        }
+
         fun startBatteryService() {
             if (!BatteryService.isRunning) {
                 Log.d(TAG, "Starting BatteryService")
@@ -508,6 +519,7 @@ class MainActivity : ComponentActivity() {
         }
         mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
+        mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
         if (enableBiometricsService) {
             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
         }
@@ -556,7 +568,12 @@ class MainActivity : ComponentActivity() {
 
     fun setDataFromDatastore() {
         runBlocking {
+            var storeCallsign = false
             callsign = dataRepository.getCallsign.first()
+            if (callsign.equals("")) {
+                callsign = "WEAROS-" + Random.nextInt(1, 1000).toString()
+                storeCallsign = true
+            }
             callsignState.postValue(callsign) // TODO: Check if we need this at all
             callsignSettingsState.postValue(callsign) // TODO: Check if we need this at all
             team = dataRepository.getTeam.first()
@@ -608,7 +625,8 @@ class MainActivity : ComponentActivity() {
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
-            LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+            CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
+            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
 
             Log.d(TAG, """
                 === Device Configuration Settings === 
@@ -623,6 +641,12 @@ class MainActivity : ComponentActivity() {
                 ReportingUpdateInterval: ${CotDispatchService.reportingUpdateIntervalSecs} seconds
                 =====================================
             """.trimIndent())
+
+            // Set callsign on first install
+            if (storeCallsign) {
+                Log.d(TAG, "Storing initial callsign $callsign")
+                dataRepository.storeCallsign(callsign)
+            }
         }
     }
 
@@ -881,6 +905,7 @@ class MainActivity : ComponentActivity() {
             startBiometericService()
             startBatteryService()
             startDittoService()
+            startPowerManagerService()
             Log.d(TAG, """
                 =====================================
             """.trimIndent())
@@ -1322,7 +1347,7 @@ fun TakServerSetting(navController: NavController) {
                     Log.d(TAG, "Storing enableLocationService $enableTAKConnectService")
                     CoroutineScope(Dispatchers.Main).launch {
                         dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
-                        EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED))
+                        EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, 0))
                     }
                 }
 
@@ -1605,7 +1630,7 @@ fun NewServerPage(navController: NavController) {
                                 }
                                 EventBus
                                     .getDefault()
-                                    .post(MessageEvent(SERVER_DETAILS_CHANGED))
+                                    .post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
                             }
                         }
                         navController.navigate("tak_server_screen") {
@@ -1921,6 +1946,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         startCotDispatchService()
                         startBiometericService()
                         startDittoService()
+                        startPowerManagerService()
                     } else {
                         Log.d(
                             TAG, """
@@ -1941,6 +1967,14 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 Intent(
                                     mainActivity,
                                     BatteryService::class.java
+                                )
+                            )
+                        }
+                        if (PowerManagerService.isRunning.get()) {
+                            mainActivity.stopService(
+                                Intent(
+                                    mainActivity,
+                                    PowerManagerService::class.java
                                 )
                             )
                         }
@@ -2351,7 +2385,7 @@ fun MarkerDropButton(
         if (takServer == true) {
             if (location != null && locationChecked) {
                 successBoolean.value = true
-                EventBus.getDefault().post(MessageEvent(DROP_MARKER))
+                EventBus.getDefault().post(MessageEvent(DROP_MARKER, 0))
             }
         } else {
             successBoolean.value = false
@@ -2708,12 +2742,12 @@ fun SettingsScreen(
                                 settingsChanged = true; reportingUpdateIntervalChanged = true
                                 CotDispatchService.reportingUpdateIntervalSecs =
                                     reportingUpdateIntervalText.toInt()
-                                LocationService.locationUpdateFastestIntervalSecs =
-                                    CotDispatchService.reportingUpdateIntervalSecs
+                                //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
                                 Log.d(
                                     TAG,
                                     "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}"
                                 )
+                                /*
                                 if (enableLocationService) {
                                     mainActivity.stopService(
                                         Intent(
@@ -2723,6 +2757,8 @@ fun SettingsScreen(
                                     )
                                     startLocationService()
                                 }
+
+                                 */
                             }
 
                         if (enableBiometricsService != biometricsChecked) {
@@ -2794,6 +2830,7 @@ fun SettingsScreen(
                                         dataRepository.storeReportingUpdateInterval(
                                             CotDispatchService.reportingUpdateIntervalSecs
                                         )
+                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
                                     }
                                     if (biometricsCheckedChanged) {
                                         Log.d(
