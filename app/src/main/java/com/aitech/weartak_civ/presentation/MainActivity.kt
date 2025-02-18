@@ -143,6 +143,7 @@ import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
@@ -2678,6 +2679,7 @@ fun SettingsScreen(
                                 settingsChanged = true; callsignChanged = true
                                 callsign = callsignSettingsState.value ?: callsign
                                 callsignLiveDataState.postValue(callsign)
+                                EventBus.getDefault().post(MessageEvent(CALLSIGN_CHANGED, 0))
                             }
                             if (!team.equals(teamSettingsState.value)) {
                                 settingsChanged = true; teamChanged = true

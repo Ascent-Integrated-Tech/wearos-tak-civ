@@ -8,5 +8,6 @@ class MessageEvent(val message: String, val addlIntInfo: Int) {
         val SERVER_DETAILS_CHANGED = "ServerDetailsChanged"
         val SERVER_TOGGLED = "ServerToggled"
         val UPDATE_INTERVAL_CHANGED = "UpdateIntervalChanged"
+        val CALLSIGN_CHANGED = "CallsignChanged"
     }
 }

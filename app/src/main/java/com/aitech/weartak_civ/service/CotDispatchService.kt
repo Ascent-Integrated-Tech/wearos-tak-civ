@@ -19,6 +19,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_CHANGED
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -393,6 +394,9 @@ class CotDispatchService : Service() {
                         sendMarkerCotMessage(location, heartRate, battery)
                     }
                 }
+            } else if (CALLSIGN_CHANGED == msg) {
+                // send the "freshest" cot message with the newly updated callsign
+                buildAndSendLocationBiometricCotMessage()
             }
         }
     }
