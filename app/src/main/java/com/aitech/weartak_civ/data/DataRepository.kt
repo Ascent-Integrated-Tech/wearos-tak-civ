@@ -22,6 +22,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -230,6 +233,104 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: false
+    }
+
+    suspend fun storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] = enableWifiBatteryOptimization
+        }
+    }
+
+    val getEnableAllWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION] ?: true
+    }
+
+    suspend fun storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION] = enableAllWifiBatteryOptimization
+        }
+    }
+
+    data class wifiSsidItem(val name: String)
+    val gson = Gson()
+    val getWifiSsidList: Flow<List<wifiSsidItem>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[WIFI_SSID_LIST_KEY]
+
+            if (jsonString.isNullOrEmpty()) {
+                emptyList()
+            } else {
+                val type = object : TypeToken<List<wifiSsidItem>>() {}.type
+                gson.fromJson<List<wifiSsidItem>>(jsonString, type)
+            }
+        }
+
+//    suspend fun storeWifiSsidList(newList: List<wifiSsidItem>) {
+//        context.dataStore.edit { preferences ->
+//            // Convert list to JSON
+//            val jsonString = gson.toJson(newList)
+//            // Store in DataStore
+//            preferences[WIFI_SSID_LIST_KEY] = jsonString
+//        }
+//    }
+
+    suspend fun addWifiSsidItem(item: wifiSsidItem) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[WIFI_SSID_LIST_KEY]
+            val currentList: MutableList<wifiSsidItem> = if (!currentJson.isNullOrEmpty()) {
+                val type = object : TypeToken<List<wifiSsidItem>>() {}.type
+                gson.fromJson(currentJson, type)
+            } else {
+                mutableListOf()
+            }
+
+            currentList.add(item)
+
+            val newJson = gson.toJson(currentList)
+            preferences[WIFI_SSID_LIST_KEY] = newJson
+        }
+    }
+
+    suspend fun removeWifiSsidItem(item: wifiSsidItem) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[WIFI_SSID_LIST_KEY]
+            val currentList: MutableList<wifiSsidItem> = if (!currentJson.isNullOrEmpty()) {
+                val type = object : TypeToken<List<wifiSsidItem>>() {}.type
+                gson.fromJson(currentJson, type)
+            } else {
+                mutableListOf()
+            }
+
+            currentList.remove(item)
+
+            preferences[WIFI_SSID_LIST_KEY] = gson.toJson(currentList)
+        }
+    }
+
+    suspend fun updateWifiSsidItem(oldItemIndex: Int, newItem: wifiSsidItem) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[WIFI_SSID_LIST_KEY]
+            val currentList: MutableList<wifiSsidItem> = if (!currentJson.isNullOrEmpty()) {
+                val type = object : TypeToken<List<wifiSsidItem>>() {}.type
+                gson.fromJson(currentJson, type)
+            } else {
+                mutableListOf()
+            }
+
+            if (oldItemIndex != -1) {
+                currentList[oldItemIndex] = newItem
+            }
+
+            val newJson = gson.toJson(currentList)
+            preferences[WIFI_SSID_LIST_KEY] = newJson
+
+            preferences[WIFI_SSID_LIST_KEY] = gson.toJson(currentList)
+        }
+    }
+
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -249,6 +350,9 @@ class DataRepository(private val context: Context) {
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
+        private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
+        private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
+        private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
 
     }
 }
