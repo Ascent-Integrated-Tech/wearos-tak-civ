@@ -210,5 +210,8 @@ class PowerManagerService : Service() {
         // and we are not concerned with the order of service start. So till this flag is set to
         // true, we will ignore NwConnEvents in the function onNwConnEvent
         var initialStartDelayDone = AtomicBoolean(false)
+        var isWifiOpt : Boolean = false
+        var isAllWifiOpt : Boolean = true
+
     }
 }

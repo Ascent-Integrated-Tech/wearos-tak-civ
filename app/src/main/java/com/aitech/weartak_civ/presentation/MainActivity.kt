@@ -36,6 +36,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -58,6 +59,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,6 +69,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -86,6 +91,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -99,6 +105,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -125,15 +134,25 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import androidx.wear.compose.foundation.RevealValue
+import androidx.wear.compose.foundation.rememberRevealState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
+import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.SplitToggleChip
 import androidx.wear.compose.material.SwipeToDismissBox
+import androidx.wear.compose.material.SwipeToRevealChip
+import androidx.wear.compose.material.SwipeToRevealDefaults
+import androidx.wear.compose.material.SwipeToRevealPrimaryAction
+import androidx.wear.compose.material.SwipeToRevealSecondaryAction
+import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
@@ -154,6 +173,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
+import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
@@ -161,13 +181,17 @@ import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUC
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.batteryOptimizationSetting
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -200,6 +224,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.username
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
@@ -218,6 +243,7 @@ import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -226,6 +252,7 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.io.File
 import javax.net.ssl.SSLSocket
+import kotlin.contracts.Effect
 import kotlin.random.Random
 
 
@@ -276,6 +303,12 @@ class MainActivity : ComponentActivity() {
         val usernameSettingsState = MutableLiveData<String>("TEST.AIT")
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
         var serverSettingsChanged: Boolean = false
+
+        var wifiSsidList: List<DataRepository.wifiSsidItem> = listOf()
+        var batteryOptimizationSetting: String = ""
+        var enableWifiBatteryOptimization : Boolean = false
+        var enableAllWifiBatteryOptimization : Boolean = true
+
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null
@@ -663,9 +696,15 @@ class MainActivity : ComponentActivity() {
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
+            PowerManagerService.isWifiOpt = dataRepository.getEnableWifiBatteryOptimization.first()
+            PowerManagerService.isAllWifiOpt = dataRepository.getEnableAllWifiBatteryOptimization.first()
+
             CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
             CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
             //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+
+            wifiSsidList = dataRepository.getWifiSsidList.first()
+
 
             Log.d(TAG, """
                 === Device Configuration Settings === 
@@ -678,6 +717,9 @@ class MainActivity : ComponentActivity() {
                 enableTAKConnectService: $enableTAKConnectService
                 enableDittoService:      $enableDittoService
                 ReportingUpdateInterval: ${CotDispatchService.reportingUpdateIntervalSecs} seconds
+                enableWifiBatteryOptimization: ${PowerManagerService.isWifiOpt}
+                enableBatteryOptimizationOnAllWifiNetworks: ${PowerManagerService.isAllWifiOpt}
+                batteryOptimizedWifiSsidList: $wifiSsidList
                 =====================================
             """.trimIndent())
 
@@ -1084,6 +1126,24 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         composable(
             "new_server_screen") {
             NewServerPage(navController)
+        }
+        composable("optimize_battery_on_wifi_screen"){
+            OptimizeBatteryonWifiSelectScreen(navController)
+        }
+        composable(
+            "wifi_ssid_screen") {
+            WifiSsidSelectScreen(navController)
+        }
+        composable(
+            "wifi_ssid_setting_screen") {
+            NewWiFiSSIDSetting(navController)
+        }
+        composable(
+            "edit_wifi_ssid_setting_screen/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            EditedWiFiSSIDSetting(navController, index)
         }
         composable(
             "license_setting_screen") {
@@ -1771,6 +1831,478 @@ fun NewServerSettingText (
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
     textState.value = textFieldValue.text
+}
+
+@Composable
+fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
+    var enableWifiOpt by remember{ mutableStateOf(
+        PowerManagerService.isWifiOpt)}
+    var enableAllWifiOpt by remember{ mutableStateOf(
+        PowerManagerService.isAllWifiOpt)}
+    val radioOptions = listOf("All WiFi Connections", "No WiFi Connections", "Some WiFi Connections")
+    val initialValue = when {
+        enableWifiOpt && enableAllWifiOpt -> radioOptions[0]  // "All"
+        !enableWifiOpt -> radioOptions[1] // "No"
+        else -> radioOptions[2] // "Some"
+    }
+    val selectedValue = remember { mutableStateOf(initialValue) }
+    val isSelectedItem: (String) -> Boolean = { selectedValue.value == it }
+    val onChangeState: (String) -> Unit = { selectedValue.value = it }
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 20.dp, top = 15.dp)
+                    .verticalScroll(scrollState),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Optimize Battery on WiFi",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(3.dp)
+                        .padding(horizontal = 10.dp)
+                )
+
+                Text(
+                    text = "Slows Update Rate on Enabled WiFi Networks",
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                    modifier = Modifier
+                        .padding(bottom = 16.dp)
+                        .padding(horizontal = 10.dp)
+                )
+
+                Text(
+                    text = "Optimize On:",
+                    textAlign = TextAlign.Left,
+                    modifier = Modifier
+                        .padding(bottom = 3.dp)
+                        .padding(horizontal = 10.dp)
+                        .align(Alignment.Start)
+                )
+                Log.d(TAG, "initial value = $initialValue")
+                radioOptions.forEach { text ->
+                    SelectableChip(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 5.dp),
+                        selected = isSelectedItem(text),
+                        onClick = { onChangeState(text)
+                            if (text=="Some WiFi Connections") {
+                                scope.launch { scrollState.animateScrollTo(scrollState.maxValue + 150)}}
+                                  },
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(text, maxLines = 3, fontSize = 14.sp, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                    )
+
+                }
+                    if (selectedValue.value == "Some WiFi Connections") {
+                        Chip(
+                            onClick = {
+                                navController.navigate("wifi_ssid_screen") {
+                                    popUpTo(("wifi_ssid_screen")) {
+                                        inclusive = true
+                                    }
+                                }
+
+                                //TODO: This is not a great solution, need to change to a better one
+                                PowerManagerService.isWifiOpt = true
+                                PowerManagerService.isAllWifiOpt = false
+
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    dataRepository.storeEnableWifiBatteryOptimization(
+                                        PowerManagerService.isWifiOpt
+                                    )
+                                    dataRepository.storeEnableAllWifiBatteryOptimization(
+                                        PowerManagerService.isAllWifiOpt
+                                    )
+
+                                    Log.d(TAG, "Wifi Output Settings Saved: isWifiOpt = ${PowerManagerService.isWifiOpt}, isAllWifiOpt = ${PowerManagerService.isAllWifiOpt}")
+                                }
+
+                            },
+                            enabled = true,
+                            label = {
+                                Text(
+                                    text = "Edit Optimized WiFi Connections",
+                                    fontWeight = FontWeight.Normal,
+                                    color = colors.primary
+                                )
+                            },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp, bottom = 20.dp)
+                        )
+                    }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onClickConfirm = {
+                        val newWifiOpt: Boolean
+                        val newAllOpt: Boolean
+
+                        when (selectedValue.value) {
+                            "All WiFi Connections" -> {
+                                newWifiOpt = true
+                                newAllOpt = true
+                            }
+                            "No WiFi Connections" -> {
+                                newWifiOpt = false
+                                newAllOpt = false
+                            }
+                            "Some WiFi Connections" -> {
+                                newWifiOpt = true
+                                newAllOpt = false
+                            }
+                            else -> {
+                                // fallback, but you really shouldn't get here
+                                newWifiOpt = false
+                                newAllOpt = false
+                            }
+                        }
+                        if (newWifiOpt != enableWifiOpt || newAllOpt != enableAllWifiOpt) {
+                            batteryOptimizationSetting = selectedValue.value
+
+                            PowerManagerService.isWifiOpt = newWifiOpt
+                            PowerManagerService.isAllWifiOpt = newAllOpt
+
+                            CoroutineScope(Dispatchers.Main).launch {
+                                dataRepository.storeEnableWifiBatteryOptimization(
+                                    PowerManagerService.isWifiOpt
+                                )
+                                dataRepository.storeEnableAllWifiBatteryOptimization(
+                                    PowerManagerService.isAllWifiOpt
+                                )
+
+                                Log.d(TAG, "Wifi Output Settings Saved: isWifiOpt = ${PowerManagerService.isWifiOpt}, isAllWifiOpt = ${PowerManagerService.isAllWifiOpt}")
+                            }
+                        } else {
+                            Log.d(TAG, "Settings NOT changed, NOT saved")
+                        }
+
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
+
+                    })
+            }
+        }
+    }
+}
+
+@Composable
+fun WifiSsidSelectScreen(navController: NavController) {
+    val wifiSsidList by dataRepository.getWifiSsidList
+        .collectAsState(initial = emptyList())
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LazyColumn {
+                    item {
+                        Text(
+                            text = "Enabled WiFi Connections",
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                    itemsIndexed(wifiSsidList) { index, wifiSsidItem ->
+                        WifiSsidItemChip(
+                            wifiSsidItem.name,
+                            onPrimaryActionClick = {
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    dataRepository.removeWifiSsidItem(wifiSsidItem)
+                                }
+                            },
+                            onSecondaryActionClick = {
+                                // Navigate to "edit_wifi_ssid_setting_screen/<index>"
+                                navController.navigate("edit_wifi_ssid_setting_screen/$index")
+                            }
+                        )
+                    }
+                    Log.d(TAG, "SSID List = $wifiSsidList")
+
+                    item {
+                        Chip(
+                            onClick = { navController.navigate("wifi_ssid_setting_screen") {
+                                popUpTo(("wifi_ssid_setting_screen")) {
+                                    inclusive = true
+                                }
+                            } },
+                            enabled = true,
+                            label = { Text(text = "Add Network") },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            icon = {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = "Localized description"
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp)
+                        )
+                    }
+
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                Button(
+                    onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
+                        popUpTo(("optimize_battery_on_wifi_screen")) {
+                            inclusive = true
+                        }
+                    } },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                        contentColor = Color.Red
+                    ),
+                ) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowLeft,
+                        contentDescription = "Localized description",
+                    )
+                }
+            }
+
+        }
+
+    }
+}
+
+@OptIn(ExperimentalWearMaterialApi::class)
+@Composable
+fun WifiSsidItemChip(
+    ssid: String,
+    onPrimaryActionClick: () -> Unit,
+    onSecondaryActionClick: () -> Unit
+) {
+    val revealState = rememberRevealState()
+    val scope = rememberCoroutineScope()
+
+    SwipeToRevealChip(
+        revealState = revealState,
+        modifier =
+        Modifier
+            .fillMaxWidth()
+            .semantics {
+                // Use custom actions to make the primary and secondary actions accessible
+                customActions =
+                    listOf(
+                        CustomAccessibilityAction("Delete") {
+                            /* Add the primary action click handler here */
+                            true
+                        },
+                        CustomAccessibilityAction("More Options") {
+                            /* Add the secondary click handler here */
+                            true
+                        }
+                    )
+            },
+        primaryAction = {
+            SwipeToRevealPrimaryAction(
+                revealState = revealState,
+                icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
+                label = { Text("Delete") },
+                onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
+            )
+        },
+        secondaryAction = {
+            SwipeToRevealSecondaryAction(
+                revealState = revealState,
+                onClick = { onSecondaryActionClick() }
+            ) {
+                Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
+            }
+        },
+        undoPrimaryAction = {
+            SwipeToRevealUndoAction(
+                revealState = revealState,
+                label = { Text("Undo") },
+                onClick = { /* Add the undo handler for primary action */ }
+            )
+        },
+        undoSecondaryAction = {
+            SwipeToRevealUndoAction(
+                revealState = revealState,
+                label = { Text("Undo") },
+                onClick = { /* Add the undo handler for secondary action */ }
+            )
+        },
+        onFullSwipe = { }
+    ) {
+        Chip(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 5.dp),
+            onClick = {
+                scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)}
+            },
+            colors = ChipDefaults.chipColors(Color.DarkGray),
+            label = { Text(ssid, maxLines = 3) }
+        )
+    }
+}
+
+@Composable
+fun NewWiFiSSIDSetting(
+    navController: NavController,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var name by remember {
+            mutableStateOf("")
+        }
+
+        OutlinedTextField(
+            value = name,
+            onValueChange = {text ->
+                name = text
+            },
+            maxLines = 1,
+            label = { Text(text = "Wifi SSID", color = colors.primary) },
+            placeholder = { Text(text = "Wifi SSID", color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("wifi_ssid_screen") {
+                        popUpTo(("wifi_ssid_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    if (name.isNotBlank()) {
+                        CoroutineScope(Dispatchers.Main).launch {
+                        dataRepository.addWifiSsidItem(DataRepository.wifiSsidItem(name))
+                            }
+                    }
+
+                    navController.navigate("wifi_ssid_screen") {
+                        popUpTo(("wifi_ssid_screen")) {
+                            inclusive = true
+                        }
+                    }
+
+                })
+        }
+    }
+}
+
+@Composable
+fun EditedWiFiSSIDSetting(
+    navController: NavController,
+    index: Int
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val currentItem = wifiSsidList.getOrNull(index)
+        Log.d(TAG, "current item = $currentItem")
+        var text by remember { mutableStateOf(currentItem?.name.orEmpty()) }
+
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it},
+            maxLines = 1,
+            label = { Text(text = "Wifi SSID", color = colors.primary) },
+            placeholder = { Text(text = "Wifi SSID", color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("wifi_ssid_screen") {
+                        popUpTo(("wifi_ssid_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    CoroutineScope(Dispatchers.Main).launch {
+                    dataRepository.updateWifiSsidItem(index, DataRepository.wifiSsidItem(text))
+                        }
+
+                    navController.navigate("wifi_ssid_screen") {
+                        popUpTo(("wifi_ssid_screen")) {
+                            inclusive = true
+                        }
+                    }
+
+                })
+        }
+    }
 }
 
 @Composable
@@ -2635,12 +3167,33 @@ fun SettingsScreen(
                         .padding(bottom = 3.dp)
                 )
 
-//                CallsignRoleTeamChip(
-////                    "license_setting_screen",
-////                    "License Key",
-////                    licenseSettingsState,
-////                    navController
-////                )
+                var enableWifiOpt by remember{ mutableStateOf(
+                    PowerManagerService.isWifiOpt)}
+                var enableAllWifiOpt by remember{ mutableStateOf(
+                    PowerManagerService.isAllWifiOpt)}
+                val batteryOptimizationSettingValue = when {
+                    enableWifiOpt && enableAllWifiOpt -> "All Wifi Networks"  // "All"
+                    !enableWifiOpt -> "No Wifi Networks" // "No"
+                    else -> "Some Wifi Networks" // "Some"
+                }
+                batteryOptimizationSetting = batteryOptimizationSettingValue
+                Chip(
+                    onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
+                        popUpTo("optimize_battery_on_wifi_screen") { inclusive = true }
+                    } },
+                    enabled = true,
+                    label = { Text(text = "Save Battery on WiFi") },
+                    secondaryLabel = {Text(text = batteryOptimizationSetting)},
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp)
+                )
+
                 val licenseText: String? by licenseSettingsState.observeAsState()
 
                 Chip(
@@ -3052,6 +3605,30 @@ fun SettingsPreview() {
     SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState)
 }
 
+@Preview(widthDp = 192, heightDp = 500)
+@Composable
+fun OptimizeBatteryonWifiSelectScreenPreview() {
+    OptimizeBatteryonWifiSelectScreen(rememberSwipeDismissableNavController())
+}
+
+@Preview(widthDp = 192, heightDp = 400)
+@Composable
+fun WifiSsidSelectionPreview() {
+    WifiSsidSelectScreen(rememberSwipeDismissableNavController())
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun WifiSsidSettingPreview() {
+    EditedWiFiSSIDSetting(rememberSwipeDismissableNavController(), 2)
+}
+
+//@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+//@Composable
+//fun WifiSsidchipPreview() {
+//    WifiSsidItemChip("a")
+//}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun TAKSettingsPreview() {
@@ -3062,25 +3639,6 @@ fun TAKSettingsPreview() {
 @Composable
 fun NewServerPreview() {
     NewServerPage(rememberSwipeDismissableNavController())
-}
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun LoadingDialogPreview() {
-    val shouldShowDialog = remember { mutableStateOf(true) }
-    LoadingDialog(shouldShowDialog)
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun ServerRegistrationPreview() {
-    val shouldShowDialog = remember { mutableStateOf(true) }
-    val isConfirmed = remember { mutableStateOf(false) }
-
-    ServerRegistrationDialog(
-        shouldShowDialog,
-        rememberSwipeDismissableNavController(),
-        isConfirmed
-    )
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
@@ -3098,19 +3656,6 @@ fun ConfirmationDialogPreview() {
         "pp",
         isConfirmed
     )
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun InvalidLicensePreview() {
-    InvalidLicenseScreen(rememberSwipeDismissableNavController())
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun LicenseKeyPreview() {
-    var licenseState = MutableLiveData<String>("License Key")
-    LicenseKeyScreen(rememberSwipeDismissableNavController(), licenseState)
 }
 
 
