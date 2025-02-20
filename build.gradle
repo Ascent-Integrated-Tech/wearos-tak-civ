@@ -1,5 +1,10 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
+    ext {
+        gitBranch = { "git rev-parse --abbrev-ref HEAD".execute().text?.trim() }
+        gitCommit = { "git log -1 --pretty=format:%H".execute().text?.trim() }
+        gitUrl    = { "git ls-remote --get-url".execute().text?.trim() }
+    }
     dependencies {
         //classpath libs.kotlin.gradle.plugin
 
