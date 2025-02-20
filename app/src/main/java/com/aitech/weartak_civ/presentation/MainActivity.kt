@@ -117,6 +117,7 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
+import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -125,6 +126,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.SplitToggleChip
+import androidx.wear.compose.material.SwipeToDismissBox
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
@@ -1015,57 +1017,65 @@ fun MainScreen(
     dataRepository: DataRepository, // Add dataRepository parameter
     context: Context // Add context parameter
 ) {
-    WearTAKCIVTheme {
-        Box (
-            modifier = Modifier
-                .background(colors.background)
-                .fillMaxSize()
-                .padding(5.dp)
-        ) {
+    val dismissState = rememberSwipeToDismissBoxState()
 
-            Column(
+        WearTAKCIVTheme {
+        SwipeToDismissBox(
+            state = dismissState,
+            modifier = Modifier.unswipeable(),
+            ) {
+            Box(
                 modifier = Modifier
                     .background(colors.background)
-                    .padding(5.dp),
-        //                horizontalAlignment = Alignment.CenterHorizontally,
-        //                verticalArrangement = Arrangement.Center
+                    .fillMaxSize()
+                    .padding(5.dp)
+                    .unswipeable()
             ) {
-                Row(
-                    modifier = Modifier
-                        .padding(top = 35.dp)
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    HeartRate()
-                }
 
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .background(colors.background)
+                        .padding(5.dp),
+                    //                horizontalAlignment = Alignment.CenterHorizontally,
+                    //                verticalArrangement = Arrangement.Center
                 ) {
-                    SOSButton()
-                    Spacer(
-                        modifier = Modifier.width(10.dp)
-                    )
-                    MarkerDropButton(dataRepository = dataRepository, context = context)
-                }
+                    Row(
+                        modifier = Modifier
+                            .padding(top = 35.dp)
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        HeartRate()
+                    }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Callsign(navController, callsignState)
-                }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        SOSButton()
+                        Spacer(
+                            modifier = Modifier.width(10.dp)
+                        )
+                        MarkerDropButton(dataRepository = dataRepository, context = context)
+                    }
 
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Callsign(navController, callsignState)
+                    }
+
+                }
+                TroubleshootingIcons()
+                TimeText()
             }
-            TroubleshootingIcons()
-            TimeText()
         }
     }
 }
