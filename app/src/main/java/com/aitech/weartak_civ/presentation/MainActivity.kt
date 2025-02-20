@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.presentation
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -935,6 +937,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onMessageEvent(event: TakServerConnEvent) {
         var toastText = ""
@@ -954,6 +957,32 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
+private fun turnOffBluetooth() {
+    // getDefaultAdapter() might return null, so we use a nullable type.
+    val bluetooth: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
+    if (ActivityCompat.checkSelfPermission(
+            mainActivity.applicationContext,
+            Manifest.permission.BLUETOOTH_CONNECT
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return
+    }
+    bluetooth?.disable() // This safely calls disable() only if bluetooth is not null.
+}
+
+private fun turnOnBluetooth() {
+    // getDefaultAdapter() might return null, so we use a nullable type.
+    val bluetooth: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
+    if (ActivityCompat.checkSelfPermission(
+            mainActivity.applicationContext,
+            Manifest.permission.BLUETOOTH_CONNECT
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return
+    }
+    bluetooth?.enable() // This safely calls enable() only if bluetooth is not null.
+}
 
 //Contains functionality for all watch screens
 @Composable
@@ -2784,6 +2813,8 @@ fun SettingsScreen(
                             if (enableBiometricsService) {
                                 Log.d(TAG, "Starting biometric service")
                                 startBiometericService()
+                                Log.v(TAG, "Starting Bluetooth service")
+                                turnOnBluetooth()
                             } else {
                                 Log.d(TAG, "Stopping biometric service")
                                 mainActivity.stopService(
@@ -2792,6 +2823,8 @@ fun SettingsScreen(
                                         HeartrateService::class.java
                                     )
                                 )
+                                Log.v(TAG, "Stopping Bluetooth service")
+                                turnOffBluetooth()
                             }
                         }
 

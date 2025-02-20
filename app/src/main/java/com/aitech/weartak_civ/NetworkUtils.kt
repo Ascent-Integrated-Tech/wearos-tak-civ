@@ -1,10 +1,17 @@
 package com.aitech.weartak_civ
 
+import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.content.Context
+import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import android.util.Log
+import androidx.compose.foundation.layout.RowScope
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.keyStore
@@ -72,4 +79,5 @@ object NetworkUtils {
         Log.v(TAG, "URL: $url")
         return url
     }
+
 }
