@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ.service
 
 import android.app.Notification
@@ -196,7 +205,7 @@ class PowerManagerService : Service() {
         private val TAG = "WearTAK-" + PowerManagerService::class.java.simpleName
         private val POWERMANAGER_SERVICE_NOTIFICATION_ID = 555
         private const val INITIAL_START_DELAY = 5_000L // 5 seconds
-        var isRunning = AtomicBoolean(false)
+        val isRunning = AtomicBoolean(false)
         // We provide a initial delay of INITIAL_START_DELAY so that other services can come up
         // and we are not concerned with the order of service start. So till this flag is set to
         // true, we will ignore NwConnEvents in the function onNwConnEvent

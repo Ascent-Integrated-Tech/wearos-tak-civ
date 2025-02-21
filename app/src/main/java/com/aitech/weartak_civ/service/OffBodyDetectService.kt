@@ -28,6 +28,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_NOT_WORN
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_WORN
@@ -41,7 +42,8 @@ class OffBodyDetectService: Service() {
     private var offBodySensor: Sensor? = null
     var permission: Boolean = false
 
-    private val dataRepository = MainActivity.dataRepository
+    private val dataRepository : DataRepository
+        get() = MainActivity.dataRepository
 
     override fun onCreate() {
         super.onCreate()
@@ -170,7 +172,7 @@ class OffBodyDetectService: Service() {
         private val OFFBODY_DETECT_SERVICE_NOTIFICATION_ID = 103
         private val TOLERANCE = 0.001F
         val offBodyDetectLiveData = MutableLiveData<Boolean>(true)
-        var isRunning = AtomicBoolean(false)
+        val isRunning = AtomicBoolean(false)
         private lateinit var instance : OffBodyDetectService
     }
 }

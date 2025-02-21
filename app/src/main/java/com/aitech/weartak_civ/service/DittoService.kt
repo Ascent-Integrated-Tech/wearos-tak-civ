@@ -26,7 +26,6 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -38,9 +37,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import live.ditto.Ditto
 import live.ditto.DittoError
+import live.ditto.DittoIdentity
 import live.ditto.DittoSyncSubscription
+import live.ditto.android.DefaultAndroidDittoDependencies
 import live.ditto.transports.DittoTransportConfig
+import java.util.concurrent.atomic.AtomicBoolean
 
 class DittoService : Service() {
 
@@ -48,7 +51,6 @@ class DittoService : Service() {
     private var dittoUpdateHandler: Handler? = null
     private var dittoUpdateThread: HandlerThread? = null
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO) // Single CoroutineScope for background I/O tasks, ensuring lifecycle management, error isolation, and cleaner code.
-    private val ditto = WearTakApplication.getDittoInstance()
     private val uuid = MainActivity.device_uid
     private var subscription: DittoSyncSubscription? = null
     private val model = android.os.Build.MODEL
@@ -56,6 +58,9 @@ class DittoService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (null == getDittoInstance()) {
+            initializeDitto(applicationContext)
+        }
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
         dataRepository = MainActivity.dataRepository // or another injection approach
         Log.d(TAG, "Oncreate Called")
@@ -300,34 +305,37 @@ class DittoService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        isRunning = false
-        // Stop syncing when the service is destroyed
-        try {
-            ditto.stopSync()
-            Log.d("DittoService", "Sync stopped")
-        } catch (e: DittoError) {
-            Log.e("DittoService", "Error stopping sync: ${e.message}")
+        if (isRunning.getAndSet(false)) {
+            stopForeground(true)
+            // Stop syncing when the service is destroyed
+            try {
+                ditto.stopSync()
+                Log.d("DittoService", "Sync stopped")
+            } catch (e: DittoError) {
+                Log.e("DittoService", "Error stopping sync: ${e.message}")
+            }
+            subscription?.close() // stop subscribing to track collection
+            Log.d(TAG, "Subscription has been closed.")
+
         }
-        stopForeground(true)
-        Log.d(TAG, "Subscription has been closed.")
-        subscription?.close() // stop subscribing to track collection
         subscription = null
         ioScope.cancel() // cancel all coroutines when service is destroyed
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        isRunning = true
-        startForegroundService() // service needs to work in the background when screen is off
-        startDispatchScheduler() // we want to update our ditto data at fixed interval
-        Log.d(TAG, "Subscribing to [ track ] collection")
-        subscription = ditto.sync.registerSubscription("SELECT * FROM track")
+        if (!isRunning.getAndSet(true)) {
+            startForegroundService() // service needs to work in the background when screen is off
+            startDispatchScheduler() // we want to update our ditto data at fixed interval
+            Log.d(TAG, "Subscribing to [ track ] collection")
+            subscription = ditto.sync.registerSubscription("SELECT * FROM track")
 
-        configureDitto() // configure all peer transports
-        try {
-            ditto.startSync() // Start syncing
-            Log.d("DittoService", "Sync started")
-        } catch (e: DittoError) {
-            Log.e("DittoService", "Error starting sync: ${e.message}")
+            configureDitto() // configure all peer transports
+            try {
+                ditto.startSync() // Start syncing
+                Log.d("DittoService", "Sync started")
+            } catch (e: DittoError) {
+                Log.e("DittoService", "Error starting sync: ${e.message}")
+            }
         }
         return START_NOT_STICKY
     }
@@ -372,9 +380,34 @@ class DittoService : Service() {
     companion object {
         private val TAG = "WearTAK-" + DittoService::class.java.simpleName
         private val DITTO_SERVICE_NOTIFICATION_ID = 3333
-        var isRunning : Boolean = false
+        val isRunning : AtomicBoolean = AtomicBoolean(false)
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
         lateinit var localPeerKeyString: String
+        private lateinit var ditto: Ditto
+
+        fun getDittoInstance(): Ditto? {
+            if (!::ditto.isInitialized) {
+                Log.w(TAG, "Ditto instance is not initialized!")
+                return null
+            }
+            return ditto
+        }
+
+        private fun initializeDitto(applicationContext: Context) {
+            Log.d(TAG, "Initializing Ditto")
+            // Initialize Ditto
+            try {
+                val androidDependencies = DefaultAndroidDittoDependencies(applicationContext)
+                val identity = DittoIdentity.OnlinePlayground(
+                    androidDependencies,
+                    appId = "d0a0ed19-be6f-43ed-bb70-ff95653c98b7",
+                    token = "8b7efdee-5a96-409e-842c-1ed48045de24"
+                )
+                ditto = Ditto(androidDependencies, identity)
+            } catch (e: DittoError) {
+                Log.e(TAG, "Failed to initialize Ditto: ${e.message}", e)
+            }
+        }
     }
 
 }

@@ -108,16 +108,17 @@ class TAKConnectService: Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        isRunning = true
-        startForegroundService()
-        setFromDatastore()
-        networkManager = NetworkManager.getInstance()
-        numConnAttemptsAfterFailure = 0
-        isNetworkConnected = networkManager?.isNetworkConnected() ?: false
-        isWifiConnected = networkManager?.isWifiConnected() ?: false
-        if (isNetworkConnected) {
-            Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
-            getClientCertificateAndConnect(takServer, username, password, port)
+        if (!isRunning.getAndSet(true)) {
+            startForegroundService()
+            setFromDatastore()
+            networkManager = NetworkManager.getInstance()
+            numConnAttemptsAfterFailure = 0
+            isNetworkConnected = networkManager?.isNetworkConnected() ?: false
+            isWifiConnected = networkManager?.isWifiConnected() ?: false
+            if (isNetworkConnected) {
+                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
+                getClientCertificateAndConnect(takServer, username, password, port)
+            }
         }
         return START_NOT_STICKY
     }
@@ -158,7 +159,7 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        isRunning = false
+        isRunning.set(false)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
@@ -170,7 +171,7 @@ class TAKConnectService: Service() {
                 secureSocket = null
             }
             Log.d(TAG, "TAK Connect Service Destroyed")
-            isRunning = false
+            isRunning.set(false)
         }
     }
 
@@ -238,7 +239,7 @@ class TAKConnectService: Service() {
     }
 
     companion object {
-        var isRunning : Boolean = false
+        val isRunning : AtomicBoolean = AtomicBoolean(false)
         private val NUM_CONN_FAILURE_TOASTS = 1
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private var numConnAttemptsAfterFailure = 0
