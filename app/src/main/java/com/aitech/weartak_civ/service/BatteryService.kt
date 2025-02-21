@@ -32,6 +32,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BatteryService: Service() {
     private var batteryMonitorHandler: Handler? = null
@@ -43,9 +44,10 @@ class BatteryService: Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        startForegroundService()
-        startBatteryMonitor()
-        isRunning = true
+        if (!isRunning.getAndSet(true)) {
+            startForegroundService()
+            startBatteryMonitor()
+        }
         return START_NOT_STICKY
     }
 
@@ -69,7 +71,7 @@ class BatteryService: Service() {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun createNotificationChannel(): String {
         val channelId = "Battery Monitor Service"
-        val channelName = "Battery Background Service"
+        val channelName = "Battery Foreground Service"
         val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
         chan.lightColor = Color.GRAY
         chan.importance = NotificationManager.IMPORTANCE_NONE
@@ -129,7 +131,7 @@ class BatteryService: Service() {
             batteryMonitorHandler?.looper?.quit()
             batteryMonitorThread?.quitSafely()
         }
-        isRunning = false
+        isRunning.set(false)
         Log.d(LOG_TAG, "BatteryService Destroyed")
     }
 
@@ -141,6 +143,6 @@ class BatteryService: Service() {
         const private val BATTERY_MONITOR_SERVICE_NOTIFICATION_ID = 102
         var batteryPercentage : Int = 100
         val batteryPercentageLiveData = MutableLiveData<Int>(100)
-        var isRunning : Boolean = false
+        val isRunning : AtomicBoolean = AtomicBoolean(false)
     }
 }

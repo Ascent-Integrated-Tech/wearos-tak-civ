@@ -10,19 +10,28 @@
 package com.aitech.weartak_civ.presentation
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import android.provider.Settings.Secure
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,7 +42,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,7 +96,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -135,17 +142,17 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.NetworkUtils
-import com.aitech.weartak_civ.events.MessageEvent
-import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
-import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
@@ -196,6 +203,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
+import com.aitech.weartak_civ.service.CustomAccessibilityService
 import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -213,10 +221,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.bouncycastle.crypto.params.Blake3Parameters.context
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.io.File
 import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 
@@ -270,6 +278,7 @@ class MainActivity : ComponentActivity() {
         var serverSettingsChanged: Boolean = false
 
         var versionNumber : String = ""
+        var logFile: java.io.File? = null
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -330,7 +339,7 @@ class MainActivity : ComponentActivity() {
 
         fun startTAKConnectService() {
             if (enableTAKConnectService) {
-                if (!TAKConnectService.isRunning) {
+                if (!TAKConnectService.isRunning.get()) {
                     Log.d(TAG, "Starting TAKConnectService")
                     mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
                 } else {
@@ -354,7 +363,7 @@ class MainActivity : ComponentActivity() {
 //                ActivityCompat.requestPermissions(this, Manifest.permission.BLUETOOTH)
             } else {
                 if (enableDittoService) {
-                    if (!DittoService.isRunning) {
+                    if (!DittoService.isRunning.get()) {
                         Log.d(TAG, "Starting DittoService")
                         mainActivity.startForegroundService(Intent(mainActivity, DittoService::class.java))
                     } else {
@@ -408,14 +417,14 @@ class MainActivity : ComponentActivity() {
         }
 
         fun startBatteryService() {
-            if (!BatteryService.isRunning) {
+            if (!BatteryService.isRunning.get()) {
                 Log.d(TAG, "Starting BatteryService")
                 mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
             }
         }
 
         fun startCotDispatchService() {
-            if (!CotDispatchService.isRunning) {
+            if (!CotDispatchService.isRunning.get()) {
                 Log.d(TAG, "Starting CotDispatchService")
                 mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
             } else {
@@ -466,6 +475,33 @@ class MainActivity : ComponentActivity() {
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
 
+    fun isAccessibilityServiceEnabled(context: Context, service: Class<out AccessibilityService?>): Boolean {
+        val am: AccessibilityManager = context.getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledServices: List<AccessibilityServiceInfo> = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+
+        for (enabledService in enabledServices) {
+            val enabledServiceInfo: ServiceInfo = enabledService.resolveInfo.serviceInfo
+            if (enabledServiceInfo.packageName.equals(context.packageName) && enabledServiceInfo.name.equals(service.name)) return true
+        }
+
+        return false
+    }
+
+    fun gotoAccessibilitySettings(context: Context): Boolean {
+        val settingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        if (context !is Activity) {
+            settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        var isOk = true
+        try {
+            context.startActivity(settingsIntent)
+        } catch (e: ActivityNotFoundException) {
+            Log.d(TAG, "gotoAccessibilitySettings: ActivityNotFoundException")
+            isOk = false
+        }
+        return isOk
+    }
+
     private val requestPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissionsMap ->
             val deniedPermissions = permissionsMap.filterValues { !it }.keys
@@ -512,7 +548,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action}")
+        Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action})")
     }
 
     override fun onDestroy() {
@@ -534,7 +570,7 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             secureSocket?.close()
         }
-        if (DittoService.isRunning) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
+        if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
         networkManager.deInit()
         /*
@@ -826,8 +862,7 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH,
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_ADVERTISE
-            )
+            Manifest.permission.BLUETOOTH_ADVERTISE)
 
         /*
         val requiredPermissions = listOf(
@@ -857,10 +892,24 @@ class MainActivity : ComponentActivity() {
                 """.trimIndent()
             )
         }
+        /*
+        if (!Settings.canDrawOverlays(this)) {
+            //If the draw over permission is not available open the settings screen
+            //to grant the permission.
+
+            //val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            //startActivityForResult(intent, 2084)
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            intent.setData(Uri.parse("package:$packageName"))
+            startActivity(intent)
+        }
+
+         */
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d(TAG, "onCreate called")
         mainActivity = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 //        Log.d(TAG, "Device UID is $device_uid")
@@ -868,6 +917,8 @@ class MainActivity : ComponentActivity() {
             EventBus.getDefault().register(this)
         }
         dataRepository = DataRepository(this)
+        //val file: File? = null
+        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
         Log.d(TAG, " === === Teams And Roles === ===")
         setTeamsJson()
@@ -926,13 +977,49 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Going to call startActivity to request ignore battery optimizations")
         }
         this.startActivity(intent)
-         */
+        */
+
+        // Kiosk needs to be allow com.samsung.accessibility for code below to work
+        val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
+        Log.d(TAG, "isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
+        if (!isAccessibilityServiceEnabled) {
+            Log.d(TAG, "isAccessibilityServiceEnabled false and trying to open Accessibility Settings")
+            /*
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            mainActivity.startActivity(intent)
+
+             */
+
+            gotoAccessibilitySettings(mainActivity)
+
+
+            for (i in 0..3) {
+                Toast.makeText(mainActivity, "Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings", Toast.LENGTH_LONG).show()
+            }
+        }
+
 
         setContent {
             WearTAKCIVTheme {
-            WearTAKCivApp(callsignState, licenseState)
-                }
+                WearTAKCivApp(callsignState, licenseState)
+            }
         }
+
+        /*
+        if (Settings.Secure.putString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, "com.aitech.weartak_civ/.service.CustomAccessibilityService")) {
+            Log.d(TAG, "Able to set ENABLED_ACCESSIBILITY_SERVICES to com.aitech.weartak_civ/.service.CustomAccessibilityService")
+        } else {
+            Log.d(TAG, "NOT Able to set ENABLED_ACCESSIBILITY_SERVICES to com.aitech.weartak_civ/.service.CustomAccessibilityService")
+
+        }
+        if (Settings.Secure.putString(getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, "1")) {
+            Log.d(TAG, "Able to set ACCESSIBILITY_ENABLED to 1")
+        } else {
+            Log.d(TAG, "NOT Able to set ACCESSIBILITY_ENABLED to 1")
+        }
+
+         */
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -1019,7 +1106,7 @@ fun MainScreen(
 ) {
     val dismissState = rememberSwipeToDismissBoxState()
 
-        WearTAKCIVTheme {
+    WearTAKCIVTheme {
         SwipeToDismissBox(
             state = dismissState,
             modifier = Modifier.unswipeable(),
@@ -1975,10 +2062,10 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             ===   Application Services Info   ===                                
                             """.trimIndent()
                         )
-                        if (TAKConnectService.isRunning) {
+                        if (TAKConnectService.isRunning.get()) {
                             mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
                         }
-                        if (BatteryService.isRunning) {
+                        if (BatteryService.isRunning.get()) {
                             mainActivity.stopService(
                                 Intent(
                                     mainActivity,
@@ -2010,7 +2097,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 )
                             )
                         }
-                        if (enableLocationService && LocationService.isRunning) {
+                        if (enableLocationService && LocationService.isRunning.get()) {
                             mainActivity.stopService(
                                 Intent(
                                     mainActivity,
@@ -2018,7 +2105,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 )
                             )
                         }
-                        if (enableDittoService && DittoService.isRunning) {
+                        if (enableDittoService && DittoService.isRunning.get()) {
                             mainActivity.stopService(
                                 Intent(
                                     mainActivity,
@@ -2694,7 +2781,7 @@ fun SettingsScreen(
                                 settingsChanged = true; callsignChanged = true
                                 callsign = callsignSettingsState.value ?: callsign
                                 callsignLiveDataState.postValue(callsign)
-                                EventBus.getDefault().post(MessageEvent(CALLSIGN_CHANGED, 0))
+                                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
                             }
                             if (!team.equals(teamSettingsState.value)) {
                                 settingsChanged = true; teamChanged = true
@@ -2712,6 +2799,7 @@ fun SettingsScreen(
                                 }
                                 teamValue = teamEntriesValuesList.ltValues[teamIndex]
                                 teamState.postValue(team)
+                                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
                             }
                             if (!role.equals(roleSettingsState.value)) {
                                 settingsChanged = true; roleChanged = true
@@ -2729,6 +2817,7 @@ fun SettingsScreen(
                                 }
                                 roleValue = roleEntriesValuesList.lrValues[roleIndex]
                                 roleState.postValue(role)
+                                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
                             }
 //                            if (!license.equals(licenseSettingsState.value)) {
 //                                settingsChanged = true; licenseChanged = true

@@ -28,22 +28,17 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.LocationRcvd
-import com.aitech.weartak_civ.events.NwConnEvent
-import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
-import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.NetworkManager
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,9 +46,10 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.text.SimpleDateFormat
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
+import java.io.FileWriter
+import java.io.IOException
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 
 
@@ -65,6 +61,8 @@ class LocationService : Service() {
     private val binder = LocationServiceBinder()
     private var handler: Handler? = null
     private var currentLocation: Location? = null
+    //private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
@@ -74,8 +72,9 @@ class LocationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        initializeLocation()
-        isRunning = true
+        if(!isRunning.getAndSet(true)) {
+            initializeLocation()
+        }
         return START_NOT_STICKY
     }
 
@@ -185,6 +184,18 @@ class LocationService : Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
                 //Log.d(TAG, "Received location update: $location")
+
+                /*
+                try {
+                    val writer = FileWriter(logFile, true) // Append to existing file
+                    writer.write("${LocalDateTime.now().format(formatter)}: Received location update: $location\n")
+                    writer.close()
+                } catch (e: IOException) {
+                    Log.e("Error", "Failed to write log to file", e)
+                }
+                
+                 */
+
                 EventBus.getDefault().post(LocationRcvd())
             }
         }
@@ -211,7 +222,7 @@ class LocationService : Service() {
     
     override fun onDestroy() {
         super.onDestroy()
-        isRunning = false
+        isRunning.set(false)
         stopLocationProvider()
         destroyLocationThread()
         stopForeground(true)
@@ -258,6 +269,6 @@ class LocationService : Service() {
         var le : Float? = null
         //var locationUpdateIntervalSecs = 2
         //var locationUpdateFastestIntervalSecs = 1
-        var isRunning : Boolean = false
+        val isRunning : AtomicBoolean = AtomicBoolean(false)
     }
 }

@@ -42,7 +42,6 @@ class HeartrateService: Service() {
     private lateinit var sensorManager: SensorManager
     private var heartRateSensor: Sensor? = null
     var permission: Boolean = false
-    private val dataRepository = MainActivity.dataRepository
     var deviceWorn = false
 
     // Instead of creating a new DataRepository, reference the same one from MainActivity
@@ -60,7 +59,7 @@ class HeartrateService: Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "HeartrateService onStartCommand called w/ isRunning=$isRunning")
         if (!isRunning.getAndSet(true)) {
-            deviceWorn = dataRepository.latestIsDeviceWorn.value
+            deviceWorn = sharedRepository.latestIsDeviceWorn.value
             startForegroundService()
             if (deviceWorn) {
                 startSensors()
@@ -240,14 +239,9 @@ class HeartrateService: Service() {
         private val TAG = "WearTAK-" + HeartrateService::class.java.simpleName
         private val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
         private val SAMPLING_PERIOD_US = 2_000_000   // Every 2 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
-        private const val BIO_PART1 = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='"
-        private const val BIO_PART2 = "' type='t-x-c-heartRate' time='"
-        private const val BIO_PART3 = "' how='m-g' access='Undefined'><point lat='"
-        private const val BIO_PART4 = "' /><detail><status serialNumber='"
-        private const val BIO_PART5 = "'/></detail></event>"
         var hr: Int = -1
 //        var heartrateSendIntervalSecs : Int = 5
         val hrStringLiveData = MutableLiveData<String>("N/A")
-        var isRunning = AtomicBoolean(false)
+        val isRunning = AtomicBoolean(false)
     }
 }

@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ.service
 
 import android.app.Notification
@@ -19,11 +28,12 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
-import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
@@ -33,11 +43,16 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.io.FileWriter
+import java.io.IOException
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class CotDispatchService : Service() {
@@ -51,6 +66,7 @@ class CotDispatchService : Service() {
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
+    //private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -58,9 +74,10 @@ class CotDispatchService : Service() {
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.v(TAG, "CotDispatchService onStartCommand()")
-        startForegroundService()
-        // startDispatchScheduler()
-        isRunning = true
+        if (!isRunning.getAndSet(true)) {
+            startForegroundService()
+            // startDispatchScheduler()
+        }
         return START_NOT_STICKY
     }
 
@@ -126,6 +143,17 @@ class CotDispatchService : Service() {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
                 // Maybe locationService is using fused indoor and currReportingIntevalInSecs < 5s OR some other reason
                 Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
+
+                /*
+                try {
+                    val writer = FileWriter(logFile, true) // Append to existing file
+                    writer.write("${LocalDateTime.now().format(formatter)}: Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable\n")
+                    writer.close()
+                } catch (e: IOException) {
+                    Log.e("Error", "Failed to write log to file", e)
+                }
+                 */
+
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
@@ -361,6 +389,16 @@ class CotDispatchService : Service() {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
         //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
+
+        /*
+        try {
+            val writer = FileWriter(logFile, true) // Append to existing file
+            writer.write("${LocalDateTime.now().format(formatter)}: Location/Biometric CoT message sent: $cotMessage\n")
+            writer.close()
+        } catch (e: IOException) {
+            Log.e("Error", "Failed to write log to file", e)
+        }
+         */
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -394,7 +432,7 @@ class CotDispatchService : Service() {
                         sendMarkerCotMessage(location, heartRate, battery)
                     }
                 }
-            } else if (CALLSIGN_CHANGED == msg) {
+            } else if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
                 // send the "freshest" cot message with the newly updated callsign
                 buildAndSendLocationBiometricCotMessage()
             }
@@ -418,14 +456,14 @@ class CotDispatchService : Service() {
             EventBus.getDefault().unregister(this)
         }
         stopDispatchScheduler()
-        isRunning = false
+        isRunning.set(false)
     }
 
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
-        var isRunning : Boolean = false
+        val isRunning : AtomicBoolean = AtomicBoolean(false)
         var reportingUpdateIntervalSecs = 10
         var currReportingIntervalInSecs = 10
         lateinit var instance: CotDispatchService
