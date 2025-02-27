@@ -54,11 +54,14 @@ import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.w3c.dom.Document
+import org.xml.sax.InputSource
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.StringReader
 import java.security.*
 import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
@@ -72,6 +75,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import javax.xml.parsers.DocumentBuilderFactory
 
 
 class TAKConnectService: Service() {
@@ -265,8 +269,6 @@ class TAKConnectService: Service() {
         var password : String = ""
         var takServer : String = ""
         var port : Int = 8089
-        val organization = "TAK"
-        val organizationUnit = "TAK"
 
         private fun generateBase64CSR(org: String, orgUnit: String, cnName: String): String? {
             var base64CSR: String? = null
@@ -284,8 +286,6 @@ class TAKConnectService: Service() {
                 //    e.g., "C=US, ST=NY, L=New York, O=MyOrg, CN=example.com"
                 // TAK Server expects exactly the 3 fields: O, OU and CN.
                 // Anything more and less and getting singed cert fails
-                // TODO: get O and OU using HTTP GET https://tak.test.ops.ascentitech.com:8446/Marti/api/tls/config
-                // TODO: and parse <?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns2:certificateConfig xmlns="http://bbn.com/marti/xml/config" xmlns:ns2="com.bbn.marti.config"><nameEntries><nameEntry name="O" value="TAK"/><nameEntry name="OU" value="TAK"/></nameEntries></ns2:certificateConfig>
                 // TODO: Also send version information as separate POST message I think??
                 val subject = X500Name("O=$org, OU=$orgUnit, CN=$cnName")
 
@@ -307,6 +307,66 @@ class TAKConnectService: Service() {
                 Log.d(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
             }
             return base64CSR
+        }
+
+        fun fetchAndParseCertificateConfig(takServer: String, username: String, password: String): Pair<String, String> {
+            val url = "https://$takServer:8446/Marti/api/tls/config"
+
+            val client = OkHttpClient()
+
+            // Basic Authentication
+            val credential = Credentials.basic(username, password)
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", credential)
+                .get()
+                .build()
+
+            Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
+                    return Pair("TAK", "TAK")
+                }
+
+                val responseBody = response.body?.string()
+                if (null == responseBody) {
+                    Log.e(TAG, "ERROR fetch certification config response is null")
+                    return Pair("TAK", "TAK")
+                } else {
+                    Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
+                }
+
+                // Parse XML response
+                val document = parseXml(responseBody)
+
+                val nameEntries = document.getElementsByTagName("nameEntry")
+
+                var organization: String? = null
+                var organizationalUnit: String? = null
+
+                for (i in 0 until nameEntries.length) {
+                    val element = nameEntries.item(i) as? org.w3c.dom.Element
+                    val name = element?.getAttribute("name")
+                    val value = element?.getAttribute("value")
+
+                    when (name) {
+                        "O" -> organization = value
+                        "OU" -> organizationalUnit = value
+                    }
+                }
+
+                Log.d(TAG, "fetchAndParseCertificateConfig: Received Organization (O): $organization, Organizational Unit (OU): $organizationalUnit")
+                return Pair(organization ?: "TAK", organizationalUnit ?: "TAK")
+            }
+        }
+
+        fun parseXml(xml: String): Document {
+            val factory = DocumentBuilderFactory.newInstance()
+            val builder = factory.newDocumentBuilder()
+            val inputSource = InputSource(StringReader(xml))
+            return builder.parse(inputSource)
         }
 
         // Returns null on ERROR else response body as String
@@ -348,8 +408,7 @@ class TAKConnectService: Service() {
 
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        Log.e(TAG, "ERROR CSR response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}"
-                        )
+                        Log.e(TAG, "ERROR CSR response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
                         return null
                     }
                     val responseBodyString = response.body?.string()
@@ -520,8 +579,8 @@ class TAKConnectService: Service() {
                         } else {
                             deleteFile("$takServer.jks")
                             Log.d(TAG, "Cannot load keyStore for $takServer. Going to generate CSR")
-                            val base64CSR =
-                                generateBase64CSR(organization, organizationUnit, username)
+                            val (organization, organizationUnit) = fetchAndParseCertificateConfig(takServer, username, password)
+                            val base64CSR = generateBase64CSR(organization, organizationUnit, username)
                             var signClientResponse: SignClientResponse? = null
                             if (null != base64CSR) {
                                 //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
@@ -602,9 +661,11 @@ class TAKConnectService: Service() {
                             }),
                             null
                         )
+                        Log.d(TAG, "Going to createSocket and startHandshake")
                         // Create the socket and connect
                         val socketFactory = sslContext.socketFactory
                         secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket
+                        Log.d(TAG, "Starting secureSocket handshake")
                         secureSocket?.startHandshake()
                         isTakConnected = true
                         isTakConnectedLiveData.postValue(isTakConnected)
