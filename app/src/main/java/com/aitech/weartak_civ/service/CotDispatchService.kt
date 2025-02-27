@@ -142,7 +142,7 @@ class CotDispatchService : Service() {
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
                 // Maybe locationService is using fused indoor and currReportingIntevalInSecs < 5s OR some other reason
-                Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
+                Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)*1000)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
 
                 /*
                 try {

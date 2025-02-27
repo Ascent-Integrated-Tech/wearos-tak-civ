@@ -9,5 +9,6 @@ class MessageEvent(val message: String, val addlIntInfo: Int) {
         val SERVER_TOGGLED = "ServerToggled"
         val UPDATE_INTERVAL_CHANGED = "UpdateIntervalChanged"
         val CALLSIGN_TEAM_ROLE_CHANGED = "CallsignTeamRoleChanged"
+        val OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED = "OptimizeBatteryOnWifiDetailsChanged"
     }
 }
