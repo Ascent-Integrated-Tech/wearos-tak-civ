@@ -22,10 +22,8 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
@@ -36,7 +34,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -60,7 +57,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -91,7 +87,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -170,28 +165,34 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALE
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
+import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
-import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_CONNECTIONS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_CONNECTIONS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.batteryOptimizationSetting
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.generateSaveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -207,6 +208,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesVal
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.serverSettingsChanged
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBatteryService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
@@ -225,6 +228,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.username
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
@@ -243,16 +248,13 @@ import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.io.File
 import javax.net.ssl.SSLSocket
-import kotlin.contracts.Effect
 import kotlin.random.Random
 
 
@@ -304,14 +306,36 @@ class MainActivity : ComponentActivity() {
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
         var serverSettingsChanged: Boolean = false
 
-        var wifiSsidList: List<DataRepository.wifiSsidItem> = listOf()
-        var batteryOptimizationSetting: String = ""
-        var enableWifiBatteryOptimization : Boolean = false
+        private val SOME_WIFI_NETWORKS = "Some WiFi Networks"
+        private val ALL_WIFI_NETWORKS = "All WiFi Networks"
+        private val NO_WIFI_NETWORKS = "No WiFi Networks"
+        val SOME_WIFI_CONNECTIONS = "Some WiFi Connections"
+        val ALL_WIFI_CONNECTIONS = "All WiFi Connections"
+        val NO_WIFI_CONNECTIONS = "No WiFi Connections"
+        var saveBattOnWifiString: String = ALL_WIFI_NETWORKS
+        val saveBattOnWifiStringState = MutableLiveData<String>(ALL_WIFI_NETWORKS)
+        var enableWifiBatteryOptimization : Boolean = true
+        val enableWifiBatteryOptimizationState = MutableLiveData<Boolean>(true)
+        val enableWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(true)
         var enableAllWifiBatteryOptimization : Boolean = true
+        val enableAllWifiBatteryOptimizationState = MutableLiveData<Boolean>(true)
+        val enableAllWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(true)
+        var wifiSsidList : List<DataRepository.WifiSsidItem> = listOf()
+        val wifiSsidListState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf())
+        val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
 
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null
+
+
+        fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
+            return when {
+                enableWifiOpt && enableAllWifiOpt -> ALL_WIFI_NETWORKS  // "All"
+                !enableWifiOpt -> NO_WIFI_NETWORKS // "No"
+                else -> SOME_WIFI_NETWORKS // "Some"
+            }
+        }
 
         data class RolesJson (
             val lrEntries: List<String>,
@@ -696,15 +720,24 @@ class MainActivity : ComponentActivity() {
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
-            PowerManagerService.isWifiOpt = dataRepository.getEnableWifiBatteryOptimization.first()
-            PowerManagerService.isAllWifiOpt = dataRepository.getEnableAllWifiBatteryOptimization.first()
 
             CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
             CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
             //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
 
+            enableWifiBatteryOptimization = dataRepository.getEnableWifiBatteryOptimization.first()
+            enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
+            enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
+            PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
+            enableAllWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
+            enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
+            enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+            PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
             wifiSsidList = dataRepository.getWifiSsidList.first()
-
+            wifiSsidListState.postValue(wifiSsidList)
+            wifiSsidListSettingsState.postValue(wifiSsidList)
+            saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
+            saveBattOnWifiStringState.postValue(saveBattOnWifiString)
 
             Log.d(TAG, """
                 === Device Configuration Settings === 
@@ -717,8 +750,8 @@ class MainActivity : ComponentActivity() {
                 enableTAKConnectService: $enableTAKConnectService
                 enableDittoService:      $enableDittoService
                 ReportingUpdateInterval: ${CotDispatchService.reportingUpdateIntervalSecs} seconds
-                enableWifiBatteryOptimization: ${PowerManagerService.isWifiOpt}
-                enableBatteryOptimizationOnAllWifiNetworks: ${PowerManagerService.isAllWifiOpt}
+                enableWifiBatteryOptimization: $enableWifiBatteryOptimization
+                enableBatteryOptimizationOnAllWifiNetworks: $enableAllWifiBatteryOptimization
                 batteryOptimizedWifiSsidList: $wifiSsidList
                 =====================================
             """.trimIndent())
@@ -1091,6 +1124,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
     val context = LocalContext.current
     validateLicense(license)
 
+    //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = if (isLicenseValid()) "main_screen" else "invalid_license_screen"
@@ -1128,7 +1162,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
             NewServerPage(navController)
         }
         composable("optimize_battery_on_wifi_screen"){
-            OptimizeBatteryonWifiSelectScreen(navController)
+            OptimizeBatteryOnWifiSelectScreen(navController)
         }
         composable(
             "wifi_ssid_screen") {
@@ -1143,6 +1177,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
             arguments = listOf(navArgument("index") { type = NavType.IntType })
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.d(TAG, "edit_wifi_ssid_setting_screen index: $index")
             EditedWiFiSSIDSetting(navController, index)
         }
         composable(
@@ -1164,6 +1199,7 @@ fun MainScreen(
     dataRepository: DataRepository, // Add dataRepository parameter
     context: Context // Add context parameter
 ) {
+    //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
 
     WearTAKCIVTheme {
@@ -1834,12 +1870,10 @@ fun NewServerSettingText (
 }
 
 @Composable
-fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
-    var enableWifiOpt by remember{ mutableStateOf(
-        PowerManagerService.isWifiOpt)}
-    var enableAllWifiOpt by remember{ mutableStateOf(
-        PowerManagerService.isAllWifiOpt)}
-    val radioOptions = listOf("All WiFi Connections", "No WiFi Connections", "Some WiFi Connections")
+fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
+    val enableWifiOpt = enableWifiBatteryOptimizationSettingsState.value ?: true
+    val enableAllWifiOpt = enableAllWifiBatteryOptimizationSettingsState.value ?: true
+    val radioOptions = listOf(ALL_WIFI_CONNECTIONS, NO_WIFI_CONNECTIONS, SOME_WIFI_CONNECTIONS)
     val initialValue = when {
         enableWifiOpt && enableAllWifiOpt -> radioOptions[0]  // "All"
         !enableWifiOpt -> radioOptions[1] // "No"
@@ -1850,6 +1884,8 @@ fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
     val onChangeState: (String) -> Unit = { selectedValue.value = it }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+
+    //Log.d(TAG, "OptimizeBatteryonWifiSelectScreen called")
 
     WearTAKCIVTheme {
         Box(
@@ -1896,7 +1932,7 @@ fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
                         .padding(horizontal = 10.dp)
                         .align(Alignment.Start)
                 )
-                Log.d(TAG, "initial value = $initialValue")
+                Log.d(TAG, "initial  value = $initialValue, selected value: ${selectedValue.value}")
                 radioOptions.forEach { text ->
                     SelectableChip(
                         modifier = Modifier
@@ -1904,9 +1940,18 @@ fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
                             .padding(bottom = 5.dp),
                         selected = isSelectedItem(text),
                         onClick = { onChangeState(text)
-                            if (text=="Some WiFi Connections") {
-                                scope.launch { scrollState.animateScrollTo(scrollState.maxValue + 150)}}
-                                  },
+                            if (text == SOME_WIFI_CONNECTIONS) {
+                                enableWifiBatteryOptimizationSettingsState.postValue(true)
+                                enableAllWifiBatteryOptimizationSettingsState.postValue(false)
+                                scope.launch { scrollState.animateScrollTo(scrollState.maxValue + 150) }
+                            } else if (text == ALL_WIFI_CONNECTIONS) {
+                                enableWifiBatteryOptimizationSettingsState.postValue(true)
+                                enableAllWifiBatteryOptimizationSettingsState.postValue(true)
+                            } else {
+                                enableWifiBatteryOptimizationSettingsState.postValue(false)
+                                enableAllWifiBatteryOptimizationSettingsState.postValue(false)
+                            }
+                        },
                         label = {
                             // The primary label should have a maximum 3 lines of text
                             Text(text, maxLines = 3, fontSize = 14.sp, overflow = TextOverflow.Ellipsis)
@@ -1915,56 +1960,42 @@ fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
                     )
 
                 }
-                    if (selectedValue.value == "Some WiFi Connections") {
-                        Chip(
-                            onClick = {
-                                navController.navigate("wifi_ssid_screen") {
-                                    popUpTo(("wifi_ssid_screen")) {
-                                        inclusive = true
-                                    }
+                if (selectedValue.value == "Some WiFi Connections") {
+                    Chip(
+                        onClick = {
+                            navController.navigate("wifi_ssid_screen") {
+                                popUpTo(("wifi_ssid_screen")) {
+                                    inclusive = true
                                 }
-
-                                //TODO: This is not a great solution, need to change to a better one
-                                PowerManagerService.isWifiOpt = true
-                                PowerManagerService.isAllWifiOpt = false
-
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    dataRepository.storeEnableWifiBatteryOptimization(
-                                        PowerManagerService.isWifiOpt
-                                    )
-                                    dataRepository.storeEnableAllWifiBatteryOptimization(
-                                        PowerManagerService.isAllWifiOpt
-                                    )
-
-                                    Log.d(TAG, "Wifi Output Settings Saved: isWifiOpt = ${PowerManagerService.isWifiOpt}, isAllWifiOpt = ${PowerManagerService.isAllWifiOpt}")
-                                }
-
-                            },
-                            enabled = true,
-                            label = {
-                                Text(
-                                    text = "Edit Optimized WiFi Connections",
-                                    fontWeight = FontWeight.Normal,
-                                    color = colors.primary
-                                )
-                            },
-                            colors = ChipDefaults.chipColors(
-                                backgroundColor = Color.DarkGray,
-                                contentColor = Color.White,
-                                secondaryContentColor = Color.LightGray
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp, bottom = 20.dp)
-                        )
-                    }
+                            }
+                            Log.d(TAG, "Some WiFi Connections selected: initial value = $initialValue, selected value: ${selectedValue.value}, isWifiOpt = $enableWifiOpt, isAllWifiOpt = $enableAllWifiOpt, wifiSsidList = ${wifiSsidListSettingsState.value}")
+                        },
+                        enabled = true,
+                        label = {
+                            Text(
+                                text = "Edit Optimized WiFi Connections",
+                                fontWeight = FontWeight.Normal,
+                                color = colors.primary
+                            )
+                        },
+                        colors = ChipDefaults.chipColors(
+                            backgroundColor = Color.DarkGray,
+                            contentColor = Color.White,
+                            secondaryContentColor = Color.LightGray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 20.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 ConfirmCancelButtons(
                     onClickCancel = {
-                        Log.d(TAG, "Settings NOT saved")
+                        Log.d(TAG, "OptimizeBatteryonWifiSelectScreen Settings NOT saved")
+
                         navController.navigate("settings_screen") {
                             popUpTo(("settings_screen")) {
                                 inclusive = true
@@ -1972,44 +2003,18 @@ fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
                         }
                     },
                     onClickConfirm = {
-                        val newWifiOpt: Boolean
-                        val newAllOpt: Boolean
+                        // TODO: check why enableWifiBatteryOptimizationState.value is Boolean?
+                        val prevWifiOpt: Boolean = enableWifiBatteryOptimizationState.value ?: true
+                        val prevAllOpt: Boolean = enableAllWifiBatteryOptimizationState.value ?: true
+                        val currWifiOpt = enableWifiBatteryOptimizationSettingsState.value
+                        val currAllOpt = enableAllWifiBatteryOptimizationSettingsState.value
 
-                        when (selectedValue.value) {
-                            "All WiFi Connections" -> {
-                                newWifiOpt = true
-                                newAllOpt = true
-                            }
-                            "No WiFi Connections" -> {
-                                newWifiOpt = false
-                                newAllOpt = false
-                            }
-                            "Some WiFi Connections" -> {
-                                newWifiOpt = true
-                                newAllOpt = false
-                            }
-                            else -> {
-                                // fallback, but you really shouldn't get here
-                                newWifiOpt = false
-                                newAllOpt = false
-                            }
-                        }
-                        if (newWifiOpt != enableWifiOpt || newAllOpt != enableAllWifiOpt) {
-                            batteryOptimizationSetting = selectedValue.value
-
-                            PowerManagerService.isWifiOpt = newWifiOpt
-                            PowerManagerService.isAllWifiOpt = newAllOpt
-
-                            CoroutineScope(Dispatchers.Main).launch {
-                                dataRepository.storeEnableWifiBatteryOptimization(
-                                    PowerManagerService.isWifiOpt
-                                )
-                                dataRepository.storeEnableAllWifiBatteryOptimization(
-                                    PowerManagerService.isAllWifiOpt
-                                )
-
-                                Log.d(TAG, "Wifi Output Settings Saved: isWifiOpt = ${PowerManagerService.isWifiOpt}, isAllWifiOpt = ${PowerManagerService.isAllWifiOpt}")
-                            }
+                        if ((prevWifiOpt != currWifiOpt) || (prevAllOpt != currAllOpt) || (wifiSsidListState.value != wifiSsidListSettingsState.value)) {
+                            Log.d(TAG, "Changed sthg: enableWifiOpt(old=$prevWifiOpt, new=$currWifiOpt), enableOptimAllWifi(old=$prevAllOpt, new=$currAllOpt), wifiSsidList(old=${wifiSsidListState.value}, new=${wifiSsidListSettingsState.value})")
+                            saveBattOnWifiStringState.postValue(generateSaveBattOnWifiString(currWifiOpt ?: true, currAllOpt ?: true))
+                            enableWifiBatteryOptimizationState.postValue(currWifiOpt)
+                            enableAllWifiBatteryOptimizationState.postValue(currAllOpt)
+                            wifiSsidListState.postValue(wifiSsidListSettingsState.value)
                         } else {
                             Log.d(TAG, "Settings NOT changed, NOT saved")
                         }
@@ -2028,8 +2033,8 @@ fun OptimizeBatteryonWifiSelectScreen(navController: NavController) {
 
 @Composable
 fun WifiSsidSelectScreen(navController: NavController) {
-    val wifiSsidList by dataRepository.getWifiSsidList
-        .collectAsState(initial = emptyList())
+    //Log.d(TAG, "WifiSsidSelectScreen called")
+    val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -2056,21 +2061,23 @@ fun WifiSsidSelectScreen(navController: NavController) {
                             modifier = Modifier.padding(10.dp)
                         )
                     }
-                    itemsIndexed(wifiSsidList) { index, wifiSsidItem ->
+                    Log.d(TAG, "SSID List = $wifiSsidList")
+                    itemsIndexed(wifiSsidList){ index, wifiSsidItem ->
                         WifiSsidItemChip(
                             wifiSsidItem.name,
                             onPrimaryActionClick = {
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    dataRepository.removeWifiSsidItem(wifiSsidItem)
-                                }
+                                Log.d(TAG, "Remove wifiSsidItem ($wifiSsidItem)")
+                                val mutableWifiSsidList = wifiSsidList.toMutableList()
+                                mutableWifiSsidList.removeAt(index)
+                                wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
                             },
                             onSecondaryActionClick = {
                                 // Navigate to "edit_wifi_ssid_setting_screen/<index>"
+                                //Log.d(TAG, "onSecondaryActionClick called")
                                 navController.navigate("edit_wifi_ssid_setting_screen/$index")
                             }
                         )
                     }
-                    Log.d(TAG, "SSID List = $wifiSsidList")
 
                     item {
                         Chip(
@@ -2136,6 +2143,7 @@ fun WifiSsidItemChip(
     val revealState = rememberRevealState()
     val scope = rememberCoroutineScope()
 
+    //Log.d(TAG, "WifiSsidItemChip called")
     SwipeToRevealChip(
         revealState = revealState,
         modifier =
@@ -2212,6 +2220,7 @@ fun NewWiFiSSIDSetting(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
+        //Log.d(TAG, "NewWiFiSSIDSetting called")
         var name by remember {
             mutableStateOf("")
         }
@@ -2238,9 +2247,9 @@ fun NewWiFiSSIDSetting(
                 },
                 onClickConfirm = {
                     if (name.isNotBlank()) {
-                        CoroutineScope(Dispatchers.Main).launch {
-                        dataRepository.addWifiSsidItem(DataRepository.wifiSsidItem(name))
-                            }
+                        val mutableWifiSsidList = wifiSsidListSettingsState.value?.toMutableList() ?: emptyList<DataRepository.WifiSsidItem>().toMutableList()
+                        mutableWifiSsidList.add(DataRepository.WifiSsidItem(name))
+                        wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
                     }
 
                     navController.navigate("wifi_ssid_screen") {
@@ -2259,6 +2268,7 @@ fun EditedWiFiSSIDSetting(
     navController: NavController,
     index: Int
 ) {
+    //Log.d(TAG, "EditedWiFiSSIDSetting called")
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -2267,13 +2277,14 @@ fun EditedWiFiSSIDSetting(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        val currentItem = wifiSsidList.getOrNull(index)
-        Log.d(TAG, "current item = $currentItem")
-        var text by remember { mutableStateOf(currentItem?.name.orEmpty()) }
+        val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
+        Log.d(TAG, "EditedWiFiSSIDSetting SSID list: $wifiSsidList")
+        var name by remember { mutableStateOf(wifiSsidList.getOrNull(index)?.name.orEmpty()) }
+        Log.d(TAG, "text = $name")
 
         OutlinedTextField(
-            value = text,
-            onValueChange = { text = it},
+            value = name,
+            onValueChange = { text -> name = text },
             maxLines = 1,
             label = { Text(text = "Wifi SSID", color = colors.primary) },
             placeholder = { Text(text = "Wifi SSID", color = colors.primary) },
@@ -2290,9 +2301,9 @@ fun EditedWiFiSSIDSetting(
                     }
                 },
                 onClickConfirm = {
-                    CoroutineScope(Dispatchers.Main).launch {
-                    dataRepository.updateWifiSsidItem(index, DataRepository.wifiSsidItem(text))
-                        }
+                    val mutableWifiSsidList = wifiSsidList.toMutableList()
+                    mutableWifiSsidList.set(index, DataRepository.WifiSsidItem(name))
+                    wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
 
                     navController.navigate("wifi_ssid_screen") {
                         popUpTo(("wifi_ssid_screen")) {
@@ -2902,7 +2913,18 @@ fun Callsign(navController: NavController, callsignState: MutableLiveData<String
     val greetingName: String? by callsignState.observeAsState()
     val maxChar = 10
     AssistChip(
-        onClick = { navController.navigate("settings_screen") },
+        onClick = {
+            callsignSettingsState.postValue(callsign)
+            teamSettingsState.postValue(team)
+            roleSettingsState.postValue(role)
+            enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
+            enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
+            enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
+            enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+            wifiSsidListSettingsState.postValue(wifiSsidList)
+            wifiSsidListSettingsState.postValue(wifiSsidList)
+            saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+            navController.navigate("settings_screen") },
         label = { Text(
             "${greetingName}",
             maxLines = 1,
@@ -3102,6 +3124,7 @@ fun SettingsScreen(
     callsignLiveDataState: MutableLiveData<String>,
     licenseLiveDataState: MutableLiveData<String>
 ) {
+    //Log.d(TAG, "SettingsScreen called")
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -3115,7 +3138,7 @@ fun SettingsScreen(
             var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
-
+            val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
 
             Column(
                 modifier = Modifier
@@ -3167,23 +3190,18 @@ fun SettingsScreen(
                         .padding(bottom = 3.dp)
                 )
 
-                var enableWifiOpt by remember{ mutableStateOf(
-                    PowerManagerService.isWifiOpt)}
-                var enableAllWifiOpt by remember{ mutableStateOf(
-                    PowerManagerService.isAllWifiOpt)}
-                val batteryOptimizationSettingValue = when {
-                    enableWifiOpt && enableAllWifiOpt -> "All Wifi Networks"  // "All"
-                    !enableWifiOpt -> "No Wifi Networks" // "No"
-                    else -> "Some Wifi Networks" // "Some"
-                }
-                batteryOptimizationSetting = batteryOptimizationSettingValue
                 Chip(
-                    onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
+
+                    onClick = {
+                        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimizationState.value)
+                        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimizationState.value)
+                        wifiSsidListSettingsState.postValue(wifiSsidListState.value)
+                        navController.navigate("optimize_battery_on_wifi_screen") {
                         popUpTo("optimize_battery_on_wifi_screen") { inclusive = true }
                     } },
                     enabled = true,
                     label = { Text(text = "Save Battery on WiFi") },
-                    secondaryLabel = {Text(text = batteryOptimizationSetting)},
+                    secondaryLabel = {Text(text = "$displayedSecondaryText")},
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
@@ -3234,17 +3252,9 @@ fun SettingsScreen(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.text.isEmpty()) {
-                                Toast.makeText(
-                                    mainActivity,
-                                    "Reporting Rate Empty, Enter Again",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval.text == "0") {
-                                Toast.makeText(
-                                    mainActivity,
-                                    "Reporting Rate 0, Enter Again",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -3306,10 +3316,7 @@ fun SettingsScreen(
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 ConfirmCancelButtons(
                     onClickCancel = {
-                        callsignSettingsState.postValue(callsign)
-                        teamSettingsState.postValue(team)
-                        roleSettingsState.postValue(role)
-                        Log.d(TAG, "Settings NOT saved")
+                        Log.d(TAG, "SettingsScreen Settings NOT saved")
                         navController.navigate("main_screen") {
                             popUpTo(("main_screen")) {
                                 inclusive = true
@@ -3324,101 +3331,89 @@ fun SettingsScreen(
                         var licenseChanged: Boolean = false
                         val maxReportRate: Int = 100000000
                         val minReportRate: Int = 1
+                        var locationCheckedChanged: Boolean = false
+                        var biometricsCheckedChanged: Boolean = false
+                        var dittoCheckedChanged: Boolean = false
+                        var reportingUpdateIntervalChanged = false
+                        var saveBattOnWifiChanged = false
 
-                            var locationCheckedChanged: Boolean = false
-                            var biometricsCheckedChanged: Boolean = false
-                            var dittoCheckedChanged: Boolean = false
-
-                            var reportingUpdateIntervalChanged = false
-                            if (!callsign.equals(callsignSettingsState.value)) {
-                                settingsChanged = true; callsignChanged = true
-                                callsign = callsignSettingsState.value ?: callsign
+                        if (!callsign.equals(callsignSettingsState.value)) {
+                            settingsChanged = true; callsignChanged = true
+                            callsign = callsignSettingsState.value ?: callsign
+                            runBlocking {
                                 callsignLiveDataState.postValue(callsign)
-                                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
                             }
-                            if (!team.equals(teamSettingsState.value)) {
-                                settingsChanged = true; teamChanged = true
-                                team = teamSettingsState.value ?: team
-                                var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
-                                // This cannot happen, but still...
-                                if (teamIndex == -1) {
-                                    Log.e(
-                                        TAG,
-                                        "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0"
-                                    )
-                                    teamIndex = 0
-                                    team = teamEntriesValuesList.ltEntries[0]
-                                    teamSettingsState.postValue(team)
-                                }
-                                teamValue = teamEntriesValuesList.ltValues[teamIndex]
+                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                        }
+                        if (!team.equals(teamSettingsState.value)) {
+                            settingsChanged = true; teamChanged = true
+                            team = teamSettingsState.value ?: team
+                            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
+                            // This cannot happen, but still...
+                            if (teamIndex == -1) {
+                                Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
+                                teamIndex = 0
+                                team = teamEntriesValuesList.ltEntries[0]
+                                teamSettingsState.postValue(team)
+                            }
+                            teamValue = teamEntriesValuesList.ltValues[teamIndex]
+                            runBlocking {
                                 teamState.postValue(team)
-                                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
                             }
-                            if (!role.equals(roleSettingsState.value)) {
-                                settingsChanged = true; roleChanged = true
-                                role = roleSettingsState.value ?: role
-                                var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-                                // This cannot happen, but still...
-                                if (roleIndex == -1) {
-                                    Log.e(
-                                        TAG,
-                                        "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0"
-                                    )
-                                    roleIndex = 0
-                                    role = roleEntriesValuesList.lrEntries[0]
-                                    roleSettingsState.postValue(role)
-                                }
-                                roleValue = roleEntriesValuesList.lrValues[roleIndex]
+                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                        }
+                        if (!role.equals(roleSettingsState.value)) {
+                            settingsChanged = true; roleChanged = true
+                            role = roleSettingsState.value ?: role
+                            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+                            // This cannot happen, but still...
+                            if (roleIndex == -1) {
+                                Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
+                                roleIndex = 0
+                                role = roleEntriesValuesList.lrEntries[0]
+                                roleSettingsState.postValue(role)
+                            }
+                            roleValue = roleEntriesValuesList.lrValues[roleIndex]
+                            runBlocking {
                                 roleState.postValue(role)
-                                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
                             }
+                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                        }
+
+                        if ((saveBattOnWifiString != saveBattOnWifiStringState.value) || (wifiSsidList != wifiSsidListState.value)) {
+                            settingsChanged = true; saveBattOnWifiChanged = true
+                            wifiSsidList = wifiSsidListState.value ?: wifiSsidList
+                            saveBattOnWifiString = saveBattOnWifiStringState.value ?: saveBattOnWifiString
+                            enableWifiBatteryOptimization = enableWifiBatteryOptimizationState.value ?: enableWifiBatteryOptimization
+                            enableAllWifiBatteryOptimization = enableAllWifiBatteryOptimizationState.value ?: enableAllWifiBatteryOptimization
+                        }
 //                            if (!license.equals(licenseSettingsState.value)) {
 //                                settingsChanged = true; licenseChanged = true
 //                                license = licenseSettingsState.value ?: license
 //                                licenseLiveDataState.postValue(license)
 //                            }
 
-                            if (enableLocationService != locationChecked) {
-                                settingsChanged = true; locationCheckedChanged = true
-                                enableLocationService = locationChecked
-                                if (enableLocationService) {
-                                    Log.d(TAG, "Starting location service")
-                                    startLocationService()
-                                } else {
-                                    Log.d(TAG, "Stopping location service")
-                                    mainActivity.stopService(
-                                        Intent(
-                                            mainActivity,
-                                            LocationService::class.java
-                                        )
-                                    )
-                                }
-                            }
-                            val reportingUpdateIntervalText = reportingUpdateInterval.text
-                            if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
-                                    CotDispatchService.reportingUpdateIntervalSecs.toString()) && reportingUpdateInterval.text.toInt() >= minReportRate
-                            ) {
-                                settingsChanged = true; reportingUpdateIntervalChanged = true
-                                CotDispatchService.reportingUpdateIntervalSecs =
-                                    reportingUpdateIntervalText.toInt()
-                                //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                Log.d(
-                                    TAG,
-                                    "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}"
-                                )
-                                /*
-                                if (enableLocationService) {
-                                    mainActivity.stopService(
-                                        Intent(
-                                            mainActivity,
-                                            LocationService::class.java
-                                        )
-                                    )
-                                    startLocationService()
-                                }
+                        val reportingUpdateIntervalText = reportingUpdateInterval.text
+                        if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
+                                CotDispatchService.reportingUpdateIntervalSecs.toString()
+                            ) && reportingUpdateInterval.text.toInt() >= minReportRate) {
+                            settingsChanged = true; reportingUpdateIntervalChanged = true
+                            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateIntervalText.toInt()
+                            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+                            Log.d(TAG, "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}")
+                        }
 
-                                 */
+                        if (enableLocationService != locationChecked) {
+                            settingsChanged = true; locationCheckedChanged = true
+                            enableLocationService = locationChecked
+                            if (enableLocationService) {
+                                Log.d(TAG, "Starting location service")
+                                startLocationService()
+                            } else {
+                                Log.d(TAG, "Stopping location service")
+                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
                             }
+                        }
 
                         if (enableBiometricsService != biometricsChecked) {
                             settingsChanged = true; biometricsCheckedChanged = true
@@ -3428,108 +3423,88 @@ fun SettingsScreen(
                                 startBiometericService()
                             } else {
                                 Log.d(TAG, "Stopping biometric service")
-                                mainActivity.stopService(
-                                    Intent(
-                                        mainActivity,
-                                        HeartrateService::class.java
-                                    )
-                                )
+                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
                             }
                         }
 
-                            if (enableDittoService != dittoChecked) {
-                                settingsChanged = true; dittoCheckedChanged = true
-                                enableDittoService = dittoChecked
-                                if (enableDittoService) {
-                                    Log.d(TAG, "Starting ditto service")
-                                    startDittoService()
-                                } else {
-                                    Log.d(TAG, "Stopping ditto service")
-                                    mainActivity.stopService(
-                                        Intent(
-                                            mainActivity,
-                                            DittoService::class.java
-                                        )
-                                    )
-                                }
+                        if (enableDittoService != dittoChecked) {
+                            settingsChanged = true; dittoCheckedChanged = true
+                            enableDittoService = dittoChecked
+                            if (enableDittoService) {
+                                Log.d(TAG, "Starting ditto service")
+                                startDittoService()
+                            } else {
+                                Log.d(TAG, "Stopping ditto service")
+                                mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
                             }
+                        }
 
-                            if (settingsChanged) {
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    if (callsignChanged) {
-                                        Log.d(TAG, "Storing Callsign ($callsign)")
-                                        dataRepository.storeCallsign(callsign)
-                                    }
-                                    if (teamChanged) {
-                                        Log.d(TAG, "Storing Team ($team)")
-                                        dataRepository.storeTeam(team)
-                                    }
-                                    if (roleChanged) {
-                                        Log.d(TAG, "Storing Role ($role)")
-                                        dataRepository.storeRole(role)
-                                    }
+                        if (settingsChanged) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                if (callsignChanged) {
+                                    Log.d(TAG, "Storing Callsign ($callsign)")
+                                    dataRepository.storeCallsign(callsign)
+                                }
+                                if (teamChanged) {
+                                    Log.d(TAG, "Storing Team ($team)")
+                                    dataRepository.storeTeam(team)
+                                }
+                                if (roleChanged) {
+                                    Log.d(TAG, "Storing Role ($role)")
+                                    dataRepository.storeRole(role)
+                                }
 //                                    if(licenseChanged) {
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
-                                    if (locationCheckedChanged) {
-                                        Log.d(
-                                            TAG,
-                                            "Storing enableLocationService $enableLocationService"
-                                        )
-                                        dataRepository.storeEnableLocationService(
-                                            enableLocationService
-                                        )
+                                if (saveBattOnWifiChanged) {
+                                    Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
+                                    runBlocking {
+                                        dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
+                                        dataRepository.storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization)
+                                        dataRepository.storeWifiSsidList(wifiSsidList)
                                     }
-                                    if (reportingUpdateIntervalChanged) {
-                                        Log.d(
-                                            TAG,
-                                            "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})"
-                                        )
-                                        dataRepository.storeReportingUpdateInterval(
-                                            CotDispatchService.reportingUpdateIntervalSecs
-                                        )
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
-                                    }
-                                    if (biometricsCheckedChanged) {
-                                        Log.d(
-                                            TAG,
-                                            "Storing enableBiometricsService $enableBiometricsService"
-                                        )
-                                        dataRepository.storeEnableBiometricsService(
-                                            enableBiometricsService
-                                        )
-                                    }
-
-                                    if (dittoCheckedChanged) {
-                                        Log.d(
-                                            TAG,
-                                            "Storing enableDittoService $enableDittoService"
-                                        )
-                                        dataRepository.storeEnableDittoService(
-                                            enableDittoService
-                                        )
-                                    }
-
-                                    Log.d(TAG, "Finished saving settings")
+                                    EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
                                 }
-                            } else {
-                                Log.v(TAG, "Settings not changed and hence NOT saved")
-                            }
-                            if (reportingUpdateIntervalText.equals("")){
-                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateIntervalText.equals("0")) {
-                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                            } else {
-                                navController.navigate("main_screen") {
-                                    popUpTo(("main_screen")) {
-                                        inclusive = true
+                                if (reportingUpdateIntervalChanged) {
+                                    Log.d(TAG, "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})")
+                                    runBlocking {
+                                        dataRepository.storeReportingUpdateInterval(CotDispatchService.reportingUpdateIntervalSecs)
                                     }
+                                    EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
+                                }
+                                if (locationCheckedChanged) {
+                                    Log.d(TAG, "Storing enableLocationService $enableLocationService")
+                                    dataRepository.storeEnableLocationService(enableLocationService)
+                                }
+                                if (biometricsCheckedChanged) {
+                                    Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
+                                    dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                                }
+                                if (dittoCheckedChanged) {
+                                    Log.d(TAG, "Storing enableDittoService $enableDittoService")
+                                    dataRepository.storeEnableDittoService(enableDittoService)
+                                }
+
+                                Log.d(TAG, "Finished saving settings")
+                            }
+                        } else {
+                            Log.v(TAG, "Settings not changed and hence NOT saved")
+                        }
+                        if (reportingUpdateIntervalText.equals("")) {
+                            Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                        } else if (reportingUpdateIntervalText.equals("0")) {
+                            Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                        } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
+                            Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                        } else {
+                            navController.navigate("main_screen") {
+                                popUpTo(("main_screen")) {
+                                    inclusive = true
                                 }
                             }
-                        })
+                        }
+                    })
             }
 
         }
@@ -3607,8 +3582,8 @@ fun SettingsPreview() {
 
 @Preview(widthDp = 192, heightDp = 500)
 @Composable
-fun OptimizeBatteryonWifiSelectScreenPreview() {
-    OptimizeBatteryonWifiSelectScreen(rememberSwipeDismissableNavController())
+fun OptimizeBatteryOnWifiSelectScreenPreview() {
+    OptimizeBatteryOnWifiSelectScreen(rememberSwipeDismissableNavController())
 }
 
 @Preview(widthDp = 192, heightDp = 400)

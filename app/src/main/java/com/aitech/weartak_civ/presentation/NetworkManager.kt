@@ -1,9 +1,19 @@
+/*
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ.presentation
 
 import android.app.Activity.CONNECTIVITY_SERVICE
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiInfo
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -12,23 +22,23 @@ import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
 import org.greenrobot.eventbus.EventBus
 import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.events.WifiSsidRcvd
 
 
-class NetworkManager : ConnectivityManager.NetworkCallback()  {
+class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags)  {
 
     private var mainActivity : MainActivity? = null
     private var connectivityManager : ConnectivityManager? = null
     private val handler = Handler(Looper.getMainLooper())
-//    var isNetworkConnected : Boolean = false
-//    private var isWifi = false
-//    private var isCellular = false
-
 
     fun init() {
         Log.d(TAG, "init called")
         mainActivity = MainActivity.getActivity()
         connectivityManager = mainActivity?.applicationContext?.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        connectivityManager?.registerDefaultNetworkCallback(this)
+        val networkRequest = android.net.NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        connectivityManager?.registerNetworkCallback(networkRequest, this,  Handler(Looper.getMainLooper()))
         checkNetworkConnected()
     }
 
@@ -47,24 +57,44 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
     }
 
     fun checkNetworkConnected() {
-        val activeNetwork = connectivityManager?.activeNetwork
-        val networkCapabilities = connectivityManager?.getNetworkCapabilities(activeNetwork)
+        checkNetworkConnected(null, null)
+    }
+
+    fun checkNetworkConnected(network: Network?, networkCapabilities: NetworkCapabilities?) {
+        //Log.d(TAG, "network (${network?.toString()}); networkCapabilities (${connectivityManager?.getNetworkCapabilities(network)?.toString()})")
+        //Log.d(TAG, "activeNetwork (${connectivityManager?.activeNetwork?.toString()}); activeNetworkCapabilities (${connectivityManager?.getNetworkCapabilities(connectivityManager?.activeNetwork)?.toString()})")
+
+        val activeNetwork = network ?: connectivityManager?.activeNetwork
+        val activeNetworkCapabilities = networkCapabilities ?: connectivityManager?.getNetworkCapabilities(activeNetwork)
         var networkInfoChanged = false
-        Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); networkCapabilities (${networkCapabilities?.toString()})")
-        if ((null != activeNetwork) && (null != networkCapabilities)) {
+        var currWifiSsid : String? = null
+        Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); activeNetworkCapabilities (${activeNetworkCapabilities?.toString()})")
+        // TODO: Need to test with SSIDs of hidden networks
+        // If wifi is connected but the wifi AP is NOT connected to internet, we still show as connected to wifi.
+        if ((null != activeNetwork) && (null != activeNetworkCapabilities)) {
             if (isNetworkConnected == false) {
                 isNetworkConnected = true
                 networkInfoChanged = true
                 isNetworkConnectedLiveData.postValue(isNetworkConnected)
             }
 
-            val currIsWifi = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            val currIsWifi = activeNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            val currWifiInfo = if (currIsWifi) { activeNetworkCapabilities.transportInfo as WifiInfo } else { null }
+            if (null != currWifiInfo) {
+                currWifiSsid = currWifiInfo.ssid
+                // Valid SSIDs are surrounded by double quotes and this removes them
+                // NOTE: We can also get <unknown ssid> and this will not change it
+                if ("<" != currWifiSsid.take(1)) {
+                    currWifiSsid = currWifiSsid.substring(1, currWifiSsid.length - 1)
+                }
+            }
+            // We get <unknown ssid> and then null when switching from wifi to cellular; Similarly <unknown ssid> and then SSID when no network to Wifi
             if (isWifi != currIsWifi) {
                 isWifi = currIsWifi
                 networkInfoChanged = true
                 isWifiConnectedLiveData.postValue(isWifi)
             }
-            val currIsCellular = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+            val currIsCellular = activeNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
             if (isCellular != currIsCellular) {
                 isCellular = currIsCellular
                 networkInfoChanged = true
@@ -91,17 +121,36 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
         if (networkInfoChanged) {
             Log.d(TAG, "Change detected in network connection information.Sending NwConnEvent")
             EventBus.getDefault().post(NwConnEvent(isNetworkConnected, if (isWifi == true) { WIFI } else { CELLULAR }))
-            // Just for testing. Please remove line below.
-            //Toast.makeText(mainActivity?.applicationContext, "nwConn = $isNetworkConnected; wifi = $isWifi; cell = $isCellular", Toast.LENGTH_LONG).show()
+            if (currWifiSsid != connectedWifiSsid) {
+                Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
+                // Note we could be storing <unknown_ssid>
+                // TODO: What happens if the actual SSID is called <unknown_ssid>. For now, this case is not being handled
+                connectedWifiSsid = currWifiSsid
+                EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
+            }
         } else {
             Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
+            // If checkNetworkConnected is called with both params null, we only change SSID if isNetworkConnected is false (i.e., currWifiSsid == null)
+            if ((null == network) && (null == networkCapabilities)) {
+                if ((null == currWifiSsid) && (currWifiSsid != connectedWifiSsid)) {
+                    Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
+                    connectedWifiSsid = currWifiSsid
+                    EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
+                }
+            } else {
+                if (currWifiSsid != connectedWifiSsid) {
+                    Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
+                    connectedWifiSsid = currWifiSsid
+                    EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
+                }
+            }
         }
     }
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
         Log.d(TAG, "onCapabilitiesChanged called")
-        checkNetworkConnected()
+        checkNetworkConnected(network, networkCapabilities)
     }
 
     override fun onAvailable(network: Network) {
@@ -128,7 +177,7 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
 
     companion object {
         private val TAG = "WearTAK-" + NetworkManager::class.java.simpleName
-        private val NETWORK_MANAGER = NetworkManager()
+        private val NETWORK_MANAGER = NetworkManager(FLAG_INCLUDE_LOCATION_INFO)
         public fun getInstance() : NetworkManager {
             return NETWORK_MANAGER
         }
@@ -138,6 +187,7 @@ class NetworkManager : ConnectivityManager.NetworkCallback()  {
         val isNetworkConnectedLiveData = MutableLiveData<Boolean>(false)
         var isWifi : Boolean = false
         val isWifiConnectedLiveData = MutableLiveData<Boolean>(false)
+        var connectedWifiSsid : String? = null
         var isCellular : Boolean = false
         val isCellularConnectedLiveData = MutableLiveData<Boolean>(false)
 
