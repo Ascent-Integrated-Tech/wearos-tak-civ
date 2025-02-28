@@ -16,27 +16,27 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
+import android.os.Handler
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
 import android.provider.Settings.Secure
 import android.util.Log
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -60,7 +60,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -133,11 +132,11 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.foundation.RevealValue
 import androidx.wear.compose.foundation.rememberRevealState
+import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -173,7 +172,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
-import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
 import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
@@ -185,13 +183,10 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.batteryOptimiz
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -243,16 +238,13 @@ import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.io.File
 import javax.net.ssl.SSLSocket
-import kotlin.contracts.Effect
 import kotlin.random.Random
 
 
@@ -978,6 +970,9 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Version number not found")
         }
 
+        Log.d(TAG, "Adding FLAG_KEEP_SCREEN_ON")
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         installSplashScreen()
 
         validateLicense(license)
@@ -1026,16 +1021,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
         if (!isAccessibilityServiceEnabled) {
             Log.d(TAG, "isAccessibilityServiceEnabled false and trying to open Accessibility Settings")
-            /*
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            mainActivity.startActivity(intent)
-
-             */
-
             gotoAccessibilitySettings(mainActivity)
-
-
             for (i in 0..3) {
                 Toast.makeText(mainActivity, "Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings", Toast.LENGTH_LONG).show()
             }
@@ -1062,6 +1048,10 @@ class MainActivity : ComponentActivity() {
         }
 
          */
+        Handler().postDelayed(
+            Runnable { Log.d(TAG, "Clearing FLAG_KEEP_SCREEN_ON"); window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) },
+            10_000
+        )
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -1083,6 +1073,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun Context.findActivity(): Activity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    return null
+}
+
+@Composable
+fun KeepScreenOnForTime(timeInSeconds: Long) {
+    val context = LocalContext.current
+    val window = context.findActivity()?.window
+    window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    Log.d(TAG, "Added FLAG_KEEP_SCREEN_ON")
+    Handler().postDelayed(
+        Runnable { Log.d(TAG, "Clearing FLAG_KEEP_SCREEN_ON"); window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) },
+        timeInSeconds
+    )
+}
 
 //Contains functionality for all watch screens
 @Composable
@@ -1222,6 +1232,7 @@ fun MainScreen(
                 }
                 TroubleshootingIcons()
                 TimeText()
+                KeepScreenOnForTime(10_000)
             }
         }
     }
