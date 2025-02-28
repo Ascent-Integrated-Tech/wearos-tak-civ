@@ -466,11 +466,13 @@ class MainActivity : ComponentActivity() {
 
 //            username = dataRepository.getUsername.first()
             username = "IL.NORTHPARK.FD"
+            dataRepository.storeUsername(username)
             usernameState.postValue(username)
             usernameSettingsState.postValue(username)
 
 //            password = dataRepository.getPassword.first()
             password = "IL.NORTHPARK.FD.Password01"
+            dataRepository.storePassword(password)
             passwordState.postValue(password)
             passwordSettingsState.postValue(password)
 
