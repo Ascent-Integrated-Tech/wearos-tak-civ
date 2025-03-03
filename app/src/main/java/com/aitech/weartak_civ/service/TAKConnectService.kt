@@ -324,42 +324,47 @@ class TAKConnectService: Service() {
                 .build()
 
             Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
-                    return Pair("TAK", "TAK")
-                }
-
-                val responseBody = response.body?.string()
-                if (null == responseBody) {
-                    Log.e(TAG, "ERROR fetch certification config response is null")
-                    return Pair("TAK", "TAK")
-                } else {
-                    Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
-                }
-
-                // Parse XML response
-                val document = parseXml(responseBody)
-
-                val nameEntries = document.getElementsByTagName("nameEntry")
-
-                var organization: String? = null
-                var organizationalUnit: String? = null
-
-                for (i in 0 until nameEntries.length) {
-                    val element = nameEntries.item(i) as? org.w3c.dom.Element
-                    val name = element?.getAttribute("name")
-                    val value = element?.getAttribute("value")
-
-                    when (name) {
-                        "O" -> organization = value
-                        "OU" -> organizationalUnit = value
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
+                        return Pair("TAK", "TAK")
                     }
-                }
 
-                Log.d(TAG, "fetchAndParseCertificateConfig: Received Organization (O): $organization, Organizational Unit (OU): $organizationalUnit")
-                return Pair(organization ?: "TAK", organizationalUnit ?: "TAK")
+                    val responseBody = response.body?.string()
+                    if (null == responseBody) {
+                        Log.e(TAG, "ERROR fetch certification config response is null")
+                        return Pair("TAK", "TAK")
+                    } else {
+                        Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
+                    }
+
+                    // Parse XML response
+                    val document = parseXml(responseBody)
+
+                    val nameEntries = document.getElementsByTagName("nameEntry")
+
+                    var organization: String? = null
+                    var organizationalUnit: String? = null
+
+                    for (i in 0 until nameEntries.length) {
+                        val element = nameEntries.item(i) as? org.w3c.dom.Element
+                        val name = element?.getAttribute("name")
+                        val value = element?.getAttribute("value")
+
+                        when (name) {
+                            "O" -> organization = value
+                            "OU" -> organizationalUnit = value
+                        }
+                    }
+
+                    Log.d(TAG, "fetchAndParseCertificateConfig: Received Organization (O): $organization, Organizational Unit (OU): $organizationalUnit")
+                    return Pair(organization ?: "TAK", organizationalUnit ?: "TAK")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
             }
+            return Pair("TAK", "TAK")
         }
 
         fun parseXml(xml: String): Document {
