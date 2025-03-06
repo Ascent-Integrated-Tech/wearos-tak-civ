@@ -260,6 +260,8 @@ class CotDispatchService : Service() {
         		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
         		<contact callsign='$emergencyCallsign&#10;$emergencyCategory'/>
         		<emergency type='$emergencyDesc'>$callsign</emergency>
+                <usericon iconsetpath='911 Alert'/>
+                <color argb='-1'/>
         	</detail>
         </event>
         """.trimIndent()
