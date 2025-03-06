@@ -237,7 +237,7 @@ class CotDispatchService : Service() {
 
         // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
 //        calendar.add(Calendar.YEAR, 1)
-        calendar.add(Calendar.SECOND, 120)
+        calendar.add(Calendar.SECOND, 10)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
@@ -314,21 +314,21 @@ class CotDispatchService : Service() {
             </detail>
         </event>
         """.trimIndent()
-/*
-        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
-        <event version='2.0' uid='8b1c80ed-aa14-4747-9bdc-7f931807c9bd' type='a-u-G' time='2025-01-14T17:00:49.286Z' start='2025-01-14T17:00:49.286Z' stale='2025-01-14T17:05:49.286Z' how='h-g-i-g-o' access='Undefined'>
-            <point lat='41.886874' lon='-87.659409' hae='126.631' ce='10.5' le='9999999.0' />
-            <detail>
-                <status readiness='true'/>
-                <archive/>
-                <color argb='-1'/>
-                <remarks/>
-                <link uid='ANDROID-4cbffc120e174b01' production_time='2024-10-31T16:41:29.018Z' type='a-f-G-U-C' parent_callsign='MAYHEMINDIA-TAB' relation='p-p'/>
-                <archive/>
-                <contact callsign='MAYHEMINDIA-TAB SSband_1031_164129'/>
-            </detail>
-        </event>
-*/
+        /*
+                <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+                <event version='2.0' uid='8b1c80ed-aa14-4747-9bdc-7f931807c9bd' type='a-u-G' time='2025-01-14T17:00:49.286Z' start='2025-01-14T17:00:49.286Z' stale='2025-01-14T17:05:49.286Z' how='h-g-i-g-o' access='Undefined'>
+                    <point lat='41.886874' lon='-87.659409' hae='126.631' ce='10.5' le='9999999.0' />
+                    <detail>
+                        <status readiness='true'/>
+                        <archive/>
+                        <color argb='-1'/>
+                        <remarks/>
+                        <link uid='ANDROID-4cbffc120e174b01' production_time='2024-10-31T16:41:29.018Z' type='a-f-G-U-C' parent_callsign='MAYHEMINDIA-TAB' relation='p-p'/>
+                        <archive/>
+                        <contact callsign='MAYHEMINDIA-TAB SSband_1031_164129'/>
+                    </detail>
+                </event>
+        */
 
         /*
                 return """
