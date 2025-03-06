@@ -1,6 +1,6 @@
 package com.aitech.weartak_civ.events
 
-class TakServerConnEvent(val connEvent: Int) {
+class TakServerConnStatusEvent(val connEvent: Int) {
 
     companion object {
         val CONNECTING = 0
