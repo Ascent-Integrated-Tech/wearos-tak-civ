@@ -1526,14 +1526,26 @@ fun TakServerSetting(navController: NavController) {
                 )
 
                 if (enableTAKConnectService != takServerChecked) {
-                    enableTAKConnectService = takServerChecked ; takServerCheckedChanged = true
+                    enableTAKConnectService = takServerChecked; takServerCheckedChanged = true
                     if (enableTAKConnectService) {
-                        Log.d(TAG, "Connecting to tak server")
-                        mainActivity.startService(Intent(mainActivity, TAKConnectService::class.java))
+                        if (!TAKConnectService.isRunning.get()) {
+                            Log.d(TAG, "Connecting to tak server")
+                            mainActivity.startForegroundService(
+                                Intent(
+                                    mainActivity,
+                                    TAKConnectService::class.java
+                                )
+                            )
 
-                    } else {
-                        Log.d(TAG, "Disconnecting from tak server")
-                        mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                        } else {
+                            Log.d(TAG, "Disconnecting from tak server")
+                            mainActivity.stopService(
+                                Intent(
+                                    mainActivity,
+                                    TAKConnectService::class.java
+                                )
+                            )
+                        }
                     }
                 }
 
@@ -1623,11 +1635,12 @@ fun TakServerChip(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
 ) {
-    val takServerConnected by TAKConnectService.isTakConnectedLiveData.observeAsState()
+    val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
+    val takServerConnecting by TAKConnectService.takConnectStatusLiveData.observeAsState()
     SplitToggleChip(
         label = {
             Image(
-                painter = if (takServerConnected == true) (painterResource(R.drawable.tak_server)) else (painterResource(R.drawable.tak_server_disconnected)),
+                painter = if (takServer == true) painterResource(R.drawable.tak_server_connected) else if (takServerConnecting == "CONNECTING") painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
                 contentDescription = "Top Left Icon",
                 modifier = Modifier
                     .align(Alignment.CenterVertically)
@@ -2773,6 +2786,7 @@ fun TroubleshootingIcons() {
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
+        val takServerConnecting by TAKConnectService.takConnectStatusLiveData.observeAsState()
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
@@ -2780,7 +2794,7 @@ fun TroubleshootingIcons() {
 
         // Icon on the top left curve
         Image(
-            painter = if (takServer == true) painterResource(R.drawable.tak_server) else painterResource(R.drawable.tak_server_disconnected),
+            painter = if (takServer == true) painterResource(R.drawable.tak_server_connected) else if (takServerConnecting == "CONNECTING") painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -2788,8 +2802,10 @@ fun TroubleshootingIcons() {
                     x = (40).dp, // Adjust this value based on the curve
                     y = (-10).dp // Adjust this value based on the curve
                 )
-                .size(iconSizeSmall) // Adjust icon size as needed
+                .size(25.dp) // Adjust icon size as needed
         )
+        Log.d(TAG, "TakConnecdtionStatus = $takServerConnecting")
+
 
 //         Icon on the bottom left curve
         Icon(

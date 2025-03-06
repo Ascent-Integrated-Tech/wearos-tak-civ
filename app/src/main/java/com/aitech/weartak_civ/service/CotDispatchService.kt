@@ -237,7 +237,7 @@ class CotDispatchService : Service() {
 
         // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
 //        calendar.add(Calendar.YEAR, 1)
-        calendar.add(Calendar.SECOND, 10)
+        calendar.add(Calendar.SECOND, 120)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
