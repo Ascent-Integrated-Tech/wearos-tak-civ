@@ -28,6 +28,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent
@@ -99,6 +100,8 @@ class TAKConnectService: Service() {
             takServer = dataRepository.getAddress.first().trim()
             username = dataRepository.getUsername.first()
             password = dataRepository.getPassword.first()
+            takServerEnabled = dataRepository.getEnableTAKConnectService.first()
+
             try {
                 port = dataRepository.getPort.first().toInt()
             } catch (e: Exception) {
@@ -215,15 +218,10 @@ class TAKConnectService: Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
-        if (SERVER_DETAILS_CHANGED == event.message) {
-            Log.d(TAG, "Received SERVER_DETAILS_CHANGED message")
+        if ((SERVER_DETAILS_CHANGED == event.message) || (SERVER_TOGGLED == event.message && takServerEnabled)) {
             //sendTakConnectionStatusEvent(CONNECTING)
             numConnAttemptsAfterFailure = 0
-            // Delete old server name file
-            Companion.deleteFile("$takServer.jks")
-            setFromDatastore()
-            // Delete new server name file (if it exists)
-            Companion.deleteFile("$takServer.jks")
+
             if (isNetworkConnected) {
                 getClientCertificateAndConnect(takServer, username, password, port)
             } else {
@@ -234,6 +232,16 @@ class TAKConnectService: Service() {
                 obtainedClientCert.set(false)
                 obtainingClientCert.set(true)
                 sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+            }
+            if (SERVER_DETAILS_CHANGED == event.message) {
+                Log.d(TAG, "Received SERVER_DETAILS_CHANGED message")
+                // Delete old server name file
+                Companion.deleteFile("$takServer.jks")
+                setFromDatastore()
+                // Delete new server name file (if it exists)
+                Companion.deleteFile("$takServer.jks")
+            } else {
+                Log.d(TAG, "Received SERVER_TOGGLED message")
             }
         }
     }
@@ -263,6 +271,7 @@ class TAKConnectService: Service() {
         var username : String = ""
         var password : String = ""
         var takServer : String = ""
+        var takServerEnabled : Boolean = false
         var port : Int = 8089
 
         private fun generateBase64CSR(org: String, orgUnit: String, cnName: String): String? {
@@ -692,6 +701,8 @@ class TAKConnectService: Service() {
                     getClientCertificateAndConnect(takServer, username, password, port)
                 }
             }
+            Log.d(TAG, "TAKConnectionStatus = $takConnectionStatus")
+
         }
 
         fun sendDataTAKServer(msg: String) {
