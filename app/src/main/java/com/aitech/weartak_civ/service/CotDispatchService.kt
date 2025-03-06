@@ -29,11 +29,10 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
-import com.aitech.weartak_civ.events.TakServerConnEvent
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.events.TakServerConnStatusEvent
+import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
@@ -43,11 +42,7 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.io.FileWriter
-import java.io.IOException
 import java.text.SimpleDateFormat
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
@@ -440,7 +435,7 @@ class CotDispatchService : Service() {
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onTakConnectionSuccess(event: TakServerConnEvent) {
+    fun onTakConnectionSuccess(event: TakServerConnStatusEvent) {
         if (event.connEvent == CONNECTION_SUCCESS) {
             Log.d(TAG, "TAKConnectService connected. Starting to dispatch cots...")
             startDispatchScheduler()

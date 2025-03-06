@@ -169,10 +169,10 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
-import com.aitech.weartak_civ.events.TakServerConnEvent
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTING
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_FAILURE
-import com.aitech.weartak_civ.events.TakServerConnEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.events.TakServerConnStatusEvent
+import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTING
+import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_FAILURE
+import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_CONNECTIONS
@@ -765,7 +765,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onTakConnectionSuccess(event: TakServerConnEvent) {
+    fun onTakConnectionSuccess(event: TakServerConnStatusEvent) {
         if (event.connEvent == CONNECTION_SUCCESS) {
             Log.v(TAG, "TAKConnectService connected. Getting Roles & Teams Configurations from Server...")
             getRolesAndTeamsJson()
@@ -1098,18 +1098,18 @@ class MainActivity : ComponentActivity() {
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onMessageEvent(event: TakServerConnEvent) {
+    public fun onMessageEvent(event: TakServerConnStatusEvent) {
         var toastText = ""
         val connEvent = event.connEvent
         if (connEvent == CONNECTING) {
             toastText = "Connecting to $name"
-            Log.d(TAG, "Received TakServerConnEvent: CONNECTING [$connEvent]")
+            Log.d(TAG, "Received TakServerConnStatusEvent: CONNECTING [$connEvent]")
         } else if (connEvent == CONNECTION_SUCCESS) {
             toastText = "Connected to $name"
-            Log.d(TAG, "Received TakServerConnEvent: CONNECTION_SUCCESS [$connEvent]")
+            Log.d(TAG, "Received TakServerConnStatusEvent: CONNECTION_SUCCESS [$connEvent]")
         } else if (connEvent == CONNECTION_FAILURE) {
             toastText = "Connection Failed"
-            Log.d(TAG, "Received TakServerConnEvent: CONNECTION_FAILURE [$connEvent]")
+            Log.d(TAG, "Received TakServerConnStatusEvent: CONNECTION_FAILURE [$connEvent]")
         }
         //Log.d(TAG, "Showing toast w/ text: $toastText")
 //        Toast.makeText(mainActivity, toastText, Toast.LENGTH_SHORT).show()
