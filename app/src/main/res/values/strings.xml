@@ -62,4 +62,131 @@
     <string name="connecting_to_toast">Connecting to %1$s</string>
     <string name="connected_to_toast">Connected to %1$s</string>
     <string name="connection_failed">Connection Failed</string>
+
+<!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
+<!--    <string name="tak_server_connection_name_title">TAK Server Connection Name</string>-->
+<!--    <string name="tak_server_connection_name_description">Enter the connection name for the TAK server</string>-->
+<!--    <string name="tak_server_connection_name_default">Tak Default Server</string>-->
+
+<!--    <string name="tak_server_connection_enabled_title">TAK Server Connection Enabled</string>-->
+<!--    <string name="tak_server_connection_enabled_description">Enable/Disable this TAK server connection</string>-->
+<!--    <string name="tak_server_connection_enabled_default">true</string>-->
+
+<!--    <string name="tak_server_address_title">TAK Server Address/URL</string>-->
+<!--    <string name="tak_server_address_description">Enter the IP address / URL of the TAK server</string>-->
+<!--    <string name="tak_server_address_default">tak.test.ops.ascentitech.com</string>-->
+
+<!--    <string name="tak_server_port_title">TAK Server Port</string>-->
+<!--    <string name="tak_server_port_description">Enter the port number for the TAK server</string>-->
+<!--    <string name="tak_server_port_default">8089</string>-->
+
+<!--    &lt;!&ndash; TAK Server Username and Password Configs &ndash;&gt;-->
+<!--    <string name="tak_server_username_title">TAK Server Username</string>-->
+<!--    <string name="tak_server_username_description">Enter the username for the TAK server</string>-->
+<!--    <string name="tak_server_username_default">TEST.AIT.WEAROS</string>-->
+
+<!--    <string name="tak_server_password_title">TAK Server Password</string>-->
+<!--    <string name="tak_server_password_description">Enter the password for the TAK server</string>-->
+<!--    <string name="tak_server_password_default">TEST.AIT.WEAROS.Password01</string>-->
+
+<!--    &lt;!&ndash; Certs Configuration &ndash;&gt;-->
+<!--    <string name="tak_server_cert_title">TAK Server Certificate (base64)</string>-->
+<!--    <string name="tak_server_cert_description">Enter the base64-encoded P12 certificate for authentication</string>-->
+
+    <!-- Tak Server Configurations -->
+    <!--     Server Defaults: 0=DEFAULT, 1=TEST, 2=DEVELOP -->
+    <string name="tak_server_list_title" translatable="false">TAK Server Connections</string>
+    <string name="tak_server_list_description" translatable="false">List of tak server connections to be installed by default. </string>
+
+    <string name="tak_server_connection_title" translatable="false">TAK Server Connection Settings</string>
+    <string name="tak_server_connection_description" translatable="false">Name the connection, enable/disable, address/url, port, credentials, update rate</string>
+
+    <string name="tak_server_connection_name_title" translatable="false">TAK Server Connection Name</string>
+    <string name="tak_server_connection_name_description" translatable="false">Enter the connection name for the TAK server</string>
+    <string name="tak_server_connection_name_default" translatable="false">Connection Name</string>
+
+    <string name="tak_server_connection_enabled_title" translatable="false">TAK Server Connection Enabled</string>
+    <string name="tak_server_connection_enabled_description" translatable="false">Enable/Disable this TAK server connection</string>
+    <string name="tak_server_connection_enabled_default" translatable="false">true</string>
+
+    <string name="tak_server_address_title" translatable="false">TAK Server Address/URL</string>
+    <string name="tak_server_address_description" translatable="false">Enter the IP address / URL of the TAK server</string>
+    <string name="tak_server_address_default" translatable="false">tak.test.ops.ascentitech.com</string>
+
+    <string name="tak_server_port_title" translatable="false">TAK Server Port</string>
+    <string name="tak_server_port_description" translatable="false">Enter the port number for the TAK server</string>
+    <string name="tak_server_port_default" translatable="false">8089</string>
+
+    <!-- TAK Server Username and Password Configs -->
+    <string name="tak_server_username_title" translatable="false">TAK Server Username</string>
+    <string name="tak_server_username_description" translatable="false">Enter the username for the TAK server</string>
+    <string name="tak_server_username_default" translatable="false">TEST.AIT.WEAROS</string>
+
+    <string name="tak_server_password_title" translatable="false">TAK Server Password</string>
+    <string name="tak_server_password_description" translatable="false">Enter the password for the TAK server</string>
+    <string name="tak_server_password_default" translatable="false">TEST.AIT.WEAROS.Password01</string>
+
+    <!-- Certs Configuration -->
+    <string name="tak_server_cert_title" translatable="false">TAK Server Certificate (base64)</string>
+    <string name="tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate for authentication</string>
+    <!-- Teams Configuration -->
+    <string name="custom_teams_names_title" translatable="false">Custom Teams Name</string>
+    <string name="custom_teams_names_description" translatable="false">Comma separated list of custom team NAMES. Entries must map to team colors one to one! </string>
+    <string name="custom_teams_names_default" translatable="false">White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown</string>
+
+    <string name="custom_teams_colors_title" translatable="false">Custom Teams Colors</string>
+    <string name="custom_teams_colors_description" translatable="false">Comma separated list of custom team COLORS. Entries must map to team names one to one!</string>
+    <string name="custom_teams_colors_default" translatable="false">White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown</string>
+
+    <!-- Roles Configuration -->
+    <string name="custom_roles_title" translatable="false">Custom Roles</string>
+    <string name="custom_roles_description" translatable="false">List of custom roles</string>
+    <string name="custom_roles_default" translatable="false">Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9</string>
+
+    <!-- License Key -->
+    <string name="license_key_title" translatable="false">License Key</string>
+    <string name="license_key_description" translatable="false">Enter the license key for authentication</string>
+    <string name="license_key_default" translatable="false">1F9A-3F43-E661</string>
+
+    <!-- Cot Update Interval -->
+    <string name="update_interval_title" translatable="false">Update Interval</string>
+    <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
+    <string name="update_interval_default" translatable="false">10</string>
+
+    <!-- Enable / Disable Services -->
+    <string name="location_service_title" translatable="false">Enable Location Service</string>
+    <string name="location_service_description" translatable="false">Enable or disable the location service</string>
+    <string name="location_service_enabled_default" translatable="false">true</string>
+
+    <string name="biometric_service_title" translatable="false">Enable Biometric Service</string>
+    <string name="biometric_service_description" translatable="false">Enable or disable the biometric service</string>
+    <string name="biometric_service_enabled_default" translatable="false">true</string>
+
+    <string name="ditto_service_title" translatable="false">Enable Ditto Service</string>
+    <string name="ditto_service_description" translatable="false">Enable or disable the Ditto service</string>
+    <string name="ditto_service_enabled_default" translatable="false">false</string>
+
+    <!-- WiFi Battery optimization-->
+    <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
+    <string name="wifiOptimization_service_enabled_description" translatable="false">Enable to increase battery life when connected to wifi networks.</string>
+    <string name="wifiOptimization_service_enabled_default" translatable="false">true</string>
+
+    <string name="wifiOptimization_all_title" translatable="false">Enable Wifi Battery Opt on All Networks</string>
+    <string name="wifiOptimization_all_description" translatable="false">Set true for all, set false for some.</string>
+    <string name="wifiOptimization_all_default" translatable="false">true</string>
+
+    <string name="wifiOptimization_ssid_list_title" translatable="false">Enabled WiFi Connections List</string>
+    <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
+
+    <!-- Developer Json -->
+    <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
+    <string name="custom_developer_config_json_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+
+    <!-- Developer bundle -->
+    <string name="custom_developer_bundle_title" translatable="false">Developer bundle</string>
+    <string name="custom_developer_bundle_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+
+    <!-- Developer bundle array -->
+    <string name="custom_developer_bundle_array_title" translatable="false">Developer bundle array</string>
+    <string name="custom_developer_bundle_array_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
 </resources>

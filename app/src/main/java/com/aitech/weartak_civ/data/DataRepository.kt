@@ -95,7 +95,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[CALLSIGN] ?: ""
+        prefs[CALLSIGN] ?: "WEAROS-0"
     }
 
     suspend fun storeCallsign(callsign: String) {
@@ -104,8 +104,38 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    suspend fun storeTeamNames(teamNames: String) {
+        context.dataStore.edit { prefs ->
+            prefs[TEAM_NAMES] = teamNames
+        }
+    }
+
+    val getTeamNames: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[TEAM_NAMES] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown"
+    }
+
+    suspend fun storeTeamColors(teamColors: String) {
+        context.dataStore.edit { prefs ->
+            prefs[TEAM_COLORS] = teamColors
+        }
+    }
+
+    val getTeamColors: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[TEAM_COLORS] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown"
+    }
+
+    suspend fun storeRolesList(rolesList: String) {
+        context.dataStore.edit { prefs ->
+            prefs[ROLES_LIST] = rolesList
+        }
+    }
+
+    val getRolesList: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[ROLES_LIST] ?: "Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9"
+    }
+
     val getTeam: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[TEAM] ?: "Orange"
+        prefs[TEAM] ?: "White"
     }
 
     suspend fun storeTeam(team: String) {
@@ -145,7 +175,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getAddress: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[ADDRESS] ?: "tak.il.ops.ascentitech.com"
+        prefs[ADDRESS] ?: "tak.test.ops.ascentitech.com"
     }
 
     suspend fun storeAddress(address: String) {
@@ -181,6 +211,26 @@ class DataRepository(private val context: Context) {
     suspend fun storePassword(password: String) {
         context.dataStore.edit { prefs ->
             prefs[PASSWORD] = password
+        }
+    }
+
+    val getCertificate: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CERTIFICATE] ?: ""
+    }
+
+    suspend fun storeCertificate(cert: String) {
+        context.dataStore.edit { prefs ->
+            prefs[CERTIFICATE] = cert
+        }
+    }
+
+    val getReportingUpdateIntervalSecs: Flow<Int?> = context.dataStore.data.map { prefs ->
+        prefs[REPORTING_UPDATE_INTERVAL] ?: 60
+    }
+
+    suspend fun storeReportingUpdateIntervalSecs(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[REPORTING_UPDATE_INTERVAL] = interval
         }
     }
 
@@ -343,13 +393,17 @@ class DataRepository(private val context: Context) {
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
         private val TEAM = stringPreferencesKey("team")
+        private val TEAM_NAMES = stringPreferencesKey("team_names")
+        private val TEAM_COLORS = stringPreferencesKey("team_colors")
         private val ROLE = stringPreferencesKey("role")
+        private val ROLES_LIST = stringPreferencesKey("roles_list")
         private val LICENSE = stringPreferencesKey("license")
         private val NAME = stringPreferencesKey("name")
         private val ADDRESS = stringPreferencesKey("address")
         private val PORT = stringPreferencesKey("port")
         private val USERNAME = stringPreferencesKey("username")
         private val PASSWORD = stringPreferencesKey("password")
+        private val CERTIFICATE = stringPreferencesKey("certificate")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val ENABLE_TAKCONNECT_SERVICE = booleanPreferencesKey("enable_takconnect_service")
@@ -360,6 +414,5 @@ class DataRepository(private val context: Context) {
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
-
     }
 }

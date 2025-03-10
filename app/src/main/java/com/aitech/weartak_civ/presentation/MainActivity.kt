@@ -15,8 +15,11 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.RestrictionEntry
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -130,11 +133,11 @@ import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.foundation.RevealValue
 import androidx.wear.compose.foundation.rememberRevealState
+import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
@@ -258,6 +261,11 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import javax.net.ssl.SSLSocket
 import kotlin.random.Random
+import android.content.RestrictionsManager
+import androidx.compose.runtime.collectAsState
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.takServer
+import org.json.JSONArray
+import org.json.JSONObject
 
 
 class MainActivity : ComponentActivity() {
@@ -280,12 +288,9 @@ class MainActivity : ComponentActivity() {
         lateinit var dataRepository: DataRepository
         lateinit var networkManager : NetworkManager
         private val klaxon = Klaxon()
-        final val DEFAULT_TEAMS_LIST = listOf("White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown")
-        final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
         var team = ""
         var role = ""
-        var license = "AscentFreeLicense"
-        var correctLicense = "AscentFreeLicense"
+        var license = "License"
         var teamValue = ""
         var roleValue = ""
         var name = "Test.Tak"
@@ -293,6 +298,7 @@ class MainActivity : ComponentActivity() {
         var port = "8089"
         var username = "TEST.AIT"
         var password = "TEST.AIT.Password01"
+        var certificate = ""
         lateinit var teamEntriesValuesList : TeamsJson
         lateinit var roleEntriesValuesList : RolesJson
         var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
@@ -326,7 +332,6 @@ class MainActivity : ComponentActivity() {
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null
-
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
@@ -516,6 +521,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     var secureSocket : SSLSocket? = null
     val callsignState = MutableLiveData<String>("WEAROS-0")
     val licenseState = MutableLiveData<String>("")
@@ -527,6 +533,9 @@ class MainActivity : ComponentActivity() {
 
     lateinit var healthServicesRepository : HealthServicesRepository
     lateinit var measureClient : MeasureClient
+
+    private lateinit var restrictionsManager: RestrictionsManager
+    private lateinit var restrictionReceiver: BroadcastReceiver
 
     fun isAccessibilityServiceEnabled(context: Context, service: Class<out AccessibilityService?>): Boolean {
         val am: AccessibilityManager = context.getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
@@ -626,6 +635,9 @@ class MainActivity : ComponentActivity() {
         if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
         networkManager.deInit()
+
+        unregisterReceiver(restrictionReceiver)
+
         /*
         // Unregister the callback.
         runBlocking {
@@ -658,272 +670,126 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun setDataFromDatastore() {
+    fun initSettings() {
+        // this function aims to organize & replace function setDataFromDatastore()
         runBlocking {
-            var storeCallsign = false
+            Log.d(TAG, """=== === Initializing Settings === === ===""".trimIndent())
+            // what is my callsign?
             callsign = dataRepository.getCallsign.first()
-            if (callsign.equals("")) {
+            // on the first install, callsign has no value, we need to fill it with a random number
+            if (callsign.equals("") || callsign.equals("WEAROS-0") ) {
                 callsign = "WEAROS-" + Random.nextInt(1, 1000).toString()
-                storeCallsign = true
+                dataRepository.storeCallsign(callsign)
+                Log.v(TAG, "First install --> Assigning a random callsign: $callsign")
             }
-            callsignState.postValue(callsign) // TODO: Check if we need this at all
-            callsignSettingsState.postValue(callsign) // TODO: Check if we need this at all
+
+            // what are the teams I can be?
+            val teamNames = dataRepository.getTeamNames.first().split(",")
+            val teamColors = dataRepository.getTeamColors.first().split(",")
+            teamEntriesValuesList = TeamsJson(teamNames, teamColors)
+
+            // which team member am I?
             team = dataRepository.getTeam.first()
             var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
-            // Needed on initial install of app where the teams json file does not match with DEFAULT_TEAMS_LIST
+            // needed in the event my current team doesn't exist in the list of available teams.
             if (teamIndex == -1) {
                 team = teamEntriesValuesList.ltEntries[0]
                 teamIndex = 0
             }
             teamValue = teamEntriesValuesList.ltValues[teamIndex]
-            teamState.postValue(team)
-            teamSettingsState.postValue(team)
+
+            // what roles can I be?
+            val rolesList = dataRepository.getRolesList.first().split(',')
+            roleEntriesValuesList = RolesJson(rolesList, rolesList)
+
+            // what role am I?
             role = dataRepository.getRole.first()
             var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-            // Needed on initial install of app where the roles json file does not match with DEFAULT_ROLES_LIST
+            // needed in the event my current role doesn't exist in the list of available roles.
             if (roleIndex == -1) {
                 role = roleEntriesValuesList.lrEntries[0]
                 roleIndex = 0
             }
             roleValue = roleEntriesValuesList.lrValues[roleIndex]
-            roleState.postValue(role)
-            roleSettingsState.postValue(role)
 
             license = dataRepository.getLicense.first()
-            licenseState.postValue(license)
-            licenseSettingsState.postValue(license)
 
-            name = dataRepository.getName.first()
-            nameState.postValue(name)
-            nameSettingsState.postValue(name)
-            address = dataRepository.getAddress.first()
-            addressState.postValue(address)
-            addressSettingsState.postValue(address)
+            Log.d(TAG, "============= Done Initializing ===============")
+            // Log all settings to logcat
+            logSettings()
 
-            port = dataRepository.getPort.first()
-            portState.postValue(port)
-            portSettingsState.postValue(port)
-
-            username = dataRepository.getUsername.first()
-            usernameState.postValue(username)
-            usernameSettingsState.postValue(username)
-
-            password = dataRepository.getPassword.first()
-            passwordState.postValue(password)
-            passwordSettingsState.postValue(password)
-
-            enableLocationService = dataRepository.getEnableLocationService.first()
-            enableBiometricsService = dataRepository.getEnableBiometricsService.first()
-            enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
-            enableDittoService = dataRepository.getEnableDittoService.first()
-
-            CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
-            CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-
-            enableWifiBatteryOptimization = dataRepository.getEnableWifiBatteryOptimization.first()
-            enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
-            enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
-            PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
-            enableAllWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
-            enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
-            enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
-            PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
-            wifiSsidList = dataRepository.getWifiSsidList.first()
-            wifiSsidListState.postValue(wifiSsidList)
-            wifiSsidListSettingsState.postValue(wifiSsidList)
-            saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
-            saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-
-            Log.d(TAG, """
-                === Device Configuration Settings === 
-                DeviceID:                $device_uid
-                Callsign:                $callsign
-                License:                 $license
-                Department:              $username
-                enableLocationService:   $enableLocationService
-                enableBiometricsService: $enableBiometricsService
-                enableTAKConnectService: $enableTAKConnectService
-                enableDittoService:      $enableDittoService
-                ReportingUpdateInterval: ${CotDispatchService.reportingUpdateIntervalSecs} seconds
-                enableWifiBatteryOptimization: $enableWifiBatteryOptimization
-                enableBatteryOptimizationOnAllWifiNetworks: $enableAllWifiBatteryOptimization
-                batteryOptimizedWifiSsidList: $wifiSsidList
-                =====================================
-            """.trimIndent())
-
-            // Set callsign on first install
-            if (storeCallsign) {
-                Log.d(TAG, "Storing initial callsign $callsign")
-                dataRepository.storeCallsign(callsign)
-            }
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onTakConnectionSuccess(event: TakServerConnStatusEvent) {
-        if (event.connEvent == CONNECTION_SUCCESS) {
-            Log.v(TAG, "TAKConnectService connected. Getting Roles & Teams Configurations from Server...")
-            getRolesAndTeamsJson()
-        }
+    private fun logSettings() {
+        val logOutput = """
+                    === === Configuration Settings === ===
+                    ${String.format("%-25s %-30s", "[Settings]", "[Value]")}
+                    === === === === === === === === === ==
+
+                    ${String.format("%-25s %-30s", "Device ID:", device_uid)}
+                    ${String.format("%-25s %-30s", "Callsign:", callsign)}
+                    ${String.format("%-25s %-30s", "Team:", team)}
+                    ${String.format("%-25s %-30s", "Role:", role)}
+                    ${String.format("%-25s %-30s", "Teams:", teamEntriesValuesList.ltEntries)}
+                    ${String.format("%-25s %-30s", "Colors:", teamEntriesValuesList.ltValues)}
+                    ${String.format("%-25s %-30s", "Roles:", roleEntriesValuesList.lrEntries)}
+                    
+                    === === Server Settings === ===
+                    ${String.format("%-25s %-30s", "Server Name:", name)}
+                    ${String.format("%-25s %-30s", "Server Addr:", address)}
+                    ${String.format("%-25s %-30s", "Server Port:", port)}
+                    ${String.format("%-25s %-30s", "Server User:", username)}
+                    ${String.format("%-25s %-30s", "Server Pswd:", password)}
+                    ${String.format("%-25s %-30s", "Server Cert:", certificate)}
+                    ${String.format("%-25s %-30s", "Update Intrvl:", "${CotDispatchService.reportingUpdateIntervalSecs} sec")}
+                    
+                    === === Service Settings === ===
+                    ${String.format("%-25s %-30s", "License Key:", license)}
+                    ${String.format("%-25s %-30s", "enable Tak:", enableTAKConnectService.toString())}
+                    ${String.format("%-25s %-30s", "enable Loc:", enableLocationService.toString())}
+                    ${String.format("%-25s %-30s", "enable Bio:", enableBiometricsService.toString())}
+                    ${String.format("%-25s %-30s", "enable Ditto:", enableDittoService.toString())}
+                    ${String.format("%-25s %-30s", "enable wifi opt:", enableWifiBatteryOptimization.toString())}
+                    ${String.format("%-25s %-30s", "enable all wifi:", enableAllWifiBatteryOptimization.toString())}
+                    ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
+                """.trimIndent()
+        Log.v(TAG, logOutput)
     }
 
-    private fun setTeamsJson() {
-        val (teamEntries, teamValues) = readJson("teams")
-        if (teamEntries.isEmpty() || teamValues.isEmpty()) {
-            Log.v(TAG, "Teams JSON empty or failed to parse. Using default teams.")
-            teamEntriesValuesList = TeamsJson(DEFAULT_TEAMS_LIST, DEFAULT_TEAMS_LIST)
-        } else {
-            teamEntriesValuesList = TeamsJson(teamEntries, teamValues)
-            Log.v(TAG, "Team Entries List: ${teamEntriesValuesList.ltEntries}")
-            Log.v(TAG, "Team Values List: ${teamEntriesValuesList.ltValues}")
-        }
-    }
-
-    private fun setRolesJson() {
-        val (roleEntries, roleValues) = readJson("roles")
-        if (roleEntries.isEmpty() || roleValues.isEmpty()) {
-            Log.v(TAG, "Roles JSON empty or failed to parse. Using default roles.")
-            roleEntriesValuesList = RolesJson(DEFAULT_ROLES_LIST, DEFAULT_ROLES_LIST)
-        } else {
-            roleEntriesValuesList = RolesJson(roleEntries, roleValues)
-            Log.v(TAG, "Roles Entries List: ${roleEntriesValuesList.lrEntries}")
-            Log.v(TAG, "Roles Values List: ${roleEntriesValuesList.lrValues}")
-        }
-    }
-
-    private fun getDepartmentId(): String {
-        return "TEST.AIT"
-    }
-
-    private fun getRolesAndTeamsJson() {
-        CoroutineScope(Dispatchers.IO).launch {
-            // need ip to build url endpoint
-            val takServerIp = dataRepository.getAddress.first().toString().trim()
-            val departmentIdentifier = dataRepository.getUsername.first().toString() // e.g., "TEST.AIT" or "$state.$department.$departmentType
-
-            // build the url endpoint to obtain config.json (e.g. https://$ip/$departmentIdentifier/teams.json)
-            val teamsJsonUrl = NetworkUtils.buildJsonUrl(takServerIp, departmentIdentifier, "teams")
-            val rolesJsonUrl = NetworkUtils.buildJsonUrl(takServerIp, departmentIdentifier, "roles")
-
-            // fetch the json from the url endpoint
-            val teamsJsonResult = NetworkUtils.fetchJsonFromServer(teamsJsonUrl)
-            val rolesJsonResult = NetworkUtils.fetchJsonFromServer(rolesJsonUrl)
-
-            // if we can get the config, use it. If not, fallback to local.
-            if (teamsJsonResult != null) {
-                val parsedTeams = TeamsJson.fromJson(teamsJsonResult)
-                if (parsedTeams != null) {
-                    // Successfully retrieved & parsed teams config file. Setting values for frontend & store the file locally!
-                    teamEntriesValuesList = parsedTeams
-                    storeJson("teams", teamsJsonResult)
-                } else {
-                    // Fallback to local file if parsing fails
-                    Log.v(TAG, "Could not parse teams Json. Falling back to persistent store teams config")
-                }
-            } else {
-                // Fallback to local file if server call fails
-                Log.v(TAG, "Could not retrieve teams.json file from server. Falling back to persistent store teams config")
-            }
-
-            if (rolesJsonResult != null) {
-                val parsedRoles = RolesJson.fromJson(rolesJsonResult)
-                if (parsedRoles != null) {
-                    // Successfully retrieved & parsed roles config file. Setting values for frontend & store the file locally!
-                    roleEntriesValuesList = parsedRoles
-                    storeJson("roles", rolesJsonResult)
-                } else {
-                    // Fallback to local file if parsing fails
-                    Log.v(TAG, "Could not parse roles Json. Falling back to persistent store roles config.")
-                }
-            } else {
-                // Fallback to local file if server call fails
-                Log.v(TAG, "Could not retrieve roles.json file from server. Falling back to persistent store roles config")
-            }
-        }
-    }
-
-    private fun storeJson(configType: String, json: String) {
-        val fileName = "$configType.json"
-//        Log.v(TAG, "Storing $fileName to persistent store")
-//        val filesDir = this.filesDir.absolutePath
-//        Log.v(TAG, "Files directory: $filesDir")
-
-        try {
-            // open the file in private mode
-            openFileOutput(fileName, Context.MODE_PRIVATE).use { outputStream ->
-                outputStream.write(json.toByteArray(Charsets.UTF_8))
-            }
-            Log.v(TAG, "Successfully stored $fileName")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error storing JSON to $fileName", e)
-        }
-    }
-
-    private fun readJson(configType: String): Pair<List<String>, List<String>> {
-        val fileName = "$configType.json"
-        return try {
-            openFileInput(fileName).use { inputStream ->
-                val bytes = inputStream.readBytes()
-                val jsonString = String(bytes, Charsets.UTF_8)
-                if (configType.equals("teams", ignoreCase = true)) {
-                    val teamsJson = TeamsJson.fromJson(jsonString)
-                    if (teamsJson != null) {
-                        Pair(teamsJson.ltEntries, teamsJson.ltValues)
-                    } else {
-                        Pair(emptyList(), emptyList())
-                    }
-                } else if (configType.equals("roles", ignoreCase = true)) {
-                    val rolesJson = RolesJson.fromJson(jsonString)
-                    if (rolesJson != null) {
-                        Pair(rolesJson.lrEntries, rolesJson.lrValues)
-                    } else {
-                        Pair(emptyList(), emptyList())
-                    }
-                } else {
-                    Pair(emptyList(), emptyList())
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reading $fileName from internal storage", e)
-            Pair(emptyList(), emptyList())
-        }
-    }
-
-
-    private fun startHealthCapabilitiesCollection() {
-        val healthClient = HealthServices.getClient(this)
-        val passiveMonitoringClient = healthClient.passiveMonitoringClient
-        measureClient = healthClient.measureClient
-
-        lifecycleScope.launch {
-            try {
-                // Await the Passive Monitoring capabilities
-                val capabilities = passiveMonitoringClient.getCapabilitiesAsync().await()
-                val supportedDataTypes = capabilities.supportedDataTypesPassiveMonitoring
-
-                Log.d(TAG, "Supported passive monitoring data: $supportedDataTypes")
-
-                val supportsHeartRate = DataType.HEART_RATE_BPM in supportedDataTypes
-                val supportsVo2Max = DataType.VO2_MAX in supportedDataTypes
-                val supportsLocation = DataType.LOCATION in supportedDataTypes
-
-                Log.d(TAG, "supportsHeartRate: $supportsHeartRate; supportsVo2Max: $supportsVo2Max; supportsLocation: $supportsLocation")
-
-                // Await the Measure capabilities
-                val measureCapabilities = measureClient?.getCapabilitiesAsync()?.await()
-                val measureSupportsHeartRate = DataType.HEART_RATE_BPM in (measureCapabilities?.supportedDataTypesMeasure ?: emptySet())
-
-                Log.d(TAG, "measureCapabilities: $measureCapabilities")
-                Log.d(TAG, "measureSupportsHeartRate: $measureSupportsHeartRate")
-
-                // If needed, register callbacks
-                // measureClient?.registerMeasureCallback(DataType.HEART_RATE_BPM, heartRateCallback)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error fetching health capabilities: ${e.message}")
-            }
-        }
-    }
+//    private fun startHealthCapabilitiesCollection() {
+//        val healthClient = HealthServices.getClient(this)
+//        val passiveMonitoringClient = healthClient.passiveMonitoringClient
+//        measureClient = healthClient.measureClient
+//
+//        lifecycleScope.launch {
+//            try {
+//                // Await the Passive Monitoring capabilities
+//                val capabilities = passiveMonitoringClient.getCapabilitiesAsync().await()
+//                val supportedDataTypes = capabilities.supportedDataTypesPassiveMonitoring
+//
+//                Log.d(TAG, "Supported passive monitoring data: $supportedDataTypes")
+//
+//                val supportsHeartRate = DataType.HEART_RATE_BPM in supportedDataTypes
+//                val supportsVo2Max = DataType.VO2_MAX in supportedDataTypes
+//                val supportsLocation = DataType.LOCATION in supportedDataTypes
+//
+//                Log.d(TAG, "supportsHeartRate: $supportsHeartRate; supportsVo2Max: $supportsVo2Max; supportsLocation: $supportsLocation")
+//
+//                // Await the Measure capabilities
+//                val measureCapabilities = measureClient?.getCapabilitiesAsync()?.await()
+//                val measureSupportsHeartRate = DataType.HEART_RATE_BPM in (measureCapabilities?.supportedDataTypesMeasure ?: emptySet())
+//
+//                Log.d(TAG, "measureCapabilities: $measureCapabilities")
+//                Log.d(TAG, "measureSupportsHeartRate: $measureSupportsHeartRate")
+//
+//                // If needed, register callbacks
+//                // measureClient?.registerMeasureCallback(DataType.HEART_RATE_BPM, heartRateCallback)
+//            } catch (e: Exception) {
+//                Log.e(TAG, "Error fetching health capabilities: ${e.message}")
+//            }
+//        }
+//    }
 
     private fun checkAndRequestPermissions() {
         val requiredPermissions = listOf(
@@ -934,14 +800,6 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.BLUETOOTH_ADVERTISE)
-
-        /*
-        val requiredPermissions = listOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BODY_SENSORS,
-            Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-        )
-         */
 
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -983,21 +841,37 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "onCreate called")
         mainActivity = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        dataRepository = DataRepository(this)
+
+        restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
+        // Register BroadcastReceiver to listen for changes
+        restrictionReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
+                    Log.d(TAG, "Managed Configurations Updated")
+                    handleManagedConfigUpdate()
+                }
+            }
+        }
+        registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED))
+        // Handle the initial configuration when the app starts
+        handleManagedConfigUpdate()
+        initSettings()
+
 //        Log.d(TAG, "Device UID is $device_uid")
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-        dataRepository = DataRepository(this)
         //val file: File? = null
         //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
-        Log.d(TAG, " === === Teams And Roles === ===")
-        setTeamsJson()
-        setRolesJson()
-        setDataFromDatastore()
+//        Log.d(TAG, " === === Teams And Roles === ===")
+//        setTeamsJson()
+//        setRolesJson()
+//        setDataFromDatastore()
+//        initSettings()
         networkManager = NetworkManager.getInstance()
         networkManager.init()
-
         //Obtain version # from build.gradle
         try {
             val pInfo: PackageInfo =
@@ -1009,8 +883,6 @@ class MainActivity : ComponentActivity() {
 
         installSplashScreen()
 
-        validateLicense(license)
-
         setTheme(android.R.style.Theme_DeviceDefault)
 
         //printSensorDetails(this)
@@ -1018,7 +890,7 @@ class MainActivity : ComponentActivity() {
         // Request all necessary permissions
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
-
+        validateLicense(license)
         if (isLicenseValid()) {
             Log.d(TAG, """
                 === Application Services onCreate ===
@@ -1094,6 +966,209 @@ class MainActivity : ComponentActivity() {
          */
     }
 
+    private fun refreshUI() {
+        Log.v(TAG, "=== === Refreshing UI  === === ")
+        runBlocking{
+            callsignState.postValue(callsign)
+            callsignSettingsState.postValue(callsign)
+            teamState.postValue(team) // liveData used by UI
+            teamSettingsState.postValue(team)
+            roleState.postValue(role) // liveData used by UI
+            roleSettingsState.postValue(role)
+            nameState.postValue(name) // tell ui
+            nameSettingsState.postValue(name) // ephemeral ui value
+            addressState.postValue(address) // tell ui
+            addressSettingsState.postValue(address) // ephemeral ui value
+            portState.postValue(port) // tell ui
+            portSettingsState.postValue(port) // ephemeral ui value
+            usernameState.postValue(username) // tell ui
+            usernameSettingsState.postValue(username) // ephemeral ui value
+            passwordState.postValue(password) // tell ui
+            passwordSettingsState.postValue(password) // ephemeral ui value
+            wifiSsidListState.postValue(wifiSsidList) // tell ui
+            wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
+            saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+            enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization) // tell ui
+            enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
+            enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
+            enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization) // ephemeral ui value
+            licenseState.postValue(license) // tell ui
+            licenseSettingsState.postValue(license) // ephemeral ui value
+
+        }
+    }
+
+    private fun updateCompanionObjects() {
+        Log.v(TAG, "=== === Updating Companion Objects === === ")
+        runBlocking {
+            callsign = dataRepository.getCallsign.first()
+
+            teamEntriesValuesList = TeamsJson(dataRepository.getTeamNames.first().split(","), dataRepository.getTeamColors.first().split(","))
+            roleEntriesValuesList = RolesJson(dataRepository.getRolesList.first().split(","), dataRepository.getRolesList.first().split(","))
+
+            team = dataRepository.getTeam.first()
+            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
+            if (teamIndex == -1) { team = teamEntriesValuesList.ltEntries[0]; teamIndex = 0 } // needed in the event my current team doesn't exist in the list of available teams.
+            teamValue = teamEntriesValuesList.ltValues[teamIndex]
+
+            role = dataRepository.getRole.first()
+            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+            if (roleIndex == -1) { role = roleEntriesValuesList.lrEntries[0]; roleIndex = 0 } // needed in the event my current role doesn't exist in the list of available roles.
+            roleValue = roleEntriesValuesList.lrValues[roleIndex]
+
+            name = dataRepository.getName.first()
+            enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
+            address = dataRepository.getAddress.first()
+            port = dataRepository.getPort.first()
+            username = dataRepository.getUsername.first()
+            password = dataRepository.getPassword.first()
+            certificate = dataRepository.getCertificate.first()
+
+            CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
+            CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
+            enableWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
+            enableAllWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
+            wifiSsidList = dataRepository.getWifiSsidList.first()
+            saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
+            PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
+            PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
+            license = dataRepository.getLicense.first()
+            enableLocationService = dataRepository.getEnableLocationService.first()
+            enableBiometricsService = dataRepository.getEnableBiometricsService.first()
+            enableDittoService = dataRepository.getEnableDittoService.first()
+        }
+    }
+
+    private fun handleManagedConfigUpdate() {
+        Log.v(TAG, " === === Handling Managed Config Update ===")
+
+        val appRestrictions = restrictionsManager.applicationRestrictions
+        if (appRestrictions == null) {
+            Log.e(TAG, "No managed configuration received."); return
+        }
+
+        for (key in appRestrictions.keySet()) {
+            val value = appRestrictions.get(key)
+            // Retrieve the runtime type name, if available
+            val typeName = value?.javaClass?.simpleName ?: "null"
+//            Log.v(TAG, "Key: $key, Value: $value, Type: $typeName")
+        }
+
+        val manifestRestrictions = restrictionsManager.getManifestRestrictions("com.aitech.weartak_civ") ?: listOf()
+
+        for (entry in manifestRestrictions) {
+//            Log.v(TAG, "Manifest Key: ${entry.key}, Declared Type: ${entry.type}")
+
+            // If the restriction is a bundle or bundle array, check nested restrictions.
+            if (entry.type == RestrictionEntry.TYPE_BUNDLE ||
+                entry.type == RestrictionEntry.TYPE_BUNDLE_ARRAY) {
+
+                entry.restrictions?.forEach { nested ->
+//                    Log.v(TAG, "\tNested Key: ${nested.key}, Type: ${nested.type}")
+                }
+            }
+        }
+
+        runBlocking {
+            CoroutineScope(Dispatchers.Main).launch {
+
+                // make sure we have the most recent companion objects
+                updateCompanionObjects()
+
+                // Get the new settings from the restrictions manager
+                val teamsNames = appRestrictions.getString("custom_teams_names", dataRepository.getTeamNames.first()).split(",")
+                val teamsColors = appRestrictions.getString("custom_teams_colors", dataRepository.getTeamColors.first()).split(",")
+                val rolesEntries = appRestrictions.getString("custom_roles", dataRepository.getRolesList.first()).split(",")
+                val rolesValues = appRestrictions.getString("custom_roles",  dataRepository.getRolesList.first()).split(",")
+
+                val serverParcels = appRestrictions.getParcelableArray("tak_server_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the servers in the list.
+
+                if (serverParcels != null) {
+                    val serverCount = serverParcels.size
+                    Log.v(TAG, "=== Number of Tak Server Connection Configurations: $serverCount ===")
+
+                    // Loop through each server connection
+                    for (i in serverParcels.indices) {
+                        // Each element should be a Bundle representing one server connection
+                        val serverBundle = serverParcels[i] as? Bundle
+                        if (serverBundle != null) {
+                            Log.v(TAG, "=== Server Connection Conf [$i] ===")
+                            // Iterate through all keys in this server connection Bundle
+                            for (key in serverBundle.keySet()) {
+                                val value = serverBundle.get(key)
+                                // Format each key/value pair into a fixed-width layout for clarity.
+                                Log.v(TAG, String.format("   %-30s : %s", key, value))
+                            }
+                            if (i == 0) {
+                                Log.v(TAG, "----> Applying server settings from this Connection Conf [$i]")
+
+                                // set companion obj by looking for key in bundle, fallback on current
+                                name = serverBundle.getString("tak_server_connection_name", name) // set companion obj by looking for key, fallback on current
+                                enableTAKConnectService = serverBundle.getBoolean("tak_server_connection_enabled", enableTAKConnectService)
+                                address = serverBundle.getString("tak_server_address", address)
+                                port = (serverBundle.getInt("tak_server_port", port.toInt())).toString()
+                                username = serverBundle.getString("tak_server_username", username)
+                                password = serverBundle.getString("tak_server_password", password)
+                                certificate = serverBundle.getString("tak_server_cert", certificate)
+                                CotDispatchService.reportingUpdateIntervalSecs = serverBundle.getInt("update_interval", dataRepository.getReportingUpdateInterval.first())
+                                EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
+                            }
+                            Log.v(TAG, "========================================")
+                        } else {
+                            Log.e(TAG, "Invalid server bundle at index $i")
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "tak_server_list is null or empty.")
+                }
+
+                enableWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
+                enableAllWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
+                val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", "")
+                val wifiOptimizationSsidList: List<DataRepository.WifiSsidItem> = wifiOptimizationSsidString.split("||") // Split by two pipes, unlikely a random generated SSID has
+                    .map { it.trim() } // Trim whitespace from each SSID
+                    .filter { it.isNotEmpty() } // Remove any empty values
+                    .map { DataRepository.WifiSsidItem(it) } // Map each SSID to a WifiSsidItem
+                wifiSsidList = wifiOptimizationSsidList
+                license = appRestrictions.getString("license_key", license)
+                validateLicense(license) // validate the license
+                enableLocationService = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
+                enableBiometricsService = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
+                enableDittoService = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+                val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
+
+                // store settings persistently
+                dataRepository.storeRolesList(rolesEntries.joinToString(","))
+                dataRepository.storeTeamNames(teamsNames.joinToString(","))
+                dataRepository.storeTeamColors(teamsColors.joinToString(","))
+                dataRepository.storeName(name)
+                dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
+                dataRepository.storeAddress(address)
+                dataRepository.storePort(port)
+                dataRepository.storeUsername(username)
+                dataRepository.storePassword(password)
+                dataRepository.storeCertificate(certificate)
+                dataRepository.storeReportingUpdateIntervalSecs(CotDispatchService.reportingUpdateIntervalSecs)
+                dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
+                dataRepository.storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization)
+                dataRepository.storeWifiSsidList(wifiSsidList)
+                dataRepository.storeLicense(license)
+                dataRepository.storeEnableLocationService(enableLocationService)
+                dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                dataRepository.storeEnableDittoService(enableDittoService)
+
+                // some settings may have been changed by config update, so update the companion objects to avoid conflictions in code
+                updateCompanionObjects()
+
+                // ui needs to be refreshed with new settings changes
+                refreshUI()
+
+                // Log all settings to logcat
+                logSettings()
+            }
+        }
+    }
+
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onMessageEvent(event: TakServerConnStatusEvent) {
         var toastText = ""
@@ -1119,7 +1194,29 @@ class MainActivity : ComponentActivity() {
 fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
-    validateLicense(license)
+
+    // collect license from data repo so we can see if it changes.
+    val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+
+    // react to changes in the license.
+    LaunchedEffect(licenseKey) {
+        validateLicense(licenseKey)
+        if (isLicenseValid()) {
+//            Log.v(TAG, "LaunchedEffect License is valid: $licenseKey | $license")
+            navController.navigate("main_screen") {
+                popUpTo("invalid_license_screen") {
+                    inclusive = true
+                }
+            }
+        } else {
+//            Log.v(TAG, "LaunchedEffect License is invalid: $licenseKey | $license")
+            navController.navigate("invalid_license_screen") {
+                popUpTo("license_setting_screen") {
+                    inclusive = true
+                }
+            }
+        }
+    }
 
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
@@ -1901,6 +1998,13 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
     val onChangeState: (String) -> Unit = { selectedValue.value = it }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+//    val wifiSsidListRestrictions by dataRepository.getWifiSsidList.collectAsState(initial = emptyList())
+//
+//    LaunchedEffect(wifiSsidListRestrictions) {
+//        Log.v(TAG, "LaunchedEffect for $wifiSsidListRestrictions")
+//        wifiSsidListState.postValue(wifiSsidListRestrictions)
+//        wifiSsidListSettingsState.postValue(wifiSsidListRestrictions)
+//    }
 
     //Log.d(TAG, "OptimizeBatteryonWifiSelectScreen called")
 
@@ -2052,6 +2156,8 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
 fun WifiSsidSelectScreen(navController: NavController) {
     //Log.d(TAG, "WifiSsidSelectScreen called")
     val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
+//    val wifiSsidListForRestrictions by dataRepository.getWifiSsidList.collectAsState(initial = emptyList())
+
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -2163,22 +2269,17 @@ fun WifiSsidItemChip(
     //Log.d(TAG, "WifiSsidItemChip called")
     SwipeToRevealChip(
         revealState = revealState,
-        modifier =
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .semantics {
                 // Use custom actions to make the primary and secondary actions accessible
-                customActions =
-                    listOf(
-                        CustomAccessibilityAction("Delete") {
-                            /* Add the primary action click handler here */
-                            true
-                        },
-                        CustomAccessibilityAction("More Options") {
-                            /* Add the secondary click handler here */
-                            true
-                        }
-                    )
+                customActions = listOf(CustomAccessibilityAction("Delete") {
+                    /* Add the primary action click handler here */
+                    true
+                }, CustomAccessibilityAction("More Options") {
+                    /* Add the secondary click handler here */
+                    true
+                })
             },
         primaryAction = {
             SwipeToRevealPrimaryAction(
@@ -2572,7 +2673,8 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             License Current: $currentLicense
                             """.trimIndent()
                     )
-                    if (!enteredLicense.equals(currentLicense)) {
+
+                    if (enteredLicense != currentLicense) {
                         settingsChanged = true; licenseChanged = true
                         license = licenseTextFieldValue.text ?: license
                         Log.d(TAG, "License Changed. Updating DataRepository.")
@@ -2586,6 +2688,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                     } else {
                         Log.d(TAG, "License Did not Change.")
                     }
+                    validateLicense(license)
 
                     if (isLicenseValid()) {
                         Log.d(
@@ -3088,9 +3191,7 @@ fun MarkerDropButton(
         },
         modifier = Modifier
             .border(
-                width = 2.dp,
-                color = Color.White,
-                shape = CircleShape
+                width = 2.dp, color = Color.White, shape = CircleShape
             )
             .size(100.dp),
     ) {
