@@ -27,6 +27,7 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
@@ -222,7 +223,7 @@ class TAKConnectService: Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val message = event.message
-        if (SERVER_DETAILS_CHANGED == message) {
+        if (SERVER_DETAILS_CHANGED == message || SERVER_ADDED == message) {
             Log.d(TAG, "Received SERVER_DETAILS_CHANGED message")
             //sendTakConnectionStatusEvent(CONNECTING)
             numConnAttemptsAfterFailure = 0
