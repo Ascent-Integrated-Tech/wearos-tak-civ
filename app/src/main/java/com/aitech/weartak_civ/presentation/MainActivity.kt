@@ -280,6 +280,8 @@ class MainActivity : ComponentActivity() {
         private val klaxon = Klaxon()
         final val DEFAULT_TEAMS_LIST = listOf("White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown")
         final val DEFAULT_ROLES_LIST = listOf("Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9")
+
+        var isP12Cert: Boolean = false
         var team = ""
         var role = ""
         var license = "AscentFreeLicense"
@@ -304,6 +306,7 @@ class MainActivity : ComponentActivity() {
         val portSettingsState = MutableLiveData<String>("8089")
         val usernameSettingsState = MutableLiveData<String>("TEST.AIT")
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
+
         var serverSettingsChanged: Boolean = false
 
         private val SOME_WIFI_NETWORKS = "Some WiFi Networks"
@@ -1123,6 +1126,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
     validateLicense(license)
+    val isP12Cert = remember { mutableStateOf(false) }
 
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
@@ -1159,7 +1163,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         }
         composable(
             "new_server_screen") {
-            NewServerPage(navController)
+            EditServerPage(navController, isP12Cert)
         }
         composable("optimize_battery_on_wifi_screen"){
             OptimizeBatteryOnWifiSelectScreen(navController)
@@ -1674,15 +1678,18 @@ fun TakServerChip(
 }
 
 @Composable
-fun NewServerPage(navController: NavController) {
+fun EditServerPage(
+    navController: NavController,
+    isP12Cert: MutableState<Boolean>) {
     WearTAKCIVTheme {
-        val shouldShowDialog = remember { mutableStateOf(false) }
-        val isConfirmed = remember { mutableStateOf(false) }
+//        val shouldShowDialog = remember { mutableStateOf(false) }
+//        val isConfirmed = remember { mutableStateOf(false) }
         val nameTextState = remember { mutableStateOf(nameSettingsState.value ?: "null") }
         val addressTextState = remember { mutableStateOf(addressSettingsState.value ?: "null") }
         var portTextState = remember { mutableStateOf(portSettingsState.value ?: "null") }
         val usernameTextState = remember { mutableStateOf(usernameSettingsState.value ?: "null") }
         val passwordTextState = remember { mutableStateOf(passwordSettingsState.value ?: "null") }
+        var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
 
         Box(
             modifier = Modifier
@@ -1693,17 +1700,18 @@ fun NewServerPage(navController: NavController) {
             contentAlignment = Alignment.Center
         ) {
 
-            if (shouldShowDialog.value) {
-                ConfirmationDialog(
-                    shouldShowDialog = shouldShowDialog,
-                    navController,
-                    "Are you sure you want to delete this server?",
-                    Icons.Default.Delete,
-                    Color.Red,
-                    "main",
-                    isConfirmed
-                )
-            }
+            //TODO: Move this to tak server chip when its turned into a swipe to reveal
+//            if (shouldShowDialog.value) {
+//                ConfirmationDialog(
+//                    shouldShowDialog = shouldShowDialog,
+//                    navController,
+//                    "Are you sure you want to delete this server?",
+//                    Icons.Default.Delete,
+//                    Color.Red,
+//                    "main",
+//                    isConfirmed
+//                )
+//            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1714,7 +1722,7 @@ fun NewServerPage(navController: NavController) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = /* add if statement for new server vs editing current server */ "Add New Server",
+                    text = "Edit Server",
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -1725,50 +1733,100 @@ fun NewServerPage(navController: NavController) {
                     nameSettingsState,
                     nameTextState,
                     false,
-                    false
-                )
-                NewServerSettingText(
-                    "Address/URL",
-                    addressSettingsState,
-                    addressTextState,
                     false,
-                    false
-                )
-                NewServerSettingText("Port", portSettingsState, portTextState, false, true)
-                NewServerSettingText(
-                    "Username",
-                    usernameSettingsState,
-                    usernameTextState,
-                    false,
-                    false
-                )
-                NewServerSettingText(
-                    "Password",
-                    passwordSettingsState,
-                    passwordTextState,
-                    true,
-                    false
+                    true
                 )
 
+                if (isP12Cert.value) {
+                    NewServerSettingText(
+                        "Address/URL",
+                        addressSettingsState,
+                        addressTextState,
+                        false,
+                        false,
+                        false
+                    )
+                    NewServerSettingText("Port", portSettingsState, portTextState, false, true, true)
+                } else {
+                    NewServerSettingText(
+                        "Address/URL",
+                        addressSettingsState,
+                        addressTextState,
+                        false,
+                        false,
+                        true
+                    )
+                    NewServerSettingText("Port", portSettingsState, portTextState, false, true, true)
+                    NewServerSettingText(
+                        "Username",
+                        usernameSettingsState,
+                        usernameTextState,
+                        false,
+                        false,
+                        true
+                    )
+                    NewServerSettingText(
+                        "Password",
+                        passwordSettingsState,
+                        passwordTextState,
+                        true,
+                        false,
+                        true
+                    )
+                }
+                val focusManager = LocalFocusManager.current
+
+                OutlinedTextField(
+                    modifier = Modifier.padding(vertical = 5.dp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (reportingUpdateInterval.text.isEmpty()) {
+                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else if (reportingUpdateInterval.text == "0") {
+                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else {
+                                // If there is valid input, we can clear focus
+                                // (which typically dismisses the keyboard)
+                                focusManager.clearFocus()
+
+                                // Now you can navigate or do the next action
+                            }
+                        }
+                    ),
+                    singleLine = true,
+                    value = reportingUpdateInterval,
+                    onValueChange = {
+                        reportingUpdateInterval = it
+                    },
+                    label = {
+                        Text(
+                            text = "Update Interval",
+                            color = colors.primary,
+                            style = MaterialTheme.typography.caption3
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            text = "Interval in secs",
+                            color = colors.primary,
+                            style = MaterialTheme.typography.caption3
+                        )
+                    },
+                    textStyle = TextStyle(color = colors.primary),
+                )
+                if (isP12Cert.value) {
+                    Text(
+                        text = "Using client certificate",
+                        textAlign = TextAlign.Center,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(5.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.height(10.dp))
-
-                // Change if to create button when settings are edited
-//                if (callsignSettingsState.value == "E2-FF1") {
-//                    Button(
-//                        onClick = { shouldShowDialog.value = true },
-//                        colors = ButtonDefaults.buttonColors(
-//                            containerColor = Color.Red,
-//                            contentColor = Color.Red
-//                        ),
-//                        modifier = Modifier.padding(top = 5.dp)
-//                    ) {
-//                        Text(
-//                            text = "Delete Server",
-//                            textAlign = TextAlign.Center,
-//                            modifier = Modifier.padding(5.dp)
-//                        )
-//                    }
-//                }
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -1777,6 +1835,10 @@ fun NewServerPage(navController: NavController) {
                 var portChanged: Boolean = false
                 var usernameChanged: Boolean = false
                 var passwordChanged: Boolean = false
+                val maxReportRate: Int = 100000000
+                val minReportRate: Int = 1
+                var reportingUpdateIntervalChanged = false
+
                 val context = LocalContext.current
 
                 ConfirmCancelButtons(
@@ -1823,31 +1885,70 @@ fun NewServerPage(navController: NavController) {
                             passwordSettingsState.postValue(password)
                         }
 
+                        val reportingUpdateIntervalText = reportingUpdateInterval.text
+                        if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
+                                CotDispatchService.reportingUpdateIntervalSecs.toString()
+                            ) && reportingUpdateInterval.text.toInt() >= minReportRate) {
+                            reportingUpdateIntervalChanged = true
+                            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateIntervalText.toInt()
+                            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+                            Log.d(TAG, "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}")
+                        }
+
                         if (serverSettingsChanged) {
                             CoroutineScope(Dispatchers.Main).launch {
-                                if (nameChanged) {
-                                    dataRepository.storeName(name)
-                                }
-                                if (addressChanged) {
-                                    dataRepository.storeAddress(address)
-                                }
-                                if (portChanged) {
-                                    dataRepository.storePort(port)
-                                }
-                                if (usernameChanged) {
-                                    dataRepository.storeUsername(username)
-                                }
-                                if (passwordChanged) {
-                                    dataRepository.storePassword(password)
-                                }
+                                    if (nameChanged) {
+                                        dataRepository.storeName(name)
+                                    }
+                                    if (addressChanged) {
+                                        dataRepository.storeAddress(address)
+                                    }
+                                    if (portChanged) {
+                                        dataRepository.storePort(port)
+                                    }
+                                    if (usernameChanged) {
+                                        dataRepository.storeUsername(username)
+                                    }
+                                    if (passwordChanged) {
+                                        dataRepository.storePassword(password)
+                                    }
                                 EventBus
                                     .getDefault()
                                     .post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
+
+                                }
+                        }
+                        if (reportingUpdateIntervalChanged){
+                            CoroutineScope(Dispatchers.Main).launch {
+
+                                Log.d(
+                                    TAG,
+                                    "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})"
+                                )
+                                runBlocking {
+                                    dataRepository.storeReportingUpdateInterval(
+                                        CotDispatchService.reportingUpdateIntervalSecs
+                                    )
+                                }
+                                EventBus.getDefault().post(
+                                    MessageEvent(
+                                        UPDATE_INTERVAL_CHANGED,
+                                        CotDispatchService.reportingUpdateIntervalSecs
+                                    )
+                                )
                             }
                         }
-                        navController.navigate("tak_server_screen") {
-                            popUpTo(("tak_server_screen")) {
-                                inclusive = true
+                        if (reportingUpdateIntervalText.equals("")) {
+                            Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                        } else if (reportingUpdateIntervalText.equals("0")) {
+                            Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                        } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
+                            Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                        } else {
+                            navController.navigate("tak_server_screen") {
+                                popUpTo(("tak_server_screen")) {
+                                    inclusive = true
+                                }
                             }
                         }
                     })
@@ -1863,12 +1964,14 @@ fun NewServerSettingText (
     textState: MutableState<String>,
     isPassword : Boolean,
     isPort : Boolean,
+    isEnabled: Boolean
 ) {
     var textFieldValue by remember { mutableStateOf(TextFieldValue(liveDataState.value ?: "null")) }
     val maxChar = 20
 
     OutlinedTextField(
         value = textFieldValue,
+        enabled = isEnabled,
         onValueChange = {
             textFieldValue = it
         },
@@ -1880,6 +1983,60 @@ fun NewServerSettingText (
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
     textState.value = textFieldValue.text
+}
+
+@Composable
+fun UpdateIntervalServerSettingText (liveDataState: MutableLiveData<String>,
+                                     textState: MutableState<String>,
+) {
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(liveDataState.value ?: "null")) }
+
+    val focusManager = LocalFocusManager.current
+
+    OutlinedTextField(
+        modifier = Modifier.padding(vertical = 5.dp),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Number,
+            imeAction = ImeAction.Done
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = {
+                if (textFieldValue.text.isEmpty()) {
+                    Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                } else if (textFieldValue.text == "0") {
+                    Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                } else {
+                    // If there is valid input, we can clear focus
+                    // (which typically dismisses the keyboard)
+                    focusManager.clearFocus()
+
+                    // Now you can navigate or do the next action
+                }
+            }
+        ),
+        singleLine = true,
+        value = textFieldValue,
+        onValueChange = {
+            textFieldValue = it
+        },
+        label = {
+            Text(
+                text = "Update Interval",
+                color = colors.primary,
+                style = MaterialTheme.typography.caption3
+            )
+        },
+        placeholder = {
+            Text(
+                text = "Interval in secs",
+                color = colors.primary,
+                style = MaterialTheme.typography.caption3
+            )
+        },
+        textStyle = TextStyle(color = colors.primary),
+    )
+    textState.value = textFieldValue.text
+
 }
 
 @Composable
@@ -3151,7 +3308,6 @@ fun SettingsScreen(
             contentAlignment = Alignment.Center
         ) {
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
-            var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
@@ -3257,50 +3413,6 @@ fun SettingsScreen(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
-                val focusManager = LocalFocusManager.current
-
-                OutlinedTextField(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (reportingUpdateInterval.text.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval.text == "0") {
-                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
-                            } else {
-                                // If there is valid input, we can clear focus
-                                // (which typically dismisses the keyboard)
-                                focusManager.clearFocus()
-
-                                // Now you can navigate or do the next action
-                            }
-                        }
-                    ),
-                    singleLine = true,
-                    value = reportingUpdateInterval,
-                    onValueChange = {
-                        reportingUpdateInterval = it
-                    },
-                    label = {
-                        Text(
-                            text = "Update Interval",
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    placeholder = {
-                        Text(
-                            text = "Interval in secs",
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    textStyle = TextStyle(color = colors.primary),
-                )
 
                 SettingSwitchToggle(
                     checked = locationChecked, onCheckedChange = { locationChecked = it },
@@ -3350,7 +3462,6 @@ fun SettingsScreen(
                         var locationCheckedChanged: Boolean = false
                         var biometricsCheckedChanged: Boolean = false
                         var dittoCheckedChanged: Boolean = false
-                        var reportingUpdateIntervalChanged = false
                         var saveBattOnWifiChanged = false
 
                         if (!callsign.equals(callsignSettingsState.value)) {
@@ -3408,16 +3519,6 @@ fun SettingsScreen(
 //                                license = licenseSettingsState.value ?: license
 //                                licenseLiveDataState.postValue(license)
 //                            }
-
-                        val reportingUpdateIntervalText = reportingUpdateInterval.text
-                        if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
-                                CotDispatchService.reportingUpdateIntervalSecs.toString()
-                            ) && reportingUpdateInterval.text.toInt() >= minReportRate) {
-                            settingsChanged = true; reportingUpdateIntervalChanged = true
-                            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateIntervalText.toInt()
-                            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                            Log.d(TAG, "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}")
-                        }
 
                         if (enableLocationService != locationChecked) {
                             settingsChanged = true; locationCheckedChanged = true
@@ -3482,13 +3583,7 @@ fun SettingsScreen(
                                     }
                                     EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
                                 }
-                                if (reportingUpdateIntervalChanged) {
-                                    Log.d(TAG, "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})")
-                                    runBlocking {
-                                        dataRepository.storeReportingUpdateInterval(CotDispatchService.reportingUpdateIntervalSecs)
-                                    }
-                                    EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
-                                }
+
                                 if (locationCheckedChanged) {
                                     Log.d(TAG, "Storing enableLocationService $enableLocationService")
                                     dataRepository.storeEnableLocationService(enableLocationService)
@@ -3507,19 +3602,11 @@ fun SettingsScreen(
                         } else {
                             Log.v(TAG, "Settings not changed and hence NOT saved")
                         }
-                        if (reportingUpdateIntervalText.equals("")) {
-                            Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                        } else if (reportingUpdateIntervalText.equals("0")) {
-                            Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
-                        } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                            Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                        } else {
                             navController.navigate("main_screen") {
                                 popUpTo(("main_screen")) {
                                     inclusive = true
                                 }
                             }
-                        }
                     })
             }
 
@@ -3628,8 +3715,9 @@ fun TAKSettingsPreview() {
 
 @Preview(widthDp = 192, heightDp = 600, showBackground = true)
 @Composable
-fun NewServerPreview() {
-    NewServerPage(rememberSwipeDismissableNavController())
+fun EditServerPreview() {
+    val isP12Cert = remember { mutableStateOf(true) }
+    EditServerPage(rememberSwipeDismissableNavController(), isP12Cert)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
