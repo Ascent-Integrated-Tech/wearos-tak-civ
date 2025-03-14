@@ -170,7 +170,7 @@ class CotDispatchService : Service() {
 
              */
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, 120 * 1000L)
+            cotDispatchHandler?.postDelayed(this, currReportingIntervalInSecs * 1000L)
         }
     }
 
@@ -186,7 +186,7 @@ class CotDispatchService : Service() {
         val startTime = dateTimeFormatter.format(calendar.time)
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.SECOND, 3*120)
+        calendar.add(Calendar.SECOND, 3*currReportingIntervalInSecs)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
