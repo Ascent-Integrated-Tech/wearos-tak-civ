@@ -254,6 +254,7 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.io.File
 import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 
@@ -327,7 +328,6 @@ class MainActivity : ComponentActivity() {
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null
-
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
@@ -992,8 +992,8 @@ class MainActivity : ComponentActivity() {
             EventBus.getDefault().register(this)
         }
         dataRepository = DataRepository(this)
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
+        val file: File? = null
+        logFile = File(file, "/sdcard/Download/WearTAK_logs.txt")
 
         Log.d(TAG, " === === Teams And Roles === ===")
         setTeamsJson()

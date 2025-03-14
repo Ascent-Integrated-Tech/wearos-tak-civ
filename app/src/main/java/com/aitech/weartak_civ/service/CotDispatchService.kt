@@ -33,6 +33,7 @@ import com.aitech.weartak_civ.events.TakServerConnStatusEvent
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
@@ -42,7 +43,11 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.io.FileWriter
+import java.io.IOException
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
@@ -61,7 +66,7 @@ class CotDispatchService : Service() {
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
-    //private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -134,6 +139,17 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
+            try {
+                Log.d(TAG, "Sending biometrics and location")
+                buildAndSendLocationBiometricCotMessage()
+                val writer = FileWriter(logFile, true) // Append to existing file
+                writer.write("${LocalDateTime.now().format(formatter)}: Sending Biometric Cot via cotDispatchRunnable\n")
+                writer.flush()
+                writer.close()
+            } catch (e: IOException) {
+                Log.e("Error", "Failed to write log to file", e)
+            }
+            /*
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
                 // Maybe locationService is using fused indoor and currReportingIntevalInSecs < 5s OR some other reason
@@ -151,8 +167,10 @@ class CotDispatchService : Service() {
 
                 buildAndSendLocationBiometricCotMessage()
             }
+
+             */
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, currReportingIntervalInSecs * 1000L)
+            cotDispatchHandler?.postDelayed(this, 120 * 1000L)
         }
     }
 
@@ -168,7 +186,7 @@ class CotDispatchService : Service() {
         val startTime = dateTimeFormatter.format(calendar.time)
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.SECOND, 3*currReportingIntervalInSecs)
+        calendar.add(Calendar.SECOND, 3*120)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
@@ -385,7 +403,11 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServer(cotMessage)
-        //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        val writer = FileWriter(logFile, true) // Append to existing file
+        writer.write("${LocalDateTime.now().format(formatter)}: $cotMessage\n")
+        writer.flush()
+        writer.close()
 
         /*
         try {
@@ -400,7 +422,7 @@ class CotDispatchService : Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
-        //Log.d(TAG, "onLocationRcvdEvent called")
+        Log.d(TAG, "onLocationRcvdEvent called")
         if (TAKConnectService.isTakConnected) {
             // We would like to send the "freshest" location especially if location update is 10s or greater
             lastLocationUpdateRcvd = System.currentTimeMillis()
