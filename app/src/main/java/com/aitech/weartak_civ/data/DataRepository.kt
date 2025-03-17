@@ -338,6 +338,35 @@ class DataRepository(private val context: Context) {
 
      */
 
+    data class TakServerItem(
+        val name: String,
+        val address: String,
+        val port: Int,
+        val username: String,
+        val password: String,
+        val reportingUpdateInterval: Int,
+        val isP12Cert: Boolean
+    )
+    val getTakServerList: Flow<List<TakServerItem>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[TAK_SERVER_LIST_KEY]
+            if (jsonString.isNullOrEmpty()) {
+                emptyList()
+            } else {
+                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                gson.fromJson<List<TakServerItem>>(jsonString, type)
+            }
+        }
+
+    suspend fun storeTakServerList(newList: List<TakServerItem>) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(newList)
+            // Store in DataStore
+            preferences[TAK_SERVER_LIST_KEY] = jsonString
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -360,6 +389,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
+        private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
 
     }
 }
