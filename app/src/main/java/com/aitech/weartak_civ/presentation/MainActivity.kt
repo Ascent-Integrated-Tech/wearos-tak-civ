@@ -68,7 +68,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
@@ -166,6 +165,7 @@ import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
@@ -177,7 +177,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_CONNE
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
@@ -199,9 +198,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.name
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.nameSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.password
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.passwordSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.port
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.portSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
@@ -219,12 +216,14 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startOffBodyDetectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startPowerManagerService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startTAKConnectService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.username
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
@@ -306,6 +305,10 @@ class MainActivity : ComponentActivity() {
         val portSettingsState = MutableLiveData<String>("8089")
         val usernameSettingsState = MutableLiveData<String>("TEST.AIT")
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
+
+        var takServerList : List<DataRepository.TakServerItem> = listOf()
+        val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
+        val takServerListSettingsState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
 
         var serverSettingsChanged: Boolean = false
 
@@ -716,6 +719,10 @@ class MainActivity : ComponentActivity() {
             passwordState.postValue(password)
             passwordSettingsState.postValue(password)
 
+            takServerList = dataRepository.getTakServerList.first()
+            takServerListState.postValue(takServerList)
+            takServerListSettingsState.postValue(takServerList)
+
             enableLocationService = dataRepository.getEnableLocationService.first()
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
             enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
@@ -1125,6 +1132,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
     validateLicense(license)
     val isP12Cert = remember { mutableStateOf(false) }
 
+
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
         navController = navController,
@@ -1160,7 +1168,15 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         }
         composable(
             "new_server_screen") {
-            EditServerPage(navController, isP12Cert)
+            NewServerPage(navController)
+        }
+        composable(
+            "edit_server_screen/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.d(TAG, "edit_server_screen index: $index")
+            EditServerPage(navController, isP12Cert, index)
         }
         composable("optimize_battery_on_wifi_screen"){
             OptimizeBatteryOnWifiSelectScreen(navController)
@@ -1489,6 +1505,9 @@ fun RoleSetting (navController: NavController) {
 @SuppressLint("CoroutineCreationDuringComposition")
 @Composable
 fun TakServerSetting(navController: NavController) {
+    val takServerList by takServerListSettingsState.observeAsState(initial = emptyList())
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -1502,29 +1521,66 @@ fun TakServerSetting(navController: NavController) {
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
                 .align(Alignment.TopCenter)
-                .padding(bottom = 30.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(bottom = 30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 var takServerChecked by remember{ mutableStateOf(enableTAKConnectService)}
                 var takServerCheckedChanged : Boolean = false
+                LazyColumn {
+                    item {
+                        Text(
+                            text = "TAK Server Connections",
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                    itemsIndexed(takServerList){ index, takServerItem ->
+                        SwipeableTakServerChip(
+                            takServerItem.name,
+                            takServerItem.address,
+                            checked = takServerChecked,
+                            onCheckedChange =  { takServerChecked = it },
+                            onPrimaryActionClick = {
+                                Log.d(TAG, "Remove takServerItem ($takServerItem)")
+                                val mutableTakServerList = takServerList.toMutableList()
+                                mutableTakServerList.removeAt(index)
+                                takServerListSettingsState.postValue(mutableTakServerList.toList())
+                            },
+                            onSecondaryActionClick = {
+                                selectedIndex = index
+                                navController.navigate("edit_server_screen/$index")
+                            }
+                        )
+                    }
 
+                    item {
+                        Chip(
+                            onClick = { navController.navigate("new_server_screen") {
+                                popUpTo(("new_server_screen")) {
+                                    inclusive = true
+                                }
+                            } },
+                            enabled = true,
+                            label = { Text(text = "Add Network") },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            icon = {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = "Localized description"
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp)
+                        )
+                    }
 
-                Text(
-                    text = "TAK Server",
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                TakServerChip(
-                    navController,
-                    "new_server_screen",
-                    name,
-                    address,
-                    checked = takServerChecked,
-                    onCheckedChange =  { takServerChecked = it },
-                )
+                }
 
                 if (enableTAKConnectService != takServerChecked) {
                     enableTAKConnectService = takServerChecked; takServerCheckedChanged = true
@@ -1564,24 +1620,17 @@ fun TakServerSetting(navController: NavController) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-//                Chip(
-//                    onClick = { navController.navigate("new_server_screen") },
-//                    enabled = true,
-//                    label = { Text(text = "Add New Server", fontSize = 13.sp) },
-//                    colors = ChipDefaults.chipColors(
-//                        backgroundColor = Color.DarkGray,
-//                        contentColor = Color.White,
-//                        secondaryContentColor = Color.LightGray
-//                    ),
-//                    icon = { Icon(Icons.Filled.Add, contentDescription = "Localized description") },
-//                    modifier = Modifier
-//                        .fillMaxWidth()
-//                        .padding(bottom = 3.dp)
-//                )
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Button(
-                    onClick = { navController.navigate("settings_screen") {
+                    onClick = {
+                      if  (takServerListState.value != takServerListSettingsState.value) {
+                          takServerListState.postValue(takServerListSettingsState.value)
+                      }
+
+                        serverSettingsChanged = false
+
+                        navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
                             inclusive = true
                         }
@@ -1620,77 +1669,138 @@ fun TakServerSetting(navController: NavController) {
                     isServerConnected.value = false
                 }
                 LoadingDialog(shouldShowLoadingDialog)
+                Log.d(TAG, "selectedIndex: $selectedIndex")
                 ServerRegistrationDialog(
                     shouldShowConfirmDialog,
                     navController,
-                    isServerConnected
+                    isServerConnected,
+                    navBehavior = {
+                        selectedIndex?.let { index ->
+                            navController.navigate("edit_server_screen/$index") // Navigate back to edit page
+                        }
+                    }
                 )
             }
         }
     }
+    Log.d(TAG, "Tak Server List: $takServerList")
 }
 
+@OptIn(ExperimentalWearMaterialApi::class)
 @Composable
-fun TakServerChip(
-    navController: NavController,
-    route: String,
+fun SwipeableTakServerChip(
     title: String,
     address: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
+    onPrimaryActionClick: () -> Unit,
+    onSecondaryActionClick: () -> Unit
 ) {
+    val revealState = rememberRevealState()
+    val scope = rememberCoroutineScope()
     val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
     val takServerConnecting by TAKConnectService.takConnectStatusLiveData.observeAsState()
-    SplitToggleChip(
-        label = {
-            Image(
-                painter = if (takServer == true) painterResource(R.drawable.tak_server_connected) else if (takServerConnecting == "CONNECTING") painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
-                contentDescription = "Top Left Icon",
-                modifier = Modifier
-                    .align(Alignment.CenterVertically)
-                    .size(22.dp)
-                    .padding(end = 2.dp),
+
+    //Log.d(TAG, "WifiSsidItemChip called")
+    SwipeToRevealChip(
+        revealState = revealState,
+        modifier =
+        Modifier
+            .fillMaxWidth()
+            .semantics {
+                // Use custom actions to make the primary and secondary actions accessible
+                customActions =
+                    listOf(
+                        CustomAccessibilityAction("Delete") {
+                            /* Add the primary action click handler here */
+                            true
+                        },
+                        CustomAccessibilityAction("More Options") {
+                            /* Add the secondary click handler here */
+                            true
+                        }
+                    )
+            },
+        primaryAction = {
+            SwipeToRevealPrimaryAction(
+                revealState = revealState,
+                icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
+                label = { Text("Delete") },
+                onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
+        },
+        secondaryAction = {
+            SwipeToRevealSecondaryAction(
+                revealState = revealState,
+                onClick = { onSecondaryActionClick() }
+            ) {
+                Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
+            }
+        },
+        undoPrimaryAction = {
+            SwipeToRevealUndoAction(
+                revealState = revealState,
+                label = { Text("Undo") },
+                onClick = { /* Add the undo handler for primary action */ }
+            )
+        },
+        undoSecondaryAction = {
+            SwipeToRevealUndoAction(
+                revealState = revealState,
+                label = { Text("Undo") },
+                onClick = { /* Add the undo handler for secondary action */ }
+            )
+        },
+        onFullSwipe = {onPrimaryActionClick() }
+    ) {
+        SplitToggleChip(
+            label = {
+                Image(
+                    painter = if (takServer == true) painterResource(R.drawable.tak_server_connected) else if (takServerConnecting == "CONNECTING") painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
+                    contentDescription = "Top Left Icon",
+                    modifier = Modifier
+                        .align(Alignment.CenterVertically)
+                        .size(22.dp)
+                        .padding(end = 2.dp),
+                )
                 Text(title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier
                     .align(Alignment.CenterVertically))
-                },
-        secondaryLabel = {
-            Text(address, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
-        checked = checked,
-        toggleControl = {
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                enabled = enabled,
-                modifier = Modifier.size(25.dp)
-            )
-        },
-        onCheckedChange = onCheckedChange,
-        enabled = true,
-        onClick = {
-            navController.navigate(route)
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 3.dp)
-    )
+            },
+            secondaryLabel = {
+                Text(address, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            checked = checked,
+            toggleControl = {
+                Switch(
+                    checked = checked,
+                    onCheckedChange = null,
+                    enabled = enabled,
+                    modifier = Modifier.size(25.dp)
+                )
+            },
+            onCheckedChange = onCheckedChange,
+            enabled = true,
+            onClick = { scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)} },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 3.dp)
+        )
+    }
 }
 
 @Composable
-fun EditServerPage(
+fun NewServerPage(
     navController: NavController,
-    isP12Cert: MutableState<Boolean>) {
+) {
     WearTAKCIVTheme {
-//        val shouldShowDialog = remember { mutableStateOf(false) }
-//        val isConfirmed = remember { mutableStateOf(false) }
-        val nameTextState = remember { mutableStateOf(nameSettingsState.value ?: "null") }
-        val addressTextState = remember { mutableStateOf(addressSettingsState.value ?: "null") }
-        var portTextState = remember { mutableStateOf(portSettingsState.value ?: "null") }
-        val usernameTextState = remember { mutableStateOf(usernameSettingsState.value ?: "null") }
-        val passwordTextState = remember { mutableStateOf(passwordSettingsState.value ?: "null") }
-        var reportingUpdateInterval by remember{ mutableStateOf(TextFieldValue(CotDispatchService.reportingUpdateIntervalSecs.toString()))}
+        var name by remember { mutableStateOf("") }
+        var address by remember { mutableStateOf("") }
+        var port by remember { mutableStateOf("") }
+        var username by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("") }
+        var reportingUpdateInterval by remember { mutableStateOf("") }
+        var isP12Cert = false
 
         Box(
             modifier = Modifier
@@ -1700,19 +1810,6 @@ fun EditServerPage(
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
-
-            //TODO: Move this to tak server chip when its turned into a swipe to reveal
-//            if (shouldShowDialog.value) {
-//                ConfirmationDialog(
-//                    shouldShowDialog = shouldShowDialog,
-//                    navController,
-//                    "Are you sure you want to delete this server?",
-//                    Icons.Default.Delete,
-//                    Color.Red,
-//                    "main",
-//                    isConfirmed
-//                )
-//            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1723,58 +1820,53 @@ fun EditServerPage(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Edit Server",
+                    text = "New Server",
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
 
-                NewServerSettingText(
+                ServerSettingText(
                     "Connection Name",
-                    nameSettingsState,
-                    nameTextState,
+                    name,
+                    onValueChanged = { name = it },
                     false,
                     false,
                     true
                 )
-
-                if (isP12Cert.value) {
-                    NewServerSettingText(
+                    ServerSettingText(
                         "Address/URL",
-                        addressSettingsState,
-                        addressTextState,
-                        false,
-                        false,
-                        false
-                    )
-                    NewServerSettingText("Port", portSettingsState, portTextState, false, true, true)
-                } else {
-                    NewServerSettingText(
-                        "Address/URL",
-                        addressSettingsState,
-                        addressTextState,
+                        address,
+                        onValueChanged = { address = it },
                         false,
                         false,
                         true
                     )
-                    NewServerSettingText("Port", portSettingsState, portTextState, false, true, true)
-                    NewServerSettingText(
+                    ServerSettingText(
+                        "Port",
+                        port,
+                        onValueChanged = { port = it },
+                        false,
+                        true,
+                        true
+                    )
+                    ServerSettingText(
                         "Username",
-                        usernameSettingsState,
-                        usernameTextState,
+                        username,
+                        onValueChanged = { username = it },
                         false,
                         false,
                         true
                     )
-                    NewServerSettingText(
+                    ServerSettingText(
                         "Password",
-                        passwordSettingsState,
-                        passwordTextState,
+                        password,
+                        onValueChanged = { password = it },
                         true,
                         false,
                         true
                     )
-                }
+
                 val focusManager = LocalFocusManager.current
 
                 OutlinedTextField(
@@ -1785,9 +1877,9 @@ fun EditServerPage(
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            if (reportingUpdateInterval.text.isEmpty()) {
+                            if (reportingUpdateInterval.isEmpty()) {
                                 Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval.text == "0") {
+                            } else if (reportingUpdateInterval == "0") {
                                 Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
@@ -1819,34 +1911,17 @@ fun EditServerPage(
                     },
                     textStyle = TextStyle(color = colors.primary),
                 )
-                if (isP12Cert.value) {
-                    Text(
-                        text = "Using client certificate",
-                        textAlign = TextAlign.Center,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(5.dp)
-                    )
-                }
+
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                var nameChanged: Boolean = false
-                var addressChanged: Boolean = false
-                var portChanged: Boolean = false
-                var usernameChanged: Boolean = false
-                var passwordChanged: Boolean = false
+
                 val maxReportRate: Int = 100000000
                 val minReportRate: Int = 1
-                var reportingUpdateIntervalChanged = false
-
-                val context = LocalContext.current
 
                 ConfirmCancelButtons(
                     onClickCancel = {
-                        serverSettingsChanged = false; nameChanged = false; addressChanged =
-                        false; portChanged = false; usernameChanged = false; passwordChanged =
-                        false
                         Log.d(TAG, "Settings NOT saved")
                         navController.navigate("tak_server_screen") {
                             popUpTo(("tak_server_screen")) {
@@ -1855,95 +1930,37 @@ fun EditServerPage(
                         }
                     },
                     onClickConfirm = {
-                        if (!nameTextState.value.equals(nameSettingsState.value)) {
-                            serverSettingsChanged = true; nameChanged = true
-                            name = nameTextState.value ?: name
-                            nameSettingsState.postValue(name)
-                        }
-                        if (!addressTextState.value.equals(addressSettingsState.value)) {
-                            serverSettingsChanged = true; addressChanged = true
-                            address = addressTextState.value.trim() ?: address
-                            // let the user enter shorthand server address (without periods ".")
-                            if (!address.contains(".")) {
-                                Log.v(TAG, "Entered address was $address, setting address to tak.$address.ops.ascentitech.com")
-                                address = "tak.$address.ops.ascentitech.com"
-                            }
-                            addressSettingsState.postValue(address)
-                        }
-                        if (!portTextState.value.equals(portSettingsState.value)) {
-                            serverSettingsChanged = true; portChanged = true
-                            port = portTextState.value ?: port
-                            portSettingsState.postValue(port)
-                        }
-                        if (!usernameTextState.value.equals(usernameSettingsState.value)) {
-                            serverSettingsChanged = true; usernameChanged = true
-                            username = usernameTextState.value ?: username
-                            usernameSettingsState.postValue(username)
-                        }
-                        if (!passwordTextState.value.equals(passwordSettingsState.value)) {
-                            serverSettingsChanged = true; passwordChanged = true
-                            password = passwordTextState.value ?: password
-                            passwordSettingsState.postValue(password)
+                        if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
+                            val mutableTakServerList = takServerListSettingsState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
+                            mutableTakServerList.add(DataRepository.TakServerItem(name, address, port.toInt(), username, password, reportingUpdateInterval.toInt(), isP12Cert))
+                            takServerListSettingsState.postValue(mutableTakServerList.toList())
+                            serverSettingsChanged = true
                         }
 
-                        val reportingUpdateIntervalText = reportingUpdateInterval.text
-                        if (!reportingUpdateIntervalText.equals("") && (reportingUpdateIntervalText.toInt() != 0) && !reportingUpdateIntervalText.equals(
+                        if (!reportingUpdateInterval.equals("") && (reportingUpdateInterval.toInt() != 0) && !reportingUpdateInterval.equals(
                                 CotDispatchService.reportingUpdateIntervalSecs.toString()
-                            ) && reportingUpdateInterval.text.toInt() >= minReportRate) {
-                            reportingUpdateIntervalChanged = true
-                            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateIntervalText.toInt()
+                            ) && reportingUpdateInterval.toInt() >= minReportRate) {
+                            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval.toInt()
                             //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
                             Log.d(TAG, "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}")
                         }
 
-                        if (serverSettingsChanged) {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                    if (nameChanged) {
-                                        dataRepository.storeName(name)
-                                    }
-                                    if (addressChanged) {
-                                        dataRepository.storeAddress(address)
-                                    }
-                                    if (portChanged) {
-                                        dataRepository.storePort(port)
-                                    }
-                                    if (usernameChanged) {
-                                        dataRepository.storeUsername(username)
-                                    }
-                                    if (passwordChanged) {
-                                        dataRepository.storePassword(password)
-                                    }
-                                EventBus
-                                    .getDefault()
-                                    .post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
+                        EventBus
+                            .getDefault()
+                            .post(MessageEvent(SERVER_ADDED, 0))
 
-                                }
-                        }
-                        if (reportingUpdateIntervalChanged){
-                            CoroutineScope(Dispatchers.Main).launch {
+                        EventBus.getDefault().post(
+                            MessageEvent(
+                                UPDATE_INTERVAL_CHANGED,
+                                CotDispatchService.reportingUpdateIntervalSecs
+                            )
+                        )
 
-                                Log.d(
-                                    TAG,
-                                    "Storing reportingUpdateInterval (${CotDispatchService.reportingUpdateIntervalSecs})"
-                                )
-                                runBlocking {
-                                    dataRepository.storeReportingUpdateInterval(
-                                        CotDispatchService.reportingUpdateIntervalSecs
-                                    )
-                                }
-                                EventBus.getDefault().post(
-                                    MessageEvent(
-                                        UPDATE_INTERVAL_CHANGED,
-                                        CotDispatchService.reportingUpdateIntervalSecs
-                                    )
-                                )
-                            }
-                        }
-                        if (reportingUpdateIntervalText.equals("")) {
+                        if (reportingUpdateInterval.equals("")) {
                             Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                        } else if (reportingUpdateIntervalText.equals("0")) {
+                        } else if (reportingUpdateInterval.equals("0")) {
                             Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
-                        } else if (reportingUpdateInterval.text.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
+                        } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
                             Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                         } else {
                             navController.navigate("tak_server_screen") {
@@ -1959,85 +1976,279 @@ fun EditServerPage(
 }
 
 @Composable
-fun NewServerSettingText (
+fun EditServerPage(
+    navController: NavController,
+    isP12Cert: MutableState<Boolean>,
+    index: Int
+) {
+    WearTAKCIVTheme {
+        val takServerList by takServerListSettingsState.observeAsState(initial = emptyList())
+        Log.d(TAG, "Edited tak servver list: $takServerList")
+        var name by remember { mutableStateOf(takServerList.getOrNull(index)?.name.orEmpty()) }
+        var address by remember { mutableStateOf(takServerList.getOrNull(index)?.address.orEmpty()) }
+        var port by remember { mutableStateOf(takServerList.getOrNull(index)?.port.toString().orEmpty()) }
+        var username by remember { mutableStateOf(takServerList.getOrNull(index)?.username.orEmpty()) }
+        var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
+        var reportingUpdateInterval by remember { mutableStateOf(takServerList.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
+        var isP12Cert by remember { mutableStateOf(takServerList.getOrNull(index)?.isP12Cert.toString().orEmpty()) }
+
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Edit Server",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+
+                ServerSettingText(
+                    "Connection Name",
+                    name,
+                    onValueChanged = { name = it },
+                    false,
+                    false,
+                    true
+                )
+
+                if (isP12Cert == "true") {
+                    ServerSettingText(
+                        "Address/URL",
+                        address,
+                        onValueChanged = { address = it },
+                        false,
+                        false,
+                        false
+                    )
+                    ServerSettingText(
+                        "Port",
+                        port,
+                        onValueChanged = { port = it },
+                        false,
+                        true,
+                        true)
+                } else {
+                    ServerSettingText(
+                        "Address/URL",
+                        address,
+                        onValueChanged = { address = it },
+                        false,
+                        false,
+                        true
+                    )
+                    ServerSettingText(
+                        "Port",
+                        port,
+                        onValueChanged = { port = it },
+                        false,
+                        true,
+                        true)
+                    ServerSettingText(
+                        "Username",
+                        username,
+                        onValueChanged = { username = it },
+                        false,
+                        false,
+                        true
+                    )
+                    ServerSettingText(
+                        "Password",
+                        password,
+                        onValueChanged = { password = it },
+                        true,
+                        false,
+                        true
+                    )
+                }
+                val focusManager = LocalFocusManager.current
+
+                OutlinedTextField(
+                    modifier = Modifier.padding(vertical = 5.dp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (reportingUpdateInterval.isEmpty()) {
+                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else if (reportingUpdateInterval == "0") {
+                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                            } else {
+                                // If there is valid input, we can clear focus
+                                // (which typically dismisses the keyboard)
+                                focusManager.clearFocus()
+
+                                // Now you can navigate or do the next action
+                            }
+                        }
+                    ),
+                    singleLine = true,
+                    value = reportingUpdateInterval,
+                    onValueChange = {
+                        reportingUpdateInterval = it
+                    },
+                    label = {
+                        Text(
+                            text = "Update Interval",
+                            color = colors.primary,
+                            style = MaterialTheme.typography.caption3
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            text = "Interval in secs",
+                            color = colors.primary,
+                            style = MaterialTheme.typography.caption3
+                        )
+                    },
+                    textStyle = TextStyle(color = colors.primary),
+                )
+                if (isP12Cert == "true") {
+                    Text(
+                        text = "Using client certificate",
+                        textAlign = TextAlign.Center,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(5.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                val maxReportRate: Int = 100000000
+                val minReportRate: Int = 1
+                var reportingUpdateIntervalChanged = false
+                val scope = rememberCoroutineScope()
+
+                val context = LocalContext.current
+
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "Settings NOT saved")
+                        navController.navigate("tak_server_screen") {
+                            popUpTo(("tak_server_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onClickConfirm = {
+                        scope.launch {
+                            delay(500L)
+                            val mutableTakServerList = takServerList.toMutableList()
+                            mutableTakServerList.set(
+                                index,
+                                DataRepository.TakServerItem(
+                                    name,
+                                    address,
+                                    port.toInt(),
+                                    username,
+                                    password,
+                                    reportingUpdateInterval.toInt(),
+                                    isP12Cert.toBoolean()
+                                )
+                            )
+                            takServerListSettingsState.postValue(mutableTakServerList.toList())
+
+                            if (name != mutableTakServerList[0].toString() || address != mutableTakServerList[1].toString() || port != mutableTakServerList[2].toString() || username != mutableTakServerList[3].toString() || password != mutableTakServerList[4].toString()) {
+                                serverSettingsChanged = true
+                            }
+
+                            if (!reportingUpdateInterval.equals("") && (reportingUpdateInterval.toInt() != 0) && !reportingUpdateInterval.equals(
+                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
+                                ) && reportingUpdateInterval.toInt() >= minReportRate
+                            ) {
+                                reportingUpdateIntervalChanged = true
+                                CotDispatchService.reportingUpdateIntervalSecs =
+                                    reportingUpdateInterval.toInt()
+                                //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+                                Log.d(
+                                    TAG,
+                                    "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}"
+                                )
+                            }
+
+                            EventBus
+                                .getDefault()
+                                .post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
+
+                            EventBus.getDefault().post(
+                                MessageEvent(
+                                    UPDATE_INTERVAL_CHANGED,
+                                    CotDispatchService.reportingUpdateIntervalSecs
+                                )
+                            )
+
+                            if (reportingUpdateInterval.equals("")) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate Empty, Enter Again",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else if (reportingUpdateInterval.equals("0")) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate 0, Enter Again",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                navController.navigate("tak_server_screen") {
+                                    popUpTo(("tak_server_screen")) {
+                                        inclusive = true
+                                    }
+                                }
+                            }
+                        }
+                    })
+            }
+        }
+    }
+}
+
+@Composable
+fun ServerSettingText (
     label: String,
-    liveDataState: MutableLiveData<String>,
-    textState: MutableState<String>,
+    value: String,
+    onValueChanged: (String) -> Unit,
     isPassword : Boolean,
     isPort : Boolean,
     isEnabled: Boolean
 ) {
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(liveDataState.value ?: "null")) }
     val maxChar = 20
 
     OutlinedTextField(
-        value = textFieldValue,
+        value = value,
         enabled = isEnabled,
-        onValueChange = {
-            textFieldValue = it
-        },
+        onValueChange = onValueChanged,
 //        maxLines = 1,
         label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
-        textStyle = TextStyle(color = colors.primary, fontSize = if (textFieldValue.text!!.length <= maxChar) 12.sp else 10.sp),
+        textStyle = TextStyle(color = colors.primary, fontSize = if (value!!.length <= maxChar) 12.sp else 10.sp),
         modifier = Modifier.padding(bottom = 5.dp),
         keyboardOptions = KeyboardOptions(keyboardType = if (isPort) KeyboardType.Number else KeyboardType.Text),
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
-    textState.value = textFieldValue.text
-}
-
-@Composable
-fun UpdateIntervalServerSettingText (liveDataState: MutableLiveData<String>,
-                                     textState: MutableState<String>,
-) {
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(liveDataState.value ?: "null")) }
-
-    val focusManager = LocalFocusManager.current
-
-    OutlinedTextField(
-        modifier = Modifier.padding(vertical = 5.dp),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Number,
-            imeAction = ImeAction.Done
-        ),
-        keyboardActions = KeyboardActions(
-            onDone = {
-                if (textFieldValue.text.isEmpty()) {
-                    Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                } else if (textFieldValue.text == "0") {
-                    Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
-                } else {
-                    // If there is valid input, we can clear focus
-                    // (which typically dismisses the keyboard)
-                    focusManager.clearFocus()
-
-                    // Now you can navigate or do the next action
-                }
-            }
-        ),
-        singleLine = true,
-        value = textFieldValue,
-        onValueChange = {
-            textFieldValue = it
-        },
-        label = {
-            Text(
-                text = "Update Interval",
-                color = colors.primary,
-                style = MaterialTheme.typography.caption3
-            )
-        },
-        placeholder = {
-            Text(
-                text = "Interval in secs",
-                color = colors.primary,
-                style = MaterialTheme.typography.caption3
-            )
-        },
-        textStyle = TextStyle(color = colors.primary),
-    )
-    textState.value = textFieldValue.text
-
 }
 
 @Composable
@@ -2364,7 +2575,7 @@ fun WifiSsidItemChip(
                 onClick = { /* Add the undo handler for secondary action */ }
             )
         },
-        onFullSwipe = { }
+        onFullSwipe = {onPrimaryActionClick() }
     ) {
         Chip(
             modifier = Modifier
@@ -2526,8 +2737,10 @@ fun LoadingDialog(
 fun ServerRegistrationDialog(
     shouldShowDialog: MutableState<Boolean>,
     navController: NavController,
-    isServerConnected: MutableState<Boolean>
+    isServerConnected: MutableState<Boolean>,
+    navBehavior: () -> Unit
 ) {
+
     if (shouldShowDialog.value) {
         AlertDialog(
             modifier = Modifier.wrapContentHeight(),
@@ -2556,8 +2769,8 @@ fun ServerRegistrationDialog(
                     Button(
                         onClick = {
                             shouldShowDialog.value = false
-                            navController.navigate("new_server_screen")
-                        },
+                            navBehavior()
+                                  },
                         modifier = Modifier.fillMaxWidth(0.45f),
                         contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -3096,7 +3309,7 @@ fun Callsign(navController: NavController, callsignState: MutableLiveData<String
             enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
             enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
             wifiSsidListSettingsState.postValue(wifiSsidList)
-            wifiSsidListSettingsState.postValue(wifiSsidList)
+            takServerListSettingsState.postValue(takServerList)
             saveBattOnWifiStringState.postValue(saveBattOnWifiString)
             navController.navigate("settings_screen") },
         label = { Text(
@@ -3349,10 +3562,14 @@ fun SettingsScreen(
                 )
 
                 Chip(
-                    onClick = { navController.navigate("tak_server_screen") },
+                    onClick = {
+                        takServerListSettingsState.postValue(takServerListState.value)
+                        navController.navigate("tak_server_screen") },
                     enabled = true,
                     label = { Text(text = "TAK Server") },
-                    secondaryLabel = { Text(text = name) },
+                    secondaryLabel = {
+//                        Text(text = name)
+                                     },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
@@ -3464,6 +3681,7 @@ fun SettingsScreen(
                         var biometricsCheckedChanged: Boolean = false
                         var dittoCheckedChanged: Boolean = false
                         var saveBattOnWifiChanged = false
+                        var takServerListChanged = false
 
                         if (!callsign.equals(callsignSettingsState.value)) {
                             settingsChanged = true; callsignChanged = true
@@ -3520,6 +3738,15 @@ fun SettingsScreen(
 //                                license = licenseSettingsState.value ?: license
 //                                licenseLiveDataState.postValue(license)
 //                            }
+
+                        if (takServerList != takServerListState.value) {
+                            settingsChanged = true; takServerListChanged = true
+                            takServerList = takServerListState.value ?: takServerList
+                        }
+                        Log.d(TAG, "takServerList: $takServerList")
+                        Log.d(TAG, "takServerListState: " + takServerListState.value)
+                        Log.d(TAG, "takServerListChanged: $takServerListChanged")
+
 
                         if (enableLocationService != locationChecked) {
                             settingsChanged = true; locationCheckedChanged = true
@@ -3583,6 +3810,10 @@ fun SettingsScreen(
                                         dataRepository.storeWifiSsidList(wifiSsidList)
                                     }
                                     EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+                                }
+                                if (takServerListChanged) {
+                                    Log.d(TAG, "Storing updated TAK Server List: $takServerList")
+                                    dataRepository.storeTakServerList(takServerList)
                                 }
 
                                 if (locationCheckedChanged) {
@@ -3710,6 +3941,21 @@ fun WifiSsidSettingPreview() {
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
+fun TAKServerChipPreview() {
+    var takServerChecked by remember{ mutableStateOf(enableTAKConnectService)}
+    var takServerCheckedChanged : Boolean = false
+    SwipeableTakServerChip(
+        "pp",
+        "pp",
+        checked = takServerChecked,
+        onCheckedChange =  { takServerChecked },
+        onPrimaryActionClick = {},
+        onSecondaryActionClick = {}
+    )
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
 fun TAKSettingsPreview() {
     TakServerSetting(rememberSwipeDismissableNavController())
 }
@@ -3718,7 +3964,7 @@ fun TAKSettingsPreview() {
 @Composable
 fun EditServerPreview() {
     val isP12Cert = remember { mutableStateOf(true) }
-    EditServerPage(rememberSwipeDismissableNavController(), isP12Cert)
+    EditServerPage(rememberSwipeDismissableNavController(), isP12Cert, 1)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
