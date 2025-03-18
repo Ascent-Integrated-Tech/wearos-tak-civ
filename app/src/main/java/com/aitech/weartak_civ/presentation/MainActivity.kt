@@ -2211,13 +2211,16 @@ fun NewServerPage(
                                         ?: emptyList<DataRepository.TakServerItem>().toMutableList()
                                 mutableTakServerList.add(
                                     DataRepository.TakServerItem(
+                                        true,
                                         name,
                                         address,
                                         port.toInt(),
+                                        isP12Cert,
                                         username,
                                         password,
-                                        reportingUpdateInterval.toInt(),
-                                        isP12Cert
+                                        "",
+                                        "",
+                                        reportingUpdateInterval.toInt()
                                     )
                                 )
                                 takServerListSettingsState.postValue(mutableTakServerList.toList())
@@ -2465,13 +2468,16 @@ fun EditServerPage(
                             mutableTakServerList.set(
                                 index,
                                 DataRepository.TakServerItem(
+                                    true,
                                     name,
                                     address,
                                     port.toInt(),
+                                    isP12Cert.toBoolean(),
                                     username,
                                     password,
-                                    reportingUpdateInterval.toInt(),
-                                    isP12Cert.toBoolean()
+                                    "",
+                                    "",
+                                    reportingUpdateInterval.toInt()
                                 )
                             )
                             takServerListSettingsState.postValue(mutableTakServerList.toList())
