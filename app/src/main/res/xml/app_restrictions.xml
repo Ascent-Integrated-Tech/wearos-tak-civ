@@ -128,6 +128,13 @@
                 android:defaultValue="@string/tak_server_port_default" />
 
             <restriction
+                android:key="tak_server_use_certificate"
+                android:restrictionType="bool"
+                android:title="@string/tak_server_use_certificate_title"
+                android:description="@string/tak_server_use_certificate_description"
+                android:defaultValue="@string/tak_server_use_certificate_default" />
+
+            <restriction
                 android:key="tak_server_username"
                 android:restrictionType="string"
                 android:title="@string/tak_server_username_title"
@@ -140,6 +147,13 @@
                 android:title="@string/tak_server_password_title"
                 android:description="@string/tak_server_password_description"
                 android:defaultValue="@string/tak_server_password_default"/>
+
+            <restriction
+                android:key="tak_server_cert_password"
+                android:restrictionType="string"
+                android:title="@string/tak_server_cert_password_title"
+                android:description="@string/tak_server_cert_password_description"
+                android:defaultValue="" />
 
             <restriction
                 android:key="tak_server_cert"

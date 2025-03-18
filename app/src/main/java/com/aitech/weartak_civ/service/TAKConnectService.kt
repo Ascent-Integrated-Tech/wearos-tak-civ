@@ -26,21 +26,19 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTING
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_FAILURE
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.DISCONNECTED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.presentation.NetworkManager
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
@@ -61,6 +59,7 @@ import org.w3c.dom.Document
 import org.xml.sax.InputSource
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.StringReader
 import java.security.*
 import java.security.cert.Certificate
@@ -70,13 +69,13 @@ import java.util.Base64
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
-
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
@@ -87,6 +86,27 @@ class TAKConnectService: Service() {
         var ca1: String? = null // getters/setters not strictly needed for basic usage
     }
 
+    data class TakServerDetail(
+        var isEnabled: Boolean,
+        var name: String,
+        var address: String,
+        var port: Int = 8089,
+        var isP12Cert: Boolean,
+        var username: String,
+        var password: String,
+        var p12Cert: String?,
+        var p12CertPassword: String?,
+        var reportingUpdateInterval: Int,
+        var numConnAttempts : Int = 0,
+        var numSocketConnectAttempts: Int = 0,
+        val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
+        val connectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_DISCONNECTED_STRING),
+        val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
+        var privateKey: PrivateKey? = null,
+        var secureSocket : SSLSocket? = null,
+        var lastTimeMsgSent: Long = 0L
+    )
+
 
     override fun onCreate() {
         Log.d(TAG, "TAKConnectService onCreate")
@@ -96,19 +116,17 @@ class TAKConnectService: Service() {
         return super.onCreate()
     }
 
+
     fun setFromDatastore() {
         runBlocking {
-            isTakServerEnabled = dataRepository.getEnableTAKConnectService.first()
-            takServer = dataRepository.getAddress.first().trim()
-            username = dataRepository.getUsername.first()
-            password = dataRepository.getPassword.first()
-            try {
-                port = dataRepository.getPort.first().toInt()
-            } catch (e: Exception) {
-                Log.w(TAG, "Port ($port) is not a number. Setting to default 8089", e)
-                port = 8089
+            val takServers : List<TakServerItem> = dataRepository.getTakServerList.first()
+            takServerDetails = mutableListOf()
+            for (takServer in takServers) {
+                takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port, takServer.isP12Cert, takServer.username, takServer.password,
+                    takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval))
+                Log.d(TAG, "setFromDatastore takServer(${takServer.name}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}), reportInterval(${takServer.reportingUpdateInterval})")
+                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
-            Log.d(TAG, "setFromDatastore isTakServerEnabled ($isTakServerEnabled), takServer ($takServer), username ($username), password ($password), port ($port)")
         }
     }
 
@@ -117,12 +135,11 @@ class TAKConnectService: Service() {
             startForegroundService()
             setFromDatastore()
             networkManager = NetworkManager.getInstance()
-            numConnAttemptsAfterFailure = 0
             isNetworkConnected = networkManager?.isNetworkConnected() ?: false
             isWifiConnected = networkManager?.isWifiConnected() ?: false
-            if (isNetworkConnected && isTakServerEnabled) {
-                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected with TAK enabled and isWifiConnected=$isWifiConnected")
-                getClientCertificateAndConnect(takServer, username, password, port)
+            if (isNetworkConnected) {
+                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
+                connectToTakServers()
             }
         }
         return START_NOT_STICKY
@@ -169,15 +186,7 @@ class TAKConnectService: Service() {
             EventBus.getDefault().unregister(this)
         }
         networkManager = null
-        CoroutineScope(Dispatchers.IO).launch {
-            if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
-                // TODO: check logic above
-                secureSocket?.close()
-                secureSocket = null
-            }
-            Log.d(TAG, "TAK Connect Service Destroyed")
-            isRunning.set(false)
-        }
+        closeTakServerSockets()
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -192,118 +201,254 @@ class TAKConnectService: Service() {
                 isNetworkConnected = currIsConn
                 isWifiConnected = currIsWifi
                 setFromDatastore()
-                numConnAttemptsAfterFailure = 0
-                if (isTakServerEnabled) {
-                    getClientCertificateAndConnect(takServer, username, password, port)
-                }
+                connectToTakServers()
             } else { // If underlying transport has changed, then we do need to reconnect
                 if (currIsWifi != isWifiConnected) {
                     Log.d(TAG, "Connected to a different transport: prevIsWifi($isWifiConnected), currIsWifi($currIsWifi)")
                     isWifiConnected = currIsWifi
-                    numConnAttemptsAfterFailure = 0
-                    if (isTakServerEnabled) {
-                        getClientCertificateAndConnect(takServer, username, password, port)
+                    for (takServerDetail in takServerDetails) {
+                        takServerDetail.numConnAttempts = 0
                     }
+                    connectToTakServers()
                 }
             }
         } else { // Network is disconnected
             if (currIsConn != isNetworkConnected) { // Previously network was connected. Set required flags. We will reconnect on network available event.
-                Log.d(TAG, "Previously network was connected but now is disconnected. So setting requried flags")
+                Log.d(TAG, "Previously network was connected but now is disconnected. So setting required flags")
                 isNetworkConnected = currIsConn
                 isWifiConnected = false
-                isTakConnected = false
-                isTakConnectedLiveData.postValue(isTakConnected)
-                //isConnectingToCotMsgPort.set(true)
-                obtainedClientCert.set(false)
-                obtainingClientCert.set(true)
+                isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
+                isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                for (takServerDetail in takServerDetails) {
+                    takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
+                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+                    takServerDetail.secureSocket = null
+                }
             }
         }
+    }
+
+    private fun setIsAnyNetworkConnectedBeforeConnectingTo(index: Int) {
+        var anyTakConnected = false
+        for (i in takServerDetails.indices) {
+            if (i != index) {
+                val takServerDetail = takServerDetails.get(i)
+                if (takServerDetail.isEnabled && (takServerDetail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT)) {
+                    anyTakConnected = true
+                    break
+                }
+            }
+        }
+        Log.d(TAG, "setIsAnyNetworkConnectedBeforeConnectingTo: $anyTakConnected")
+        isAnyTakConnected = anyTakConnected
+        isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val message = event.message
-        if (SERVER_DETAILS_CHANGED == message || SERVER_ADDED == message) {
-            Log.d(TAG, "Received SERVER_DETAILS_CHANGED message")
-            //sendTakConnectionStatusEvent(CONNECTING)
-            numConnAttemptsAfterFailure = 0
-            // Delete old server name file
-            Companion.deleteFile("$takServer.jks")
-            setFromDatastore()
-            // Delete new server name file (if it exists)
-            Companion.deleteFile("$takServer.jks")
-            if (isNetworkConnected) {
-                if (isTakServerEnabled) {
-                    getClientCertificateAndConnect(takServer, username, password, port)
+        val addlIntInfo = event.addlIntInfo // This is the TAK Server index
+        try {
+            if (SERVER_CHANGED == message) {
+                val takServerDetail = takServerDetails.get(addlIntInfo)
+                Log.d(TAG, "Received SERVER_DETAILS_CHANGED message for index($addlIntInfo): ${takServerDetail.address}")
+                // Delete old server name file
+                Companion.deleteFile("${takServerDetail.address}.jks")
+                runBlocking {
+                    val takServers: List<TakServerItem> = dataRepository.getTakServerList.first()
+                    val takServer = takServers.get(addlIntInfo)
+                    takServerDetails.set(addlIntInfo,
+                        TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
+                            takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval))
                 }
-            } else {
-                Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
-                isTakConnected = false
-                isTakConnectedLiveData.postValue(isTakConnected)
-                //isConnectingToCotMsgPort.set(true)
-                obtainedClientCert.set(false)
-                obtainingClientCert.set(true)
-                sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+                takServerDetails.get(addlIntInfo).numConnAttempts = 0
+                // Delete new server name file (if it exists)
+                Companion.deleteFile("${takServerDetail.address}.jks")
+                if (isNetworkConnected) {
+                    setIsAnyNetworkConnectedBeforeConnectingTo(addlIntInfo)
+                    getClientCertificateAndConnect(takServerDetail)
+                } else {
+                    Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
+                    isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
+                    isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                }
+            } else if ((SERVER_ADDED == message) || (SERVER_ADDED_VIA_UI == message)) {
+                Log.d(TAG, "Received SERVER_ADDED message with index($addlIntInfo)")
+                // TODO:
+                // Item 0: TEST setIsAnyNetworkConnecting
+                // Item 1: TEST newServerAddedViaUi
+                // Item 2: Why last ServerRegistrationDialog is shown??
+                // Item 3: Why 3 times when editServer is called
+                // Item 4: Why we keep trying for junk connections when sending out data
+                // Item 4: All TODOs
+                runBlocking {
+                    val takServers: List<TakServerItem> = dataRepository.getTakServerList.first()
+                    if (takServers.size - 1 != addlIntInfo) {
+                        // We could do nothing here but if there is a bug we are trying to take care of it
+                        Log.w(TAG, "SERVER_ADDED index($addlIntInfo) != takServers.size(${takServers.size})-1")
+                    }
+                    val takServer = takServers.last()
+                    val takServerDetail = TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
+                        takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval)
+                    takServerDetails.add(takServerDetail)
+                    // Delete server name file (if it exists)
+                    Companion.deleteFile("${takServerDetail.address}.jks")
+                    if (isNetworkConnected) {
+                        if (SERVER_ADDED_VIA_UI == message) {
+                            Log.d(TAG, "Previous newServerAddedViaUi=$newServerAddedViaUi; newServerAddedViaUiConnectionStatusLiveData=${newServerAddedViaUiConnectionStatusLiveData.value}")
+                            newServerAddedViaUi = true
+                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                        }
+                        setIsAnyNetworkConnectedBeforeConnectingTo(addlIntInfo)
+                        getClientCertificateAndConnect(takServerDetail)
+                    } else {
+                        Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
+                        isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
+                        isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                        if (SERVER_ADDED_VIA_UI == message) {
+                            newServerAddedViaUi = false
+                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                        }
+                    }
+                }
+            } else if (SERVER_TOGGLED == message) {
+                val takServerDetail = takServerDetails.get(addlIntInfo)
+                Log.d(TAG, "Received SERVER_TOGGLED message for index($addlIntInfo): ${takServerDetail.address}")
+                takServerDetail.numConnAttempts = 0
+                if (takServerDetail.isEnabled) {
+                    if ((TAK_SERVER_CONNECTED_COT_PORT == takServerDetail.connectionStatus.get()) && isNetworkConnected) {
+                        if ((null != takServerDetail.secureSocket) && ((takServerDetail.secureSocket?.isClosed ?: true) == false)) {
+                            // TODO: check logic above
+                            Log.d(TAG, "Closing socket")
+                            takServerDetail.secureSocket?.close()
+                        }
+                        takServerDetail.secureSocket = null
+                    }
+                    takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
+                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+                    takServerDetail.isEnabled = false
+                    setIsAnyNetworkConnectedBeforeConnectingTo(addlIntInfo)
+                } else {
+                    takServerDetail.isEnabled = true
+                    if (isNetworkConnected) {
+                        setIsAnyNetworkConnectedBeforeConnectingTo(addlIntInfo)
+                        getClientCertificateAndConnect(takServerDetail)
+                    } else {
+                        Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
+                        isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
+                        isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                    }
+                }
+            } else if (SERVER_REMOVED == message) {
+                val takServerDetail = takServerDetails.get(addlIntInfo)
+                Log.d(TAG, "Received SERVER_REMOVED message for index($addlIntInfo): ${takServerDetail.address}")
+                takServerDetail.numConnAttempts = 0
+                if (takServerDetail.isEnabled) {
+                    if ((TAK_SERVER_CONNECTED_COT_PORT == takServerDetail.connectionStatus.get()) && isNetworkConnected) {
+                        if ((null != takServerDetail.secureSocket) && ((takServerDetail.secureSocket?.isClosed ?: true) == false)) {
+                            // TODO: check logic above
+                            Log.d(TAG, "Closing socket")
+                            takServerDetail.secureSocket?.close()
+                        }
+                        takServerDetail.secureSocket = null
+                    }
+                    takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
+                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+                    setIsAnyNetworkConnectedBeforeConnectingTo(addlIntInfo)
+                }
+                takServerDetails.removeAt(addlIntInfo)
             }
-        } else if (SERVER_TOGGLED == message) {
-            numConnAttemptsAfterFailure = 0
-            if (event.addlIntInfo == 0) {
-                // dataRepository.getEnableTAKConnectService is false
-                isTakServerEnabled = false
-                Log.d(TAG, "Received SERVER_TOGGLED message with server OFF")
-                if (isTakConnected) {
-                    if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
-                        // TODO: check logic above
-                        Log.d(TAG, "Closing socket")
+        } catch (e: Exception) {
+            Log.w(TAG, "ERROR in MessageEvent ($message) w/ $addlIntInfo: ${e.message}")
+            Log.w(TAG, "${e.printStackTrace()}")
+        }
+    }
+
+
+    fun closeTakServerSockets() {
+        for (takServer in takServerDetails) {
+            if (takServer.isEnabled) {
+                val secureSocket = takServer.secureSocket
+                if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
+                    // TODO: check logic above
+                    runBlocking( Dispatchers.IO) {
                         secureSocket?.close()
                     }
-                    secureSocket = null
-                }
-                isTakConnected = false
-                isTakConnectedLiveData.postValue(isTakConnected)
-                obtainedClientCert.set(false)
-                obtainingClientCert.set(true)
-                sendTakConnectionStatusEvent(DISCONNECTED)
-            } else {
-                // dataRepository.getEnableTAKConnectService is true
-                isTakServerEnabled = true
-                Log.d(TAG, "Received SERVER_DETAILS_CHANGED message with server ON")
-                if (isNetworkConnected) {
-                    getClientCertificateAndConnect(takServer, username, password, port)
+                    takServer.secureSocket = null
                 }
             }
         }
     }
 
+    fun connectToTakServers() {
+        isAnyTakConnected = false
+        isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+        isAnyTakConnecting = false
+        isAnyTakConnectingLiveData.postValue(isAnyTakConnecting)
+        for (takServer in takServerDetails) {
+            if (takServer.isEnabled) {
+                getClientCertificateAndConnect(takServer)
+            }
+        }
+    }
+
     companion object {
+        const val TAK_SERVER_DISCONNECTED = 0
+        const val TAK_SERVER_DISCONNECTED_STRING = "DISCONNECTED"
+
+        const val TAK_SERVER_OBTAINING_CLIENT_CERT = 1
+        const val TAK_SERVER_OBTAINED_CLIENT_CERT = 2
+        const val TAK_SERVER_CONNECTING_COT_PORT = 3
+        const val TAK_SERVER_CONNECTING_STRING = "CONNECTING"
+
+        const val TAK_SERVER_CONNECTED_COT_PORT = 4
+        const val TAK_SERVER_CONNECTED_STRING = "CONNECTED"
+
+        const val TAK_SERVER_CONNECTION_FAILED = 5
+        const val TAK_SERVER_CONNECTION_FAILED_STRING = "CONNECTION_FAILED"
+
+        const val TAK_SERVER_CONNECTION_SUCCESS = 0 // Corresponds to TAK_SERVER_CONNECTED_STRING
+        const val TAK_SERVER_CONNECTION_FAILURE = 1 // Corresponds to TAK_SERVER_CONNECTION_FAILED_STRING
+
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
-        private var numConnAttemptsAfterFailure = 0
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
-        private var secureSocket : SSLSocket? = null
         const private val TAK_CERT_PASSWORD = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
         var isNetworkConnected = false
         var isWifiConnected = false
-        var isTakConnected : Boolean = false // Overall isConnected flag. This includes getting client cert and connecting to COT message port
-        val isTakConnectedLiveData = MutableLiveData<Boolean>(false)
-        val obtainingClientCert = AtomicBoolean(false)
-        val obtainedClientCert  = AtomicBoolean(false)
-        val isConnectingToCotMsgPort : AtomicBoolean = AtomicBoolean(false) // This is only for the process of connecting to COT message port
-        var takConnectionStatus: String = "null"
-        val takConnectStatusLiveData = MutableLiveData<String>("DISCONNECTED")
+        var isAnyTakConnected : Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
+        val isAnyTakConnectedLiveData = MutableLiveData<Boolean>(false)
 
-        var privateKey: PrivateKey? = null
-        val keyStore : KeyStore = KeyStore.getInstance("PKCS12")
+        var isAnyTakConnecting : Boolean = false // Overall flag indicating if connection is being made to any TAK server
+        val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
 
-        var username : String = ""
-        var password : String = ""
-        var takServer : String = ""
-        var port : Int = 8089
-        var isTakServerEnabled = false
+        var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
 
-        private fun generateBase64CSR(org: String, orgUnit: String, cnName: String): String? {
+        var newServerAddedViaUi = false
+        val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
+
+        private fun setIsAnyNetworkConnecting() {
+            var anyTakConnecting = false
+            for (takServerDetail in takServerDetails) {
+                if (takServerDetail.isEnabled) {
+                    val connectionStatus = takServerDetail.connectionStatus.get()
+                    if ((TAK_SERVER_OBTAINING_CLIENT_CERT == connectionStatus) ||
+                        (TAK_SERVER_OBTAINED_CLIENT_CERT == connectionStatus) ||
+                        (TAK_SERVER_CONNECTING_COT_PORT == connectionStatus)) {
+                        anyTakConnecting = true
+                        break
+                    }
+                }
+            }
+            isAnyTakConnecting = anyTakConnecting
+            isAnyTakConnectingLiveData.postValue(anyTakConnecting)
+            Log.d(TAG, "setIsAnyNetworkConnecting: $isAnyTakConnecting")
+        }
+
+        private fun generateBase64CSR(org: String, orgUnit: String, takServerDetail: TakServerDetail): String? {
+            val cnName = takServerDetail.username
             var base64CSR: String? = null
             try {
                 // Add the BouncyCastle security provider
@@ -313,7 +458,7 @@ class TAKConnectService: Service() {
                 val keyPairGen = KeyPairGenerator.getInstance("RSA", "BC")
                 keyPairGen.initialize(4096)
                 val keyPair = keyPairGen.generateKeyPair()
-                privateKey = keyPair.private
+                takServerDetail.privateKey = keyPair.private
 
                 // Build the X.500 Name (subject) for the CSR
                 //    e.g., "C=US, ST=NY, L=New York, O=MyOrg, CN=example.com"
@@ -330,7 +475,7 @@ class TAKConnectService: Service() {
                 // Create a ContentSigner for "SHA256withRSA" using the private key
                 val csBuilder = JcaContentSignerBuilder("SHA256withRSA")
                 //csBuilder.setProvider("BC")
-                val signer = csBuilder.build(privateKey)
+                val signer = csBuilder.build(takServerDetail.privateKey)
 
                 // Build the PKCS#10 CSR
                 val csr = p10Builder.build(signer)
@@ -342,9 +487,12 @@ class TAKConnectService: Service() {
             return base64CSR
         }
 
-        fun fetchAndParseCertificateConfig(takServer: String, username: String, password: String): Pair<String, String> {
-            val url = "https://$takServer:8446/Marti/api/tls/config"
+        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): Pair<String, String> {
+            val takServer = takServerDetail.address
+            val username = takServerDetail.username
+            val password = takServerDetail.password
 
+            val url = "https://$takServer:8446/Marti/api/tls/config"
             val client = OkHttpClient()
 
             // Basic Authentication
@@ -460,7 +608,11 @@ class TAKConnectService: Service() {
             return null
         }
 
-        fun postCsrAndParse(takServer: String, username: String, password: String, base64CSR: String): SignClientResponse? {
+        fun postCsrAndParse(takServerDetail: TakServerDetail, base64CSR: String): SignClientResponse? {
+            val takServer = takServerDetail.address
+            val username = takServerDetail.username
+            val password = takServerDetail.password
+
             var result: SignClientResponse? = null
 
             val csrResponse = postCsrAndGetResponse(takServer, username, password, base64CSR)
@@ -492,7 +644,7 @@ class TAKConnectService: Service() {
             }
         }
 
-        fun loadKeyStore(fileName: String, password: String): Boolean {
+        fun loadKeyStore(keyStore : KeyStore, fileName: String, password: String): Boolean {
             return runBlocking {
                 try {
                     MainActivity.mainActivity.openFileInput(fileName).use { fis ->
@@ -513,6 +665,7 @@ class TAKConnectService: Service() {
                         }
                     } else {
                         Log.e(TAG, "No certificate chain found for alias: $KEY_ALIAS")
+                        return@runBlocking false
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "loadKeyStore failed w/ exception: ${e.message}", e)
@@ -522,7 +675,8 @@ class TAKConnectService: Service() {
             }
         }
 
-        fun setKeystore(takServer: String, signClientResponse: SignClientResponse): Boolean {
+        fun setKeystore(takServerDetail: TakServerDetail, signClientResponse: SignClientResponse): Boolean {
+            val takServer = takServerDetail.address
             var retVal = true
 
             try {
@@ -541,20 +695,20 @@ class TAKConnectService: Service() {
 
                 // Create an empty PKCS#12 keystore
                 // Initialize with null parameters => empty store
-                keyStore.load(null, null)
+                takServerDetail.keyStore.load(null, null)
 
                 //p12.setCertificateEntry("signedCert", signedCert);
                 // Store the CA certs as "trusted" entries
-                keyStore.setCertificateEntry("ca0", ca0Cert)
-                keyStore.setCertificateEntry("ca1", ca1Cert)
+                takServerDetail.keyStore.setCertificateEntry("ca0", ca0Cert)
+                takServerDetail.keyStore.setCertificateEntry("ca1", ca1Cert)
 
                 // Keystore password to protect the .p12
                 val keystorePassword = TAK_CERT_PASSWORD.toCharArray()
-                keyStore.setKeyEntry(KEY_ALIAS, privateKey, keystorePassword, chain)
+                takServerDetail.keyStore.setKeyEntry(KEY_ALIAS, takServerDetail.privateKey, keystorePassword, chain)
                 runBlocking {
                     try {
                         MainActivity.mainActivity.openFileOutput("$takServer.jks", Context.MODE_PRIVATE).use { fos ->
-                            keyStore.store(fos, keystorePassword)
+                            takServerDetail.keyStore.store(fos, keystorePassword)
                             Log.d(TAG, "Keystore stored successfully in $takServer.jks")
                         }
                     } catch (e: Exception) {
@@ -581,12 +735,30 @@ class TAKConnectService: Service() {
             }
         }
 
+
+        fun base64ToInputStream(encodedString: String?): InputStream? {
+            var inputStream: InputStream? = null
+            if (null == encodedString) {
+                return inputStream
+            }
+            try {
+                // Decode the Base64 string into a byte array
+                val decodedBytes = Base64.getDecoder().decode(encodedString)
+
+                // Create and return an InputStream from the byte array
+                inputStream = ByteArrayInputStream(decodedBytes)
+            } catch (e: Exception) {
+                Log.d(TAG, "ERROR in base64ToInputStream: ${e.message}", e)
+            }
+            return inputStream
+        }
+
         private fun checkIssuerEqualsSubject(cert1: X509Certificate, cert2: X509Certificate): Boolean {
             return cert1.issuerX500Principal == cert2.subjectX500Principal
         }
 
+        /*
         private fun sendTakConnectionStatusEvent(connStatus: Int) {
-
             if (CONNECTING == connStatus) {
                 Log.d(TAG, "sendTakConnectionStatusEvent: CONNECTING")
                 takConnectionStatus = "CONNECTING"
@@ -607,81 +779,130 @@ class TAKConnectService: Service() {
             EventBus.getDefault().post(TakServerConnStatusEvent(connStatus))
         }
 
-        fun getClientCertificateAndConnect(takServer: String, username: String, password: String, port: Int) {
-            Log.d(TAG, "getClientCertificateAndConnect called with numConnAttemptsAfterFailure $numConnAttemptsAfterFailure")
-            isTakConnected = false
-            isTakConnectedLiveData.postValue(isTakConnected)
-            //isConnectingToCotMsgPort.set(true)
-            obtainedClientCert.set(false)
-            obtainingClientCert.set(true)
+         */
+
+        fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
+            Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
+            takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
+            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             if (isNetworkConnected) {
                 CoroutineScope(Dispatchers.IO).launch {
+                    val secureSocket = takServerDetail.secureSocket
                     if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
                         // TODO: check logic above
-                        Log.d(TAG, "Closing socket")
+                        Log.d(TAG, "Closing socket for takServer ${takServerDetail.address}")
                         secureSocket?.close()
                     }
-                    if (numConnAttemptsAfterFailure < NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                        sendTakConnectionStatusEvent(CONNECTING)
-                        if (loadKeyStore("$takServer.jks", TAK_CERT_PASSWORD)) {
-                            Log.d(TAG, "Successfully loaded keyStore for $takServer")
+                    if (takServerDetail.numConnAttempts < NUM_CONN_ATTEMPS_AFTER_FAILURE) {
+                        takServerDetail.numConnAttempts++
+                        isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
 
-                            obtainedClientCert.set(true)
-                            obtainingClientCert.set(false)
-                            connectTAKServer(takServer, username, password, port)
+                        if (takServerDetail.isP12Cert) {
+                            Log.d(TAG, "isP12Cert true")
+                            //takServerDetail.keyStore = KeyStore.getInstance("PKCS12")
+                            val inputStream = base64ToInputStream(takServerDetail.p12Cert)
+                            if (null != inputStream) {
+                                takServerDetail.keyStore.load(inputStream, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
+                                takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
+                                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                                connectTAKServer(takServerDetail)
+                            } else {
+                                Log.e(TAG, "ERROR getClientCertificateAndConnect: Cannot parse p12Cert for takServer ${takServerDetail.address}")
+                                takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                setIsAnyNetworkConnecting()
+                                if (newServerAddedViaUi) {
+                                    newServerAddedViaUi = false
+                                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                }
+                            }
                         } else {
-                            deleteFile("$takServer.jks")
-                            Log.d(TAG, "Cannot load keyStore for $takServer. Going to generate CSR")
-                            val (organization, organizationUnit) = fetchAndParseCertificateConfig(takServer, username, password)
-                            val base64CSR = generateBase64CSR(organization, organizationUnit, username)
-                            var signClientResponse: SignClientResponse? = null
-                            if (null != base64CSR) {
-                                //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
-                                signClientResponse = postCsrAndParse(takServer, username, password, base64CSR)
-                                if (null != signClientResponse) {
-                                    //Log.d(TAG, "signClientResponse NOT null. Going to call setKeystore")
-                                    if (setKeystore(takServer, signClientResponse)) {
-                                        Log.d(TAG, "setKeystore success: calling connectTAKServer")
-                                        obtainedClientCert.set(true)
-                                        obtainingClientCert.set(false)
-                                        connectTAKServer(takServer, username, password, port)
+                            if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", TAK_CERT_PASSWORD)) {
+                                Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
+                                takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
+                                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                                connectTAKServer(takServerDetail)
+                            } else {
+                                takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)
+                                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                                deleteFile("${takServerDetail.address}.jks")
+                                Log.d(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
+                                val (organization, organizationUnit) = fetchAndParseCertificateConfig(takServerDetail)
+                                val base64CSR = generateBase64CSR(organization, organizationUnit, takServerDetail)
+                                var signClientResponse: SignClientResponse? = null
+                                if (null != base64CSR) {
+                                    //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
+                                    signClientResponse = postCsrAndParse(takServerDetail, base64CSR)
+                                    if (null != signClientResponse) {
+                                        //Log.d(TAG, "signClientResponse NOT null. Going to call setKeystore")
+                                        if (setKeystore(takServerDetail, signClientResponse)) {
+                                            Log.d(TAG, "setKeystore success: calling connectTAKServer")
+                                            takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
+                                            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                                            connectTAKServer(takServerDetail)
+                                        } else {
+                                            deleteFile("$takServerDetail.jks")
+                                            Log.e(TAG, "ERROR in setKeystore: Cannot connect to TAK Server")
+                                            takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                            setIsAnyNetworkConnecting()
+                                            if (newServerAddedViaUi) {
+                                                newServerAddedViaUi = false
+                                                newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                            }
+                                        }
                                     } else {
-                                        deleteFile("$takServer.jks")
-                                        Log.e(TAG, "ERROR in setKeystore: Cannot connect to TAK Server")
-                                        obtainingClientCert.set(false)
-                                        sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+                                        Log.e(TAG, "ERROR postCsrAndParse returned NULL: Cannot connect to TAK Server")
+                                        takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                        setIsAnyNetworkConnecting()
+                                        if (newServerAddedViaUi) {
+                                            newServerAddedViaUi = false
+                                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                        }
                                     }
                                 } else {
-                                    Log.e(TAG, "ERROR postCsrAndParse returned NULL: Cannot connect to TAK Server")
-                                    obtainingClientCert.set(false)
-                                    sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+                                    Log.e(TAG, "ERROR generateBase64CSR returned NULL. Cannot connect to TAK Server")
+                                    takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                    setIsAnyNetworkConnecting()
+                                    if (newServerAddedViaUi) {
+                                        newServerAddedViaUi = false
+                                        newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                    }
                                 }
-                            } else {
-                                Log.e(TAG, "ERROR generateBase64CSR returned NULL. Cannot connect to TAK Server")
-                                obtainingClientCert.set(false)
-                                sendTakConnectionStatusEvent(CONNECTION_FAILURE)
                             }
                         }
-                    } else {
-                        sendTakConnectionStatusEvent(DISCONNECTED)
                     }
-                    numConnAttemptsAfterFailure++
                 }
             } else {
                 Log.d(TAG, "Network is NOT connected. Hence not trying to connect to TAK server")
+                if (newServerAddedViaUi) {
+                    newServerAddedViaUi = false
+                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                }
             }
         }
 
-        fun connectTAKServer(takServer: String, username: String, password: String, port: Int) {
-            isTakConnected = false
-            isTakConnectedLiveData.postValue(isTakConnected)
-            Log.d(TAG,"connectTAKServer called with obtainedClientCert = ${obtainedClientCert.get()} & isConnectingToCotMsgPort = ${isConnectingToCotMsgPort.get()}")
-            if (obtainedClientCert.get()) {
-                if (isConnectingToCotMsgPort.getAndSet(true) == false) {
+        fun connectTAKServer(takServerDetail: TakServerDetail) {
+            if (takServerDetail.numSocketConnectAttempts > NUM_CONN_ATTEMPS_AFTER_FAILURE) {
+                //Log.d(TAG, "connectTAKServer: takServer (${takServerDetail.address}): numSocketConnectAttempts(${takServerDetail.numSocketConnectAttempts}) > $NUM_CONN_ATTEMPS_AFTER_FAILURE")
+                return
+            }
+            takServerDetail.numSocketConnectAttempts++
+            val takServer = takServerDetail.address
+            val port = takServerDetail.port
+            Log.d(TAG,"connectTAKServer called for takServer ($takServer) w/ numSocketConnectAttempts=${takServerDetail.numSocketConnectAttempts}")
+            if (takServerDetail.connectionStatus.getAndSet(TAK_SERVER_CONNECTING_COT_PORT) == TAK_SERVER_OBTAINED_CLIENT_CERT) {
+                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                     try {
                         // Initialize the KeyManagerFactory with the client certificate
                         val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-                        keyManagerFactory.init(keyStore, TAK_CERT_PASSWORD.toCharArray())
+                        if (takServerDetail.isP12Cert) {
+                            keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
+                        } else {
+                            keyManagerFactory.init(takServerDetail.keyStore, TAK_CERT_PASSWORD.toCharArray())
+                        }
 
                         // Initialize SSL Context with TrustManager
                         val sslContext = SSLContext.getInstance("TLS")
@@ -709,59 +930,82 @@ class TAKConnectService: Service() {
                         Log.d(TAG, "Going to createSocket and startHandshake")
                         // Create the socket and connect
                         val socketFactory = sslContext.socketFactory
-                        secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket
+                        takServerDetail.secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket
                         Log.d(TAG, "Starting secureSocket handshake")
-                        secureSocket?.startHandshake()
-                        isTakConnected = true
-                        isTakConnectedLiveData.postValue(isTakConnected)
-                        sendTakConnectionStatusEvent(CONNECTION_SUCCESS)
+                        takServerDetail.secureSocket?.startHandshake()
+                        isAnyTakConnected = true
+                        isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+                        takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
+                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
+                        setIsAnyNetworkConnecting()
                         Log.d(TAG, "Successfully connected to $takServer on port $port")
+                        if (newServerAddedViaUi) {
+                            newServerAddedViaUi = false
+                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
+                        }
                     } catch (e: Exception) {
-                        isTakConnected = false
-                        isTakConnectedLiveData.postValue(isTakConnected)
-                        sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+                        //sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+                        takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                        setIsAnyNetworkConnecting()
                         Log.e(TAG, "ERROR in connectTAKServer: ${e.message}", e)
+                        if (newServerAddedViaUi) {
+                            newServerAddedViaUi = false
+                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                        }
                     }
-                }
-                isConnectingToCotMsgPort.set(false)
             } else {
-                if (!obtainingClientCert.get()) {
-                    Log.d(TAG, "Going to obtain client cert and then connect as obtainedClientCert=false and obtainingClientCert=false")
-                    getClientCertificateAndConnect(takServer, username, password, port)
+                // TODO: do we need to check that it is also NOT TAK_SERVER_CONNECTED_COT_PORT
+                if (takServerDetail.connectionStatus.get() != TAK_SERVER_OBTAINING_CLIENT_CERT) {
+                    Log.d(TAG, "Going to call getClientCertificateAndConnect for takServer($takServer)")
+                    if (!newServerAddedViaUi) {
+                        getClientCertificateAndConnect(takServerDetail)
+                        newServerAddedViaUi = false
+                        newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                    }
                 }
             }
         }
 
-        fun sendDataTAKServer(msg: String) {
-            if (isConnectingToCotMsgPort.get()) {
-                Log.i(TAG, "Connecting to TAK server. Hence not sending this message: $msg")
-                return
-            }
-            CoroutineScope(Dispatchers.IO).launch {
-                if (isLicenseValid() && enableTAKConnectService) {
-                    //Log.d(TAG,"License Valid and enableTAKConnectService true. Sending data: $msg")
-                    try {
-                        if ((null != secureSocket) && (secureSocket?.isConnected == true)) {
-                            val outputStream = secureSocket!!.getOutputStream()
-                            outputStream.write(msg.toByteArray(charset("UTF-8")))
-                            outputStream.flush()
-                        } else {
-                            Log.i(TAG, "ERROR sendDataTAKServer: secureSocket=$secureSocket; isConnected: ${secureSocket?.isConnected ?: false}. Reconnecting....")
-                            secureSocket?.close()
-                            connectTAKServer(takServer, username, password, port)
-                        }
-                    } catch (e: IOException) {
-                        Log.e(TAG, "Error sending COT message: " + e.message, e)
-                        secureSocket?.close()
-                        connectTAKServer(takServer, username, password, port)
-                    } catch (e: java.lang.Exception) {
-                        Log.e(TAG, "Error sending COT message: " + e.message, e)
-                        secureSocket?.close()
-                        connectTAKServer(takServer, username, password, port)
+        fun sendDataTAKServers(msg: String) {
+            if (isLicenseValid() && isNetworkConnected) {
+                val currTime = System.currentTimeMillis()
+                for (takServerDetail in takServerDetails) {
+                    if (TAK_SERVER_OBTAINING_CLIENT_CERT == takServerDetail.connectionStatus.get()) {
+                        Log.i(TAG, "Connecting to TAK server ${takServerDetail.address}. Hence not sending this message: $msg")
+                        continue
                     }
-                } else {
-                    Log.d(TAG,"License Invalid or enableTAKConnectService false: NOT sending any data")
+                    if (takServerDetail.isEnabled) {
+                        if ((currTime - takServerDetail.lastTimeMsgSent) >= takServerDetail.reportingUpdateInterval * 1000L) {
+                            //Log.d(TAG, "currTime($currTime) - takServerDetail.lastTimeMsgSent(${takServerDetail.lastTimeMsgSent}) = ${(currTime - takServerDetail.lastTimeMsgSent)} >= ${(takServerDetail.reportingUpdateInterval * 1000L)}")
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    if ((null != takServerDetail.secureSocket) && (takServerDetail.secureSocket?.isConnected == true)) {
+                                        val outputStream = takServerDetail.secureSocket!!.getOutputStream()
+                                        outputStream.write(msg.toByteArray(charset("UTF-8")))
+                                        outputStream.flush()
+                                        takServerDetail.lastTimeMsgSent = currTime
+                                        //Log.d(TAG, "sendDataTAKServers sent msg successfully to server(${takServerDetail.address}) at time($currTime)")
+                                    } else {
+                                        //Log.i(TAG, "ERROR sendDataTAKServers to server(${takServerDetail.address}): secureSocket=${takServerDetail.secureSocket}; isConnected: ${takServerDetail.secureSocket?.isConnected ?: false}. Reconnecting....")
+                                        takServerDetail.secureSocket?.close()
+                                        connectTAKServer(takServerDetail)
+                                    }
+                                } catch (e: IOException) {
+                                    Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}): ${e.message}", e)
+                                    takServerDetail.secureSocket?.close()
+                                    connectTAKServer(takServerDetail)
+                                } catch (e: java.lang.Exception) {
+                                    Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}): ${e.message}", e)
+                                    takServerDetail.secureSocket?.close()
+                                    connectTAKServer(takServerDetail)
+                                }
+                            }
+                        }
+                    }
                 }
+            } else {
+                Log.d(TAG,"License Invalid or network NOT connected: NOT sending any data")
             }
         }
     }

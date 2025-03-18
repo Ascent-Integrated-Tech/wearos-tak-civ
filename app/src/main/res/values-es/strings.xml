@@ -26,6 +26,7 @@
     <string name="registration_failed">Registro fallido</string>
     <string name="tak_server_registration_succeeded">El registro del servidor TAK se realizó correctamente</string>
     <string name="invalid_credentials_try_again">Credenciales no válidas, inténtelo de nuevo</string>
+    <string name="network_disconnected_try_later">Network Disconnected, try later</string>
     <string name="retry">Rever</string>
     <string name="okay">Bueno</string>
     <string name="cancel">Cancelar</string>
