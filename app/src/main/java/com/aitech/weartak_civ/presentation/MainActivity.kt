@@ -1646,44 +1646,50 @@ fun TakServerSetting(navController: NavController) {
                     )
                 }
             }
-            var pp = remember {mutableStateOf(TAKConnectService.takConnectionStatus)}
+            //TODO: Maybe delete this
             val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
             val shouldShowLoadingDialog = remember { mutableStateOf(false) }
             val shouldShowConfirmDialog = remember { mutableStateOf(false) }
             val isServerConnected = remember { mutableStateOf(false) }
 
-            takConnectionStatus = "NULL"
-            takConnectStatusLiveData.postValue(takConnectionStatus)
+            displayServerDialogs(loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
 
-            if (serverSettingsChanged) {
-                if (loadingDialog.equals("CONNECTING")) {
-                    shouldShowLoadingDialog.value = true
-                    shouldShowConfirmDialog.value = false
-                } else if (loadingDialog.equals("CONNECTION_SUCCESS")) {
-                    shouldShowLoadingDialog.value = false
-                    shouldShowConfirmDialog.value = true
-                    isServerConnected.value = true
-                } else if (loadingDialog.equals("CONNECTION_FAILURE")) {
-                    shouldShowLoadingDialog.value = false
-                    shouldShowConfirmDialog.value = true
-                    isServerConnected.value = false
-                }
-                LoadingDialog(shouldShowLoadingDialog)
+            LoadingDialog(shouldShowLoadingDialog)
                 Log.d(TAG, "selectedIndex: $selectedIndex")
                 ServerRegistrationDialog(
                     shouldShowConfirmDialog,
                     navController,
                     isServerConnected,
-                    navBehavior = {
-                        selectedIndex?.let { index ->
-                            navController.navigate("edit_server_screen/$index") // Navigate back to edit page
-                        }
-                    }
                 )
             }
         }
-    }
     Log.d(TAG, "Tak Server List: $takServerList")
+}
+
+fun displayServerDialogs(
+    loadingDialog: String?,
+    shouldShowLoadingDialog: MutableState<Boolean>,
+    shouldShowConfirmDialog: MutableState<Boolean>,
+    isServerConnected: MutableState<Boolean>
+    ) {
+
+    takConnectionStatus = "NULL"
+    takConnectStatusLiveData.postValue(takConnectionStatus)
+
+    if (serverSettingsChanged) {
+        if (loadingDialog.equals("CONNECTING")) {
+            shouldShowLoadingDialog.value = true
+            shouldShowConfirmDialog.value = false
+        } else if (loadingDialog.equals("CONNECTION_SUCCESS")) {
+            shouldShowLoadingDialog.value = false
+            shouldShowConfirmDialog.value = true
+            isServerConnected.value = true
+        } else if (loadingDialog.equals("CONNECTION_FAILURE")) {
+            shouldShowLoadingDialog.value = false
+            shouldShowConfirmDialog.value = true
+            isServerConnected.value = false
+        }
+    }
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -1801,6 +1807,7 @@ fun NewServerPage(
         var password by remember { mutableStateOf("") }
         var reportingUpdateInterval by remember { mutableStateOf("") }
         var isP12Cert = false
+        var listAmount = takServerList.size
 
         Box(
             modifier = Modifier
@@ -1919,6 +1926,10 @@ fun NewServerPage(
 
                 val maxReportRate: Int = 100000000
                 val minReportRate: Int = 1
+                val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
+                val shouldShowLoadingDialog = remember { mutableStateOf(false) }
+                val shouldShowConfirmDialog = remember { mutableStateOf(false) }
+                val isServerConnected = remember { mutableStateOf(false) }
 
                 ConfirmCancelButtons(
                     onClickCancel = {
@@ -1930,46 +1941,81 @@ fun NewServerPage(
                         }
                     },
                     onClickConfirm = {
-                        if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
-                            val mutableTakServerList = takServerListSettingsState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                            mutableTakServerList.add(DataRepository.TakServerItem(name, address, port.toInt(), username, password, reportingUpdateInterval.toInt(), isP12Cert))
-                            takServerListSettingsState.postValue(mutableTakServerList.toList())
-                            serverSettingsChanged = true
-                        }
-
-                        if (!reportingUpdateInterval.equals("") && (reportingUpdateInterval.toInt() != 0) && !reportingUpdateInterval.equals(
-                                CotDispatchService.reportingUpdateIntervalSecs.toString()
-                            ) && reportingUpdateInterval.toInt() >= minReportRate) {
-                            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval.toInt()
-                            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                            Log.d(TAG, "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}")
-                        }
-
-                        EventBus
-                            .getDefault()
-                            .post(MessageEvent(SERVER_ADDED, 0))
-
-                        EventBus.getDefault().post(
-                            MessageEvent(
-                                UPDATE_INTERVAL_CHANGED,
-                                CotDispatchService.reportingUpdateIntervalSecs
-                            )
-                        )
-
-                        if (reportingUpdateInterval.equals("")) {
-                            Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
-                        } else if (reportingUpdateInterval.equals("0")) {
-                            Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
-                        } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                            Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                        } else {
-                            navController.navigate("tak_server_screen") {
-                                popUpTo(("tak_server_screen")) {
-                                    inclusive = true
-                                }
+                            if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
+                                val mutableTakServerList =
+                                    takServerListSettingsState.value?.toMutableList()
+                                        ?: emptyList<DataRepository.TakServerItem>().toMutableList()
+                                mutableTakServerList.add(
+                                    DataRepository.TakServerItem(
+                                        name,
+                                        address,
+                                        port.toInt(),
+                                        username,
+                                        password,
+                                        reportingUpdateInterval.toInt(),
+                                        isP12Cert
+                                    )
+                                )
+                                takServerListSettingsState.postValue(mutableTakServerList.toList())
+                                serverSettingsChanged = true
                             }
-                        }
+
+                            if (!reportingUpdateInterval.equals("") && (reportingUpdateInterval.toInt() != 0) && !reportingUpdateInterval.equals(
+                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
+                                ) && reportingUpdateInterval.toInt() >= minReportRate
+                            ) {
+                                CotDispatchService.reportingUpdateIntervalSecs =
+                                    reportingUpdateInterval.toInt()
+                                //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+                                Log.d(
+                                    TAG,
+                                    "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}"
+                                )
+                            }
+
+                            EventBus
+                                .getDefault()
+                                .post(MessageEvent(SERVER_ADDED, 0))
+
+                            EventBus.getDefault().post(
+                                MessageEvent(
+                                    UPDATE_INTERVAL_CHANGED,
+                                    CotDispatchService.reportingUpdateIntervalSecs
+                                )
+                            )
+
+                            if (reportingUpdateInterval.equals("")) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate Empty, Enter Again",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else if (reportingUpdateInterval.equals("0")) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate 0, Enter Again",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                Log.d(TAG, "Server Added")
+                            }
                     })
+
+                displayServerDialogs(loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
+
+                LoadingDialog(shouldShowLoadingDialog)
+                ServerRegistrationDialog(
+                    shouldShowConfirmDialog,
+                    navController,
+                    isServerConnected,
+                )
+
             }
         }
     }
@@ -2214,14 +2260,23 @@ fun EditServerPage(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {
-                                navController.navigate("tak_server_screen") {
-                                    popUpTo(("tak_server_screen")) {
-                                        inclusive = true
-                                    }
-                                }
+                                Log.d(TAG, "Server Info Changed")
                             }
                         }
                     })
+                val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
+                val shouldShowLoadingDialog = remember { mutableStateOf(false) }
+                val shouldShowConfirmDialog = remember { mutableStateOf(false) }
+                val isServerConnected = remember { mutableStateOf(false) }
+
+                displayServerDialogs(loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
+
+                LoadingDialog(shouldShowLoadingDialog)
+                ServerRegistrationDialog(
+                    shouldShowConfirmDialog,
+                    navController,
+                    isServerConnected,
+                )
             }
         }
     }
@@ -2738,7 +2793,6 @@ fun ServerRegistrationDialog(
     shouldShowDialog: MutableState<Boolean>,
     navController: NavController,
     isServerConnected: MutableState<Boolean>,
-    navBehavior: () -> Unit
 ) {
 
     if (shouldShowDialog.value) {
@@ -2769,7 +2823,6 @@ fun ServerRegistrationDialog(
                     Button(
                         onClick = {
                             shouldShowDialog.value = false
-                            navBehavior()
                                   },
                         modifier = Modifier.fillMaxWidth(0.45f),
                         contentPadding = PaddingValues(0.dp),
@@ -2789,6 +2842,11 @@ fun ServerRegistrationDialog(
                     Button(
                         onClick = {
                             shouldShowDialog.value = false
+                            navController.navigate("tak_server_screen") {
+                                popUpTo(("tak_server_screen")) {
+                                    inclusive = true
+                                }
+                            }
                         },
                         contentPadding = PaddingValues(0.dp),
                         modifier = if (isServerConnected.value) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(0.45f),
@@ -3943,7 +4001,6 @@ fun WifiSsidSettingPreview() {
 @Composable
 fun TAKServerChipPreview() {
     var takServerChecked by remember{ mutableStateOf(enableTAKConnectService)}
-    var takServerCheckedChanged : Boolean = false
     SwipeableTakServerChip(
         "pp",
         "pp",
@@ -3958,6 +4015,19 @@ fun TAKServerChipPreview() {
 @Composable
 fun TAKSettingsPreview() {
     TakServerSetting(rememberSwipeDismissableNavController())
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun ServerDialogPreview() {
+    val trueBoolean = remember { mutableStateOf(true) }
+    val falseBoolean = remember { mutableStateOf(false) }
+
+    ServerRegistrationDialog (
+        trueBoolean,
+        rememberSwipeDismissableNavController(),
+        falseBoolean
+    )
 }
 
 @Preview(widthDp = 192, heightDp = 600, showBackground = true)
