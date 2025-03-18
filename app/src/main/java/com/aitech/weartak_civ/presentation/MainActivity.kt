@@ -693,14 +693,20 @@ class MainActivity : ComponentActivity() {
             roleState.postValue(role)
             roleSettingsState.postValue(role)
 
-            license = dataRepository.getLicense.first()
+            //license = dataRepository.getLicense.first()
+            license = "AscentFreeLicense"
+            dataRepository.storeLicense(license)
             licenseState.postValue(license)
             licenseSettingsState.postValue(license)
 
-            name = dataRepository.getName.first()
+            //name = dataRepository.getName.first()
+            name = "WI_TAK"
+            dataRepository.storeName(name)
             nameState.postValue(name)
             nameSettingsState.postValue(name)
-            address = dataRepository.getAddress.first()
+            //address = dataRepository.getAddress.first()
+            address = "tak.wi.ops.ascentitech.com"
+            dataRepository.storeAddress(address)
             addressState.postValue(address)
             addressSettingsState.postValue(address)
 
@@ -708,11 +714,15 @@ class MainActivity : ComponentActivity() {
             portState.postValue(port)
             portSettingsState.postValue(port)
 
-            username = dataRepository.getUsername.first()
+            //username = dataRepository.getUsername.first()
+            username = "WI.MILWAUKEE.FD.WEAROS"
+            dataRepository.storeUsername(username)
             usernameState.postValue(username)
             usernameSettingsState.postValue(username)
 
-            password = dataRepository.getPassword.first()
+            //password = dataRepository.getPassword.first()
+            password = "WI.MILWAUKEE.FD.WEAROS.Password01"
+            dataRepository.storePassword(password)
             passwordState.postValue(password)
             passwordSettingsState.postValue(password)
 
