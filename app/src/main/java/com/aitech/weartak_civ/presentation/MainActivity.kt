@@ -395,15 +395,12 @@ class MainActivity : ComponentActivity() {
         private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
 
         fun startTAKConnectService() {
-            if (enableTAKConnectService) {
-                if (!TAKConnectService.isRunning.get()) {
-                    Log.d(TAG, "Starting TAKConnectService")
-                    mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
-                } else {
-                    Log.d(TAG, "TAKConnectService is already running.")
-                }
+            // We are removing dependency on enableTAKConnectService here as it is taken care of in the TAKConnectService itself.
+            if (!TAKConnectService.isRunning.get()) {
+                Log.d(TAG, "Starting TAKConnectService")
+                mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
             } else {
-                Log.d(TAG, "TAKConnectService is disabled")
+                Log.d(TAG, "TAKConnectService is already running.")
             }
         }
 
@@ -1527,7 +1524,7 @@ fun TakServerSetting(navController: NavController) {
 
                 if (enableTAKConnectService != takServerChecked) {
                     enableTAKConnectService = takServerChecked; takServerCheckedChanged = true
-                    if (enableTAKConnectService) {
+                    if (takServerChecked) {
                         if (!TAKConnectService.isRunning.get()) {
                             Log.d(TAG, "Connecting to tak server")
                             mainActivity.startForegroundService(
@@ -1537,7 +1534,9 @@ fun TakServerSetting(navController: NavController) {
                                 )
                             )
 
-                        } else {
+                        }
+                        /*
+                        else {
                             Log.d(TAG, "Disconnecting from tak server")
                             mainActivity.stopService(
                                 Intent(
@@ -1546,14 +1545,16 @@ fun TakServerSetting(navController: NavController) {
                                 )
                             )
                         }
+
+                         */
                     }
                 }
 
                 if (takServerCheckedChanged) {
-                    Log.d(TAG, "Storing enableLocationService $enableTAKConnectService")
+                    Log.d(TAG, "Storing enableTAKConnectService $enableTAKConnectService")
                     CoroutineScope(Dispatchers.Main).launch {
                         dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
-                        EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, 0))
+                        EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, if (enableTAKConnectService == true) {1} else {0}))
                     }
                 }
 
