@@ -342,11 +342,12 @@ class DataRepository(private val context: Context) {
         val name: String,
         val address: String,
         val port: Int,
+        val isP12Cert: Boolean,
         val username: String,
         val password: String,
-        val reportingUpdateInterval: Int,
-        val isP12Cert: Boolean
-    )
+        val p12Cert: String,
+        val reportingUpdateInterval: Int
+        )
     val getTakServerList: Flow<List<TakServerItem>> = context.dataStore.data
         .map { preferences ->
             val jsonString = preferences[TAK_SERVER_LIST_KEY]
