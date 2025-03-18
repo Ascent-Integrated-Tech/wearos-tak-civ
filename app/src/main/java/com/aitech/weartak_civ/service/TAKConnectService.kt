@@ -26,6 +26,8 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
@@ -69,6 +71,7 @@ import java.util.Base64
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -86,6 +89,22 @@ class TAKConnectService: Service() {
         var ca1: String? = null // getters/setters not strictly needed for basic usage
     }
 
+    data class TakServerDetail(
+        var name: String,
+        var address: String,
+        var port: Int,
+        var isP12Cert: Boolean,
+        var username: String,
+        var password: String,
+        var p12Cert: String,
+        var p12CertPassword: String,
+        var reportingUpdateInterval: Int,
+        var numConnAttempts : Int = 0,
+        val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
+        var privateKey: String? = null,
+        var secureSocket : SSLSocket? = null,
+    )
+
 
     override fun onCreate() {
         Log.d(TAG, "TAKConnectService onCreate")
@@ -97,16 +116,13 @@ class TAKConnectService: Service() {
 
     fun setFromDatastore() {
         runBlocking {
-            takServer = dataRepository.getAddress.first().trim()
-            username = dataRepository.getUsername.first()
-            password = dataRepository.getPassword.first()
-            try {
-                port = dataRepository.getPort.first().toInt()
-            } catch (e: Exception) {
-                Log.w(TAG, "Port ($port) is not a number. Setting to default 8089", e)
-                port = 8089
+            val takServers : List<TakServerItem> = dataRepository.getTakServerList.first()
+            for (takServer in takServers) {
+                takServerDetails.add(TakServerDetail(takServer.name, takServer.address.trim(), takServer.port, takServer.isP12Cert, takServer.username, takServer.password,
+                    takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval))
+                Log.d(TAG, "setFromDatastore takServer(${takServer.name}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), password(${takServer.password}), reportInterval(${takServer.reportingUpdateInterval})")
+                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
-            Log.d(TAG, "setFromDatastore takServer ($takServer), username ($username), password ($password), port ($port)")
         }
     }
 
@@ -120,7 +136,7 @@ class TAKConnectService: Service() {
             isWifiConnected = networkManager?.isWifiConnected() ?: false
             if (isNetworkConnected) {
                 Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
-                getClientCertificateAndConnect(takServer, username, password, port)
+                connectToTakServers()
             }
         }
         return START_NOT_STICKY
@@ -239,7 +255,22 @@ class TAKConnectService: Service() {
         }
     }
 
+    fun connectToTakServers() {
+        for (takServer in takServerDetails) {
+            getClientCertificateAndConnect(takServer)
+        }
+    }
+
     companion object {
+        const val TAK_SERVER_DISCONNECTED = 0
+        const val TAK_SERVER_OBTAINING_CLIENT_CERT = 1
+        const val TAK_SERVER_OBTAINED_CLIENT_CERT = 2
+        const val TAK_SERVER_CONNECTING_COT_PORT = 3
+        const val TAK_SERVER_CONNECTED_COT_PORT = 4
+
+        const val TAK_SERVER_CONNECTION_SUCCESS = 0
+        const val TAK_SERVER_CONNECTION_FAILURE = 1
+
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private var numConnAttemptsAfterFailure = 0
@@ -265,6 +296,7 @@ class TAKConnectService: Service() {
         var password : String = ""
         var takServer : String = ""
         var port : Int = 8089
+        var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
 
         private fun generateBase64CSR(org: String, orgUnit: String, cnName: String): String? {
             var base64CSR: String? = null
@@ -570,7 +602,7 @@ class TAKConnectService: Service() {
             EventBus.getDefault().post(TakServerConnStatusEvent(connStatus))
         }
 
-        fun getClientCertificateAndConnect(takServer: String, username: String, password: String, port: Int) {
+        fun getClientCertificateAndConnect(takServer: TakServerDetail) {
             Log.d(TAG, "getClientCertificateAndConnect called with numConnAttemptsAfterFailure $numConnAttemptsAfterFailure")
             isTakConnected = false
             isTakConnectedLiveData.postValue(isTakConnected)

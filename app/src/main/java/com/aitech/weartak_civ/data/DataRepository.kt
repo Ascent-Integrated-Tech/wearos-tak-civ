@@ -346,6 +346,7 @@ class DataRepository(private val context: Context) {
         val username: String,
         val password: String,
         val p12Cert: String,
+        val p12CertPassword: String,
         val reportingUpdateInterval: Int
         )
     val getTakServerList: Flow<List<TakServerItem>> = context.dataStore.data

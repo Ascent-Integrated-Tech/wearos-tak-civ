@@ -1930,7 +1930,7 @@ fun NewServerPage(
                                 Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                             } else {
                                 val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                                mutableTakServerList.add(DataRepository.TakServerItem(name, address, port.toInt(), isP12Cert, username, password, "", reportingUpdateInterval.toInt()))
+                                mutableTakServerList.add(DataRepository.TakServerItem(name, address, port.toInt(), isP12Cert, username, password, "", "", reportingUpdateInterval.toInt()))
                                 // TODO: takServerListState vs takServerSettingsListState
                                 takServerListState.postValue(mutableTakServerList.toList())
                                 serverSettingsChanged = true
@@ -2145,7 +2145,7 @@ fun EditServerPage(
                                     isP12Cert.toBoolean(),
                                     username,
                                     password,
-                                    "",
+                                    "", "",
                                     reportingUpdateInterval.toInt()
                                 )
                             )
