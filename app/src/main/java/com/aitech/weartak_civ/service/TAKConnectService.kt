@@ -28,6 +28,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent
@@ -96,6 +97,7 @@ class TAKConnectService: Service() {
 
     fun setFromDatastore() {
         runBlocking {
+            isTakServerEnabled = dataRepository.getEnableTAKConnectService.first()
             takServer = dataRepository.getAddress.first().trim()
             username = dataRepository.getUsername.first()
             password = dataRepository.getPassword.first()
@@ -105,7 +107,7 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Port ($port) is not a number. Setting to default 8089", e)
                 port = 8089
             }
-            Log.d(TAG, "setFromDatastore takServer ($takServer), username ($username), password ($password), port ($port)")
+            Log.d(TAG, "setFromDatastore isTakServerEnabled ($isTakServerEnabled), takServer ($takServer), username ($username), password ($password), port ($port)")
         }
     }
 
@@ -117,8 +119,8 @@ class TAKConnectService: Service() {
             numConnAttemptsAfterFailure = 0
             isNetworkConnected = networkManager?.isNetworkConnected() ?: false
             isWifiConnected = networkManager?.isWifiConnected() ?: false
-            if (isNetworkConnected) {
-                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
+            if (isNetworkConnected && isTakServerEnabled) {
+                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected with TAK enabled and isWifiConnected=$isWifiConnected")
                 getClientCertificateAndConnect(takServer, username, password, port)
             }
         }
@@ -190,13 +192,17 @@ class TAKConnectService: Service() {
                 isWifiConnected = currIsWifi
                 setFromDatastore()
                 numConnAttemptsAfterFailure = 0
-                getClientCertificateAndConnect(takServer, username, password, port)
+                if (isTakServerEnabled) {
+                    getClientCertificateAndConnect(takServer, username, password, port)
+                }
             } else { // If underlying transport has changed, then we do need to reconnect
                 if (currIsWifi != isWifiConnected) {
                     Log.d(TAG, "Connected to a different transport: prevIsWifi($isWifiConnected), currIsWifi($currIsWifi)")
                     isWifiConnected = currIsWifi
                     numConnAttemptsAfterFailure = 0
-                    getClientCertificateAndConnect(takServer, username, password, port)
+                    if (isTakServerEnabled) {
+                        getClientCertificateAndConnect(takServer, username, password, port)
+                    }
                 }
             }
         } else { // Network is disconnected
@@ -215,7 +221,8 @@ class TAKConnectService: Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
-        if (SERVER_DETAILS_CHANGED == event.message) {
+        val message = event.message
+        if (SERVER_DETAILS_CHANGED == message) {
             Log.d(TAG, "Received SERVER_DETAILS_CHANGED message")
             //sendTakConnectionStatusEvent(CONNECTING)
             numConnAttemptsAfterFailure = 0
@@ -225,7 +232,9 @@ class TAKConnectService: Service() {
             // Delete new server name file (if it exists)
             Companion.deleteFile("$takServer.jks")
             if (isNetworkConnected) {
-                getClientCertificateAndConnect(takServer, username, password, port)
+                if (isTakServerEnabled) {
+                    getClientCertificateAndConnect(takServer, username, password, port)
+                }
             } else {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isTakConnected = false
@@ -234,6 +243,33 @@ class TAKConnectService: Service() {
                 obtainedClientCert.set(false)
                 obtainingClientCert.set(true)
                 sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+            }
+        } else if (SERVER_TOGGLED == message) {
+            numConnAttemptsAfterFailure = 0
+            if (event.addlIntInfo == 0) {
+                // dataRepository.getEnableTAKConnectService is false
+                isTakServerEnabled = false
+                Log.d(TAG, "Received SERVER_TOGGLED message with server OFF")
+                if (isTakConnected) {
+                    if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
+                        // TODO: check logic above
+                        Log.d(TAG, "Closing socket")
+                        secureSocket?.close()
+                    }
+                    secureSocket = null
+                }
+                isTakConnected = false
+                isTakConnectedLiveData.postValue(isTakConnected)
+                obtainedClientCert.set(false)
+                obtainingClientCert.set(true)
+                sendTakConnectionStatusEvent(DISCONNECTED)
+            } else {
+                // dataRepository.getEnableTAKConnectService is true
+                isTakServerEnabled = true
+                Log.d(TAG, "Received SERVER_DETAILS_CHANGED message with server ON")
+                if (isNetworkConnected) {
+                    getClientCertificateAndConnect(takServer, username, password, port)
+                }
             }
         }
     }
@@ -264,6 +300,7 @@ class TAKConnectService: Service() {
         var password : String = ""
         var takServer : String = ""
         var port : Int = 8089
+        var isTakServerEnabled = false
 
         private fun generateBase64CSR(org: String, orgUnit: String, cnName: String): String? {
             var base64CSR: String? = null
