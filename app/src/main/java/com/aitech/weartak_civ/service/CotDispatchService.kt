@@ -29,13 +29,11 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,7 +69,7 @@ class CotDispatchService : Service() {
         Log.v(TAG, "CotDispatchService onStartCommand()")
         if (!isRunning.getAndSet(true)) {
             startForegroundService()
-            // startDispatchScheduler()
+            startDispatchScheduler()
         }
         return START_NOT_STICKY
     }
@@ -351,18 +349,18 @@ class CotDispatchService : Service() {
 
     private fun sendMarkerCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
-        sendDataTAKServer(cotMessage)
+        sendDataTAKServers(cotMessage)
         Log.v(TAG, "Marker CoT message sent: $cotMessage")
     }
 
     private fun sendEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String) {
         val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
-        sendDataTAKServer(cotMessage)
+        sendDataTAKServers(cotMessage)
         Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
     }
 
     fun buildAndSendLocationBiometricCotMessage() {
-        if (!TAKConnectService.isTakConnected) {
+        if (!TAKConnectService.isAnyTakConnected) {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             CoroutineScope(Dispatchers.IO).launch {
@@ -384,7 +382,7 @@ class CotDispatchService : Service() {
 
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
-        sendDataTAKServer(cotMessage)
+        sendDataTAKServers(cotMessage)
         //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
 
         /*
@@ -401,7 +399,7 @@ class CotDispatchService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         //Log.d(TAG, "onLocationRcvdEvent called")
-        if (TAKConnectService.isTakConnected) {
+        if (TAKConnectService.isAnyTakConnected) {
             // We would like to send the "freshest" location especially if location update is 10s or greater
             lastLocationUpdateRcvd = System.currentTimeMillis()
             buildAndSendLocationBiometricCotMessage()
@@ -413,7 +411,7 @@ class CotDispatchService : Service() {
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
         //Log.d(TAG, "onMessageEvent w/ msg($msg)")
-        if (TAKConnectService.isTakConnected) {
+        if (TAKConnectService.isAnyTakConnected) {
             if (DROP_MARKER == msg) {
                 CoroutineScope(Dispatchers.IO).launch {
                     val location = dataRepository.latestLocation.value
@@ -436,6 +434,7 @@ class CotDispatchService : Service() {
         }
     }
 
+    /*
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onTakConnectionSuccess(event: TakServerConnStatusEvent) {
         if (event.connEvent == CONNECTION_SUCCESS) {
@@ -446,6 +445,8 @@ class CotDispatchService : Service() {
             stopDispatchScheduler()
         }
     }
+
+     */
 
     override fun onDestroy() {
         super.onDestroy()

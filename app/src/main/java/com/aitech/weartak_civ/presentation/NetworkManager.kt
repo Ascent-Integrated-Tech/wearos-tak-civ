@@ -117,7 +117,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 isCellularConnectedLiveData.postValue(isCellular)
             }
         }
-        //Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
+        Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         if (networkInfoChanged) {
             Log.d(TAG, "Change detected in network connection information.Sending NwConnEvent")
             EventBus.getDefault().post(NwConnEvent(isNetworkConnected, if (isWifi == true) { WIFI } else { CELLULAR }))
@@ -149,7 +149,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
-        //Log.d(TAG, "onCapabilitiesChanged called")
+        Log.d(TAG, "onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
     }
 

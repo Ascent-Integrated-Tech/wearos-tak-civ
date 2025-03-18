@@ -26,6 +26,7 @@
     <string name="registration_failed">登録に失敗しました</string>
     <string name="tak_server_registration_succeeded">TAKサーバーの登録に成功しました</string>
     <string name="invalid_credentials_try_again">認証情報が無効です。もう一度お試しください</string>
+    <string name="network_disconnected_try_later">Network Disconnected, try later</string>
     <string name="retry">リトライ</string>
     <string name="okay">わかった</string>
     <string name="cancel">キャンセル</string>

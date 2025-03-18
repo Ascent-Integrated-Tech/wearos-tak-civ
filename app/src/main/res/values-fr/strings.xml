@@ -26,6 +26,7 @@
     <string name="registration_failed">Échec de l\'inscription</string>
     <string name="tak_server_registration_succeeded">L\'enregistrement du serveur TAK a réussi</string>
     <string name="invalid_credentials_try_again">Informations d\'identification non valides, réessayez</string>
+    <string name="network_disconnected_try_later">Network Disconnected, try later</string>
     <string name="retry">Réessayer</string>
     <string name="okay">D\'accord</string>
     <string name="cancel">Annuler</string>

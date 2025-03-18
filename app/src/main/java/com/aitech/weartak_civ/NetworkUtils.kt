@@ -6,12 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import android.util.Log
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.keyStore
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.takServer
-import kotlinx.coroutines.flow.first
 import java.security.KeyStore
-import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
@@ -20,11 +15,6 @@ import javax.net.ssl.X509TrustManager
 
 object NetworkUtils {
     private const val TAG = "WearTAK-NetworkUtils"
-
-    // lazy so the customHttpClient is only built once and when needed
-    val customOkHttpClient: OkHttpClient by lazy {
-        createCustomOkHttpClient(keyStore)
-    }
 
     // tak.X.ops.ascentitech.com is not in default truststore, so we need to trust it. To do this, we need to obtain the trusted cert from the keystore once we have connected to the tak server.
     private fun createCustomOkHttpClient(keyStore: KeyStore): OkHttpClient {
@@ -43,10 +33,10 @@ object NetworkUtils {
             .build()
     }
 
-    suspend fun fetchJsonFromServer(url: String): String? {
+    suspend fun fetchJsonFromServer(url: String, keyStore: KeyStore): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val client = customOkHttpClient
+                val client = createCustomOkHttpClient(keyStore)
                 val xHardwareId = MainActivity.device_uid
                 val request = Request.Builder()
                     .url(url)
