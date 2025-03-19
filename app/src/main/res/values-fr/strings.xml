@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="callsign_settings">Paramètres d\'indicatif</string>
+    <string name="team">Équipe</string>
+    <string name="role">Rôle</string>
+    <string name="callsign">Indicatif</string>
+    <string name="connection_settings">Paramètres de connexion</string>
+    <string name="tak_server">Serveur TAK</string>
+    <string name="save_battery_on_wifi">Économiser la batterie sur le WiFi</string>
+    <string name="license_key">Clé de licence</string>
+    <string name="general_settings">Paramètres généraux</string>
+    <string name="location_service">Service de localisation</string>
+    <string name="service_on_off">Service activé/désactivé</string>
+    <string name="biometrics">Biométrie</string>
+    <string name="ditto">Ditto</string>
+    <string name="version">Version %1$s</string>
+    <string name="tak_servers">Serveurs TAK</string>
+    <string name="edit_server">Modifier le serveur</string>
+    <string name="connection_name">Nom de la connexion</string>
+    <string name="address_url">Adresse/URL</string>
+    <string name="port">Port du site Web</string>
+    <string name="username">Nom d\'utilisateur</string>
+    <string name="password">Mot de passe</string>
+    <string name="registering_device_with_tak_server">Enregistrement de l\'appareil auprès du serveur TAK</string>
+    <string name="registration_complete">Inscription terminée</string>
+    <string name="registration_failed">Échec de l\'inscription</string>
+    <string name="tak_server_registration_succeeded">L\'enregistrement du serveur TAK a réussi</string>
+    <string name="invalid_credentials_try_again">Informations d\'identification non valides, réessayez</string>
+    <string name="retry">Réessayer</string>
+    <string name="okay">D\'accord</string>
+    <string name="cancel">Annuler</string>
+    <string name="slows_update_rate_on_enabled_wifi_networks">Ralentit le taux de mise à jour sur les réseaux Wi-Fi activés</string>
+    <string name="optimize_on">Optimiser sur:</string>
+    <string name="some_wifi_connections">Quelques connexions WiFi</string>
+    <string name="no_wifi_connections">Aucune connexion WiFi</string>
+    <string name="all_wifi_connections">Toutes les connexions WiFi</string>
+    <string name="edit_optimized_wifi_connections">Modifier les connexions Wi-Fi optimisées</string>
+    <string name="enabled_wifi_connections">Connexions Wi-Fi activées</string>
+    <string name="add_network">Ajouter un réseau</string>
+    <string name="delete">Supprimer</string>
+    <string name="undo">Défaire</string>
+    <string name="wifi_ssid">SSID Wi-Fi</string>
+    <string name="confirm">Confirmer</string>
+    <string name="dismiss">Rejeter</string>
+    <string name="sos_alert_prompt">Vous souhaitez déclencher une alerte SOS à votre emplacement?</string>
+    <string name="marker_drop_prompt">Déposer le marqueur à l\'emplacement actuel?</string>
+    <string name="success">Succès!</string>
+    <string name="error">Erreur</string>
+    <string name="invalid_license_key">Clé de licence invalide</string>
+    <string name="please_add_correct_key_to_use_weartak">Veuillez ajouter la clé correcte pour utiliser WearTAK</string>
+    <string name="update_license">Mettre à jour la licence</string>
+    <string name="bpm">" bpm"</string>
+    <string name="sos">SOS</string>
+
+</resources>

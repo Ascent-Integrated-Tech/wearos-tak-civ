@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -173,9 +174,9 @@ import com.aitech.weartak_civ.events.TakServerConnStatusEvent
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTING
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_FAILURE
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_CONNECTIONS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_CONNECTIONS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_CONNECTIONS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_NETWORKS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.address
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
@@ -306,12 +307,9 @@ class MainActivity : ComponentActivity() {
         val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
         var serverSettingsChanged: Boolean = false
 
-        private val SOME_WIFI_NETWORKS = "Some WiFi Networks"
-        private val ALL_WIFI_NETWORKS = "All WiFi Networks"
-        private val NO_WIFI_NETWORKS = "No WiFi Networks"
-        val SOME_WIFI_CONNECTIONS = "Some WiFi Connections"
-        val ALL_WIFI_CONNECTIONS = "All WiFi Connections"
-        val NO_WIFI_CONNECTIONS = "No WiFi Connections"
+        var SOME_WIFI_NETWORKS = "Some WiFi Networks"
+        var ALL_WIFI_NETWORKS = "All WiFi Networks"
+        var NO_WIFI_NETWORKS = "No WiFi Networks"
         var saveBattOnWifiString: String = ALL_WIFI_NETWORKS
         val saveBattOnWifiStringState = MutableLiveData<String>(ALL_WIFI_NETWORKS)
         var enableWifiBatteryOptimization : Boolean = true
@@ -1314,8 +1312,8 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
                     callsignTextFieldValue = it
                 },
                 maxLines = 1,
-                label = { Text(text = "Callsign", color = colors.primary) },
-                placeholder = { Text(text = "Your Callsign", color = colors.primary) },
+                label = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
+                placeholder = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
                 textStyle = TextStyle(color = colors.primary)
             )
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -1510,7 +1508,7 @@ fun TakServerSetting(navController: NavController) {
 
 
                 Text(
-                    text = "TAK Server",
+                    text = stringResource(R.string.tak_servers),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -1714,36 +1712,36 @@ fun NewServerPage(navController: NavController) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = /* add if statement for new server vs editing current server */ "Add New Server",
+                    text = stringResource(R.string.edit_server),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
 
                 NewServerSettingText(
-                    "Connection Name",
+                    stringResource(R.string.connection_name),
                     nameSettingsState,
                     nameTextState,
                     false,
                     false
                 )
                 NewServerSettingText(
-                    "Address/URL",
+                    stringResource(R.string.address_url),
                     addressSettingsState,
                     addressTextState,
                     false,
                     false
                 )
-                NewServerSettingText("Port", portSettingsState, portTextState, false, true)
+                NewServerSettingText(stringResource(R.string.port), portSettingsState, portTextState, false, true)
                 NewServerSettingText(
-                    "Username",
+                    stringResource(R.string.username),
                     usernameSettingsState,
                     usernameTextState,
                     false,
                     false
                 )
                 NewServerSettingText(
-                    "Password",
+                    stringResource(R.string.password),
                     passwordSettingsState,
                     passwordTextState,
                     true,
@@ -1886,6 +1884,9 @@ fun NewServerSettingText (
 fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
     val enableWifiOpt = enableWifiBatteryOptimizationSettingsState.value ?: true
     val enableAllWifiOpt = enableAllWifiBatteryOptimizationSettingsState.value ?: true
+    val SOME_WIFI_CONNECTIONS = stringResource(R.string.some_wifi_connections)
+    val ALL_WIFI_CONNECTIONS = stringResource(R.string.all_wifi_connections)
+    val NO_WIFI_CONNECTIONS = stringResource(R.string.no_wifi_connections)
     val radioOptions = listOf(ALL_WIFI_CONNECTIONS, NO_WIFI_CONNECTIONS, SOME_WIFI_CONNECTIONS)
     val initialValue = when {
         enableWifiOpt && enableAllWifiOpt -> radioOptions[0]  // "All"
@@ -1919,7 +1920,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Optimize Battery on WiFi",
+                    text = stringResource(R.string.save_battery_on_wifi),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
@@ -1928,7 +1929,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
                 )
 
                 Text(
-                    text = "Slows Update Rate on Enabled WiFi Networks",
+                    text = stringResource(R.string.slows_update_rate_on_enabled_wifi_networks),
                     textAlign = TextAlign.Center,
                     fontSize = 12.sp,
                     lineHeight = 15.sp,
@@ -1938,7 +1939,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
                 )
 
                 Text(
-                    text = "Optimize On:",
+                    text = stringResource(R.string.optimize_on),
                     textAlign = TextAlign.Left,
                     modifier = Modifier
                         .padding(bottom = 3.dp)
@@ -1973,7 +1974,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
                     )
 
                 }
-                if (selectedValue.value == "Some WiFi Connections") {
+                if (selectedValue.value == SOME_WIFI_CONNECTIONS) {
                     Chip(
                         onClick = {
                             navController.navigate("wifi_ssid_screen") {
@@ -1986,7 +1987,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
                         enabled = true,
                         label = {
                             Text(
-                                text = "Edit Optimized WiFi Connections",
+                                text = stringResource(R.string.edit_optimized_wifi_connections),
                                 fontWeight = FontWeight.Normal,
                                 color = colors.primary
                             )
@@ -2068,7 +2069,7 @@ fun WifiSsidSelectScreen(navController: NavController) {
                 LazyColumn {
                     item {
                         Text(
-                            text = "Enabled WiFi Connections",
+                            text = stringResource(R.string.enabled_wifi_connections),
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(10.dp)
@@ -2100,7 +2101,7 @@ fun WifiSsidSelectScreen(navController: NavController) {
                                 }
                             } },
                             enabled = true,
-                            label = { Text(text = "Add Network") },
+                            label = { Text(text = stringResource(R.string.add_network)) },
                             colors = ChipDefaults.chipColors(
                                 backgroundColor = Color.DarkGray,
                                 contentColor = Color.White,
@@ -2180,7 +2181,7 @@ fun WifiSsidItemChip(
             SwipeToRevealPrimaryAction(
                 revealState = revealState,
                 icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
-                label = { Text("Delete") },
+                label = { Text(stringResource(R.string.delete)) },
                 onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
         },
@@ -2195,14 +2196,14 @@ fun WifiSsidItemChip(
         undoPrimaryAction = {
             SwipeToRevealUndoAction(
                 revealState = revealState,
-                label = { Text("Undo") },
+                label = { Text(stringResource(R.string.undo)) },
                 onClick = { /* Add the undo handler for primary action */ }
             )
         },
         undoSecondaryAction = {
             SwipeToRevealUndoAction(
                 revealState = revealState,
-                label = { Text("Undo") },
+                label = { Text(stringResource(R.string.undo)) },
                 onClick = { /* Add the undo handler for secondary action */ }
             )
         },
@@ -2244,8 +2245,8 @@ fun NewWiFiSSIDSetting(
                 name = text
             },
             maxLines = 1,
-            label = { Text(text = "Wifi SSID", color = colors.primary) },
-            placeholder = { Text(text = "Wifi SSID", color = colors.primary) },
+            label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
+            placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
             textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -2299,8 +2300,8 @@ fun EditedWiFiSSIDSetting(
             value = name,
             onValueChange = { text -> name = text },
             maxLines = 1,
-            label = { Text(text = "Wifi SSID", color = colors.primary) },
-            placeholder = { Text(text = "Wifi SSID", color = colors.primary) },
+            label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
+            placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
             textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -2355,7 +2356,7 @@ fun LoadingDialog(
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Registering device with TAK Server",
+                        text = stringResource(R.string.registering_device_with_tak_server),
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -2379,16 +2380,16 @@ fun ServerRegistrationDialog(
             },
             title = {
                 if (isServerConnected.value) {
-                    Text("Registration Complete", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                    Text(stringResource(R.string.registration_complete), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
                 } else {
-                    Text("Registration Failed", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 15.dp))
+                    Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 15.dp))
                 }
             },
             text = {
                 if (isServerConnected.value) {
-                    Text("TAK Server registration succeeded", textAlign = TextAlign.Center)
+                    Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
                 } else {
-                    Text("Invalid Credentials, try again", textAlign = TextAlign.Center)
+                    Text(stringResource(R.string.invalid_credentials_try_again), textAlign = TextAlign.Center)
                 }
             },
             confirmButton = {
@@ -2407,7 +2408,7 @@ fun ServerRegistrationDialog(
                         ),
                     ) {
                         Text(
-                            text = "Retry",
+                            text = stringResource(R.string.retry),
                             color = Color.Black
                         )
                     }
@@ -2427,11 +2428,11 @@ fun ServerRegistrationDialog(
                     ) {
                         if (isServerConnected.value) {
                             Text(
-                                text = "Okay",
+                                text = stringResource(R.string.okay),
                             )
                         } else {
                             Text(
-                                text = "Cancel",
+                                text = stringResource(R.string.cancel),
                             )
                         }
                     }
@@ -2481,7 +2482,7 @@ fun ConfirmationDialog(
                         ),
                     ) {
                         Text(
-                            text = "Confirm",
+                            text = stringResource(R.string.confirm),
                             color = Color.Black
                         )
                     }
@@ -2500,7 +2501,7 @@ fun ConfirmationDialog(
                         )
                         ) {
                         Text(
-                            text = "Dismiss",
+                            text = stringResource(R.string.dismiss),
                         )
                     }
                 }
@@ -2534,7 +2535,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                 licenseTextFieldValue = it
             },
             maxLines = 1,
-            label = { Text(text = "License Key", color = colors.primary) },
+            label = { Text(text = stringResource(R.string.license_key), color = colors.primary) },
             textStyle = TextStyle(color = colors.primary)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -2693,14 +2694,14 @@ fun InvalidLicenseScreen (navController: NavController) {
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Invalid License Key",
+                text = stringResource(R.string.invalid_license_key),
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.size(5.dp))
             //Maybe add info here for how to contact Ascent for the key?
             Text(
-                text = "Please add correct key to use WearTAK",
+                text = stringResource(R.string.please_add_correct_key_to_use_weartak),
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.size(10.dp))
@@ -2714,7 +2715,7 @@ fun InvalidLicenseScreen (navController: NavController) {
                 )
             ) {
                 Text (
-                    text = "Update License",
+                    text = stringResource(R.string.update_license),
                     color = Color.Black,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
@@ -2755,7 +2756,7 @@ fun HeartRate () {
                     color = Color.White
                 )
                 Text(
-                    text = " bpm",
+                    text = stringResource(R.string.bpm),
                     color = Color.White
                 )
             } else {
@@ -2902,7 +2903,7 @@ fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : Muta
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Success!",
+                            text = stringResource(R.string.success),
                             textAlign = TextAlign.Center,
                         )
                     } else {
@@ -2914,7 +2915,7 @@ fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : Muta
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Error",
+                            text = stringResource(R.string.error),
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -2969,7 +2970,7 @@ fun SOSButton() {
         ConfirmationDialog(
             shouldShowConfirmationDialog,
             rememberSwipeDismissableNavController(),
-            "Do you want to trigger an SOS alert at your location?",
+            stringResource(R.string.sos_alert_prompt),
             Icons.Default.Warning,
             Color.Red,
             "main_screen",
@@ -3006,7 +3007,7 @@ fun SOSButton() {
         )
     ) {
         Text (
-            "SOS",
+            stringResource(R.string.sos),
             fontSize = 25.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Red
@@ -3046,7 +3047,7 @@ fun MarkerDropButton(
         ConfirmationDialog(
             shouldShowConfirmationDialog,
             rememberSwipeDismissableNavController(),
-            "Drop marker at current location?",
+            stringResource(R.string.marker_drop_prompt),
             Icons.Default.LocationOn,
             Color.Green,
             "main_screen",
@@ -3155,6 +3156,11 @@ fun SettingsScreen(
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
+            when (displayedSecondaryText) {
+                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
+                SOME_WIFI_NETWORKS -> { SOME_WIFI_NETWORKS = stringResource(R.string.some_wifi_connections) }
+                else -> { NO_WIFI_NETWORKS = stringResource(R.string.no_wifi_connections) }
+            }
 
             Column(
                 modifier = Modifier
@@ -3166,7 +3172,7 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Callsign Settings",
+                    text = stringResource(R.string.callsign_settings),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -3174,17 +3180,19 @@ fun SettingsScreen(
 
                 CallsignRoleTeamChip(
                     "callsign_screen",
-                    "Callsign",
+                    stringResource(R.string.callsign),
                     callsignSettingsState,
                     navController
                 )
-                CallsignRoleTeamChip("team_screen", "Team", teamSettingsState, navController)
-                CallsignRoleTeamChip("role_screen", "Role", roleSettingsState, navController)
+                CallsignRoleTeamChip("team_screen",
+                    stringResource(R.string.team), teamSettingsState, navController)
+                CallsignRoleTeamChip("role_screen",
+                    stringResource(R.string.role), roleSettingsState, navController)
 
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Connection Settings",
+                    text = stringResource(R.string.connection_settings),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
@@ -3194,7 +3202,7 @@ fun SettingsScreen(
                 Chip(
                     onClick = { navController.navigate("tak_server_screen") },
                     enabled = true,
-                    label = { Text(text = "TAK Server") },
+                    label = { Text(text = stringResource(R.string.tak_server)) },
                     secondaryLabel = { Text(text = name) },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
@@ -3216,7 +3224,7 @@ fun SettingsScreen(
                         popUpTo("optimize_battery_on_wifi_screen") { inclusive = true }
                     } },
                     enabled = true,
-                    label = { Text(text = "Save Battery on WiFi") },
+                    label = { Text(text = stringResource(R.string.save_battery_on_wifi)) },
                     secondaryLabel = {Text(text = "$displayedSecondaryText")},
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
@@ -3235,7 +3243,7 @@ fun SettingsScreen(
                         popUpTo("license_setting_screen") { inclusive = true }
                     } },
                     enabled = true,
-                    label = { Text(text = "License Key") },
+                    label = { Text(text = stringResource(R.string.license_key)) },
                     secondaryLabel = {
                         Text(text = licenseText.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
                     },
@@ -3252,7 +3260,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "General Settings",
+                    text = stringResource(R.string.general_settings),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -3304,24 +3312,24 @@ fun SettingsScreen(
 
                 SettingSwitchToggle(
                     checked = locationChecked, onCheckedChange = { locationChecked = it },
-                    title = "Location Service", description = "Service ON/OFF"
+                    title = stringResource(R.string.location_service), description = stringResource(R.string.service_on_off)
                 )
 
                 SettingSwitchToggle(
                     checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
-                    title = "Biometrics",
-                    description = "Service ON/OFF",
+                    title = stringResource(R.string.biometrics),
+                    description = stringResource(R.string.service_on_off),
                 )
 
                 SettingSwitchToggle(
                     checked = dittoChecked, onCheckedChange = { dittoChecked = it },
-                    title = "Ditto",
-                    description = "Service ON/OFF",
+                    title = stringResource(R.string.ditto),
+                    description = stringResource(R.string.service_on_off),
                 )
 
                 Text(
                     modifier = Modifier.padding(top = 7.dp),
-                    text = "Version $versionNumber",
+                    text = stringResource(R.string.version, versionNumber),
                     fontSize = 11.sp,
                     color = colors.primary,
                 )

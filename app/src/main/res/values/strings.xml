@@ -1,10 +1,61 @@
 <resources>
-    <string name="app_name">WearTAK-CIV</string>
+    <string name="app_name" translatable="false">WearTAK-CIV</string>
     <!--
     This string is used for square devices and overridden by hello_world in
     values-round/strings.xml for round devices.
     -->
-    <string name="hello_world">From WearTAK-CIV,\nHello, %1$s!</string>
-    <string name="tile_label">WearTAK-CIV tile</string>
-    <string name="complication_label">WearTAK-CIV complication</string>
+    <string name="hello_world" translatable="false">From WearTAK-CIV,\nHello, %1$s!</string>
+    <string name="tile_label" translatable="false">WearTAK-CIV tile</string>
+    <string name="complication_label" translatable="false">WearTAK-CIV complication</string>
+    <string name="callsign_settings">Callsign Settings</string>
+    <string name="team">Team</string>
+    <string name="role">Role</string>
+    <string name="callsign">Callsign</string>
+    <string name="connection_settings">Connection Settings</string>
+    <string name="tak_server">TAK Server</string>
+    <string name="save_battery_on_wifi">Save Battery on WiFi</string>
+    <string name="license_key">License Key</string>
+    <string name="general_settings">General Settings</string>
+    <string name="location_service">Location Service</string>
+    <string name="service_on_off">Service ON/OFF</string>
+    <string name="biometrics">Biometrics</string>
+    <string name="ditto">Ditto</string>
+    <string name="version">Version %1$s</string>
+    <string name="tak_servers">TAK Servers</string>
+    <string name="edit_server">Edit Server</string>
+    <string name="connection_name">Connection Name</string>
+    <string name="address_url">Address/URL</string>
+    <string name="port">Port</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="registering_device_with_tak_server">Registering device with TAK Server</string>
+    <string name="registration_complete">Registration Complete</string>
+    <string name="registration_failed">Registration Failed</string>
+    <string name="tak_server_registration_succeeded">TAK Server registration succeeded</string>
+    <string name="invalid_credentials_try_again">Invalid Credentials, try again</string>
+    <string name="retry">Retry</string>
+    <string name="okay">Okay</string>
+    <string name="cancel">Cancel</string>
+    <string name="slows_update_rate_on_enabled_wifi_networks">Slows Update Rate on Enabled WiFi Networks</string>
+    <string name="optimize_on">Optimize On:</string>
+    <string name="some_wifi_connections">Some WiFi Connections</string>
+    <string name="no_wifi_connections">No WiFi Connections</string>
+    <string name="all_wifi_connections">All WiFi Connections</string>
+    <string name="edit_optimized_wifi_connections">Edit Optimized WiFi Connections</string>
+    <string name="enabled_wifi_connections">Enabled WiFi Connections</string>
+    <string name="add_network">Add Network</string>
+    <string name="delete">Delete</string>
+    <string name="undo">Undo</string>
+    <string name="wifi_ssid">Wifi SSID</string>
+    <string name="confirm">Confirm</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="sos_alert_prompt">Do you want to trigger an SOS alert at your location?</string>
+    <string name="marker_drop_prompt">Drop marker at current location?</string>
+    <string name="success">Success!</string>
+    <string name="error">Error</string>
+    <string name="invalid_license_key">Invalid License Key</string>
+    <string name="please_add_correct_key_to_use_weartak">Please add correct key to use WearTAK</string>
+    <string name="update_license">Update License</string>
+    <string name="bpm">" bpm"</string>
+    <string name="sos">SOS</string>
 </resources>
