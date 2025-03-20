@@ -38,6 +38,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -134,6 +135,10 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
+            //var diff = System.currentTimeMillis()-lastLocationUpdateRcvd
+
+            //Log.d(TAG, "DIFF: ${diff}")
+
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
                 // Maybe locationService is using fused indoor and currReportingIntevalInSecs < 5s OR some other reason
@@ -149,7 +154,12 @@ class CotDispatchService : Service() {
                 }
                  */
 
+                //Log.d(TAG, "DIFF: ${diff}")
+
                 buildAndSendLocationBiometricCotMessage()
+
+            }else{
+                Log.d(TAG, "Not Sending")
             }
             // Schedule the next run
             cotDispatchHandler?.postDelayed(this, currReportingIntervalInSecs * 1000L)
@@ -374,6 +384,10 @@ class CotDispatchService : Service() {
                         heartRate = -1
                     }
                     sendLocationBiometricCotMessage(location, heartRate, battery)
+
+                    Log.d(TAG, "Sending COT, INTERVAL: ${currReportingIntervalInSecs}")
+                    Log.d(TAG, "Reporting Interval: ${reportingUpdateIntervalSecs}")
+                    Log.d(TAG, "Stored: ${dataRepository.getReportingUpdateInterval.first()}")
                 } else {
                     Log.w(TAG, "Missing data for CoT message. Not sending.")
                 }

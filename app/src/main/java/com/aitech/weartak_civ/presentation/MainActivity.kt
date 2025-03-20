@@ -216,6 +216,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometeri
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startMQTTService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startOffBodyDetectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startPowerManagerService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startTAKConnectService
@@ -239,6 +240,7 @@ import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
+import com.aitech.weartak_civ.service.MQTTService
 import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
 import com.aitech.weartak_civ.service.TAKConnectService
@@ -478,6 +480,16 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "Starting BatteryService")
                 mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
             }
+        }
+
+        fun startMQTTService() {
+            Log.d(TAG, "Starting MQTTService")
+
+            Log.d(TAG, "UID " + device_uid)
+
+            val intent = Intent(mainActivity, MQTTService::class.java)
+            intent.putExtra("uid", device_uid)
+            mainActivity.startForegroundService(intent)
         }
 
         fun startCotDispatchService() {
@@ -1035,6 +1047,7 @@ class MainActivity : ComponentActivity() {
             startBatteryService()
             startDittoService()
             startPowerManagerService()
+            startMQTTService()
             Log.d(TAG, """
                 =====================================
             """.trimIndent())
@@ -2606,6 +2619,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         startBiometericService()
                         startDittoService()
                         startPowerManagerService()
+                        startMQTTService()
                     } else {
                         Log.d(
                             TAG, """
