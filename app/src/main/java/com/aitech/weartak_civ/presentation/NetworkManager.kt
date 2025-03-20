@@ -68,7 +68,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
         val activeNetworkCapabilities = networkCapabilities ?: connectivityManager?.getNetworkCapabilities(activeNetwork)
         var networkInfoChanged = false
         var currWifiSsid : String? = null
-        Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); activeNetworkCapabilities (${activeNetworkCapabilities?.toString()})")
+        //Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); activeNetworkCapabilities (${activeNetworkCapabilities?.toString()})")
         // TODO: Need to test with SSIDs of hidden networks
         // If wifi is connected but the wifi AP is NOT connected to internet, we still show as connected to wifi.
         if ((null != activeNetwork) && (null != activeNetworkCapabilities)) {
@@ -117,7 +117,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 isCellularConnectedLiveData.postValue(isCellular)
             }
         }
-        Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
+        //Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         if (networkInfoChanged) {
             Log.d(TAG, "Change detected in network connection information.Sending NwConnEvent")
             EventBus.getDefault().post(NwConnEvent(isNetworkConnected, if (isWifi == true) { WIFI } else { CELLULAR }))
@@ -129,7 +129,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
             }
         } else {
-            Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
+            //Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
             // If checkNetworkConnected is called with both params null, we only change SSID if isNetworkConnected is false (i.e., currWifiSsid == null)
             if ((null == network) && (null == networkCapabilities)) {
                 if ((null == currWifiSsid) && (currWifiSsid != connectedWifiSsid)) {
@@ -149,7 +149,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
-        Log.d(TAG, "onCapabilitiesChanged called")
+        //Log.d(TAG, "onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
     }
 

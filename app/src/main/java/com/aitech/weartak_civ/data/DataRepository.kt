@@ -95,7 +95,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[CALLSIGN] ?: "WEAROS-0"
+        prefs[CALLSIGN] ?: ""
     }
 
     suspend fun storeCallsign(callsign: String) {
@@ -135,7 +135,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getTeam: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[TEAM] ?: "White"
+        prefs[TEAM] ?: "Orange"
     }
 
     suspend fun storeTeam(team: String) {
@@ -225,7 +225,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getReportingUpdateIntervalSecs: Flow<Int?> = context.dataStore.data.map { prefs ->
-        prefs[REPORTING_UPDATE_INTERVAL] ?: 60
+        prefs[REPORTING_UPDATE_INTERVAL] ?: 10
     }
 
     suspend fun storeReportingUpdateIntervalSecs(interval: Int) {

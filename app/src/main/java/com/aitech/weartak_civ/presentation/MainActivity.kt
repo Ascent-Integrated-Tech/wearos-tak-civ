@@ -19,7 +19,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.RestrictionEntry
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -123,15 +122,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.concurrent.futures.await
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.health.services.client.HealthServices
-import androidx.health.services.client.MeasureClient
-import androidx.health.services.client.data.DataType
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -160,10 +154,8 @@ import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.data.HealthServicesRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
@@ -217,7 +209,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.serverSettingsChanged
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBatteryService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometericService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
@@ -259,13 +251,10 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 import android.content.RestrictionsManager
 import androidx.compose.runtime.collectAsState
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.takServer
-import org.json.JSONArray
-import org.json.JSONObject
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 
 
 class MainActivity : ComponentActivity() {
@@ -296,8 +285,8 @@ class MainActivity : ComponentActivity() {
         var name = "Test.Tak"
         var address = "tak.test.ops.ascentitech.com"
         var port = "8089"
-        var username = "TEST.AIT"
-        var password = "TEST.AIT.Password01"
+        var username = ""
+        var password = ""
         var certificate = ""
         lateinit var teamEntriesValuesList : TeamsJson
         lateinit var roleEntriesValuesList : RolesJson
@@ -367,7 +356,19 @@ class MainActivity : ComponentActivity() {
             return mainActivity
         }
 
-        fun startBiometericService() {
+        fun startStopBiometricService() {
+            if (isLicenseValid()) {
+                if (enableBiometricsService) {
+                    startBiometricService()
+                } else {
+                    if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                }
+            } else {
+                if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+            }
+        }
+
+        fun startBiometricService() {
             if (enableBiometricsService) {
                 if ((ActivityCompat.checkSelfPermission(
                         mainActivity.applicationContext,
@@ -398,6 +399,18 @@ class MainActivity : ComponentActivity() {
         }
         private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
 
+        fun startStopTAKConnectService() {
+            if (isLicenseValid()) {
+                if (enableTAKConnectService) {
+                    startTAKConnectService()
+                } else {
+                    if (TAKConnectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                }
+            } else {
+                if (TAKConnectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+            }
+        }
+
         fun startTAKConnectService() {
             // We are removing dependency on enableTAKConnectService here as it is taken care of in the TAKConnectService itself.
             if (!TAKConnectService.isRunning.get()) {
@@ -405,6 +418,18 @@ class MainActivity : ComponentActivity() {
                 mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
             } else {
                 Log.d(TAG, "TAKConnectService is already running.")
+            }
+        }
+
+        fun startStopDittoService() {
+            if (isLicenseValid()) {
+                if (enableDittoService) {
+                    startDittoService()
+                } else {
+                    if (DittoService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
+                }
+            } else {
+                if (DittoService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
             }
         }
 
@@ -433,6 +458,18 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startStopLocationService() {
+            if (isLicenseValid()) {
+                if (enableLocationService) {
+                    startLocationService()
+                } else {
+                    if (LocationService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                }
+            } else {
+                if (LocationService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+            }
+        }
+
         fun startLocationService() {
             if (hasGps()) {
                 //Log.i(TAG, "This hardware has GPS")
@@ -454,12 +491,15 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
             } else {
                 if (enableLocationService) {
-                    Log.d(TAG, "Starting LocationService")
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
-
+                    if (!LocationService.isRunning.get()) {
+                        Log.d(TAG, "Starting LocationService")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
+                        } else {
+                            mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                        }
                     } else {
-                        mainActivity.startService(Intent(mainActivity, LocationService::class.java))
+                        Log.d(TAG, "LocationService is already running")
                     }
                 } else {
                     Log.d(TAG, "enableLocationService is false. So NOT starting location service")
@@ -471,6 +511,8 @@ class MainActivity : ComponentActivity() {
             if (!PowerManagerService.isRunning.get()) {
                 Log.d(TAG, "Starting PowerManagerService")
                 mainActivity.startForegroundService(Intent(mainActivity, PowerManagerService::class.java))
+            } else {
+                Log.d(TAG, "PowerManagerService is already running")
             }
         }
 
@@ -478,6 +520,8 @@ class MainActivity : ComponentActivity() {
             if (!BatteryService.isRunning.get()) {
                 Log.d(TAG, "Starting BatteryService")
                 mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
+            } else {
+                Log.d(TAG, "BatteryService is already running")
             }
         }
 
@@ -487,6 +531,18 @@ class MainActivity : ComponentActivity() {
                 mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
             } else {
                 Log.d(TAG, "Cot DispatchService is already running")
+            }
+        }
+
+        fun startStopoffBodyDetectService() {
+            if (isLicenseValid()) {
+                if (enableBiometricsService) {
+                    startOffBodyDetectService()
+                } else {
+                    if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
+                }
+            } else {
+                if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
             }
         }
 
@@ -519,20 +575,62 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "BiometricServices are disabled. Not starting OffBodyDetectService")
             }
         }
+
+
+        fun startStopServicesLicense() {
+            if (isLicenseValid()) {
+                Log.d(TAG, """
+                        ===   Application Services Info   ===
+                        =====================================
+                        """.trimIndent())
+                startTAKConnectService()
+                startOffBodyDetectService()
+                startBiometricService()
+                startBatteryService()
+                startLocationService()
+                startCotDispatchService()
+                startDittoService()
+                startPowerManagerService()
+            } else {
+                Log.d(TAG, """
+                            ===   Application Services Info   ===                                
+                            """.trimIndent())
+                if (TAKConnectService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                }
+                if (OffBodyDetectService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
+                }
+                if (HeartrateService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                }
+                if (BatteryService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
+                }
+                if (LocationService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                }
+                if (CotDispatchService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
+                }
+                if (enableDittoService && DittoService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
+                }
+                if (PowerManagerService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
+                }
+            }
+        }
     }
 
 
-    var secureSocket : SSLSocket? = null
-    val callsignState = MutableLiveData<String>("WEAROS-0")
+    val callsignState = MutableLiveData<String>("")
     val licenseState = MutableLiveData<String>("")
     val nameState = MutableLiveData<String>("")
     val addressState = MutableLiveData<String>("")
     val portState = MutableLiveData<String>("")
     val usernameState = MutableLiveData<String>("")
     val passwordState = MutableLiveData<String>("")
-
-    lateinit var healthServicesRepository : HealthServicesRepository
-    lateinit var measureClient : MeasureClient
 
     private lateinit var restrictionsManager: RestrictionsManager
     private lateinit var restrictionReceiver: BroadcastReceiver
@@ -629,9 +727,6 @@ class MainActivity : ComponentActivity() {
             mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
         }
         mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-        CoroutineScope(Dispatchers.IO).launch {
-            secureSocket?.close()
-        }
         if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
         networkManager.deInit()
@@ -670,15 +765,57 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun initTeamEntriesValuesList(teamNamesList: List<String>, teamColorsList: List<String>) {
+        var teamNames = teamNamesList
+        var teamColors = teamColorsList
+        val teamNamesSize = teamNames.size
+        val teamColorsSize = teamColors.size
+        if (teamNamesSize != teamColorsSize) {
+            // Mistake maybe made in MDM. Make size of teamNames the same as that of teamColors
+            Log.w(TAG, "Initial teamNames size($teamNamesSize) != teamColors size($teamColorsSize)")
+            if (teamNamesSize > teamColorsSize) {
+                // Reduce teamNames to that of teamColors
+                teamNames = teamNames.take(teamColorsSize)
+            } else {
+                teamColors = teamColors.take(teamNamesSize)
+            }
+        }
+        teamEntriesValuesList = TeamsJson(teamNames, teamColors)
+    }
+
+    private suspend fun initTeamAndTeamValue() {
+        // which team member am I?
+        team = dataRepository.getTeam.first()
+        var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
+        // needed in the event my current team doesn't exist in the list of available teams.
+        if (teamIndex == -1) {
+            team = teamEntriesValuesList.ltEntries[0]
+            teamIndex = 0
+        }
+        teamValue = teamEntriesValuesList.ltValues[teamIndex]
+    }
+
+    private suspend fun initRoleAndRoleValue() {
+        // what role am I?
+        role = dataRepository.getRole.first()
+        var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+        // needed in the event my current role doesn't exist in the list of available roles.
+        if (roleIndex == -1) {
+            role = roleEntriesValuesList.lrEntries[0]
+            roleIndex = 0
+        }
+        roleValue = roleEntriesValuesList.lrValues[roleIndex]
+    }
+
     fun initSettings() {
-        // this function aims to organize & replace function setDataFromDatastore()
+        // This function reads in data from dataRepository and sets MainActivity settings (except those for UI settings screens) as well as other service settings
         runBlocking {
             Log.d(TAG, """=== === Initializing Settings === === ===""".trimIndent())
             // what is my callsign?
             callsign = dataRepository.getCallsign.first()
             // on the first install, callsign has no value, we need to fill it with a random number
-            if (callsign.equals("") || callsign.equals("WEAROS-0") ) {
-                callsign = "WEAROS-" + Random.nextInt(1, 1000).toString()
+            if (callsign.equals("")) {
+                callsign = "WEAROS-" + Random.nextInt(1, 10000).toString()
                 dataRepository.storeCallsign(callsign)
                 Log.v(TAG, "First install --> Assigning a random callsign: $callsign")
             }
@@ -686,38 +823,40 @@ class MainActivity : ComponentActivity() {
             // what are the teams I can be?
             val teamNames = dataRepository.getTeamNames.first().split(",")
             val teamColors = dataRepository.getTeamColors.first().split(",")
-            teamEntriesValuesList = TeamsJson(teamNames, teamColors)
-
-            // which team member am I?
-            team = dataRepository.getTeam.first()
-            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
-            // needed in the event my current team doesn't exist in the list of available teams.
-            if (teamIndex == -1) {
-                team = teamEntriesValuesList.ltEntries[0]
-                teamIndex = 0
-            }
-            teamValue = teamEntriesValuesList.ltValues[teamIndex]
+            initTeamEntriesValuesList(teamNames, teamColors)
+            initTeamAndTeamValue()
 
             // what roles can I be?
             val rolesList = dataRepository.getRolesList.first().split(',')
             roleEntriesValuesList = RolesJson(rolesList, rolesList)
-
-            // what role am I?
-            role = dataRepository.getRole.first()
-            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-            // needed in the event my current role doesn't exist in the list of available roles.
-            if (roleIndex == -1) {
-                role = roleEntriesValuesList.lrEntries[0]
-                roleIndex = 0
-            }
-            roleValue = roleEntriesValuesList.lrValues[roleIndex]
+            initRoleAndRoleValue()
 
             license = dataRepository.getLicense.first()
 
-            Log.d(TAG, "============= Done Initializing ===============")
-            // Log all settings to logcat
-            logSettings()
+            name = dataRepository.getName.first()
+            address = dataRepository.getAddress.first()
+            port = dataRepository.getPort.first()
+            username = dataRepository.getUsername.first()
+            password = dataRepository.getPassword.first()
+            certificate = dataRepository.getCertificate.first()
 
+            enableLocationService = dataRepository.getEnableLocationService.first()
+            enableBiometricsService = dataRepository.getEnableBiometricsService.first()
+            enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
+            enableDittoService = dataRepository.getEnableDittoService.first()
+
+            CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
+            CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
+            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+
+            enableWifiBatteryOptimization = dataRepository.getEnableWifiBatteryOptimization.first()
+            PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
+            enableAllWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
+            PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
+            wifiSsidList = dataRepository.getWifiSsidList.first()
+            saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
+
+            Log.d(TAG, "============= Done Initializing Settings ===============")
         }
     }
 
@@ -838,10 +977,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate called")
+        Log.d(TAG, "MainActivity onCreate called")
         mainActivity = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+
         dataRepository = DataRepository(this)
+        initSettings()
+        logSettings()
+        refreshUI()
 
         restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
         // Register BroadcastReceiver to listen for changes
@@ -849,14 +992,13 @@ class MainActivity : ComponentActivity() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
                     Log.d(TAG, "Managed Configurations Updated")
-                    handleManagedConfigUpdate()
+                    handleManagedConfigUpdate(false)
                 }
             }
         }
         registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED))
         // Handle the initial configuration when the app starts
-        handleManagedConfigUpdate()
-        initSettings()
+        handleManagedConfigUpdate(true)
 
 //        Log.d(TAG, "Device UID is $device_uid")
         if (!EventBus.getDefault().isRegistered(this)) {
@@ -869,9 +1011,9 @@ class MainActivity : ComponentActivity() {
 //        setTeamsJson()
 //        setRolesJson()
 //        setDataFromDatastore()
-//        initSettings()
         networkManager = NetworkManager.getInstance()
         networkManager.init()
+
         //Obtain version # from build.gradle
         try {
             val pInfo: PackageInfo =
@@ -891,36 +1033,7 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
         validateLicense(license)
-        if (isLicenseValid()) {
-            Log.d(TAG, """
-                === Application Services onCreate ===
-            """.trimIndent())
-            startTAKConnectService()
-            startOffBodyDetectService()
-            startCotDispatchService()
-            startLocationService()
-            startBiometericService()
-            startBatteryService()
-            startDittoService()
-            startPowerManagerService()
-            Log.d(TAG, """
-                =====================================
-            """.trimIndent())
-        }
-
-        /*
-        val intent = Intent()
-        val pm : PowerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (pm.isIgnoringBatteryOptimizations(this.packageName)) {
-            intent.action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
-            Log.d(TAG, "pm.isIgnoringBatteryOptimizations is TRUE: Going to call startActivity to ignore battery optimizations")
-        } else {
-            intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-            intent.data = Uri.parse("package:${this.packageName}")
-            Log.d(TAG, "Going to call startActivity to request ignore battery optimizations")
-        }
-        this.startActivity(intent)
-        */
+        startStopServicesLicense()
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
@@ -931,12 +1044,9 @@ class MainActivity : ComponentActivity() {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             mainActivity.startActivity(intent)
-
              */
 
             gotoAccessibilitySettings(mainActivity)
-
-
             for (i in 0..3) {
                 Toast.makeText(mainActivity,
                     getString(R.string.weartak_accessibility_settings_toast), Toast.LENGTH_LONG).show()
@@ -962,40 +1072,36 @@ class MainActivity : ComponentActivity() {
         } else {
             Log.d(TAG, "NOT Able to set ACCESSIBILITY_ENABLED to 1")
         }
-
          */
     }
 
     private fun refreshUI() {
         Log.v(TAG, "=== === Refreshing UI  === === ")
-        runBlocking{
-            callsignState.postValue(callsign)
-            callsignSettingsState.postValue(callsign)
-            teamState.postValue(team) // liveData used by UI
-            teamSettingsState.postValue(team)
-            roleState.postValue(role) // liveData used by UI
-            roleSettingsState.postValue(role)
-            nameState.postValue(name) // tell ui
-            nameSettingsState.postValue(name) // ephemeral ui value
-            addressState.postValue(address) // tell ui
-            addressSettingsState.postValue(address) // ephemeral ui value
-            portState.postValue(port) // tell ui
-            portSettingsState.postValue(port) // ephemeral ui value
-            usernameState.postValue(username) // tell ui
-            usernameSettingsState.postValue(username) // ephemeral ui value
-            passwordState.postValue(password) // tell ui
-            passwordSettingsState.postValue(password) // ephemeral ui value
-            wifiSsidListState.postValue(wifiSsidList) // tell ui
-            wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
-            saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-            enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization) // tell ui
-            enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
-            enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
-            enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization) // ephemeral ui value
-            licenseState.postValue(license) // tell ui
-            licenseSettingsState.postValue(license) // ephemeral ui value
-
-        }
+        callsignState.postValue(callsign)
+        callsignSettingsState.postValue(callsign)
+        teamState.postValue(team) // liveData used by UI
+        teamSettingsState.postValue(team)
+        roleState.postValue(role) // liveData used by UI
+        roleSettingsState.postValue(role)
+        licenseState.postValue(license) // tell ui
+        licenseSettingsState.postValue(license) // ephemeral ui value
+        nameState.postValue(name) // tell ui
+        nameSettingsState.postValue(name) // ephemeral ui value
+        addressState.postValue(address) // tell ui
+        addressSettingsState.postValue(address) // ephemeral ui value
+        portState.postValue(port) // tell ui
+        portSettingsState.postValue(port) // ephemeral ui value
+        usernameState.postValue(username) // tell ui
+        usernameSettingsState.postValue(username) // ephemeral ui value
+        passwordState.postValue(password) // tell ui
+        passwordSettingsState.postValue(password) // ephemeral ui value
+        enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization) // tell ui
+        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
+        enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
+        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization) // ephemeral ui value
+        wifiSsidListState.postValue(wifiSsidList) // tell ui
+        wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
+        saveBattOnWifiStringState.postValue(saveBattOnWifiString)
     }
 
     private fun updateCompanionObjects() {
@@ -1039,134 +1145,195 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handleManagedConfigUpdate() {
+    private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, " === === Handling Managed Config Update ===")
 
         val appRestrictions = restrictionsManager.applicationRestrictions
         if (appRestrictions == null) {
-            Log.e(TAG, "No managed configuration received."); return
+            Log.w(TAG, "No managed configuration received. Returning...")
+            return
         }
 
-        for (key in appRestrictions.keySet()) {
+        /* for (key in appRestrictions.keySet()) {
             val value = appRestrictions.get(key)
             // Retrieve the runtime type name, if available
             val typeName = value?.javaClass?.simpleName ?: "null"
-//            Log.v(TAG, "Key: $key, Value: $value, Type: $typeName")
-        }
+            //Log.v(TAG, "Key: $key, Value: $value, Type: $typeName")
+        } */
 
         val manifestRestrictions = restrictionsManager.getManifestRestrictions("com.aitech.weartak_civ") ?: listOf()
-
+        if (manifestRestrictions.size == 0) {
+            Log.w(TAG, "Size of manifestRestrictions is 0. Returning...")
+            return
+        }
+        /*
         for (entry in manifestRestrictions) {
-//            Log.v(TAG, "Manifest Key: ${entry.key}, Declared Type: ${entry.type}")
-
+            Log.v(TAG, "Manifest Key: ${entry.key}, Declared Type: ${entry.type}")
             // If the restriction is a bundle or bundle array, check nested restrictions.
             if (entry.type == RestrictionEntry.TYPE_BUNDLE ||
                 entry.type == RestrictionEntry.TYPE_BUNDLE_ARRAY) {
-
                 entry.restrictions?.forEach { nested ->
-//                    Log.v(TAG, "\tNested Key: ${nested.key}, Type: ${nested.type}")
+                    Log.v(TAG, "\tNested Key: ${nested.key}, Type: ${nested.type}")
                 }
             }
         }
+         */
 
         runBlocking {
-            CoroutineScope(Dispatchers.Main).launch {
+            // Get the new settings from the restrictions manager or null, so that we only change dataRepository if there are changes
+            license = appRestrictions.getString("license_key", license)
 
-                // make sure we have the most recent companion objects
-                updateCompanionObjects()
+            val teamsNames = appRestrictions.getString("custom_teams_names", null)
+            val teamsColors = appRestrictions.getString("custom_teams_colors", null)
+            val rolesEntries = appRestrictions.getString("custom_roles", null)
 
-                // Get the new settings from the restrictions manager
-                val teamsNames = appRestrictions.getString("custom_teams_names", dataRepository.getTeamNames.first()).split(",")
-                val teamsColors = appRestrictions.getString("custom_teams_colors", dataRepository.getTeamColors.first()).split(",")
-                val rolesEntries = appRestrictions.getString("custom_roles", dataRepository.getRolesList.first()).split(",")
-                val rolesValues = appRestrictions.getString("custom_roles",  dataRepository.getRolesList.first()).split(",")
+            var server0enableTAKConnectService: Boolean = enableTAKConnectService
+            var server0name: String? = null
+            var server0address: String? = null
+            var server0port: String? = null
+            var server0username: String? = null
+            var server0password: String? = null
+            var server0certificate: String? = null
+            var server0updateInterval: Int = CotDispatchService.reportingUpdateIntervalSecs
 
-                val serverParcels = appRestrictions.getParcelableArray("tak_server_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the servers in the list.
-
-                if (serverParcels != null) {
-                    val serverCount = serverParcels.size
-                    Log.v(TAG, "=== Number of Tak Server Connection Configurations: $serverCount ===")
-
-                    // Loop through each server connection
-                    for (i in serverParcels.indices) {
-                        // Each element should be a Bundle representing one server connection
-                        val serverBundle = serverParcels[i] as? Bundle
-                        if (serverBundle != null) {
-                            Log.v(TAG, "=== Server Connection Conf [$i] ===")
-                            // Iterate through all keys in this server connection Bundle
-                            for (key in serverBundle.keySet()) {
-                                val value = serverBundle.get(key)
-                                // Format each key/value pair into a fixed-width layout for clarity.
-                                Log.v(TAG, String.format("   %-30s : %s", key, value))
-                            }
-                            if (i == 0) {
-                                Log.v(TAG, "----> Applying server settings from this Connection Conf [$i]")
-
-                                // set companion obj by looking for key in bundle, fallback on current
-                                name = serverBundle.getString("tak_server_connection_name", name) // set companion obj by looking for key, fallback on current
-                                enableTAKConnectService = serverBundle.getBoolean("tak_server_connection_enabled", enableTAKConnectService)
-                                address = serverBundle.getString("tak_server_address", address)
-                                port = (serverBundle.getInt("tak_server_port", port.toInt())).toString()
-                                username = serverBundle.getString("tak_server_username", username)
-                                password = serverBundle.getString("tak_server_password", password)
-                                certificate = serverBundle.getString("tak_server_cert", certificate)
-                                CotDispatchService.reportingUpdateIntervalSecs = serverBundle.getInt("update_interval", dataRepository.getReportingUpdateInterval.first())
-                                EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
-                            }
-                            Log.v(TAG, "========================================")
-                        } else {
-                            Log.e(TAG, "Invalid server bundle at index $i")
+            val serverParcels = appRestrictions.getParcelableArray("tak_server_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the servers in the list.
+            if (serverParcels != null) {
+                val serverCount = serverParcels.size
+                Log.v(TAG, "=== Number of Tak Server Connection Configurations: $serverCount ===")
+                // Loop through each server connection
+                for (i in serverParcels.indices) {
+                    // Each element should be a Bundle representing one server connection
+                    val serverBundle = serverParcels[i] as? Bundle
+                    if (serverBundle != null) {
+                        Log.v(TAG, "=== Server Connection Conf [$i] ===")
+                        // Iterate through all keys in this server connection Bundle
+                        for (key in serverBundle.keySet()) {
+                            val value = serverBundle.get(key)
+                            // Format each key/value pair into a fixed-width layout for clarity.
+                            Log.v(TAG, String.format("   %-30s : %s", key, value))
                         }
+                        if (i == 0) {
+                            Log.v(TAG, "----> Applying server settings from this Connection Conf [$i]")
+
+                            // set companion obj by looking for key in bundle, fallback on current
+                            server0name = serverBundle.getString("tak_server_connection_name", null) // set companion obj by looking for key, fallback on current
+                            server0enableTAKConnectService = serverBundle.getBoolean("tak_server_connection_enabled", enableTAKConnectService)
+                            server0address = serverBundle.getString("tak_server_address", null)
+                            server0port = (serverBundle.getInt("tak_server_port", port.toInt())).toString()
+                            server0username = serverBundle.getString("tak_server_username", null)
+                            server0password = serverBundle.getString("tak_server_password", null)
+                            server0certificate = serverBundle.getString("tak_server_cert", null)
+                            server0updateInterval = serverBundle.getInt("update_interval", CotDispatchService.reportingUpdateIntervalSecs)
+                        }
+                        Log.v(TAG, "========================================")
+                    } else {
+                        Log.e(TAG, "Invalid server bundle at index $i")
                     }
-                } else {
-                    Log.e(TAG, "tak_server_list is null or empty.")
                 }
+            } else {
+                Log.w(TAG, "tak_server_list is null or empty.")
+            }
 
-                enableWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
-                enableAllWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
-                val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", "")
-                val wifiOptimizationSsidList: List<DataRepository.WifiSsidItem> = wifiOptimizationSsidString.split("||") // Split by two pipes, unlikely a random generated SSID has
-                    .map { it.trim() } // Trim whitespace from each SSID
-                    .filter { it.isNotEmpty() } // Remove any empty values
-                    .map { DataRepository.WifiSsidItem(it) } // Map each SSID to a WifiSsidItem
-                wifiSsidList = wifiOptimizationSsidList
-                license = appRestrictions.getString("license_key", license)
-                validateLicense(license) // validate the license
-                enableLocationService = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
-                enableBiometricsService = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
-                enableDittoService = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
-                val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
+            enableWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
+            enableAllWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
+            val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", "")
+            val wifiOptimizationSsidList: List<DataRepository.WifiSsidItem> = wifiOptimizationSsidString.split("||") // Split by two pipes, unlikely a random generated SSID has
+                .map { it.trim() } // Trim whitespace from each SSID
+                .filter { it.isNotEmpty() } // Remove any empty values
+                .map { DataRepository.WifiSsidItem(it) } // Map each SSID to a WifiSsidItem
+            wifiSsidList = wifiOptimizationSsidList
 
-                // store settings persistently
-                dataRepository.storeRolesList(rolesEntries.joinToString(","))
-                dataRepository.storeTeamNames(teamsNames.joinToString(","))
-                dataRepository.storeTeamColors(teamsColors.joinToString(","))
-                dataRepository.storeName(name)
+            val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
+            val enableBiometricsServiceConfigUpdate = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
+            val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+            val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
+
+            // store settings persistently & send out events as necessary
+            validateLicense(license) // validate the license
+            dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
+            dataRepository.storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization)
+            dataRepository.storeWifiSsidList(wifiSsidList)
+            // Send PowerManager Event even if there is no change to wifi optimization settings
+            EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+
+            if (null != rolesEntries) {
+                Log.v(TAG, "rolesEntries: $rolesEntries")
+                dataRepository.storeRolesList(rolesEntries)
+                val rolesList = rolesEntries.split(",")
+                roleEntriesValuesList = RolesJson(rolesList, rolesList)
+                initRoleAndRoleValue()
+            }
+            if ((null != teamsNames) || (null != teamsColors)) {
+                Log.v(TAG, "teamsNames : $teamsNames")
+                Log.v(TAG, "teamsColors: $teamsColors")
+                if (null != teamsNames) { dataRepository.storeTeamNames(teamsNames) }
+                if (null != teamsColors) { dataRepository.storeTeamColors(teamsColors) }
+                initTeamEntriesValuesList(teamsNames.split(","), teamsColors.split(","))
+                initTeamAndTeamValue()
+            }
+            // Send out EventBus message even if there is no change
+            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+
+            if (null != server0address) {
+                if ((name != server0name) || (address != server0address) || (port != server0port) ||
+                    (username != server0username) || (password != server0password) || (certificate != server0certificate)) {
+                    Log.v(TAG, "TAK server details changed: ($server0address)")
+                    name = server0name ?: name
+                    address = server0address ?: address
+                    port = server0port ?: port
+                    username = server0username ?: username
+                    password = server0password ?: password
+                    certificate = server0certificate ?: certificate
+                    dataRepository.storeName(name)
+                    dataRepository.storeAddress(address)
+                    dataRepository.storePort(port)
+                    dataRepository.storeUsername(username)
+                    dataRepository.storePassword(password)
+                    dataRepository.storeCertificate(certificate)
+                    // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
+                    EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
+                }
+                if (server0updateInterval != CotDispatchService.reportingUpdateIntervalSecs) {
+                    Log.v(TAG, "server0updateInterval changed: $server0updateInterval")
+                    dataRepository.storeReportingUpdateIntervalSecs(server0updateInterval)
+                    CotDispatchService.reportingUpdateIntervalSecs = server0updateInterval
+                    EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
+                }
+            }
+
+            dataRepository.storeLicense(license)
+            dataRepository.storeEnableLocationService(enableLocationService)
+            dataRepository.storeEnableBiometricsService(enableBiometricsService)
+            dataRepository.storeEnableDittoService(enableDittoService)
+
+            // TODO: Should we move all enables to the service itself rather than starting and stopping services all over??
+            // At the end, enable / disable services and then enable/disable based on license
+            if (enableTAKConnectService != server0enableTAKConnectService) {
+                enableTAKConnectService = server0enableTAKConnectService
                 dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
-                dataRepository.storeAddress(address)
-                dataRepository.storePort(port)
-                dataRepository.storeUsername(username)
-                dataRepository.storePassword(password)
-                dataRepository.storeCertificate(certificate)
-                dataRepository.storeReportingUpdateIntervalSecs(CotDispatchService.reportingUpdateIntervalSecs)
-                dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
-                dataRepository.storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization)
-                dataRepository.storeWifiSsidList(wifiSsidList)
-                dataRepository.storeLicense(license)
-                dataRepository.storeEnableLocationService(enableLocationService)
-                dataRepository.storeEnableBiometricsService(enableBiometricsService)
-                dataRepository.storeEnableDittoService(enableDittoService)
-
-                // some settings may have been changed by config update, so update the companion objects to avoid conflictions in code
-                updateCompanionObjects()
-
-                // ui needs to be refreshed with new settings changes
-                refreshUI()
-
-                // Log all settings to logcat
-                logSettings()
+                startStopTAKConnectService()
+            }
+            if (enableLocationServiceConfigUpdate != enableLocationService) {
+                enableLocationService = enableLocationServiceConfigUpdate
+                startStopLocationService()
+            }
+            if (enableBiometricsServiceConfigUpdate != enableBiometricsService) {
+                enableBiometricsService = enableBiometricsServiceConfigUpdate
+                startStopBiometricService()
+            }
+            if (enableDittoServiceConfigUpdate != enableDittoService) {
+                enableDittoService = enableDittoServiceConfigUpdate
+                startStopDittoService()
+            }
+            if (!calledOnCreate) {
+                startStopServicesLicense()
             }
         }
+        // ui needs to be refreshed with new settings changes
+        refreshUI()
+
+        // Log all settings to logcat
+        logSettings()
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -1998,13 +2165,6 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
     val onChangeState: (String) -> Unit = { selectedValue.value = it }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
-//    val wifiSsidListRestrictions by dataRepository.getWifiSsidList.collectAsState(initial = emptyList())
-//
-//    LaunchedEffect(wifiSsidListRestrictions) {
-//        Log.v(TAG, "LaunchedEffect for $wifiSsidListRestrictions")
-//        wifiSsidListState.postValue(wifiSsidListRestrictions)
-//        wifiSsidListSettingsState.postValue(wifiSsidListRestrictions)
-//    }
 
     //Log.d(TAG, "OptimizeBatteryonWifiSelectScreen called")
 
@@ -2156,7 +2316,6 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
 fun WifiSsidSelectScreen(navController: NavController) {
     //Log.d(TAG, "WifiSsidSelectScreen called")
     val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
-//    val wifiSsidListForRestrictions by dataRepository.getWifiSsidList.collectAsState(initial = emptyList())
 
     WearTAKCIVTheme {
         Box(
@@ -2273,13 +2432,16 @@ fun WifiSsidItemChip(
             .fillMaxWidth()
             .semantics {
                 // Use custom actions to make the primary and secondary actions accessible
-                customActions = listOf(CustomAccessibilityAction("Delete") {
-                    /* Add the primary action click handler here */
-                    true
-                }, CustomAccessibilityAction("More Options") {
-                    /* Add the secondary click handler here */
-                    true
-                })
+                customActions = listOf(
+                    CustomAccessibilityAction("Delete") {
+                        /* Add the primary action click handler here */
+                        true
+                    },
+                    CustomAccessibilityAction("More Options") {
+                        /* Add the secondary click handler here */
+                        true
+                    }
+                )
             },
         primaryAction = {
             SwipeToRevealPrimaryAction(
@@ -2684,7 +2846,6 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             dataRepository.storeLicense(license)
                         }
                         Log.d(TAG, "Sending License for Validation.")
-                        validateLicense(license)
                     } else {
                         Log.d(TAG, "License Did not Change.")
                     }
@@ -2702,90 +2863,18 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                                 inclusive = true
                             }
                         }
-
-                        Log.d(
-                            TAG, """
-                        ===   Application Services Info   ===
-                        =====================================
-                        """.trimIndent()
-                        )
-                        startTAKConnectService()
-                        startOffBodyDetectService()
-                        startBatteryService()
-                        startLocationService()
-                        startCotDispatchService()
-                        startBiometericService()
-                        startDittoService()
-                        startPowerManagerService()
                     } else {
                         Log.d(
                             TAG, """
-                            License is invalid. Stopping Services if Started. Navigating to Invalid License Screen.
+                            License is invalid. Navigating to Invalid License Screen & Stopping Services if started
                             =====================================
                             """.trimIndent()
                         )
-                        Log.d(
-                            TAG, """
-                            ===   Application Services Info   ===                                
-                            """.trimIndent()
-                        )
-                        if (TAKConnectService.isRunning.get()) {
-                            mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-                        }
-                        if (BatteryService.isRunning.get()) {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    BatteryService::class.java
-                                )
-                            )
-                        }
-                        if (PowerManagerService.isRunning.get()) {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    PowerManagerService::class.java
-                                )
-                            )
-                        }
-                        if (enableBiometricsService && HeartrateService.isRunning.get()) {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    HeartrateService::class.java
-                                )
-                            )
-                        }
-                        if (enableBiometricsService && OffBodyDetectService.isRunning.get()) {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    OffBodyDetectService::class.java
-                                )
-                            )
-                        }
-                        if (enableLocationService && LocationService.isRunning.get()) {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    LocationService::class.java
-                                )
-                            )
-                        }
-                        if (enableDittoService && DittoService.isRunning.get()) {
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    DittoService::class.java
-                                )
-                            )
-                        }
-
                         navController.navigate("invalid_license_screen"){
                             popUpTo("settings_screen") { inclusive = true }
                         }
-
                     }
+                    startStopServicesLicense()
                 }
             )
         }
@@ -2915,7 +3004,7 @@ fun TroubleshootingIcons() {
                 )
                 .size(25.dp) // Adjust icon size as needed
         )
-        Log.d(TAG, "TakConnecdtionStatus = $takServerConnecting")
+        Log.d(TAG, "TakServerConnecting = $takServerConnecting")
 
 
 //         Icon on the bottom left curve
@@ -3191,7 +3280,9 @@ fun MarkerDropButton(
         },
         modifier = Modifier
             .border(
-                width = 2.dp, color = Color.White, shape = CircleShape
+                width = 2.dp,
+                color = Color.White,
+                shape = CircleShape
             )
             .size(100.dp),
     ) {
@@ -3544,10 +3635,10 @@ fun SettingsScreen(
                             settingsChanged = true; locationCheckedChanged = true
                             enableLocationService = locationChecked
                             if (enableLocationService) {
-                                Log.d(TAG, "Starting location service")
+                                Log.d(TAG, "Trying to start location service")
                                 startLocationService()
                             } else {
-                                Log.d(TAG, "Stopping location service")
+                                Log.d(TAG, "Trying to stop location service")
                                 mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
                             }
                         }
@@ -3556,10 +3647,10 @@ fun SettingsScreen(
                             settingsChanged = true; biometricsCheckedChanged = true
                             enableBiometricsService = biometricsChecked
                             if (enableBiometricsService) {
-                                Log.d(TAG, "Starting biometric service")
-                                startBiometericService()
+                                Log.d(TAG, "Trying to start biometric service")
+                                startBiometricService()
                             } else {
-                                Log.d(TAG, "Stopping biometric service")
+                                Log.d(TAG, "Trying to stop biometric service")
                                 mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
                             }
                         }
@@ -3568,10 +3659,10 @@ fun SettingsScreen(
                             settingsChanged = true; dittoCheckedChanged = true
                             enableDittoService = dittoChecked
                             if (enableDittoService) {
-                                Log.d(TAG, "Starting ditto service")
+                                Log.d(TAG, "Trying to start ditto service")
                                 startDittoService()
                             } else {
-                                Log.d(TAG, "Stopping ditto service")
+                                Log.d(TAG, "Trying to stop ditto service")
                                 mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
                             }
                         }
