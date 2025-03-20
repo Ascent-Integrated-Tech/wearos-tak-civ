@@ -143,6 +143,7 @@ class PowerManagerService : Service() {
                 }
             }
         } else if (OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED == msg) {
+            // TODO: Note we can get this message even if no details have changed (from handleManagedConfigUpdate). Check that all is good
             Log.d(TAG, "Received MessageEvent OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED")
             if (initialStartDelayDone.get()) {
                 runBlocking {
@@ -202,7 +203,7 @@ class PowerManagerService : Service() {
     private fun dynamicUpdates(nwConnected: Boolean, nwTransport: Int, connWifiSsid : String?,
                                enableWifiPowerOptim: Boolean, enablePowerOptimOnAllWifiSsids: Boolean,
                                powerOptimWifiSsidList: List<DataRepository.WifiSsidItem>) {
-        Log.d(TAG, "dynamicUpdates called w/ $nwConnected, $nwTransport, $connWifiSsid, $enableWifiPowerOptim, $enablePowerOptimOnAllWifiSsids, $powerOptimWifiSsidList")
+        Log.d(TAG, "dynamicUpdates called w/ nwConnected($nwConnected), nwTransport($nwTransport), connWifiSsid($connWifiSsid), enableWifiPowerOptim($enableWifiPowerOptim), enablePowerOptimOnAllWifiSsids($enablePowerOptimOnAllWifiSsids), powerOptimWifiSsidList(${powerOptimWifiSsidList.toString()})")
         if (nwConnected) {
             if (nwTransport == WIFI) {
                 if (enableWifiPowerOptim) {

@@ -187,8 +187,7 @@
 
         <meta-data
             android:name="android.content.APP_RESTRICTIONS"
-            android:resource="@xml/app_restrictions"
-            />
+            android:resource="@xml/app_restrictions" />
 
         <receiver android:name=".WearTakInitOnUpdate" android:exported="true" android:enabled="true">
             <intent-filter>
