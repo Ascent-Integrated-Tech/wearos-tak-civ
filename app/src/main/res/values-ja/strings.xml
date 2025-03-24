@@ -51,5 +51,9 @@
     <string name="update_license">ライセンスの更新</string>
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
+    <string name="weartak_accessibility_settings_toast">アクセシビリティ設定のインストール済みアプリでWearTAK-CIVをオンにしてください</string>
+    <string name="connecting_to_toast">%1$sに接続中</string>
+    <string name="connected_to_toast">%1$sに接続しました</string>
+    <string name="connection_failed">接続に失敗しました</string>
 
 </resources>

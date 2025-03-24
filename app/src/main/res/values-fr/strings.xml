@@ -51,5 +51,9 @@
     <string name="update_license">Mettre à jour la licence</string>
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
+    <string name="weartak_accessibility_settings_toast">Veuillez activer WearTAK-CIV dans les applications installées des paramètres d\'accessibilité</string>
+    <string name="connecting_to_toast">Connexion à %1$s</string>
+    <string name="connected_to_toast">Connecté à %1$s</string>
+    <string name="connection_failed">Échec de la connexion</string>
 
 </resources>

@@ -51,5 +51,9 @@
     <string name="update_license">Lisansı Güncelle</string>
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
+    <string name="weartak_accessibility_settings_toast">Lütfen Erişilebilirlik Ayarları\'nın Yüklü Uygulamaları\'nda WearTAK-CIV\'i AÇIN</string>
+    <string name="connecting_to_toast">%1$s\'ye bağlanma</string>
+    <string name="connected_to_toast">%1$s\'ye bağlı</string>
+    <string name="connection_failed">Bağlantı Başarısız</string>
 
 </resources>

@@ -41,6 +41,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1068,7 +1069,8 @@ class MainActivity : ComponentActivity() {
 
 
             for (i in 0..3) {
-                Toast.makeText(mainActivity, "Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings", Toast.LENGTH_LONG).show()
+                Toast.makeText(mainActivity,
+                    getString(R.string.weartak_accessibility_settings_toast), Toast.LENGTH_LONG).show()
             }
         }
 
@@ -1100,13 +1102,13 @@ class MainActivity : ComponentActivity() {
         var toastText = ""
         val connEvent = event.connEvent
         if (connEvent == CONNECTING) {
-            toastText = "Connecting to $name"
+            toastText = getString(R.string.connecting_to_toast, name)
             Log.d(TAG, "Received TakServerConnStatusEvent: CONNECTING [$connEvent]")
         } else if (connEvent == CONNECTION_SUCCESS) {
-            toastText = "Connected to $name"
+            toastText = getString(R.string.connected_to_toast, name)
             Log.d(TAG, "Received TakServerConnStatusEvent: CONNECTION_SUCCESS [$connEvent]")
         } else if (connEvent == CONNECTION_FAILURE) {
-            toastText = "Connection Failed"
+            toastText = getString(R.string.connection_failed)
             Log.d(TAG, "Received TakServerConnStatusEvent: CONNECTION_FAILURE [$connEvent]")
         }
         //Log.d(TAG, "Showing toast w/ text: $toastText")
@@ -2467,7 +2469,11 @@ fun ConfirmationDialog(
                     )
                 },
                 text = {
-                    Text(description, textAlign = TextAlign.Center)
+                    Text(
+                        description,
+                        textAlign = TextAlign.Center,
+                        fontSize = if (description.length > 40) 13.sp else 14.sp
+                    )
                 },
                 confirmButton = {
                     Button(
@@ -3133,7 +3139,6 @@ fun SettingSwitchToggle(
     )
 }
 
-
 //Contains functionality for settings screen
 @Composable
 fun SettingsScreen(
@@ -3156,11 +3161,12 @@ fun SettingsScreen(
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
-            when (displayedSecondaryText) {
-                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
-                SOME_WIFI_NETWORKS -> { SOME_WIFI_NETWORKS = stringResource(R.string.some_wifi_connections) }
-                else -> { NO_WIFI_NETWORKS = stringResource(R.string.no_wifi_connections) }
-            }
+
+//            when (displayedSecondaryText) {
+//                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
+//                SOME_WIFI_NETWORKS -> { SOME_WIFI_NETWORKS = stringResource(R.string.some_wifi_connections) }
+//                else -> { NO_WIFI_NETWORKS = stringResource(R.string.no_wifi_connections) }
+//            }
 
             Column(
                 modifier = Modifier
@@ -3225,7 +3231,12 @@ fun SettingsScreen(
                     } },
                     enabled = true,
                     label = { Text(text = stringResource(R.string.save_battery_on_wifi)) },
-                    secondaryLabel = {Text(text = "$displayedSecondaryText")},
+                    secondaryLabel = {Text(
+                        text = if (displayedSecondaryText == ALL_WIFI_NETWORKS) stringResource(R.string.all_wifi_connections)
+                        else if (displayedSecondaryText == SOME_WIFI_NETWORKS) stringResource(R.string.some_wifi_connections)
+                        else stringResource(R.string.no_wifi_connections)
+                    )
+                    },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,

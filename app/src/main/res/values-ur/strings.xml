@@ -51,5 +51,9 @@
     <string name="update_license">لائسنس اپ ڈیٹ کریں۔</string>
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
+    <string name="weartak_accessibility_settings_toast">براہ کرم ایکسیسبیلٹی سیٹنگز کی انسٹال کردہ ایپس میں WearTAK-CIV کو آن کریں۔</string>
+    <string name="connecting_to_toast">%1$s سے منسلک ہو رہا ہے۔</string>
+    <string name="connected_to_toast">%1$s سے منسلک</string>
+    <string name="connection_failed">کنکشن ناکام ہو گیا۔</string>
 
 </resources>
