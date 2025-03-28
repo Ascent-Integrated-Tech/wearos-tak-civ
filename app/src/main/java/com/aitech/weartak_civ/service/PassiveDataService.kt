@@ -23,7 +23,7 @@ import com.aitech.weartak_civ.service.LocationService.Companion.hae
 import com.aitech.weartak_civ.service.LocationService.Companion.lat
 import com.aitech.weartak_civ.service.LocationService.Companion.le
 import com.aitech.weartak_civ.service.LocationService.Companion.lon
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServer
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -33,8 +33,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.net.ssl.SSLSocket
 
 /**
  * Service to receive data from Health Services.
@@ -117,7 +115,7 @@ class PassiveDataService : PassiveListenerService() {
 
         // Send the CoT message
         Log.d(TAG, "Sending biometric COT msg: $cotMsg")
-        sendDataTAKServer(cotMsg)
+        sendDataTAKServers(cotMsg)
     }
 
     companion object {

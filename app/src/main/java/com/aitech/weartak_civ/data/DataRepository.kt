@@ -214,6 +214,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getCertificatePassword: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CERTIFICATE_PASSWORD] ?: ""
+    }
+
+    suspend fun storeCertificatePassword(certPassword: String) {
+        context.dataStore.edit { prefs ->
+            prefs[CERTIFICATE_PASSWORD] = certPassword
+        }
+    }
+
     val getCertificate: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[CERTIFICATE] ?: ""
     }
@@ -251,16 +261,6 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableBiometricsService(enableBiometricsService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_BIOMETRICS_SERVICE] = enableBiometricsService
-        }
-    }
-
-    val getEnableTAKConnectService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_TAKCONNECT_SERVICE] ?: true
-    }
-
-    suspend fun storeEnableTAKConnectService(enableTAKConnectService: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_TAKCONNECT_SERVICE] = enableTAKConnectService
         }
     }
 
@@ -420,6 +420,64 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    suspend fun addTakServerItem(item: TakServerItem) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[TAK_SERVER_LIST_KEY]
+            Log.d(TAG, "addTakServerItem: $item, currJsonList: ${currentJson.toString()}")
+            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                gson.fromJson(currentJson, type)
+            } else {
+                mutableListOf()
+            }
+            currentList.add(item)
+
+            val newJson = gson.toJson(currentList)
+            preferences[TAK_SERVER_LIST_KEY] = newJson
+            Log.d(TAG, "addTakServerItem newJson: $newJson")
+        }
+    }
+
+    suspend fun removeTakServerItem(item: TakServerItem) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[TAK_SERVER_LIST_KEY]
+            Log.d(TAG, "removeTakServerItem: $item, currJsonList: ${currentJson.toString()}")
+            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                gson.fromJson(currentJson, type)
+            } else {
+                mutableListOf()
+            }
+
+            currentList.remove(item)
+
+            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
+            Log.d(TAG, "removeTakServerItem newJson: ${gson.toJson(currentList)}")
+        }
+    }
+
+    suspend fun updateTakServerItem(oldItemIndex: Int, newItem: TakServerItem) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[TAK_SERVER_LIST_KEY]
+            Log.d(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")
+            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                gson.fromJson(currentJson, type)
+            } else {
+                mutableListOf()
+            }
+
+            if (oldItemIndex != -1) {
+                currentList[oldItemIndex] = newItem
+            }
+
+            val newJson = gson.toJson(currentList)
+            preferences[TAK_SERVER_LIST_KEY] = newJson
+            Log.d(TAG, "updateTakServerItem newJson: $newJson")
+            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -435,10 +493,10 @@ class DataRepository(private val context: Context) {
         private val PORT = stringPreferencesKey("port")
         private val USERNAME = stringPreferencesKey("username")
         private val PASSWORD = stringPreferencesKey("password")
+        private val CERTIFICATE_PASSWORD = stringPreferencesKey("certificate_password")
         private val CERTIFICATE = stringPreferencesKey("certificate")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
-        private val ENABLE_TAKCONNECT_SERVICE = booleanPreferencesKey("enable_takconnect_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")

@@ -117,6 +117,10 @@
     <string name="tak_server_port_description" translatable="false">Enter the port number for the TAK server</string>
     <string name="tak_server_port_default" translatable="false">8089</string>
 
+    <string name="tak_server_use_certificate_title" translatable="false">Authenticate Using Certificate</string>
+    <string name="tak_server_use_certificate_description" translatable="false">Is a user certificate used to authenticate with this TAK server?</string>
+    <string name="tak_server_use_certificate_default" translatable="false">false</string>
+
     <!-- TAK Server Username and Password Configs -->
     <string name="tak_server_username_title" translatable="false">TAK Server Username</string>
     <string name="tak_server_username_description" translatable="false">Enter the username for the TAK server</string>
@@ -127,8 +131,10 @@
     <string name="tak_server_password_default" translatable="false">TEST.AIT.WEAROS.Password01</string>
 
     <!-- Certs Configuration -->
+    <string name="tak_server_cert_password_title" translatable="false">TAK Server Certificate Password</string>
+    <string name="tak_server_cert_password_description" translatable="false">Enter the password for the P12 certificate</string>
     <string name="tak_server_cert_title" translatable="false">TAK Server Certificate (base64)</string>
-    <string name="tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate for authentication</string>
+    <string name="tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate used for authentication</string>
     <!-- Teams Configuration -->
     <string name="custom_teams_names_title" translatable="false">Custom Teams Name</string>
     <string name="custom_teams_names_description" translatable="false">Comma separated list of custom team NAMES. Entries must map to team colors one to one! </string>

@@ -43,7 +43,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -164,17 +163,10 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_DETAILS_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTING
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_FAILURE
-import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.addressSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
@@ -184,7 +176,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiB
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
@@ -192,11 +183,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.generateSaveBa
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.name
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.nameSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.passwordSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.portSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
@@ -205,14 +192,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.serverSettingsChanged
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBatteryService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startCotDispatchService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startOffBodyDetectService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startPowerManagerService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
@@ -221,7 +203,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesVal
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.usernameSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
@@ -238,8 +219,6 @@ import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
 import com.aitech.weartak_civ.service.TAKConnectService
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectStatusLiveData
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.takConnectionStatus
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -248,12 +227,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
 import kotlin.random.Random
 import android.content.RestrictionsManager
 import androidx.compose.runtime.collectAsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 
 
 class MainActivity : ComponentActivity() {
@@ -267,7 +248,6 @@ class MainActivity : ComponentActivity() {
         var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
         var biometricServiceRunning : Boolean = false
-        var enableTAKConnectService : Boolean = true
         var enableDittoService : Boolean = false
         var dittoServiceRunning : Boolean = false
 
@@ -277,18 +257,11 @@ class MainActivity : ComponentActivity() {
         lateinit var networkManager : NetworkManager
         private val klaxon = Klaxon()
 
-        var isP12Cert: Boolean = false
         var team = ""
         var role = ""
         var license = "License"
         var teamValue = ""
         var roleValue = ""
-        var name = "Test.Tak"
-        var address = "tak.test.ops.ascentitech.com"
-        var port = "8089"
-        var username = ""
-        var password = ""
-        var certificate = ""
         lateinit var teamEntriesValuesList : TeamsJson
         lateinit var roleEntriesValuesList : RolesJson
         var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
@@ -297,11 +270,6 @@ class MainActivity : ComponentActivity() {
         val roleState = MutableLiveData<String>("")
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
-        val nameSettingsState = MutableLiveData<String>("Test.Tak")
-        val addressSettingsState = MutableLiveData<String>("tak.test.ops.ascentitech.com")
-        val portSettingsState = MutableLiveData<String>("8089")
-        val usernameSettingsState = MutableLiveData<String>("TEST.AIT")
-        val passwordSettingsState = MutableLiveData<String>("TEST.AIT.Password01")
 
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
@@ -407,18 +375,13 @@ class MainActivity : ComponentActivity() {
 
         fun startStopTAKConnectService() {
             if (isLicenseValid()) {
-                if (enableTAKConnectService) {
-                    startTAKConnectService()
-                } else {
-                    if (TAKConnectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-                }
+                startTAKConnectService()
             } else {
                 if (TAKConnectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
             }
         }
 
         fun startTAKConnectService() {
-            // We are removing dependency on enableTAKConnectService here as it is taken care of in the TAKConnectService itself.
             if (!TAKConnectService.isRunning.get()) {
                 Log.d(TAG, "Starting TAKConnectService")
                 mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
@@ -719,9 +682,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        /*
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+
+         */
         mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
         mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
@@ -839,18 +805,10 @@ class MainActivity : ComponentActivity() {
 
             license = dataRepository.getLicense.first()
 
-            name = dataRepository.getName.first()
-            address = dataRepository.getAddress.first()
-            port = dataRepository.getPort.first()
-            username = dataRepository.getUsername.first()
-            password = dataRepository.getPassword.first()
-            certificate = dataRepository.getCertificate.first()
-
             takServerList = dataRepository.getTakServerList.first()
 
             enableLocationService = dataRepository.getEnableLocationService.first()
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
-            enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
 
             CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
@@ -869,11 +827,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun logSettings() {
-        val logOutput = """
+        var logOutput = """
                     === === Configuration Settings === ===
                     ${String.format("%-25s %-30s", "[Settings]", "[Value]")}
                     === === === === === === === === === ==
-
                     ${String.format("%-25s %-30s", "Device ID:", device_uid)}
                     ${String.format("%-25s %-30s", "Callsign:", callsign)}
                     ${String.format("%-25s %-30s", "Team:", team)}
@@ -883,17 +840,31 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Roles:", roleEntriesValuesList.lrEntries)}
                     
                     === === Server Settings === ===
-                    ${String.format("%-25s %-30s", "Server Name:", name)}
-                    ${String.format("%-25s %-30s", "Server Addr:", address)}
-                    ${String.format("%-25s %-30s", "Server Port:", port)}
-                    ${String.format("%-25s %-30s", "Server User:", username)}
-                    ${String.format("%-25s %-30s", "Server Pswd:", password)}
-                    ${String.format("%-25s %-30s", "Server Cert:", certificate)}
-                    ${String.format("%-25s %-30s", "Update Intrvl:", "${CotDispatchService.reportingUpdateIntervalSecs} sec")}
+                    ${String.format("%-25s %-30s", "Number of Servers:", takServerList.size)}
                     
+                    
+                    """.trimIndent()
+
+        for (i in takServerList.indices) {
+            val takServer = takServerList.get(i)
+            logOutput += """
+                    ${String.format("%-25s %-30s", "Server$i Name:", takServer.name)}
+                    ${String.format("%-25s %-30s", "Server$i Addr:", takServer.address)}
+                    ${String.format("%-25s %-30s", "Server$i Port:", takServer.port)}
+                    ${String.format("%-25s %-30s", "Server$i Uses Cert:", takServer.isP12Cert)}
+                    ${String.format("%-25s %-30s", "Server$i User:", takServer.username)}
+                    ${String.format("%-25s %-30s", "Server$i Pswd:", takServer.password)}
+                    ${String.format("%-25s %-30s", "Server$i Cert:", takServer.p12Cert)}
+                    ${String.format("%-25s %-30s", "Server$i Cert Pswd:", takServer.p12CertPassword)}
+                    ${String.format("%-25s %-30s", "Server$i Update Intrvl:", "${takServer.reportingUpdateInterval} sec")}
+                       
+                    
+                    """.trimIndent()
+        }
+
+        logOutput += """
                     === === Service Settings === ===
                     ${String.format("%-25s %-30s", "License Key:", license)}
-                    ${String.format("%-25s %-30s", "enable Tak:", enableTAKConnectService.toString())}
                     ${String.format("%-25s %-30s", "enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "enable Bio:", enableBiometricsService.toString())}
                     ${String.format("%-25s %-30s", "enable Ditto:", enableDittoService.toString())}
@@ -1009,16 +980,19 @@ class MainActivity : ComponentActivity() {
         handleManagedConfigUpdate(true)
 
 //        Log.d(TAG, "Device UID is $device_uid")
+        /*
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+
+         */
         //val file: File? = null
         //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
 //        Log.d(TAG, " === === Teams And Roles === ===")
 //        setTeamsJson()
 //        setRolesJson()
-//        setDataFromDatastore()
+//        setDataFromDatastore()serverPort
         networkManager = NetworkManager.getInstance()
         networkManager.init()
 
@@ -1095,16 +1069,6 @@ class MainActivity : ComponentActivity() {
         licenseSettingsState.postValue(license) // ephemeral ui value
         takServerListState.postValue(takServerList)
         takServerListSettingsState.postValue(takServerList)
-        nameState.postValue(name) // tell ui
-        nameSettingsState.postValue(name) // ephemeral ui value
-        addressState.postValue(address) // tell ui
-        addressSettingsState.postValue(address) // ephemeral ui value
-        portState.postValue(port) // tell ui
-        portSettingsState.postValue(port) // ephemeral ui value
-        usernameState.postValue(username) // tell ui
-        usernameSettingsState.postValue(username) // ephemeral ui value
-        passwordState.postValue(password) // tell ui
-        passwordSettingsState.postValue(password) // ephemeral ui value
         enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization) // tell ui
         enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
         enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
@@ -1112,47 +1076,6 @@ class MainActivity : ComponentActivity() {
         wifiSsidListState.postValue(wifiSsidList) // tell ui
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-    }
-
-    private fun updateCompanionObjects() {
-        Log.v(TAG, "=== === Updating Companion Objects === === ")
-        runBlocking {
-            callsign = dataRepository.getCallsign.first()
-
-            teamEntriesValuesList = TeamsJson(dataRepository.getTeamNames.first().split(","), dataRepository.getTeamColors.first().split(","))
-            roleEntriesValuesList = RolesJson(dataRepository.getRolesList.first().split(","), dataRepository.getRolesList.first().split(","))
-
-            team = dataRepository.getTeam.first()
-            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
-            if (teamIndex == -1) { team = teamEntriesValuesList.ltEntries[0]; teamIndex = 0 } // needed in the event my current team doesn't exist in the list of available teams.
-            teamValue = teamEntriesValuesList.ltValues[teamIndex]
-
-            role = dataRepository.getRole.first()
-            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-            if (roleIndex == -1) { role = roleEntriesValuesList.lrEntries[0]; roleIndex = 0 } // needed in the event my current role doesn't exist in the list of available roles.
-            roleValue = roleEntriesValuesList.lrValues[roleIndex]
-
-            name = dataRepository.getName.first()
-            enableTAKConnectService = dataRepository.getEnableTAKConnectService.first()
-            address = dataRepository.getAddress.first()
-            port = dataRepository.getPort.first()
-            username = dataRepository.getUsername.first()
-            password = dataRepository.getPassword.first()
-            certificate = dataRepository.getCertificate.first()
-
-            CotDispatchService.reportingUpdateIntervalSecs = dataRepository.getReportingUpdateInterval.first()
-            CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-            enableWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
-            enableAllWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
-            wifiSsidList = dataRepository.getWifiSsidList.first()
-            saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
-            PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
-            PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
-            license = dataRepository.getLicense.first()
-            enableLocationService = dataRepository.getEnableLocationService.first()
-            enableBiometricsService = dataRepository.getEnableBiometricsService.first()
-            enableDittoService = dataRepository.getEnableDittoService.first()
-        }
     }
 
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
@@ -1189,7 +1112,6 @@ class MainActivity : ComponentActivity() {
         }
          */
 
-        runBlocking {
             // Get the new settings from the restrictions manager or null, so that we only change dataRepository if there are changes
             license = appRestrictions.getString("license_key", license)
 
@@ -1197,14 +1119,17 @@ class MainActivity : ComponentActivity() {
             val teamsColors = appRestrictions.getString("custom_teams_colors", null)
             val rolesEntries = appRestrictions.getString("custom_roles", null)
 
-            var server0enableTAKConnectService: Boolean = enableTAKConnectService
-            var server0name: String? = null
-            var server0address: String? = null
-            var server0port: String? = null
-            var server0username: String? = null
-            var server0password: String? = null
-            var server0certificate: String? = null
-            var server0updateInterval: Int = CotDispatchService.reportingUpdateIntervalSecs
+            var serverEnableTAKConnectService: Boolean = true
+            var serverName: String? = null
+            var serverAddress: String? = null
+            var serverPort: String? = null
+            var serverUseCert: Boolean = false
+            var serverUsername: String? = null
+            var serverPassword: String? = null
+            var serverCertPassword: String? = null
+            var serverCertificate: String? = null
+            var serverUpdateInterval: Int = CotDispatchService.reportingUpdateIntervalSecs
+            val takServerListConfig: MutableList<DataRepository.TakServerItem> = mutableListOf()
 
             val serverParcels = appRestrictions.getParcelableArray("tak_server_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the servers in the list.
             if (serverParcels != null) {
@@ -1222,19 +1147,20 @@ class MainActivity : ComponentActivity() {
                             // Format each key/value pair into a fixed-width layout for clarity.
                             Log.v(TAG, String.format("   %-30s : %s", key, value))
                         }
-                        if (i == 0) {
-                            Log.v(TAG, "----> Applying server settings from this Connection Conf [$i]")
 
-                            // set companion obj by looking for key in bundle, fallback on current
-                            server0name = serverBundle.getString("tak_server_connection_name", null) // set companion obj by looking for key, fallback on current
-                            server0enableTAKConnectService = serverBundle.getBoolean("tak_server_connection_enabled", enableTAKConnectService)
-                            server0address = serverBundle.getString("tak_server_address", null)
-                            server0port = (serverBundle.getInt("tak_server_port", port.toInt())).toString()
-                            server0username = serverBundle.getString("tak_server_username", null)
-                            server0password = serverBundle.getString("tak_server_password", null)
-                            server0certificate = serverBundle.getString("tak_server_cert", null)
-                            server0updateInterval = serverBundle.getInt("update_interval", CotDispatchService.reportingUpdateIntervalSecs)
-                        }
+                        // set companion obj by looking for key in bundle, fallback on current
+                        serverName = serverBundle.getString("tak_server_connection_name", null) // set companion obj by looking for key, fallback on current
+                        serverEnableTAKConnectService = serverBundle.getBoolean("tak_server_connection_enabled", true)
+                        serverAddress = serverBundle.getString("tak_server_address", null)
+                        serverUseCert = serverBundle.getBoolean("tak_server_use_certificate", false)
+                        // TODO: Is 8089 ok?
+                        serverPort = (serverBundle.getInt("tak_server_port", 8089)).toString()
+                        serverUsername = serverBundle.getString("tak_server_username", null)
+                        serverPassword = serverBundle.getString("tak_server_password", null)
+                        serverCertPassword = serverBundle.getString("tak_server_cert_password", null)
+                        serverCertificate = serverBundle.getString("tak_server_cert", null)
+                        serverUpdateInterval = serverBundle.getInt("update_interval", CotDispatchService.reportingUpdateIntervalSecs)
+                        takServerListConfig.add(DataRepository.TakServerItem(serverEnableTAKConnectService, serverName, serverAddress, serverPort.toInt(), serverUseCert, serverUsername, serverPassword, serverCertificate, serverCertPassword, serverUpdateInterval))
                         Log.v(TAG, "========================================")
                     } else {
                         Log.e(TAG, "Invalid server bundle at index $i")
@@ -1244,6 +1170,7 @@ class MainActivity : ComponentActivity() {
                 Log.w(TAG, "tak_server_list is null or empty.")
             }
 
+            // TODO: check if needed only then call CALLSIGN_TEAM_ROLE_CHANGED
             enableWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
             enableAllWifiBatteryOptimization = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
             val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", "")
@@ -1260,6 +1187,7 @@ class MainActivity : ComponentActivity() {
 
             // store settings persistently & send out events as necessary
             validateLicense(license) // validate the license
+        runBlocking {
             dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
             dataRepository.storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization)
             dataRepository.storeWifiSsidList(wifiSsidList)
@@ -1284,30 +1212,31 @@ class MainActivity : ComponentActivity() {
             // Send out EventBus message even if there is no change
             EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
 
-            if (null != server0address) {
-                if ((name != server0name) || (address != server0address) || (port != server0port) ||
-                    (username != server0username) || (password != server0password) || (certificate != server0certificate)) {
-                    Log.v(TAG, "TAK server details changed: ($server0address)")
-                    name = server0name ?: name
-                    address = server0address ?: address
-                    port = server0port ?: port
-                    username = server0username ?: username
-                    password = server0password ?: password
-                    certificate = server0certificate ?: certificate
-                    dataRepository.storeName(name)
-                    dataRepository.storeAddress(address)
-                    dataRepository.storePort(port)
-                    dataRepository.storeUsername(username)
-                    dataRepository.storePassword(password)
-                    dataRepository.storeCertificate(certificate)
-                    // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
-                    EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED, 0))
-                }
-                if (server0updateInterval != CotDispatchService.reportingUpdateIntervalSecs) {
-                    Log.v(TAG, "server0updateInterval changed: $server0updateInterval")
-                    dataRepository.storeReportingUpdateIntervalSecs(server0updateInterval)
-                    CotDispatchService.reportingUpdateIntervalSecs = server0updateInterval
-                    EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
+            if (takServerListConfig.size > 0) {
+                for (i in takServerListConfig.indices) {
+                    if (i < takServerList.size) {
+                        // Server already present
+                        Log.d(TAG, "takServerListConfig.get(i).toString(): ${takServerListConfig.get(i).toString()}")
+                        // TODO: We reconnect even if name has changed or even if username has changed though we use p12 or updateInterval changed
+                        if (takServerListConfig.get(i).toString() != takServerList.get(i).toString()) {
+                            dataRepository.updateTakServerItem(i, takServerListConfig.get(i))
+                            // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
+                            EventBus.getDefault().post(MessageEvent(SERVER_DETAILS_CHANGED, i))
+                        }
+                    } else {
+                        dataRepository.addTakServerItem(takServerListConfig.get(i))
+                        EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i))
+                    }
+                    // TODO: What to do with server0updateInterval
+                    /*
+                    val serverUpdateInterval = takServerListConfig.get(i).reportingUpdateInterval
+                    if (serverUpdateInterval != CotDispatchService.reportingUpdateIntervalSecs) {
+                        Log.v(TAG, "server0updateInterval changed: $serverUpdateInterval")
+                        dataRepository.storeReportingUpdateIntervalSecs(serverUpdateInterval)
+                        CotDispatchService.reportingUpdateIntervalSecs = serverUpdateInterval
+                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
+                    }
+                     */
                 }
             }
 
@@ -1318,11 +1247,14 @@ class MainActivity : ComponentActivity() {
 
             // TODO: Should we move all enables to the service itself rather than starting and stopping services all over??
             // At the end, enable / disable services and then enable/disable based on license
+            /*
             if (enableTAKConnectService != server0enableTAKConnectService) {
                 enableTAKConnectService = server0enableTAKConnectService
                 dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
                 startStopTAKConnectService()
             }
+
+             */
             if (enableLocationServiceConfigUpdate != enableLocationService) {
                 enableLocationService = enableLocationServiceConfigUpdate
                 startStopLocationService()
@@ -1346,6 +1278,7 @@ class MainActivity : ComponentActivity() {
         logSettings()
     }
 
+    /*
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onMessageEvent(event: TakServerConnStatusEvent) {
         var toastText = ""
@@ -1363,6 +1296,7 @@ class MainActivity : ComponentActivity() {
         //Log.d(TAG, "Showing toast w/ text: $toastText")
 //        Toast.makeText(mainActivity, toastText, Toast.LENGTH_SHORT).show()
     }
+    */
 }
 
 
@@ -1394,9 +1328,6 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
             }
         }
     }
-    validateLicense(license)
-    val isP12Cert = remember { mutableStateOf(false) }
-
 
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
@@ -1441,7 +1372,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "edit_server_screen index: $index")
-            EditServerPage(navController, isP12Cert, index)
+            EditServerPage(navController, index)
         }
         composable("optimize_battery_on_wifi_screen"){
             OptimizeBatteryOnWifiSelectScreen(navController)
@@ -1770,8 +1701,8 @@ fun RoleSetting (navController: NavController) {
 @SuppressLint("CoroutineCreationDuringComposition")
 @Composable
 fun TakServerSetting(navController: NavController) {
-    val takServerList by takServerListSettingsState.observeAsState(initial = emptyList())
-    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+    val takServerSettingList by takServerListState.observeAsState(initial = emptyList())
+    var selectedIndex by remember { mutableStateOf<Int?>(0) }
 
     WearTAKCIVTheme {
         Box(
@@ -1789,7 +1720,7 @@ fun TakServerSetting(navController: NavController) {
                 .padding(bottom = 30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                var takServerChecked by remember{ mutableStateOf(enableTAKConnectService)}
+                var takServerChecked by remember{ mutableStateOf(true)}
                 var takServerCheckedChanged : Boolean = false
                 LazyColumn {
                     item {
@@ -1800,17 +1731,41 @@ fun TakServerSetting(navController: NavController) {
                             modifier = Modifier.padding(10.dp)
                         )
                     }
-                    itemsIndexed(takServerList){ index, takServerItem ->
+                    itemsIndexed(takServerSettingList){ index, takServerItem ->
                         SwipeableTakServerChip(
+                            index,
                             takServerItem.name,
                             takServerItem.address,
-                            checked = takServerChecked,
-                            onCheckedChange =  { takServerChecked = it },
+                            checked = takServerItem.isEnabled,
+                            onCheckedChange =  {
+                                takServerItem.isEnabled = it
+                                val mutableTakServerList = takServerSettingList.toMutableList()
+                                mutableTakServerList.get(index).isEnabled = it
+                                takServerListState.postValue(mutableTakServerList.toList())
+                                // TODO: Store in takServerList, dataRepo and send event to TAKConnectService
+                                Log.d(TAG, "onCheckedChange index($index): it")
+                                /*
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    dataRepository.updateTakServerItem(index, takServerItem)
+                                    EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, if (enableTAKConnectService == true) {1} else {0}))
+                                }
+
+                                 */
+                                               },
                             onPrimaryActionClick = {
                                 Log.d(TAG, "Remove takServerItem ($takServerItem)")
-                                val mutableTakServerList = takServerList.toMutableList()
+                                val mutableTakServerList = takServerSettingList.toMutableList()
                                 mutableTakServerList.removeAt(index)
-                                takServerListSettingsState.postValue(mutableTakServerList.toList())
+                                takServerListState.postValue(mutableTakServerList.toList())
+                                // TODO: Store in takServerList, dataRepo and send event to TAKConnectService
+                                Log.d(TAG, "onPrimaryActionClick index($index): it")
+                                /*
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    dataRepository.removeTakServerItem(takServerItem)
+                                    EventBus.getDefault().post(MessageEvent())
+                                }
+
+                                 */
                             },
                             onSecondaryActionClick = {
                                 selectedIndex = index
@@ -1836,7 +1791,7 @@ fun TakServerSetting(navController: NavController) {
                             icon = {
                                 Icon(
                                     Icons.Filled.Add,
-                                    contentDescription = "Localized description"
+                                    contentDescription = "Add TAK Server"
                                 )
                             },
                             modifier = Modifier
@@ -1846,52 +1801,16 @@ fun TakServerSetting(navController: NavController) {
                     }
                 }
 
-                if (enableTAKConnectService != takServerChecked) {
-                    enableTAKConnectService = takServerChecked; takServerCheckedChanged = true
-                    if (takServerChecked) {
-                        if (!TAKConnectService.isRunning.get()) {
-                            Log.d(TAG, "Connecting to tak server")
-                            mainActivity.startForegroundService(
-                                Intent(
-                                    mainActivity,
-                                    TAKConnectService::class.java
-                                )
-                            )
-
-                        }
-                        /*
-                        else {
-                            Log.d(TAG, "Disconnecting from tak server")
-                            mainActivity.stopService(
-                                Intent(
-                                    mainActivity,
-                                    TAKConnectService::class.java
-                                )
-                            )
-                        }
-
-                         */
-                    }
-                }
-
-                if (takServerCheckedChanged) {
-                    Log.d(TAG, "Storing enableTAKConnectService $enableTAKConnectService")
-                    CoroutineScope(Dispatchers.Main).launch {
-                        dataRepository.storeEnableTAKConnectService(enableTAKConnectService)
-                        EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, if (enableTAKConnectService == true) {1} else {0}))
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(10.dp))
 
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Button(
                     onClick = {
-                      if  (takServerListState.value != takServerListSettingsState.value) {
-                          takServerListState.postValue(takServerListSettingsState.value)
-                      }
-
+                        // TODO: Check code below. Do we need takServerListSettingsState if we immediately connect to new server?
+                        if  (takServerListState.value != takServerListSettingsState.value) {
+                            takServerListState.postValue(takServerListSettingsState.value)
+                        }
                         serverSettingsChanged = false
 
                         navController.navigate("settings_screen") {
@@ -1906,12 +1825,13 @@ fun TakServerSetting(navController: NavController) {
                 ) {
                     Icon(
                         Icons.Filled.KeyboardArrowLeft,
-                        contentDescription = "Localized description",
+                        contentDescription = "Go back to Main Settings Screen",
                     )
                 }
             }
             //TODO: Maybe delete this
-            val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
+            // TODO: get(0) is wrong
+            val loadingDialog by TAKConnectService.takServerDetails.get(0).connectionStatusLiveData.observeAsState()
             val shouldShowLoadingDialog = remember { mutableStateOf(false) }
             val shouldShowConfirmDialog = remember { mutableStateOf(false) }
             val isServerConnected = remember { mutableStateOf(false) }
@@ -1927,7 +1847,7 @@ fun TakServerSetting(navController: NavController) {
                 )
             }
         }
-    Log.d(TAG, "Tak Server List: $takServerList")
+    Log.d(TAG, "Tak Server List: $takServerSettingList")
 }
 
 fun displayServerDialogs(
@@ -1937,18 +1857,19 @@ fun displayServerDialogs(
     isServerConnected: MutableState<Boolean>
     ) {
 
-    takConnectionStatus = "NULL"
-    takConnectStatusLiveData.postValue(takConnectionStatus)
+    val takConnectionStatus = "NULL"
+    // TODO: get(0) is wrong
+    TAKConnectService.takServerDetails.get(0).connectionStatusLiveData.postValue(takConnectionStatus)
 
     if (serverSettingsChanged) {
-        if (loadingDialog.equals("CONNECTING")) {
+        if (loadingDialog.equals(TAK_SERVER_CONNECTING_STRING)) {
             shouldShowLoadingDialog.value = true
             shouldShowConfirmDialog.value = false
-        } else if (loadingDialog.equals("CONNECTION_SUCCESS")) {
+        } else if (loadingDialog.equals(TAK_SERVER_CONNECTED_STRING)) {
             shouldShowLoadingDialog.value = false
             shouldShowConfirmDialog.value = true
             isServerConnected.value = true
-        } else if (loadingDialog.equals("CONNECTION_FAILURE")) {
+        } else if (loadingDialog.equals(TAK_SERVER_DISCONNECTED_STRING)) {
             shouldShowLoadingDialog.value = false
             shouldShowConfirmDialog.value = true
             isServerConnected.value = false
@@ -1959,6 +1880,7 @@ fun displayServerDialogs(
 @OptIn(ExperimentalWearMaterialApi::class)
 @Composable
 fun SwipeableTakServerChip(
+    index: Int,
     title: String,
     address: String,
     checked: Boolean,
@@ -1969,10 +1891,10 @@ fun SwipeableTakServerChip(
 ) {
     val revealState = rememberRevealState()
     val scope = rememberCoroutineScope()
-    val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
-    val takServerConnecting by TAKConnectService.takConnectStatusLiveData.observeAsState()
+    // TODO: This have to be per-server
+    val takServerStatus by TAKConnectService.takServerDetails.get(index).connectionStatusLiveData.observeAsState(initial = TAK_SERVER_DISCONNECTED_STRING)
 
-    //Log.d(TAG, "WifiSsidItemChip called")
+    Log.d(TAG, "SwipeableTakServerChip called")
     SwipeToRevealChip(
         revealState = revealState,
         modifier =
@@ -1982,11 +1904,11 @@ fun SwipeableTakServerChip(
                 // Use custom actions to make the primary and secondary actions accessible
                 customActions =
                     listOf(
-                        CustomAccessibilityAction("Delete") {
+                        CustomAccessibilityAction("Delete TAK Server") {
                             /* Add the primary action click handler here */
                             true
                         },
-                        CustomAccessibilityAction("More Options") {
+                        CustomAccessibilityAction("Edit TAK Server") {
                             /* Add the secondary click handler here */
                             true
                         }
@@ -2027,7 +1949,7 @@ fun SwipeableTakServerChip(
         SplitToggleChip(
             label = {
                 Image(
-                    painter = if (takServer == true) painterResource(R.drawable.tak_server_connected) else if (takServerConnecting == "CONNECTING") painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
+                    painter = if (takServerStatus == TAK_SERVER_CONNECTED_STRING) painterResource(R.drawable.tak_server_connected) else if (takServerStatus == TAK_SERVER_CONNECTING_STRING) painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
                     contentDescription = "Top Left Icon",
                     modifier = Modifier
                         .align(Alignment.CenterVertically)
@@ -2051,6 +1973,7 @@ fun SwipeableTakServerChip(
             },
             onCheckedChange = onCheckedChange,
             enabled = true,
+            // TODO: What does line below do?
             onClick = { scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)} },
             modifier = Modifier
                 .fillMaxWidth()
@@ -2061,17 +1984,18 @@ fun SwipeableTakServerChip(
 
 @Composable
 fun NewServerPage(
-    navController: NavController,
+    navController: NavController
 ) {
     WearTAKCIVTheme {
         var name by remember { mutableStateOf("") }
         var address by remember { mutableStateOf("") }
-        var port by remember { mutableStateOf("") }
+        var port by remember { mutableStateOf("8089") }
         var username by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
-        var reportingUpdateInterval by remember { mutableStateOf("") }
+        var reportingUpdateInterval by remember { mutableStateOf("10") }
         var isP12Cert = false
-        var listAmount = takServerList.size
+        // TODO: Make sure that all values are entered, else, one can only cancel
+        // TODO: On cancel, there should be no TAK registration dialog success or NOT.
 
         Box(
             modifier = Modifier
@@ -2105,41 +2029,42 @@ fun NewServerPage(
                     false,
                     true
                 )
-                    ServerSettingText(
-                        stringResource(R.string.address_url),
-                        address,
-                        onValueChanged = { address = it },
-                        false,
-                        false,
-                        true
-                    )
-                    ServerSettingText(
-                        stringResource(R.string.port),
-                        port,
-                        onValueChanged = { port = it },
-                        false,
-                        true,
-                        true
-                    )
-                    ServerSettingText(
-                        stringResource(R.string.username),
-                        username,
-                        onValueChanged = { username = it },
-                        false,
-                        false,
-                        true
-                    )
-                    ServerSettingText(
-                        stringResource(R.string.password),
-                        password,
-                        onValueChanged = { password = it },
-                        true,
-                        false,
-                        true
-                    )
+                ServerSettingText(
+                    stringResource(R.string.address_url),
+                    address,
+                    onValueChanged = { address = it },
+                    false,
+                    false,
+                    true
+                )
+                ServerSettingText(
+                    stringResource(R.string.port),
+                    port,
+                    onValueChanged = { port = it },
+                    false,
+                    true,
+                    true
+                )
+                ServerSettingText(
+                    stringResource(R.string.username),
+                    username,
+                    onValueChanged = { username = it },
+                    false,
+                    false,
+                    true
+                )
+                ServerSettingText(
+                    stringResource(R.string.password),
+                    password,
+                    onValueChanged = { password = it },
+                    true,
+                    false,
+                    true
+                )
 
                 val focusManager = LocalFocusManager.current
 
+                // TODO: Should we call it "Update Interval" or "Reporting Interval"?
                 OutlinedTextField(
                     modifier = Modifier.padding(vertical = 5.dp),
                     keyboardOptions = KeyboardOptions(
@@ -2149,9 +2074,9 @@ fun NewServerPage(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, "Reporting Interval Empty, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, "Reporting Interval 0, Enter Again", Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2168,7 +2093,7 @@ fun NewServerPage(
                     },
                     label = {
                         Text(
-                            text = "Update Interval",
+                            text = "Reporting Interval",
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
@@ -2190,7 +2115,8 @@ fun NewServerPage(
 
                 val maxReportRate: Int = 100000000
                 val minReportRate: Int = 1
-                val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
+                // TODO: get(0) is wrong
+                val loadingDialog by TAKConnectService.takServerDetails.get(0).connectionStatusLiveData.observeAsState()
                 val shouldShowLoadingDialog = remember { mutableStateOf(false) }
                 val shouldShowConfirmDialog = remember { mutableStateOf(false) }
                 val isServerConnected = remember { mutableStateOf(false) }
@@ -2205,73 +2131,39 @@ fun NewServerPage(
                         }
                     },
                     onClickConfirm = {
-                            if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
-                                val mutableTakServerList =
-                                    takServerListSettingsState.value?.toMutableList()
-                                        ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                                mutableTakServerList.add(
-                                    DataRepository.TakServerItem(
-                                        true,
-                                        name,
-                                        address,
-                                        port.toInt(),
-                                        isP12Cert,
-                                        username,
-                                        password,
-                                        "",
-                                        "",
-                                        reportingUpdateInterval.toInt()
-                                    )
-                                )
-                                takServerListSettingsState.postValue(mutableTakServerList.toList())
-                                serverSettingsChanged = true
-                            }
-
-                            if (!reportingUpdateInterval.equals("") && (reportingUpdateInterval.toInt() != 0) && !reportingUpdateInterval.equals(
-                                    CotDispatchService.reportingUpdateIntervalSecs.toString()
-                                ) && reportingUpdateInterval.toInt() >= minReportRate
-                            ) {
-                                CotDispatchService.reportingUpdateIntervalSecs =
-                                    reportingUpdateInterval.toInt()
-                                //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                Log.d(
-                                    TAG,
-                                    "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}"
-                                )
-                            }
-
-                            EventBus
-                                .getDefault()
-                                .post(MessageEvent(SERVER_ADDED, 0))
-
-                            EventBus.getDefault().post(
-                                MessageEvent(
-                                    UPDATE_INTERVAL_CHANGED,
-                                    CotDispatchService.reportingUpdateIntervalSecs
-                                )
-                            )
-
+                        if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
                             if (reportingUpdateInterval.equals("")) {
-                                Toast.makeText(
-                                    mainActivity,
-                                    "Reporting Rate Empty, Enter Again",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval.equals("0")) {
-                                Toast.makeText(
-                                    mainActivity,
-                                    "Reporting Rate 0, Enter Again",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                Toast.makeText(
-                                    mainActivity,
-                                    "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                             } else {
-                                Log.d(TAG, "Server Added")
+                                val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
+                                mutableTakServerList.add(DataRepository.TakServerItem(true, name, address, port.toInt(), isP12Cert, username, password, "", "", reportingUpdateInterval.toInt()))
+                                // TODO: takServerListState vs takServerSettingsListState
+                                takServerListState.postValue(mutableTakServerList.toList())
+                                serverSettingsChanged = true
+
+                                if (!reportingUpdateInterval.equals(CotDispatchService.reportingUpdateIntervalSecs.toString())) {
+                                    CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval.toInt()
+                                    //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+                                    Log.d(TAG, "Setting reportingUpdateIntervalSecs to ${CotDispatchService.reportingUpdateIntervalSecs}")
+                                }
+
+                                EventBus.getDefault().post(MessageEvent(SERVER_ADDED, 0))
+
+                                EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, CotDispatchService.reportingUpdateIntervalSecs))
+
+                                navController.navigate("tak_server_screen") {
+                                    popUpTo(("tak_server_screen")) {
+                                        inclusive = true
+                                    }
+                                }
                             }
+                        } else {
+                            Toast.makeText(mainActivity,"Please enter valid values for all fields", Toast.LENGTH_LONG).show()
+                        }
                     })
 
                 displayServerDialogs(loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
@@ -2291,12 +2183,12 @@ fun NewServerPage(
 @Composable
 fun EditServerPage(
     navController: NavController,
-    isP12Cert: MutableState<Boolean>,
     index: Int
 ) {
     WearTAKCIVTheme {
-        val takServerList by takServerListSettingsState.observeAsState(initial = emptyList())
-        Log.d(TAG, "Edited tak servver list: $takServerList")
+        // TODO: is it takServerListSettingsState or takServerListState
+        val takServerList by takServerListState.observeAsState(initial = emptyList())
+        Log.d(TAG, "Edited tak server list: $takServerList")
         var name by remember { mutableStateOf(takServerList.getOrNull(index)?.name.orEmpty()) }
         var address by remember { mutableStateOf(takServerList.getOrNull(index)?.address.orEmpty()) }
         var port by remember { mutableStateOf(takServerList.getOrNull(index)?.port.toString().orEmpty()) }
@@ -2304,7 +2196,6 @@ fun EditServerPage(
         var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
         var reportingUpdateInterval by remember { mutableStateOf(takServerList.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
         var isP12Cert by remember { mutableStateOf(takServerList.getOrNull(index)?.isP12Cert.toString().orEmpty()) }
-
 
         Box(
             modifier = Modifier
@@ -2400,9 +2291,9 @@ fun EditServerPage(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, "Reporting Interval Empty, Enter Again", Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, "Reporting Interval 0, Enter Again", Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2419,7 +2310,7 @@ fun EditServerPage(
                     },
                     label = {
                         Text(
-                            text = "Update Interval",
+                            text = "Reporting Interval",
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
@@ -2534,7 +2425,8 @@ fun EditServerPage(
                             }
                         }
                     })
-                val loadingDialog by TAKConnectService.takConnectStatusLiveData.observeAsState()
+                // TODO: get(0) is wrong
+                val loadingDialog by TAKConnectService.takServerDetails.get(0).connectionStatusLiveData.observeAsState()
                 val shouldShowLoadingDialog = remember { mutableStateOf(false) }
                 val shouldShowConfirmDialog = remember { mutableStateOf(false) }
                 val isServerConnected = remember { mutableStateOf(false) }
@@ -2862,11 +2754,12 @@ fun WifiSsidItemChip(
             .semantics {
                 // Use custom actions to make the primary and secondary actions accessible
                 customActions = listOf(
-                    CustomAccessibilityAction("Delete") {
+                    CustomAccessibilityAction("Delete WiFi SSID") {
                         /* Add the primary action click handler here */
                         true
                     },
-                    CustomAccessibilityAction("More Options") {
+                    // TODO: Can we change the MoreOptions Icon to Edit Icon?
+                    CustomAccessibilityAction("Edit WiFi SSID") {
                         /* Add the secondary click handler here */
                         true
                     }
@@ -3419,8 +3312,8 @@ fun TroubleshootingIcons() {
         var locationChecked by remember{ mutableStateOf(enableLocationService)}
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
-        val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
-        val takServerConnecting by TAKConnectService.takConnectStatusLiveData.observeAsState()
+        val anyTakServerConnected by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
+        val anyTakServerConnecting by TAKConnectService.isAnyTakConnectingLiveData.observeAsState()
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
@@ -3428,7 +3321,7 @@ fun TroubleshootingIcons() {
 
         // Icon on the top left curve
         Image(
-            painter = if (takServer == true) painterResource(R.drawable.tak_server_connected) else if (takServerConnecting == "CONNECTING") painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
+            painter = if (anyTakServerConnected == true) painterResource(R.drawable.tak_server_connected) else if (anyTakServerConnecting == true) painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -3438,7 +3331,7 @@ fun TroubleshootingIcons() {
                 )
                 .size(25.dp) // Adjust icon size as needed
         )
-        Log.d(TAG, "TakServerConnecting = $takServerConnecting")
+        Log.d(TAG, "AnyTakServerConnected = $anyTakServerConnected; AnyTakServerConnecting = $anyTakServerConnecting")
 
 
 //         Icon on the bottom left curve
@@ -3571,7 +3464,9 @@ fun Callsign(navController: NavController, callsignState: MutableLiveData<String
             enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
             enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
             enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+            wifiSsidListState.postValue(wifiSsidList)
             wifiSsidListSettingsState.postValue(wifiSsidList)
+            takServerListState.postValue(takServerList)
             takServerListSettingsState.postValue(takServerList)
             saveBattOnWifiStringState.postValue(saveBattOnWifiString)
             navController.navigate("settings_screen") },
@@ -3594,7 +3489,7 @@ fun SOSButton() {
     val successBoolean = remember {mutableStateOf(false)}
     val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
     val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
+    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
     val location = dataRepository.latestLocation.value
     var locationChecked by remember{ mutableStateOf(enableLocationService)}
 
@@ -3662,7 +3557,7 @@ fun MarkerDropButton(
     val successBoolean = remember {mutableStateOf(false)}
     val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
     val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isTakConnectedLiveData.observeAsState()
+    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
     val location = dataRepository.latestLocation.value
     var locationChecked by remember{ mutableStateOf(enableLocationService)}
 
@@ -3836,7 +3731,7 @@ fun SettingsScreen(
                         takServerListSettingsState.postValue(takServerListState.value)
                         navController.navigate("tak_server_screen") },
                     enabled = true,
-                    label = { Text(text = stringResource(R.string.tak_server)) },
+                    label = { Text(text = stringResource(R.string.tak_servers)) },
                     secondaryLabel = {
 //                        Text(text = name)
                                      },
@@ -4217,8 +4112,9 @@ fun WifiSsidSettingPreview() {
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun TAKServerChipPreview() {
-    var takServerChecked by remember{ mutableStateOf(enableTAKConnectService)}
+    var takServerChecked by remember{ mutableStateOf(true)}
     SwipeableTakServerChip(
+        0,
         "pp",
         "pp",
         checked = takServerChecked,
@@ -4251,7 +4147,7 @@ fun ServerDialogPreview() {
 @Composable
 fun EditServerPreview() {
     val isP12Cert = remember { mutableStateOf(true) }
-    EditServerPage(rememberSwipeDismissableNavController(), isP12Cert, 1)
+    EditServerPage(rememberSwipeDismissableNavController(), 1)
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
