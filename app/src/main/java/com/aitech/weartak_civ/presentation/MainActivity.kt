@@ -1736,6 +1736,7 @@ fun NewServerPage(navController: NavController) {
                     false
                 )
                 NewServerSettingText(stringResource(R.string.port), portSettingsState, portTextState, false, true)
+                /*
                 NewServerSettingText(
                     stringResource(R.string.username),
                     usernameSettingsState,
@@ -1750,6 +1751,8 @@ fun NewServerPage(navController: NavController) {
                     true,
                     false
                 )
+                
+                 */
 
                 Spacer(modifier = Modifier.height(10.dp))
 

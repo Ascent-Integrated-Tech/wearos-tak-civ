@@ -145,7 +145,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getAddress: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[ADDRESS] ?: "tak.il.ops.ascentitech.com"
+        prefs[ADDRESS] ?: "vkistak.com"
     }
 
     suspend fun storeAddress(address: String) {
