@@ -95,104 +95,113 @@
 
     <!-- Tak Server Configurations -->
     <!--     Server Defaults: 0=DEFAULT, 1=TEST, 2=DEVELOP -->
-    <string name="tak_server_list_title" translatable="false">TAK Server Connections</string>
-    <string name="tak_server_list_description" translatable="false">List of tak server connections to be installed by default. </string>
+    <string name="mc_tak_server_list_title" translatable="false">TAK Server Connections</string>
+    <string name="mc_tak_server_list_description" translatable="false">List of tak server connections to be installed by default. </string>
 
-    <string name="tak_server_connection_title" translatable="false">TAK Server Connection Settings</string>
-    <string name="tak_server_connection_description" translatable="false">Name the connection, enable/disable, address/url, port, credentials, update rate</string>
+    <string name="mc_tak_server_connection_title" translatable="false">TAK Server Connection Settings</string>
+    <string name="mc_tak_server_connection_description" translatable="false">Name the connection, enable/disable, address/url, port, credentials, update rate</string>
 
-    <string name="tak_server_connection_name_title" translatable="false">TAK Server Connection Name</string>
-    <string name="tak_server_connection_name_description" translatable="false">Enter the connection name for the TAK server</string>
-    <string name="tak_server_connection_name_default" translatable="false">Connection Name</string>
+    <string name="mc_tak_server_connection_name_title" translatable="false">TAK Server Connection Name</string>
+    <string name="mc_tak_server_connection_name_description" translatable="false">Enter the connection name for the TAK server</string>
+    <string name="mc_tak_server_connection_name_default" translatable="false">Connection Name</string>
 
-    <string name="tak_server_connection_enabled_title" translatable="false">TAK Server Connection Enabled</string>
-    <string name="tak_server_connection_enabled_description" translatable="false">Enable/Disable this TAK server connection</string>
-    <string name="tak_server_connection_enabled_default" translatable="false">true</string>
+    <string name="mc_tak_server_connection_enabled_title" translatable="false">TAK Server Connection Enabled</string>
+    <string name="mc_tak_server_connection_enabled_description" translatable="false">Enable/Disable this TAK server connection</string>
+    <string name="mc_tak_server_connection_enabled_default" translatable="false">true</string>
 
-    <string name="tak_server_address_title" translatable="false">TAK Server Address/URL</string>
-    <string name="tak_server_address_description" translatable="false">Enter the IP address / URL of the TAK server</string>
-    <string name="tak_server_address_default" translatable="false">tak.test.ops.ascentitech.com</string>
+    <string name="mc_tak_server_address_title" translatable="false">TAK Server Address/URL</string>
+    <string name="mc_tak_server_address_description" translatable="false">Enter the IP address / URL of the TAK server</string>
+    <string name="mc_tak_server_address_default" translatable="false">tak.test.ops.ascentitech.com</string>
 
-    <string name="tak_server_port_title" translatable="false">TAK Server Port</string>
-    <string name="tak_server_port_description" translatable="false">Enter the port number for the TAK server</string>
-    <string name="tak_server_port_default" translatable="false">8089</string>
+    <string name="mc_tak_server_port_title" translatable="false">TAK Server Port</string>
+    <string name="mc_tak_server_port_description" translatable="false">Enter the port number for the TAK server</string>
+    <string name="mc_tak_server_port_default" translatable="false">8089</string>
 
-    <string name="tak_server_use_certificate_title" translatable="false">Authenticate Using Certificate</string>
-    <string name="tak_server_use_certificate_description" translatable="false">Is a user certificate used to authenticate with this TAK server?</string>
-    <string name="tak_server_use_certificate_default" translatable="false">false</string>
+    <string name="mc_tak_server_use_certificate_title" translatable="false">Authenticate Using Certificate</string>
+    <string name="mc_tak_server_use_certificate_description" translatable="false">Is a user certificate used to authenticate with this TAK server?</string>
+    <string name="mc_tak_server_use_certificate_default" translatable="false">false</string>
 
     <!-- TAK Server Username and Password Configs -->
-    <string name="tak_server_username_title" translatable="false">TAK Server Username</string>
-    <string name="tak_server_username_description" translatable="false">Enter the username for the TAK server</string>
-    <string name="tak_server_username_default" translatable="false">TEST.AIT.WEAROS</string>
+    <string name="mc_tak_server_username_title" translatable="false">TAK Server Username</string>
+    <string name="mc_tak_server_username_description" translatable="false">Enter the username for the TAK server</string>
+    <string name="mc_tak_server_username_default" translatable="false">TEST.AIT.WEAROS</string>
 
-    <string name="tak_server_password_title" translatable="false">TAK Server Password</string>
-    <string name="tak_server_password_description" translatable="false">Enter the password for the TAK server</string>
-    <string name="tak_server_password_default" translatable="false">TEST.AIT.WEAROS.Password01</string>
+    <string name="mc_tak_server_password_title" translatable="false">TAK Server Password</string>
+    <string name="mc_tak_server_password_description" translatable="false">Enter the password for the TAK server</string>
+    <string name="mc_tak_server_password_default" translatable="false">TEST.AIT.WEAROS.Password01</string>
 
     <!-- Certs Configuration -->
-    <string name="tak_server_cert_password_title" translatable="false">TAK Server Certificate Password</string>
-    <string name="tak_server_cert_password_description" translatable="false">Enter the password for the P12 certificate</string>
-    <string name="tak_server_cert_title" translatable="false">TAK Server Certificate (base64)</string>
-    <string name="tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate used for authentication</string>
+    <string name="mc_tak_server_cert_password_title" translatable="false">TAK Server Certificate Password</string>
+    <string name="mc_tak_server_cert_password_description" translatable="false">Enter the password for the P12 certificate</string>
+    <string name="mc_tak_server_cert_title" translatable="false">TAK Server Certificate (base64)</string>
+    <string name="mc_tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate used for authentication</string>
     <!-- Teams Configuration -->
-    <string name="custom_teams_names_title" translatable="false">Custom Teams Name</string>
-    <string name="custom_teams_names_description" translatable="false">Comma separated list of custom team NAMES. Entries must map to team colors one to one! </string>
-    <string name="custom_teams_names_default" translatable="false">White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown</string>
+    <string name="mc_custom_teams_names_title" translatable="false">Custom Teams Name</string>
+    <string name="mc_custom_teams_names_description" translatable="false">Comma separated list of custom team NAMES. Entries must map to team colors one to one! </string>
+    <string name="mc_custom_teams_names_default" translatable="false">White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown</string>
 
-    <string name="custom_teams_colors_title" translatable="false">Custom Teams Colors</string>
-    <string name="custom_teams_colors_description" translatable="false">Comma separated list of custom team COLORS. Entries must map to team names one to one!</string>
-    <string name="custom_teams_colors_default" translatable="false">White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown</string>
+    <string name="mc_custom_teams_colors_title" translatable="false">Custom Teams Colors</string>
+    <string name="mc_custom_teams_colors_description" translatable="false">Comma separated list of custom team COLORS. Entries must map to team names one to one!</string>
+    <string name="mc_custom_teams_colors_default" translatable="false">White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown</string>
 
     <!-- Roles Configuration -->
-    <string name="custom_roles_title" translatable="false">Custom Roles</string>
-    <string name="custom_roles_description" translatable="false">List of custom roles</string>
-    <string name="custom_roles_default" translatable="false">Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9</string>
+    <string name="mc_custom_roles_title" translatable="false">Custom Roles</string>
+    <string name="mc_custom_roles_description" translatable="false">List of custom roles</string>
+    <string name="mc_custom_roles_default" translatable="false">Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9</string>
 
     <!-- License Key -->
-    <string name="license_key_title" translatable="false">License Key</string>
-    <string name="license_key_description" translatable="false">Enter the license key for authentication</string>
-    <string name="license_key_default" translatable="false">1F9A-3F43-E661</string>
+    <string name="mc_license_key_title" translatable="false">License Key</string>
+    <string name="mc_license_key_description" translatable="false">Enter the license key for authentication</string>
+    <string name="mc_license_key_default" translatable="false">1F9A-3F43-E661</string>
 
     <!-- Cot Update Interval -->
-    <string name="update_interval_title" translatable="false">Update Interval</string>
-    <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
-    <string name="update_interval_default" translatable="false">10</string>
+    <string name="mc_update_interval_title" translatable="false">Update Interval</string>
+    <string name="mc_update_interval_description" translatable="false">Interval in seconds for cot updates</string>
+    <string name="mc_update_interval_default" translatable="false">10</string>
 
     <!-- Enable / Disable Services -->
-    <string name="location_service_title" translatable="false">Enable Location Service</string>
-    <string name="location_service_description" translatable="false">Enable or disable the location service</string>
-    <string name="location_service_enabled_default" translatable="false">true</string>
+    <string name="mc_location_service_title" translatable="false">Enable Location Service</string>
+    <string name="mc_location_service_description" translatable="false">Enable or disable the location service</string>
+    <string name="mc_location_service_enabled_default" translatable="false">true</string>
 
-    <string name="biometric_service_title" translatable="false">Enable Biometric Service</string>
-    <string name="biometric_service_description" translatable="false">Enable or disable the biometric service</string>
-    <string name="biometric_service_enabled_default" translatable="false">true</string>
+    <string name="mc_biometric_service_title" translatable="false">Enable Biometric Service</string>
+    <string name="mc_biometric_service_description" translatable="false">Enable or disable the biometric service</string>
+    <string name="mc_biometric_service_enabled_default" translatable="false">true</string>
 
-    <string name="ditto_service_title" translatable="false">Enable Ditto Service</string>
-    <string name="ditto_service_description" translatable="false">Enable or disable the Ditto service</string>
-    <string name="ditto_service_enabled_default" translatable="false">false</string>
+    <string name="mc_ditto_service_title" translatable="false">Enable Ditto Service</string>
+    <string name="mc_ditto_service_description" translatable="false">Enable or disable the Ditto service</string>
+    <string name="mc_ditto_service_enabled_default" translatable="false">false</string>
 
     <!-- WiFi Battery optimization-->
-    <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
-    <string name="wifiOptimization_service_enabled_description" translatable="false">Enable to increase battery life when connected to wifi networks.</string>
-    <string name="wifiOptimization_service_enabled_default" translatable="false">true</string>
+    <string name="mc_wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
+    <string name="mc_wifiOptimization_service_enabled_description" translatable="false">Enable to increase battery life when connected to wifi networks.</string>
+    <string name="mc_wifiOptimization_service_enabled_default" translatable="false">true</string>
 
-    <string name="wifiOptimization_all_title" translatable="false">Enable Wifi Battery Opt on All Networks</string>
-    <string name="wifiOptimization_all_description" translatable="false">Set true for all, set false for some.</string>
-    <string name="wifiOptimization_all_default" translatable="false">true</string>
+    <string name="mc_wifiOptimization_all_title" translatable="false">Enable Wifi Battery Opt on All Networks</string>
+    <string name="mc_wifiOptimization_all_description" translatable="false">Set true for all, set false for some.</string>
+    <string name="mc_wifiOptimization_all_default" translatable="false">true</string>
 
-    <string name="wifiOptimization_ssid_list_title" translatable="false">Enabled WiFi Connections List</string>
-    <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
+    <string name="mc_wifiOptimization_ssid_list_title" translatable="false">Enabled WiFi Connections List</string>
+    <string name="mc_wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
 
     <!-- Developer Json -->
-    <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
-    <string name="custom_developer_config_json_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+    <string name="mc_custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
+    <string name="mc_custom_developer_config_json_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
 
     <!-- Developer bundle -->
-    <string name="custom_developer_bundle_title" translatable="false">Developer bundle</string>
-    <string name="custom_developer_bundle_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+    <string name="mc_custom_developer_bundle_title" translatable="false">Developer bundle</string>
+    <string name="mc_custom_developer_bundle_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
 
     <!-- Developer bundle array -->
-    <string name="custom_developer_bundle_array_title" translatable="false">Developer bundle array</string>
-    <string name="custom_developer_bundle_array_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+    <string name="mc_custom_developer_bundle_array_title" translatable="false">Developer bundle array</string>
+    <string name="mc_custom_developer_bundle_array_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+    <string name="tak_server_connections">TAK Server Connections</string>
+    <string name="new_server">New Server</string>
+    <string name="reporting_interval_empty_enter_again">Reporting Interval Empty, Enter Again</string>
+    <string name="reporting_interval_0_enter_again">Reporting Interval 0, Enter Again</string>
+    <string name="reporting_interval">Reporting Interval</string>
+    <string name="interval_in_secs">Interval in secs</string>
+    <string name="reporting_rate_outside_bounds">"Reporting Rate Outside Bounds "</string>
+    <string name="please_enter_valid_values_for_all_fields">Please enter valid values for all fields</string>
+    <string name="using_client_certificate">Using client certificate</string>
 </resources>

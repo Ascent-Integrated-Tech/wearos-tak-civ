@@ -1725,7 +1725,7 @@ fun TakServerSetting(navController: NavController) {
                 LazyColumn {
                     item {
                         Text(
-                            text = "TAK Server Connections",
+                            text = stringResource(R.string.tak_server_connections),
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(10.dp)
@@ -1782,7 +1782,7 @@ fun TakServerSetting(navController: NavController) {
                                 }
                             } },
                             enabled = true,
-                            label = { Text(text = "Add Network") },
+                            label = { Text(text = stringResource(R.string.add_network)) },
                             colors = ChipDefaults.chipColors(
                                 backgroundColor = Color.DarkGray,
                                 contentColor = Color.White,
@@ -1917,8 +1917,8 @@ fun SwipeableTakServerChip(
         primaryAction = {
             SwipeToRevealPrimaryAction(
                 revealState = revealState,
-                icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
-                label = { Text("Delete") },
+                icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
+                label = { Text(stringResource(R.string.delete)) },
                 onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
         },
@@ -1933,14 +1933,14 @@ fun SwipeableTakServerChip(
         undoPrimaryAction = {
             SwipeToRevealUndoAction(
                 revealState = revealState,
-                label = { Text("Undo") },
+                label = { Text(stringResource(R.string.undo)) },
                 onClick = { /* Add the undo handler for primary action */ }
             )
         },
         undoSecondaryAction = {
             SwipeToRevealUndoAction(
                 revealState = revealState,
-                label = { Text("Undo") },
+                label = { Text(stringResource(R.string.undo)) },
                 onClick = { /* Add the undo handler for secondary action */ }
             )
         },
@@ -1974,6 +1974,7 @@ fun SwipeableTakServerChip(
             onCheckedChange = onCheckedChange,
             enabled = true,
             // TODO: What does line below do?
+            // TODO Answer:^Molly^ This adds the ability to tap on the chip to reveal, without this you would only be able to access this by swiping
             onClick = { scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)} },
             modifier = Modifier
                 .fillMaxWidth()
@@ -1994,6 +1995,8 @@ fun NewServerPage(
         var password by remember { mutableStateOf("") }
         var reportingUpdateInterval by remember { mutableStateOf("10") }
         var isP12Cert = false
+        val context = LocalContext.current
+
         // TODO: Make sure that all values are entered, else, one can only cancel
         // TODO: On cancel, there should be no TAK registration dialog success or NOT.
 
@@ -2015,7 +2018,7 @@ fun NewServerPage(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "New Server",
+                    text = stringResource(R.string.new_server),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -2074,9 +2077,11 @@ fun NewServerPage(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Interval Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,
+                                    context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, "Reporting Interval 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,
+                                    context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2093,14 +2098,14 @@ fun NewServerPage(
                     },
                     label = {
                         Text(
-                            text = "Reporting Interval",
+                            text = stringResource(R.string.reporting_interval),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
                     },
                     placeholder = {
                         Text(
-                            text = "Interval in secs",
+                            text = stringResource(R.string.interval_in_secs),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
@@ -2133,11 +2138,12 @@ fun NewServerPage(
                     onClickConfirm = {
                         if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
                             if (reportingUpdateInterval.equals("")) {
-                                Toast.makeText(mainActivity,"Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval.equals("0")) {
-                                Toast.makeText(mainActivity,"Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                Toast.makeText(mainActivity,"Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,
+                                    context.getString(R.string.reporting_rate_outside_bounds) + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                             } else {
                                 val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
                                 mutableTakServerList.add(DataRepository.TakServerItem(true, name, address, port.toInt(), isP12Cert, username, password, "", "", reportingUpdateInterval.toInt()))
@@ -2162,7 +2168,8 @@ fun NewServerPage(
                                 }
                             }
                         } else {
-                            Toast.makeText(mainActivity,"Please enter valid values for all fields", Toast.LENGTH_LONG).show()
+                            Toast.makeText(mainActivity,
+                                context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
                         }
                     })
 
@@ -2196,6 +2203,7 @@ fun EditServerPage(
         var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
         var reportingUpdateInterval by remember { mutableStateOf(takServerList.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
         var isP12Cert by remember { mutableStateOf(takServerList.getOrNull(index)?.isP12Cert.toString().orEmpty()) }
+        val context = LocalContext.current
 
         Box(
             modifier = Modifier
@@ -2216,14 +2224,14 @@ fun EditServerPage(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Edit Server",
+                    text = stringResource(R.string.edit_server),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
 
                 ServerSettingText(
-                    "Connection Name",
+                    stringResource(R.string.connection_name),
                     name,
                     onValueChanged = { name = it },
                     false,
@@ -2233,7 +2241,7 @@ fun EditServerPage(
 
                 if (isP12Cert == "true") {
                     ServerSettingText(
-                        "Address/URL",
+                        stringResource(R.string.address_url),
                         address,
                         onValueChanged = { address = it },
                         false,
@@ -2241,7 +2249,7 @@ fun EditServerPage(
                         false
                     )
                     ServerSettingText(
-                        "Port",
+                        stringResource(R.string.port),
                         port,
                         onValueChanged = { port = it },
                         false,
@@ -2249,7 +2257,7 @@ fun EditServerPage(
                         true)
                 } else {
                     ServerSettingText(
-                        "Address/URL",
+                        stringResource(R.string.address_url),
                         address,
                         onValueChanged = { address = it },
                         false,
@@ -2257,14 +2265,14 @@ fun EditServerPage(
                         true
                     )
                     ServerSettingText(
-                        "Port",
+                        stringResource(R.string.port),
                         port,
                         onValueChanged = { port = it },
                         false,
                         true,
                         true)
                     ServerSettingText(
-                        "Username",
+                        stringResource(R.string.username),
                         username,
                         onValueChanged = { username = it },
                         false,
@@ -2272,7 +2280,7 @@ fun EditServerPage(
                         true
                     )
                     ServerSettingText(
-                        "Password",
+                        stringResource(R.string.password),
                         password,
                         onValueChanged = { password = it },
                         true,
@@ -2291,9 +2299,9 @@ fun EditServerPage(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Interval Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, "Reporting Interval 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2310,14 +2318,14 @@ fun EditServerPage(
                     },
                     label = {
                         Text(
-                            text = "Reporting Interval",
+                            text = stringResource(R.string.reporting_interval),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
                     },
                     placeholder = {
                         Text(
-                            text = "Interval in secs",
+                            text = stringResource(R.string.interval_in_secs),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
@@ -2326,7 +2334,7 @@ fun EditServerPage(
                 )
                 if (isP12Cert == "true") {
                     Text(
-                        text = "Using client certificate",
+                        text = stringResource(R.string.using_client_certificate),
                         textAlign = TextAlign.Center,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(5.dp)
@@ -2405,19 +2413,19 @@ fun EditServerPage(
                             if (reportingUpdateInterval.equals("")) {
                                 Toast.makeText(
                                     mainActivity,
-                                    "Reporting Rate Empty, Enter Again",
+                                    context.getString(R.string.reporting_interval_empty_enter_again),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else if (reportingUpdateInterval.equals("0")) {
                                 Toast.makeText(
                                     mainActivity,
-                                    "Reporting Rate 0, Enter Again",
+                                    context.getString(R.string.reporting_interval_0_enter_again),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
                                 Toast.makeText(
                                     mainActivity,
-                                    "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate",
+                                    context.getString(R.string.reporting_rate_outside_bounds) + "$minReportRate" + "-" + "$maxReportRate",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {

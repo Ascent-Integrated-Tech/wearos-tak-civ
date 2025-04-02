@@ -91,8 +91,8 @@ class TAKConnectService: Service() {
         var isP12Cert: Boolean,
         var username: String,
         var password: String,
-        var p12Cert: String,
-        var p12CertPassword: String,
+        var p12Cert: String?,
+        var p12CertPassword: String?,
         var reportingUpdateInterval: Int,
         var numConnAttempts : Int = 0,
         val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
@@ -739,9 +739,9 @@ class TAKConnectService: Service() {
                         if (takServerDetail.isP12Cert) {
                             Log.d(TAG, "isP12Cert true")
                             //takServerDetail.keyStore = KeyStore.getInstance("PKCS12")
-                            val inputStream = base64ToInputStream(takServerDetail.p12Cert)
+                            val inputStream = base64ToInputStream(takServerDetail.p12Cert?:"")
                             if (null != inputStream) {
-                                takServerDetail.keyStore.load(inputStream, takServerDetail.p12CertPassword.toCharArray())
+                                takServerDetail.keyStore.load(inputStream, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
                                 takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                                 connectTAKServer(takServerDetail)
@@ -809,7 +809,7 @@ class TAKConnectService: Service() {
                         // Initialize the KeyManagerFactory with the client certificate
                         val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
                         if (takServerDetail.isP12Cert) {
-                            keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword.toCharArray())
+                            keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
                         } else {
                             keyManagerFactory.init(takServerDetail.keyStore, TAK_CERT_PASSWORD.toCharArray())
                         }

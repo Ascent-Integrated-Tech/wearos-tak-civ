@@ -55,4 +55,13 @@
     <string name="connecting_to_toast">الاتصال بـ %1$s</string>
     <string name="connected_to_toast">متصل بـ %1$s</string>
     <string name="connection_failed">فشل الاتصال</string>
+    <string name="tak_server_connections">TAK Server Connections</string>
+    <string name="new_server">New Server</string>
+    <string name="reporting_interval_empty_enter_again">Reporting Interval Empty, Enter Again</string>
+    <string name="reporting_interval_0_enter_again">Reporting Interval 0, Enter Again</string>
+    <string name="reporting_interval">Reporting Interval</string>
+    <string name="interval_in_secs">Interval in secs</string>
+    <string name="reporting_rate_outside_bounds">"Reporting Rate Outside Bounds "</string>
+    <string name="please_enter_valid_values_for_all_fields">Please enter valid values for all fields</string>
+    <string name="using_client_certificate">Using client certificate</string>
 </resources>

@@ -3,31 +3,31 @@
     <restriction
         android:key="custom_teams_names"
         android:restrictionType="string"
-        android:title="@string/custom_teams_names_title"
-        android:description="@string/custom_teams_names_description"
-        android:defaultValue="@string/custom_teams_names_default" />
+        android:title="@string/mc_custom_teams_names_title"
+        android:description="@string/mc_custom_teams_names_description"
+        android:defaultValue="@string/mc_custom_teams_names_default" />
 
     <restriction
         android:key="custom_teams_colors"
         android:restrictionType="string"
-        android:title="@string/custom_teams_colors_title"
-        android:description="@string/custom_teams_colors_description"
-        android:defaultValue="@string/custom_teams_colors_default" />
+        android:title="@string/mc_custom_teams_colors_title"
+        android:description="@string/mc_custom_teams_colors_description"
+        android:defaultValue="@string/mc_custom_teams_colors_default" />
 
     <restriction
         android:key="custom_roles"
         android:restrictionType="string"
-        android:title="@string/custom_roles_title"
-        android:description="@string/custom_roles_description"
-        android:defaultValue="@string/custom_roles_default" />
+        android:title="@string/mc_custom_roles_title"
+        android:description="@string/mc_custom_roles_description"
+        android:defaultValue="@string/mc_custom_roles_default" />
 
     <!-- License Key -->
     <restriction
         android:key="license_key"
         android:restrictionType="string"
-        android:title="@string/license_key_title"
-        android:description="@string/license_key_description"
-        android:defaultValue="@string/license_key_default" />
+        android:title="@string/mc_license_key_title"
+        android:description="@string/mc_license_key_description"
+        android:defaultValue="@string/mc_license_key_default" />
 
     <!-- Update Interval -->
 <!--    <restriction-->
@@ -41,133 +41,133 @@
     <restriction
         android:key="location_service_enabled"
         android:restrictionType="bool"
-        android:title="@string/location_service_title"
-        android:description="@string/location_service_description"
-        android:defaultValue="@string/location_service_enabled_default" />
+        android:title="@string/mc_location_service_title"
+        android:description="@string/mc_location_service_description"
+        android:defaultValue="@string/mc_location_service_enabled_default" />
 
     <restriction
         android:key="biometric_service_enabled"
         android:restrictionType="bool"
-        android:title="@string/biometric_service_title"
-        android:description="@string/biometric_service_description"
-        android:defaultValue="@string/biometric_service_enabled_default" />
+        android:title="@string/mc_biometric_service_title"
+        android:description="@string/mc_biometric_service_description"
+        android:defaultValue="@string/mc_biometric_service_enabled_default" />
 
     <restriction
         android:key="ditto_service_enabled"
         android:restrictionType="bool"
-        android:title="@string/ditto_service_title"
-        android:description="@string/ditto_service_description"
-        android:defaultValue="@string/ditto_service_enabled_default" />
+        android:title="@string/mc_ditto_service_title"
+        android:description="@string/mc_ditto_service_description"
+        android:defaultValue="@string/mc_ditto_service_enabled_default" />
 
     <restriction
         android:key="wifiOptimization_service_enabled"
         android:restrictionType="bool"
-        android:title="@string/wifiOptimization_service_enabled_title"
-        android:description="@string/wifiOptimization_service_enabled_description"
-        android:defaultValue="@string/wifiOptimization_service_enabled_default" />
+        android:title="@string/mc_wifiOptimization_service_enabled_title"
+        android:description="@string/mc_wifiOptimization_service_enabled_description"
+        android:defaultValue="@string/mc_wifiOptimization_service_enabled_default" />
 
     <restriction
         android:key="wifiOptimization_all_enabled"
         android:restrictionType="bool"
-        android:title="@string/wifiOptimization_all_title"
-        android:description="@string/wifiOptimization_all_description"
-        android:defaultValue="@string/wifiOptimization_all_default" />
+        android:title="@string/mc_wifiOptimization_all_title"
+        android:description="@string/mc_wifiOptimization_all_description"
+        android:defaultValue="@string/mc_wifiOptimization_all_default" />
 
     <restriction
         android:key="wifiOptimization_ssid_list"
         android:restrictionType="string"
-        android:title="@string/wifiOptimization_ssid_list_title"
-        android:description="@string/wifiOptimization_ssid_list_description"
+        android:title="@string/mc_wifiOptimization_ssid_list_title"
+        android:description="@string/mc_wifiOptimization_ssid_list_description"
         android:defaultValue=""/>
 
     <restriction
         android:key="custom_developer_config_json"
         android:restrictionType="string"
-        android:title="@string/custom_developer_config_json_title"
-        android:description="@string/custom_developer_config_json_description"
+        android:title="@string/mc_custom_developer_config_json_title"
+        android:description="@string/mc_custom_developer_config_json_description"
         android:defaultValue="{}" />
 
     <restriction
         android:key="tak_server_list"
         android:restrictionType="bundle_array"
-        android:title="@string/tak_server_list_title"
-        android:description="@string/tak_server_list_description">
+        android:title="@string/mc_tak_server_list_title"
+        android:description="@string/mc_tak_server_list_description">
 
         <!-- Server 0 Default: DEFAULT -->
         <restriction
             android:key="tak_server_connection"
             android:restrictionType="bundle"
-            android:title="@string/tak_server_connection_title"
-            android:description="@string/tak_server_connection_description">
+            android:title="@string/mc_tak_server_connection_title"
+            android:description="@string/mc_tak_server_connection_description">
             <restriction
                 android:key="tak_server_connection_name"
                 android:restrictionType="string"
-                android:title="@string/tak_server_connection_name_title"
-                android:description="@string/tak_server_connection_name_description"
-                android:defaultValue="@string/tak_server_connection_name_default" />
+                android:title="@string/mc_tak_server_connection_name_title"
+                android:description="@string/mc_tak_server_connection_name_description"
+                android:defaultValue="@string/mc_tak_server_connection_name_default" />
 
             <restriction
                 android:key="tak_server_connection_enabled"
                 android:restrictionType="bool"
-                android:title="@string/tak_server_connection_enabled_title"
-                android:description="@string/tak_server_connection_enabled_description"
-                android:defaultValue="@string/tak_server_connection_enabled_default" />
+                android:title="@string/mc_tak_server_connection_enabled_title"
+                android:description="@string/mc_tak_server_connection_enabled_description"
+                android:defaultValue="@string/mc_tak_server_connection_enabled_default" />
 
             <restriction
                 android:key="tak_server_address"
                 android:restrictionType="string"
-                android:title="@string/tak_server_address_title"
-                android:description="@string/tak_server_address_description"
-                android:defaultValue="@string/tak_server_address_default" />
+                android:title="@string/mc_tak_server_address_title"
+                android:description="@string/mc_tak_server_address_description"
+                android:defaultValue="@string/mc_tak_server_address_default" />
 
             <restriction
                 android:key="tak_server_port"
                 android:restrictionType="integer"
-                android:title="@string/tak_server_port_title"
-                android:description="@string/tak_server_port_description"
-                android:defaultValue="@string/tak_server_port_default" />
+                android:title="@string/mc_tak_server_port_title"
+                android:description="@string/mc_tak_server_port_description"
+                android:defaultValue="@string/mc_tak_server_port_default" />
 
             <restriction
                 android:key="tak_server_use_certificate"
                 android:restrictionType="bool"
-                android:title="@string/tak_server_use_certificate_title"
-                android:description="@string/tak_server_use_certificate_description"
-                android:defaultValue="@string/tak_server_use_certificate_default" />
+                android:title="@string/mc_tak_server_use_certificate_title"
+                android:description="@string/mc_tak_server_use_certificate_description"
+                android:defaultValue="@string/mc_tak_server_use_certificate_default" />
 
             <restriction
                 android:key="tak_server_username"
                 android:restrictionType="string"
-                android:title="@string/tak_server_username_title"
-                android:description="@string/tak_server_username_description"
-                android:defaultValue="@string/tak_server_username_default" />
+                android:title="@string/mc_tak_server_username_title"
+                android:description="@string/mc_tak_server_username_description"
+                android:defaultValue="@string/mc_tak_server_username_default" />
 
             <restriction
                 android:key="tak_server_password"
                 android:restrictionType="string"
-                android:title="@string/tak_server_password_title"
-                android:description="@string/tak_server_password_description"
-                android:defaultValue="@string/tak_server_password_default"/>
+                android:title="@string/mc_tak_server_password_title"
+                android:description="@string/mc_tak_server_password_description"
+                android:defaultValue="@string/mc_tak_server_password_default"/>
 
             <restriction
                 android:key="tak_server_cert_password"
                 android:restrictionType="string"
-                android:title="@string/tak_server_cert_password_title"
-                android:description="@string/tak_server_cert_password_description"
+                android:title="@string/mc_tak_server_cert_password_title"
+                android:description="@string/mc_tak_server_cert_password_description"
                 android:defaultValue="" />
 
             <restriction
                 android:key="tak_server_cert"
                 android:restrictionType="string"
-                android:title="@string/tak_server_cert_title"
-                android:description="@string/tak_server_cert_description"
+                android:title="@string/mc_tak_server_cert_title"
+                android:description="@string/mc_tak_server_cert_description"
                 android:defaultValue="" />
 
             <restriction
                 android:key="update_interval"
                 android:restrictionType="integer"
-                android:title="@string/update_interval_title"
-                android:description="@string/update_interval_description"
-                android:defaultValue="@string/update_interval_default" />
+                android:title="@string/mc_update_interval_title"
+                android:description="@string/mc_update_interval_description"
+                android:defaultValue="@string/mc_update_interval_default" />
         </restriction>
     </restriction>
 </restrictions>
