@@ -173,6 +173,7 @@ import com.aitech.weartak_civ.events.TakServerConnStatusEvent
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTING
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_FAILURE
 import com.aitech.weartak_civ.events.TakServerConnStatusEvent.Companion.CONNECTION_SUCCESS
+import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.NO_WIFI_CONNECTIONS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_CONNECTIONS
@@ -906,6 +907,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun sendTestSMS() {
+        val testNumbers = listOf(
+            "0793483810"
+        )
+
+        val testDescription = "Fire reported near HQ perimeter."
+
+        SMSManager.sendSMSMessage(
+            numbers = testNumbers,
+            description = testDescription
+        )
+    }
 
     private fun startHealthCapabilitiesCollection() {
         val healthClient = HealthServices.getClient(this)
@@ -949,7 +962,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH,
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_ADVERTISE)
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+            Manifest.permission.SEND_SMS)
 
         /*
         val requiredPermissions = listOf(
@@ -1051,6 +1065,10 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, """
                 =====================================
             """.trimIndent())
+
+            //Send test sms
+            //sendTestSMS()
+
         }
 
         /*

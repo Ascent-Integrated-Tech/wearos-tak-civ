@@ -24,6 +24,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SEND_SMS"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+
     <!--
 <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
@@ -72,6 +75,9 @@
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="true" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <application
         android:name=".WearTakApplication"
@@ -82,9 +88,9 @@
         android:theme="@android:style/Theme.DeviceDefault">
         <service
             android:name=".service.MQTTService"
-            android:foregroundServiceType="connectedDevice"
             android:enabled="true"
-            android:exported="true"></service>
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice" />
         <service
             android:name=".complication.MainComplicationService"
             android:exported="true"
