@@ -15,6 +15,7 @@ import android.app.Notification.PRIORITY_MAX
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -24,10 +25,14 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
+import com.aitech.weartak_civ.complication.LocationComplicationService
+import com.aitech.weartak_civ.complication.TakServerComplicationService
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
@@ -40,6 +45,7 @@ import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.NetworkManager
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -212,6 +218,7 @@ class TAKConnectService: Service() {
     private fun resetTakServerConnectionDetails() {
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+		requestTakServerComplicationUpdate(context)
         for (takServerDetail in takServerDetails) {
             takServerDetail.numConnAttempts = 0
             takServerDetail.secureSocket = null
@@ -298,6 +305,7 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                requestTakServerComplicationUpdate(context)
                 if (SERVER_ADDED_VIA_UI == message) {
                     newServerAddedViaUi = false
                     newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
@@ -361,6 +369,7 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                requestTakServerComplicationUpdate(context)
             }
         }
     }
@@ -393,6 +402,7 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                requestTakServerComplicationUpdate(context)
             }
         }
     }
@@ -474,6 +484,7 @@ class TAKConnectService: Service() {
     fun connectToTakServers() {
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(isAnyTakConnecting)
+        requestTakServerComplicationUpdate(context)
         for (takServer in takServerDetails) {
             if (takServer.isEnabled) {
                 getClientCertificateAndConnect(takServer)
@@ -508,6 +519,7 @@ class TAKConnectService: Service() {
         var isWifiConnected = false
         var isAnyTakConnected : Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
         val isAnyTakConnectedLiveData = MutableLiveData<Boolean>(false)
+        val context: Context = mainActivity.applicationContext
 
         var isAnyTakConnecting : Boolean = false // Overall flag indicating if connection is being made to any TAK server
         val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
@@ -532,6 +544,7 @@ class TAKConnectService: Service() {
             }
             isAnyTakConnecting = anyTakConnecting
             isAnyTakConnectingLiveData.postValue(anyTakConnecting)
+            requestTakServerComplicationUpdate(context)
             //Log.d(TAG, "setIsAnyNetworkConnecting: $isAnyTakConnecting")
         }
 
@@ -851,24 +864,39 @@ class TAKConnectService: Service() {
             return cert1.issuerX500Principal == cert2.subjectX500Principal
         }
 
+        fun requestTakServerComplicationUpdate(context: Context) {
+            val componentName = ComponentName(context, TakServerComplicationService::class.java)
+
+            val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
+            requester.requestUpdateAll()
+        }
+
         /*
         private fun sendTakConnectionStatusEvent(connStatus: Int) {
             if (CONNECTING == connStatus) {
                 Log.d(TAG, "sendTakConnectionStatusEvent: CONNECTING")
                 takConnectionStatus = "CONNECTING"
                 takConnectStatusLiveData.postValue(takConnectionStatus)
+                requestTakServerComplicationUpdate(context)
+                Log.d(TAG, "sending complication update")
             } else if (CONNECTION_FAILURE == connStatus) {
                 Log.d(TAG, "sendTakConnectionStatusEvent: CONNECTION_FAILURE")
                 takConnectionStatus = "CONNECTION_FAILURE"
                 takConnectStatusLiveData.postValue(takConnectionStatus)
+                requestTakServerComplicationUpdate(context)
+                Log.d(TAG, "sending complication update")
             } else if (CONNECTION_SUCCESS == connStatus) {
                 Log.d(TAG, "sendTakConnectionStatusEvent: CONNECTION_SUCCESS")
                 takConnectionStatus = "CONNECTION_SUCCESS"
                 takConnectStatusLiveData.postValue(takConnectionStatus)
+                requestTakServerComplicationUpdate(context)
+                Log.d(TAG, "sending complication update")
             } else if (DISCONNECTED == connStatus) {
                 Log.d(TAG, "sendTakConnectionStatusEvent: DISCONNECTED")
                 takConnectionStatus = "DISCONNECTED"
                 takConnectStatusLiveData.postValue(takConnectionStatus)
+                requestTakServerComplicationUpdate(context)
+                Log.d(TAG, "sending complication update")
             }
             EventBus.getDefault().post(TakServerConnStatusEvent(connStatus))
         }
@@ -891,7 +919,6 @@ class TAKConnectService: Service() {
                         Log.d(TAG, "Closing socket for takServer ${takServerDetail.address}")
                         secureSocket?.close()
                     }
-
                     isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
                     takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
@@ -1036,6 +1063,7 @@ class TAKConnectService: Service() {
                     takServerDetail.secureSocket?.startHandshake()
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+                    requestTakServerComplicationUpdate(context)
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     // Reset counters for connection attempts

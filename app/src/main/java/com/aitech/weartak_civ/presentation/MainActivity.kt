@@ -16,8 +16,10 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.Intent.ACTION_TIME_TICK
 import android.content.IntentFilter
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -229,7 +231,21 @@ import kotlin.random.Random
 import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.text.format.DateFormat
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.wear.compose.foundation.CurvedLayout
+import androidx.wear.compose.foundation.CurvedModifier
+import androidx.wear.compose.foundation.CurvedTextStyle
+import androidx.wear.compose.foundation.curvedRow
+import androidx.wear.compose.foundation.padding
+import androidx.wear.compose.material.TimeSource
+import androidx.wear.compose.material.TimeTextDefaults
+import androidx.wear.compose.material.curvedText
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
@@ -243,9 +259,25 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DIS
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import kotlin.math.min
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.aitech.weartak_civ.complication.CallsignComplicationService
+import com.aitech.weartak_civ.complication.HeartRateComplicationService
+import com.aitech.weartak_civ.complication.LocationComplicationService
+import com.aitech.weartak_civ.complication.TakServerComplicationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServerComplicationUpdate
+import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Date
+import java.util.Locale
+import kotlin.time.AbstractLongTimeSource
+import kotlin.time.DurationUnit
 
 
 class MainActivity : ComponentActivity() {
@@ -257,11 +289,16 @@ class MainActivity : ComponentActivity() {
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
+        var enableLocationServiceLiveData = MutableLiveData<Boolean>(false)
         var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
+        var enableBiometricsServiceLiveData = MutableLiveData<Boolean>(false)
         var biometricServiceRunning : Boolean = false
         var enableDittoService : Boolean = false
         var dittoServiceRunning : Boolean = false
+
+        var connectivityStatusComplication : String = ""
+        var takServerStatusComplication : String = ""
 
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
@@ -566,7 +603,7 @@ class MainActivity : ComponentActivity() {
         }
 
 
-        fun startStopServicesLicense() {
+        fun startStopServicesLicense(context: Context) {
             if (isLicenseValid()) {
                 Log.d(TAG, """
                         ===   Application Services Info   ===
@@ -998,10 +1035,11 @@ class MainActivity : ComponentActivity() {
         mainActivity = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
+        val context = mainActivity.applicationContext
         dataRepository = DataRepository(this)
         initSettings()
         logSettings()
-        refreshUI()
+        refreshUI(context)
 
         restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
         // Register BroadcastReceiver to listen for changes
@@ -1053,7 +1091,7 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
         validateLicense(license)
-        startStopServicesLicense()
+        startStopServicesLicense(context)
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
@@ -1076,7 +1114,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WearTAKCIVTheme {
-                WearTAKCivApp(callsignState, licenseState)
+                WearTAKCivApp(callsignSettingsState, licenseState)
             }
         }
 
@@ -1095,7 +1133,7 @@ class MainActivity : ComponentActivity() {
          */
     }
 
-    private fun refreshUI() {
+    private fun refreshUI(context: Context) {
         Log.v(TAG, "=== === Refreshing UI  === === ")
         callsignState.postValue(callsign)
         callsignSettingsState.postValue(callsign)
@@ -1113,6 +1151,12 @@ class MainActivity : ComponentActivity() {
         wifiSsidListState.postValue(wifiSsidList) // tell ui
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+        enableLocationServiceLiveData.postValue(enableLocationService)
+        enableBiometricsServiceLiveData.postValue(enableBiometricsService)
+
+        requestCallsignComplicationUpdate(context)
+        requestLocationComplicationUpdate(context)
+        requestHeartRateComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -1161,6 +1205,7 @@ class MainActivity : ComponentActivity() {
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, " === === Handling Managed Config Update ===")
 
+        val context = mainActivity.applicationContext
         val appRestrictions = restrictionsManager.applicationRestrictions
         if (appRestrictions == null) {
             Log.w(TAG, "No managed configuration received. Returning...")
@@ -1387,12 +1432,12 @@ class MainActivity : ComponentActivity() {
             if (!calledOnCreate) {
                 if (prevLicenseIsValid != isLicenseValid()) {
                     Log.d(TAG, "isLicenseValid=${isLicenseValid()}: Going to startStopServicesLicense")
-                    startStopServicesLicense()
+                    startStopServicesLicense(context)
                 }
             }
         }
         // ui needs to be refreshed with new settings changes
-        refreshUI()
+        refreshUI(context)
 
         // Log all settings to logcat
         logSettings()
@@ -1419,6 +1464,20 @@ class MainActivity : ComponentActivity() {
     */
 }
 
+fun requestCallsignComplicationUpdate(context: Context) {
+    val componentName = ComponentName(context, CallsignComplicationService::class.java)
+
+    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
+    requester.requestUpdateAll()
+}
+
+fun requestLocationComplicationUpdate(context: Context) {
+    val componentName = ComponentName(context, LocationComplicationService::class.java)
+
+    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
+    requester.requestUpdateAll()
+}
+
 
 //Contains functionality for all watch screens
 @Composable
@@ -1431,23 +1490,21 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
-        validateLicense(licenseKey)
         if (isLicenseValid()) {
-//            Log.v(TAG, "LaunchedEffect License is valid: $licenseKey | $license")
             navController.navigate("main_screen") {
-                popUpTo("invalid_license_screen") {
-                    inclusive = true
-                }
+//                popUpTo("invalid_license_screen") {
+//                    inclusive = true
+//                }
             }
         } else {
-//            Log.v(TAG, "LaunchedEffect License is invalid: $licenseKey | $license")
             navController.navigate("invalid_license_screen") {
-                popUpTo("license_setting_screen") {
+                popUpTo("main_screen") {
                     inclusive = true
                 }
             }
         }
     }
+
 
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
@@ -1462,64 +1519,13 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
                 context = context
             )
         }
-        composable(
-            "settings_screen") {
-            SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState)
-        }
-        composable(
-            "callsign_screen") {
-            CallsignSetting(navController, callsignSettingsState)
-        }
-        composable(
-            "role_screen") {
-            RoleSetting(navController)
-        }
-        composable(
-            "team_screen") {
-            TeamSetting(navController)
-        }
-        composable(
-            "tak_server_screen") {
-            TakServerSetting(navController)
-        }
-        composable(
-            "new_server_screen") {
-            NewServerPage(navController)
-        }
-        composable(
-            "edit_server_screen/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val index = backStackEntry.arguments?.getInt("index") ?: -1
-            Log.d(TAG, "edit_server_screen index: $index")
-            EditServerPage(navController, index)
-        }
-        composable("optimize_battery_on_wifi_screen"){
-            OptimizeBatteryOnWifiSelectScreen(navController)
-        }
-        composable(
-            "wifi_ssid_screen") {
-            WifiSsidSelectScreen(navController)
-        }
-        composable(
-            "wifi_ssid_setting_screen") {
-            NewWiFiSSIDSetting(navController)
-        }
-        composable(
-            "edit_wifi_ssid_setting_screen/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val index = backStackEntry.arguments?.getInt("index") ?: -1
-            Log.d(TAG, "edit_wifi_ssid_setting_screen index: $index")
-            EditedWiFiSSIDSetting(navController, index)
-        }
-        composable(
-            "license_setting_screen") {
-            LicenseKeyScreen(navController, licenseSettingsState)
-        }
+//        composable(
+//            "license_setting_screen") {
+//            LicenseKeyScreen(navController, licenseSettingsState, context)
+//        }
         composable(
             "invalid_license_screen") {
-            InvalidLicenseScreen(navController)
+            context.startActivity(Intent(context, SettingsActivity::class.java))
         }
     }
 }
@@ -1585,94 +1591,57 @@ fun MainScreen(
                             .padding(top = 10.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Callsign(navController, callsignState)
+                        Callsign(context, callsignState)
                     }
 
                 }
                 TroubleshootingIcons()
-                TimeText()
+
+                //TODO: Seconds appears but only updates every minute?
+                TimeWithSecondsAware(context)
             }
         }
     }
 }
 
 @Composable
-fun CallsignRoleTeamChip(
-    route: String,
-    title: String,
-    nameState: MutableLiveData<String>,
-    navController: NavController
-) {
-    val nameSecondary: String? by nameState.observeAsState()
-    Chip(
-        onClick = { navController.navigate(route) },
-        enabled = true,
-        label = { Text(text = title) },
-        secondaryLabel = {
-            Text(text = nameSecondary.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
-        },
-        colors = ChipDefaults.chipColors(
-            backgroundColor = Color.DarkGray,
-            contentColor = Color.White,
-            secondaryContentColor = Color.LightGray
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 3.dp)
-    )
-}
+fun TimeWithSecondsAware(context: Context) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isActive by remember { mutableStateOf(true) }
+    var currentTime by remember { mutableStateOf(LocalTime.now()) }
 
-@Composable
-fun CallsignSetting(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            var callsignTextFieldValue by remember {
-                mutableStateOf(
-                    TextFieldValue(
-                        callsignLiveDataState.value ?: "null"
-                    )
-                )
-            }
-//        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+    val is24Hour = remember { DateFormat.is24HourFormat(context) }
 
-            OutlinedTextField(
-                value = callsignTextFieldValue,
-                onValueChange = {
-                    callsignTextFieldValue = it
-                },
-                maxLines = 1,
-                label = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
-                placeholder = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
-                textStyle = TextStyle(color = colors.primary)
-            )
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    },
-                    onClickConfirm = {
-                        callsignLiveDataState.postValue(callsignTextFieldValue.text)
-                        Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    })
-            }
+    val formatter = remember(is24Hour) {
+        if (is24Hour) {
+            DateTimeFormatter.ofPattern("HH:mm:ss")
+        } else {
+            DateTimeFormatter.ofPattern("hh:mm:ss") // a = AM/PM
         }
     }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            isActive = event == Lifecycle.Event.ON_RESUME
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(isActive) {
+        while (isActive) {
+            currentTime = LocalTime.now()
+            delay(1000L)
+        }
+    }
+    CurvedLayout() {
+        curvedRow(modifier = CurvedModifier.padding()) {
+            curvedText(currentTime.format(formatter),
+                style = CurvedTextStyle())
+
+        }
+    }
+
+}
 
 fun findTeamIndex(teamName: String?) : Int {
     if (null == teamName) {
@@ -1685,68 +1654,6 @@ fun findTeamIndex(teamName: String?) : Int {
     return index
 }
 
-@Composable
-fun TeamSetting(navController: NavController) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(top = 20.dp, bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        val index : Int = findTeamIndex(teamSettingsState.value)
-        var selectedRadioIndex by remember { mutableStateOf(index) }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 5.dp)
-                .padding(bottom = 40.dp)
-                .verticalScroll(state = rememberScrollState()),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            teamEntriesValuesList.ltEntries.forEachIndexed { index, ltItem ->
-                run {
-                    SelectableChip(
-                        modifier = Modifier.fillMaxWidth(),
-                        selected = index == selectedRadioIndex,
-                        onClick = { selectedRadioIndex = index},
-                        label = {
-                            // The primary label should have a maximum 3 lines of text
-                            Text(ltItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        },
-                        enabled = true,
-                        shape = RoundedCornerShape(0.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(15.dp))
-        }
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("settings_screen") {
-                        popUpTo(("settings_screen")) {
-                            inclusive = true
-                        }
-                    }
-                },
-            onClickConfirm = {
-                teamSettingsState.postValue(teamEntriesValuesList.ltEntries[selectedRadioIndex])
-                Log.d(TAG, "Settings saved with team: ${teamSettingsState.value}")
-                navController.navigate("settings_screen") {
-                    popUpTo(("settings_screen")) {
-                        inclusive = true
-                    }
-                }
-                }
-            )
-        }
-    }
-}
-
 fun findRoleIndex(roleName: String?) : Int {
     if (null == roleName) {
         return 0
@@ -1756,210 +1663,6 @@ fun findRoleIndex(roleName: String?) : Int {
         return 0
     }
     return index
-}
-
-@Composable
-fun RoleSetting (navController: NavController) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(top = 20.dp, bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        val index = findRoleIndex(roleSettingsState.value)
-        var selectedRadioIndex by remember { mutableStateOf(index) }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 5.dp)
-                .padding(bottom = 40.dp)
-                .verticalScroll(state = rememberScrollState()),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            roleEntriesValuesList.lrEntries.forEachIndexed { index, lrItem ->
-                run {
-                    SelectableChip(
-                        modifier = Modifier.fillMaxWidth(),
-                        selected = index == selectedRadioIndex,
-                        onClick = { selectedRadioIndex = index},
-                        label = {
-                            // The primary label should have a maximum 3 lines of text
-                            Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        },
-                        enabled = true,
-                        shape = RoundedCornerShape(0.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(15.dp))
-        }
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("settings_screen") {
-                        popUpTo(("settings_screen")) {
-                            inclusive = true
-                        }
-                    }                },
-                onClickConfirm = {
-                    roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
-                    Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
-                    navController.navigate("settings_screen") {
-                        popUpTo(("settings_screen")) {
-                            inclusive = true
-                        }
-                    }                })
-        }
-    }
-}
-
-@SuppressLint("CoroutineCreationDuringComposition", "UnrememberedMutableState")
-@Composable
-fun TakServerSetting(navController: NavController) {
-    val takServerSettingList by takServerListState.observeAsState(initial = emptyList())
-    //val selectedIndexState = MutableLiveData<Int?>(null)
-    //val selectedIndex by selectedIndexState.observeAsState(initial = null)
-    Log.d(TAG, "TakServerSetting called")
-    val text = stringResource(R.string.tak_server_connections)
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .align(Alignment.TopCenter)
-                .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                LazyColumn {
-                    item {
-                        Text(
-                            text = text,
-                            fontSize = if (text.length!! < 20) 15.sp else 13.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 20.dp).align(Alignment.CenterHorizontally)
-                        )
-                    }
-                    itemsIndexed(takServerSettingList){ index, takServerItem ->
-                        var takServerChecked by remember{ mutableStateOf(takServerItem.isEnabled)}
-                        Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
-                        SwipeableTakServerChip(
-                            index,
-                            takServerItem.name,
-                            takServerItem.address,
-                            checked = takServerChecked,
-                            onCheckedChange =  {
-                                Log.d(TAG, "onCheckedChange index($index): $it")
-                                takServerChecked = it
-                                Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
-                                takServerSettingList[index].isEnabled = it
-                                val mutableTakServerList = takServerSettingList.toMutableList()
-                                mutableTakServerList.get(index).isEnabled = it
-                                takServerList = mutableTakServerList.toList()
-                                takServerListState.postValue(takServerList)
-                                //selectedIndexState.postValue(null)
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    dataRepository.updateTakServerItem(index, takServerItem)
-                                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, index)) }, EVENT_SEND_DELAY_MS)
-                                    val minReportingInterval = getMinReportingInterval(takServerList)
-                                    var prevReportingInterval = 1
-                                    runBlocking {
-                                        prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
-                                    }
-                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                    if (prevReportingInterval != minReportingInterval) {
-                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                        runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(minReportingInterval)
-                                        }
-                                        CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
-                                    }
-                                } },
-                            onPrimaryActionClick = {
-                                Log.d(TAG, "Remove takServerItem ($takServerItem)")
-                                val mutableTakServerList = takServerSettingList.toMutableList()
-                                mutableTakServerList.removeAt(index)
-                                takServerList = mutableTakServerList.toList()
-                                takServerListState.postValue(takServerList)
-                                //selectedIndexState.postValue(null)
-                                Log.d(TAG, "onPrimaryActionClick index($index): REMOVE")
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    dataRepository.removeTakServerItem(takServerItem)
-                                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(SERVER_REMOVED, index)) }, EVENT_SEND_DELAY_MS)
-                                }
-                            },
-                            onSecondaryActionClick = {
-                                //selectedIndexState.postValue(index)
-                                navController.navigate("edit_server_screen/$index")
-                            }
-                        )
-                    }
-
-                    item {
-                        Chip(
-                            onClick = { navController.navigate("new_server_screen") {
-                                popUpTo(("new_server_screen")) {
-                                    inclusive = true
-                                }
-                            } },
-                            enabled = true,
-                            label = { Text(text = stringResource(R.string.add_network)) },
-                            colors = ChipDefaults.chipColors(
-                                backgroundColor = Color.DarkGray,
-                                contentColor = Color.White,
-                                secondaryContentColor = Color.LightGray
-                            ),
-                            icon = {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = "Add TAK Server"
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                Button(
-                    onClick = {
-                        navController.navigate("settings_screen") {
-                        popUpTo(("settings_screen")) {
-                            inclusive = true
-                        }
-                    } },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Gray,
-                        contentColor = Color.Red
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowLeft,
-                        contentDescription = "Go back to Main Settings Screen",
-                    )
-                }
-            }
-        }
-    }
-    Log.d(TAG, "Tak Server List: $takServerSettingList")
 }
 
 fun displayServerDialogs(
@@ -1997,1482 +1700,11 @@ fun displayServerDialogs(
     Log.d(TAG, "Exiting displayServerDialogs: isNetworkConnected=$isNetworkConnected, loadingDialog=$loadingDialog, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}, shouldShowConfirmDialog=${shouldShowConfirmDialog.value}, isServerConnected=${isServerConnected.value}")
 }
 
-@OptIn(ExperimentalWearMaterialApi::class)
-@Composable
-fun SwipeableTakServerChip(
-    index: Int,
-    title: String,
-    address: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-    onPrimaryActionClick: () -> Unit,
-    onSecondaryActionClick: () -> Unit
-) {
-    val revealState = rememberRevealState()
-    val scope = rememberCoroutineScope()
-    val takServerStatus by TAKConnectService.takServerDetails.get(index).connectionStatusLiveData.observeAsState(initial = TAK_SERVER_DISCONNECTED_STRING)
-
-    Log.d(TAG, "SwipeableTakServerChip called with index $index: takServerStatus($takServerStatus)")
-    SwipeToRevealChip(
-        revealState = revealState,
-        modifier =
-        Modifier
-            .fillMaxWidth()
-            .semantics {
-                // Use custom actions to make the primary and secondary actions accessible
-                customActions =
-                    listOf(
-                        CustomAccessibilityAction("Delete TAK Server") {
-                            /* Add the primary action click handler here */
-                            true
-                        },
-                        CustomAccessibilityAction("Edit TAK Server") {
-                            /* Add the secondary click handler here */
-                            true
-                        }
-                    )
-            },
-        primaryAction = {
-            SwipeToRevealPrimaryAction(
-                revealState = revealState,
-                icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
-                label = { Text(stringResource(R.string.delete)) },
-                onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
-            )
-        },
-        secondaryAction = {
-            SwipeToRevealSecondaryAction(
-                revealState = revealState,
-                onClick = { onSecondaryActionClick() }
-            ) {
-                Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
-            }
-        },
-        undoPrimaryAction = {
-            SwipeToRevealUndoAction(
-                revealState = revealState,
-                label = { Text(stringResource(R.string.undo)) },
-                onClick = { /* Add the undo handler for primary action */ }
-            )
-        },
-        undoSecondaryAction = {
-            SwipeToRevealUndoAction(
-                revealState = revealState,
-                label = { Text(stringResource(R.string.undo)) },
-                onClick = { /* Add the undo handler for secondary action */ }
-            )
-        },
-        onFullSwipe = {onPrimaryActionClick() }
-    ) {
-        SplitToggleChip(
-            label = {
-                Image(
-                    painter = if (takServerStatus == TAK_SERVER_CONNECTED_STRING) painterResource(R.drawable.tak_server_connected) else if (takServerStatus == TAK_SERVER_CONNECTING_STRING) painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
-                    contentDescription = "Top Left Icon",
-                    modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .size(22.dp)
-                        .padding(end = 2.dp),
-                )
-                Text(title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier
-                    .align(Alignment.CenterVertically))
-            },
-            secondaryLabel = {
-                Text(address, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            },
-            checked = checked,
-            toggleControl = {
-                Switch(
-                    checked = checked,
-                    onCheckedChange = null,
-                    enabled = enabled,
-                    modifier = Modifier.size(25.dp)
-                )
-            },
-            onCheckedChange = onCheckedChange,
-            enabled = true,
-            onClick = { scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)} },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 3.dp)
-        )
-    }
-}
-
-@Composable
-fun NewServerPage(navController: NavController) {
-    var serverSettingsChanged = remember { mutableStateOf(false) }
-    val isNetworkConnected = remember { mutableStateOf(false) }
-    WearTAKCIVTheme {
-        var name by remember { mutableStateOf("") }
-        var address by remember { mutableStateOf("") }
-        var port by remember { mutableStateOf("8089") }
-        var username by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("") }
-        var reportingUpdateInterval by remember { mutableStateOf("10") }
-        var isP12Cert = false
-        val context = LocalContext.current
-        val serverSettingsChanged = remember { mutableStateOf(false) }
-        val scope = rememberCoroutineScope()
-        val index by remember { mutableStateOf(takServerListState.value?.size ?: 0)}
-        Log.d(TAG, "NewServerPage takServerListState index=$index")
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.new_server),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                ServerSettingText(
-                    stringResource(R.string.connection_name),
-                    name,
-                    onValueChanged = { name = it },
-                    false,
-                    false,
-                    true
-                )
-                ServerSettingText(
-                    stringResource(R.string.address_url),
-                    address,
-                    onValueChanged = { address = it },
-                    false,
-                    false,
-                    true
-                )
-                ServerSettingText(
-                    stringResource(R.string.port),
-                    port,
-                    onValueChanged = { port = it },
-                    false,
-                    true,
-                    true
-                )
-                ServerSettingText(
-                    stringResource(R.string.username),
-                    username,
-                    onValueChanged = { username = it },
-                    false,
-                    false,
-                    true
-                )
-                ServerSettingText(
-                    stringResource(R.string.password),
-                    password,
-                    onValueChanged = { password = it },
-                    true,
-                    false,
-                    true
-                )
-
-                val focusManager = LocalFocusManager.current
-
-                OutlinedTextField(
-                    modifier = Modifier.padding(vertical = 5.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity,
-                                    context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity,
-                                    context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                            } else {
-                                // If there is valid input, we can clear focus
-                                // (which typically dismisses the keyboard)
-                                focusManager.clearFocus()
-
-                                // Now you can navigate or do the next action
-                            }
-                        }
-                    ),
-                    singleLine = true,
-                    value = reportingUpdateInterval,
-                    onValueChange = {
-                        reportingUpdateInterval = it
-                    },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.reporting_interval),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.interval_in_secs),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    textStyle = TextStyle(color = colors.primary),
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-
-                val maxReportRate: Int = 100000000
-                val minReportRate: Int = 1
-
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("tak_server_screen") {
-                            popUpTo(("tak_server_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    },
-                    onClickConfirm = {
-                        scope.launch {
-                            if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
-                                password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
-                                if (reportingUpdateInterval.equals("")) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                                } else if (reportingUpdateInterval.equals("0")) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                                } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    val newReportingUpdateInterval = reportingUpdateInterval.toInt()
-                                    val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
-                                        isP12Cert, username, password, "", "", newReportingUpdateInterval)
-                                    runBlocking {
-                                        dataRepository.updateTakServerItem(index, takServerItem)
-                                    }
-                                    val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                                    if (index == mutableTakServerList.size) {
-                                        mutableTakServerList.add(takServerItem)
-                                    } else {
-                                        mutableTakServerList.set(index, takServerItem)
-                                    }
-                                    takServerList = mutableTakServerList.toList()
-                                    takServerListState.postValue(takServerList)
-                                    serverSettingsChanged.value = true
-
-                                    Log.d(TAG, "serverSettingsChanged=${serverSettingsChanged.value}")
-                                    Handler(Looper.getMainLooper()).postDelayed(
-                                        { EventBus.getDefault().post(MessageEvent(SERVER_ADDED_VIA_UI, takServerList.size-1)) }, EVENT_SEND_DELAY_MS)
-
-                                    Log.d(TAG, "reportingUpdateInterval.toInt()=${newReportingUpdateInterval}; COT:${CotDispatchService.reportingUpdateIntervalSecs}")
-                                    val minReportingInterval = getMinReportingInterval(takServerList)
-                                    var prevReportingInterval = 1
-                                    runBlocking {
-                                        prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
-                                    }
-                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                    if (prevReportingInterval != minReportingInterval) {
-                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                        runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(minReportingInterval)
-                                        }
-                                        CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
-                                    }
-                                    /*
-                                    if (newReportingUpdateInterval < CotDispatchService.reportingUpdateIntervalSecs) {
-                                        Log.d(TAG, "Setting reportingUpdateIntervalSecs (curr= ${CotDispatchService.reportingUpdateIntervalSecs}) to ${newReportingUpdateInterval}")
-                                        runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(newReportingUpdateInterval)
-                                        }
-                                        CotDispatchService.reportingUpdateIntervalSecs = newReportingUpdateInterval
-                                        //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, newReportingUpdateInterval))
-                                    }
-
-                                     */
-                                }
-                            } else {
-                                Toast.makeText(mainActivity,
-                                    context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                )
-                //Log.d(TAG, "NewServerPage serverSettingsChanged=${serverSettingsChanged.value}")
-                if (serverSettingsChanged.value) {
-                    //TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
-                    val loadingDialog by TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.observeAsState()
-                    val shouldShowLoadingDialog = remember { mutableStateOf(false) }
-                    val shouldShowConfirmDialog = remember { mutableStateOf(false) }
-                    val isServerConnected = remember { mutableStateOf(false) }
-
-                    if (NetworkManager.isNetworkConnected) {
-                        Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network connected")
-                        isNetworkConnected.value = true
-                        displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog,shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
-                    } else {
-                        Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network disconnected")
-                        isNetworkConnected.value = false
-                        displayServerDialogs(false, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        //LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EditServerPage(
-    navController: NavController,
-    index: Int
-) {
-    WearTAKCIVTheme {
-        val takServerListLocal by takServerListState.observeAsState(initial = emptyList())
-        Log.d(TAG, "Edited tak server list: $takServerListLocal")
-        var name by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.name.orEmpty()) }
-        var address by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.address.orEmpty()) }
-        var port by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.port.toString().orEmpty()) }
-        var username by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.username.orEmpty()) }
-        var password by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.password.orEmpty()) }
-        var reportingUpdateInterval by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
-        var isP12Cert by remember { mutableStateOf(takServerListLocal.get(index)?.isP12Cert ?: false) }
-        val context = LocalContext.current
-        val serverConnSettingsChanged = remember { mutableStateOf(false) }
-        Log.d(TAG, "address=$address, serverSettingsChanged=${serverConnSettingsChanged.value}")
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.edit_server),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                ServerSettingText(
-                    stringResource(R.string.connection_name),
-                    name,
-                    onValueChanged = { name = it },
-                    false,
-                    false,
-                    true
-                )
-
-                if (isP12Cert == true) {
-                    ServerSettingText(
-                        stringResource(R.string.address_url),
-                        address,
-                        onValueChanged = { address = it },
-                        false,
-                        false,
-                        false
-                    )
-                    ServerSettingText(
-                        stringResource(R.string.port),
-                        port,
-                        onValueChanged = { port = it },
-                        false,
-                        true,
-                        true)
-                } else {
-                    ServerSettingText(
-                        stringResource(R.string.address_url),
-                        address,
-                        onValueChanged = { address = it },
-                        false,
-                        false,
-                        true
-                    )
-                    ServerSettingText(
-                        stringResource(R.string.port),
-                        port,
-                        onValueChanged = { port = it },
-                        false,
-                        true,
-                        true)
-                    ServerSettingText(
-                        stringResource(R.string.username),
-                        username,
-                        onValueChanged = { username = it },
-                        false,
-                        false,
-                        true
-                    )
-                    ServerSettingText(
-                        stringResource(R.string.password),
-                        password,
-                        onValueChanged = { password = it },
-                        true,
-                        false,
-                        true
-                    )
-                }
-                val focusManager = LocalFocusManager.current
-
-                OutlinedTextField(
-                    modifier = Modifier.padding(vertical = 5.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                            } else {
-                                // If there is valid input, we can clear focus
-                                // (which typically dismisses the keyboard)
-                                focusManager.clearFocus()
-
-                                // Now you can navigate or do the next action
-                            }
-                        }
-                    ),
-                    singleLine = true,
-                    value = reportingUpdateInterval,
-                    onValueChange = {
-                        reportingUpdateInterval = it
-                    },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.reporting_interval),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.interval_in_secs),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    textStyle = TextStyle(color = colors.primary),
-                )
-                if (isP12Cert == true) {
-                    Text(
-                        text = "Using client certificate",
-                        textAlign = TextAlign.Center,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(5.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                val maxReportRate: Int = 100000000
-                val minReportRate: Int = 1
-                val scope = rememberCoroutineScope()
-
-                val context = LocalContext.current
-
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "Settings NOT saved")
-                        navController.navigate("tak_server_screen") {
-                            popUpTo(("tak_server_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    },
-                    onClickConfirm = {
-                            if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && reportingUpdateInterval.isNotBlank() &&
-                                (if (isP12Cert) { true } else { username.isNotBlank() } ) &&
-                                (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
-                                if (reportingUpdateInterval.equals("")) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                                } else if (reportingUpdateInterval.equals("0")) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                                } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                    Toast.makeText(mainActivity,
-                                        context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    var reportingIntervalChanged = false
-                                    val takServerDetails = takServerList.get(index)
-                                    Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
-                                    Log.d(TAG, "takServerDetails: $takServerDetails")
-                                    Log.d(TAG, "name: $name, address: $address, port=$port, username=$username, password=$password, reportingUpdateInterval=${reportingUpdateInterval.toInt()}")
-                                    if (name != takServerDetails.name || address != takServerDetails.address || port != takServerDetails.port.toString() ||
-                                        username != takServerDetails.username || password != takServerDetails.password ||
-                                        takServerDetails.reportingUpdateInterval != reportingUpdateInterval.toInt()) {
-                                        if (name == takServerDetails.name) {
-                                            // Name is same, so something else in address, port, username, password or reporting interval has changed
-                                            if (takServerDetails.reportingUpdateInterval == reportingUpdateInterval.toInt()) {
-                                                serverConnSettingsChanged.value = true
-                                                Log.d(TAG, "serverConnSettingsChanged set to true")
-                                            } else {
-                                                reportingIntervalChanged = true
-                                                Log.d(TAG, "reportingIntervalChanged set to true")
-                                            }
-                                        } else { // Name is different
-                                            if (address != takServerDetails.address || port.toInt() != takServerDetails.port ||
-                                                username != takServerDetails.username || password != takServerDetails.password ||
-                                                reportingUpdateInterval.toInt() != takServerDetails.reportingUpdateInterval) {
-                                                // Apart from name, something else is different
-                                                if (reportingUpdateInterval.toInt() == takServerDetails.reportingUpdateInterval) {
-                                                    serverConnSettingsChanged.value = true
-                                                    Log.d(TAG, "serverConnSettingsChanged set to true with name being different")
-                                                } else {
-                                                    reportingIntervalChanged = true
-                                                    Log.d(TAG, "reportingIntervalChanged set to true with name being different")
-                                                }
-                                            }
-                                        }
-                                        val changedTakServerDetail: DataRepository.TakServerItem =
-                                            if (isP12Cert == true) {
-                                                DataRepository.TakServerItem(takServerListLocal.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
-                                                    takServerListLocal.get(index).username, takServerListLocal.get(index).password, takServerListLocal.get(index).p12Cert, takServerListLocal.get(index).p12CertPassword,
-                                                    reportingUpdateInterval.toInt())
-                                            } else {
-                                                DataRepository.TakServerItem(takServerListLocal.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
-                                                    username, password, "", "", reportingUpdateInterval.toInt())
-                                            }
-
-                                        runBlocking {
-                                            dataRepository.updateTakServerItem(index, changedTakServerDetail)
-                                        }
-
-                                        val mutableTakServerList = takServerListLocal.toMutableList()
-                                        mutableTakServerList.set(index, changedTakServerDetail)
-                                        takServerList = mutableTakServerList.toList()
-                                        takServerListState.postValue(takServerList)
-
-                                        val changedReportingUpdateInterval = reportingUpdateInterval.toInt()
-                                        val minReportingInterval = getMinReportingInterval(takServerList)
-                                        var prevReportingInterval = 1
-                                        runBlocking {
-                                            prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
-                                        }
-                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                        if (prevReportingInterval != minReportingInterval) {
-                                            Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                            runBlocking {
-                                                dataRepository.storeReportingUpdateInterval(minReportingInterval)
-                                            }
-                                            CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                            EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
-                                        }
-
-                                        if (serverConnSettingsChanged.value || reportingIntervalChanged) {
-                                            Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value} or reportingIntervalChanged=$reportingIntervalChanged")
-                                            EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
-                                            if (reportingIntervalChanged || !changedTakServerDetail.isEnabled) {
-                                                // Go back to previous page
-                                                navController.navigate("tak_server_screen") {
-                                                    popUpTo(("tak_server_screen")) {
-                                                        inclusive = true
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            navController.navigate("tak_server_screen") {
-                                                popUpTo(("tak_server_screen")) {
-                                                    inclusive = true
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        Log.d(TAG, "EditServerPage onClickConfirm: nothing has changed")
-                                        serverConnSettingsChanged.value = false
-                                        navController.navigate("tak_server_screen") {
-                                            popUpTo(("tak_server_screen")) {
-                                                inclusive = true
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                Toast.makeText(mainActivity, context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
-                            }
-                    }
-                )
-                Log.d(TAG, "EditServerPage: loadingDialog serverSettingsChanged=${serverConnSettingsChanged.value}")
-                if (serverConnSettingsChanged.value) {
-                    val loadingDialog by TAKConnectService.takServerDetails.get(index).connectionStatusLiveData.observeAsState()
-                    val shouldShowLoadingDialog = remember { mutableStateOf(false) }
-                    val shouldShowConfirmDialog = remember { mutableStateOf(false) }
-                    val isServerConnected = remember { mutableStateOf(false) }
-                    if (NetworkManager.isNetworkConnected) {
-                        Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network connected")
-                        val isNetworkConnected = remember { mutableStateOf(true)}
-
-                        displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
-                    } else {
-                        Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network disconnected")
-                        val isNetworkConnected = remember { mutableStateOf(false)}
-
-                        displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        //LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ServerSettingText (
-    label: String,
-    value: String,
-    onValueChanged: (String) -> Unit,
-    isPassword : Boolean,
-    isPort : Boolean,
-    isEnabled: Boolean
-) {
-    val maxChar = 20
-
-    OutlinedTextField(
-        value = value,
-        enabled = isEnabled,
-        onValueChange = onValueChanged,
-//        maxLines = 1,
-        label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
-        textStyle = TextStyle(color = colors.primary, fontSize = if (value!!.length <= maxChar) 12.sp else 10.sp),
-        modifier = Modifier.padding(bottom = 5.dp),
-        keyboardOptions = KeyboardOptions(keyboardType = if (isPort) KeyboardType.Number else KeyboardType.Text),
-        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-    )
-}
-
-@Composable
-fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
-    val enableWifiOpt = enableWifiBatteryOptimizationSettingsState.value ?: true
-    val enableAllWifiOpt = enableAllWifiBatteryOptimizationSettingsState.value ?: true
-    val SOME_WIFI_CONNECTIONS = stringResource(R.string.some_wifi_connections)
-    val ALL_WIFI_CONNECTIONS = stringResource(R.string.all_wifi_connections)
-    val NO_WIFI_CONNECTIONS = stringResource(R.string.no_wifi_connections)
-    val radioOptions = listOf(ALL_WIFI_CONNECTIONS, NO_WIFI_CONNECTIONS, SOME_WIFI_CONNECTIONS)
-    val initialValue = when {
-        enableWifiOpt && enableAllWifiOpt -> radioOptions[0]  // "All"
-        !enableWifiOpt -> radioOptions[1] // "No"
-        else -> radioOptions[2] // "Some"
-    }
-    val selectedValue = remember { mutableStateOf(initialValue) }
-    val isSelectedItem: (String) -> Boolean = { selectedValue.value == it }
-    val onChangeState: (String) -> Unit = { selectedValue.value = it }
-    val scrollState = rememberScrollState()
-    val scope = rememberCoroutineScope()
-
-    //Log.d(TAG, "OptimizeBatteryonWifiSelectScreen called")
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp, top = 15.dp)
-                    .verticalScroll(scrollState),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.save_battery_on_wifi),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .padding(3.dp)
-                        .padding(horizontal = 10.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.slows_update_rate_on_enabled_wifi_networks),
-                    textAlign = TextAlign.Center,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp,
-                    modifier = Modifier
-                        .padding(bottom = 16.dp)
-                        .padding(horizontal = 10.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.optimize_on),
-                    textAlign = TextAlign.Left,
-                    modifier = Modifier
-                        .padding(bottom = 3.dp)
-                        .padding(horizontal = 10.dp)
-                        .align(Alignment.Start)
-                )
-                Log.d(TAG, "initial  value = $initialValue, selected value: ${selectedValue.value}")
-                radioOptions.forEach { text ->
-                    SelectableChip(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 5.dp),
-                        selected = isSelectedItem(text),
-                        onClick = { onChangeState(text)
-                            if (text == SOME_WIFI_CONNECTIONS) {
-                                enableWifiBatteryOptimizationSettingsState.postValue(true)
-                                enableAllWifiBatteryOptimizationSettingsState.postValue(false)
-                                scope.launch { scrollState.animateScrollTo(scrollState.maxValue + 150) }
-                            } else if (text == ALL_WIFI_CONNECTIONS) {
-                                enableWifiBatteryOptimizationSettingsState.postValue(true)
-                                enableAllWifiBatteryOptimizationSettingsState.postValue(true)
-                            } else {
-                                enableWifiBatteryOptimizationSettingsState.postValue(false)
-                                enableAllWifiBatteryOptimizationSettingsState.postValue(false)
-                            }
-                        },
-                        label = {
-                            // The primary label should have a maximum 3 lines of text
-                            Text(text, maxLines = 3, fontSize = 14.sp, overflow = TextOverflow.Ellipsis)
-                        },
-                        enabled = true,
-                    )
-
-                }
-                if (selectedValue.value == SOME_WIFI_CONNECTIONS) {
-                    Chip(
-                        onClick = {
-                            navController.navigate("wifi_ssid_screen") {
-                                popUpTo(("wifi_ssid_screen")) {
-                                    inclusive = true
-                                }
-                            }
-                            Log.d(TAG, "Some WiFi Connections selected: initial value = $initialValue, selected value: ${selectedValue.value}, isWifiOpt = $enableWifiOpt, isAllWifiOpt = $enableAllWifiOpt, wifiSsidList = ${wifiSsidListSettingsState.value}")
-                        },
-                        enabled = true,
-                        label = {
-                            Text(
-                                text = stringResource(R.string.edit_optimized_wifi_connections),
-                                fontWeight = FontWeight.Normal,
-                                color = colors.primary
-                            )
-                        },
-                        colors = ChipDefaults.chipColors(
-                            backgroundColor = Color.DarkGray,
-                            contentColor = Color.White,
-                            secondaryContentColor = Color.LightGray
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 20.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "OptimizeBatteryonWifiSelectScreen Settings NOT saved")
-
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    },
-                    onClickConfirm = {
-                        // TODO: check why enableWifiBatteryOptimizationState.value is Boolean?
-                        val prevWifiOpt: Boolean = enableWifiBatteryOptimizationState.value ?: true
-                        val prevAllOpt: Boolean = enableAllWifiBatteryOptimizationState.value ?: true
-                        val currWifiOpt = enableWifiBatteryOptimizationSettingsState.value
-                        val currAllOpt = enableAllWifiBatteryOptimizationSettingsState.value
-
-                        if ((prevWifiOpt != currWifiOpt) || (prevAllOpt != currAllOpt) || (wifiSsidListState.value != wifiSsidListSettingsState.value)) {
-                            Log.d(TAG, "Changed sthg: enableWifiOpt(old=$prevWifiOpt, new=$currWifiOpt), enableOptimAllWifi(old=$prevAllOpt, new=$currAllOpt), wifiSsidList(old=${wifiSsidListState.value}, new=${wifiSsidListSettingsState.value})")
-                            saveBattOnWifiStringState.postValue(generateSaveBattOnWifiString(currWifiOpt ?: true, currAllOpt ?: true))
-                            enableWifiBatteryOptimizationState.postValue(currWifiOpt)
-                            enableAllWifiBatteryOptimizationState.postValue(currAllOpt)
-                            wifiSsidListState.postValue(wifiSsidListSettingsState.value)
-                        } else {
-                            Log.d(TAG, "Settings NOT changed, NOT saved")
-                        }
-
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-
-                    })
-            }
-        }
-    }
-}
-
-@Composable
-fun WifiSsidSelectScreen(navController: NavController) {
-    //Log.d(TAG, "WifiSsidSelectScreen called")
-    val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
-    val text = stringResource(R.string.enabled_wifi_connections)
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                LazyColumn {
-                    item {
-                        Text(
-                            text = text,
-                            fontSize = if(text.length!!<20) 15.sp else 13.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal =20.dp, vertical = 10.dp)
-                        )
-                    }
-                    Log.d(TAG, "SSID List = $wifiSsidList")
-                    itemsIndexed(wifiSsidList){ index, wifiSsidItem ->
-                        WifiSsidItemChip(
-                            wifiSsidItem.name,
-                            onPrimaryActionClick = {
-                                Log.d(TAG, "Remove wifiSsidItem ($wifiSsidItem)")
-                                val mutableWifiSsidList = wifiSsidList.toMutableList()
-                                mutableWifiSsidList.removeAt(index)
-                                wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
-                            },
-                            onSecondaryActionClick = {
-                                // Navigate to "edit_wifi_ssid_setting_screen/<index>"
-                                //Log.d(TAG, "onSecondaryActionClick called")
-                                navController.navigate("edit_wifi_ssid_setting_screen/$index")
-                            }
-                        )
-                    }
-
-                    item {
-                        Chip(
-                            onClick = { navController.navigate("wifi_ssid_setting_screen") {
-                                popUpTo(("wifi_ssid_setting_screen")) {
-                                    inclusive = true
-                                }
-                            } },
-                            enabled = true,
-                            label = { Text(text = stringResource(R.string.add_network)) },
-                            colors = ChipDefaults.chipColors(
-                                backgroundColor = Color.DarkGray,
-                                contentColor = Color.White,
-                                secondaryContentColor = Color.LightGray
-                            ),
-                            icon = {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = "Localized description"
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
-                        )
-                    }
-
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                Button(
-                    onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
-                        popUpTo(("optimize_battery_on_wifi_screen")) {
-                            inclusive = true
-                        }
-                    } },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Gray,
-                        contentColor = Color.Red
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowLeft,
-                        contentDescription = "Localized description",
-                    )
-                }
-            }
-
-        }
-
-    }
-}
-
-@OptIn(ExperimentalWearMaterialApi::class)
-@Composable
-fun WifiSsidItemChip(
-    ssid: String,
-    onPrimaryActionClick: () -> Unit,
-    onSecondaryActionClick: () -> Unit
-) {
-    val revealState = rememberRevealState()
-    val scope = rememberCoroutineScope()
-
-    //Log.d(TAG, "WifiSsidItemChip called")
-    SwipeToRevealChip(
-        revealState = revealState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                // Use custom actions to make the primary and secondary actions accessible
-                customActions = listOf(
-                    CustomAccessibilityAction("Delete WiFi SSID") {
-                        /* Add the primary action click handler here */
-                        true
-                    },
-                    // TODO: Can we change the MoreOptions Icon to Edit Icon?
-                    CustomAccessibilityAction("Edit WiFi SSID") {
-                        /* Add the secondary click handler here */
-                        true
-                    }
-                )
-            },
-        primaryAction = {
-            SwipeToRevealPrimaryAction(
-                revealState = revealState,
-                icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
-                label = { Text(stringResource(R.string.delete)) },
-                onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
-            )
-        },
-        secondaryAction = {
-            SwipeToRevealSecondaryAction(
-                revealState = revealState,
-                onClick = { onSecondaryActionClick() }
-            ) {
-                Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
-            }
-        },
-        undoPrimaryAction = {
-            SwipeToRevealUndoAction(
-                revealState = revealState,
-                label = { Text(stringResource(R.string.undo)) },
-                onClick = { /* Add the undo handler for primary action */ }
-            )
-        },
-        undoSecondaryAction = {
-            SwipeToRevealUndoAction(
-                revealState = revealState,
-                label = { Text(stringResource(R.string.undo)) },
-                onClick = { /* Add the undo handler for secondary action */ }
-            )
-        },
-        onFullSwipe = {onPrimaryActionClick() }
-    ) {
-        Chip(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 5.dp),
-            onClick = {
-                scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)}
-            },
-            colors = ChipDefaults.chipColors(Color.DarkGray),
-            label = { Text(ssid, maxLines = 3) }
-        )
-    }
-}
-
-@Composable
-fun NewWiFiSSIDSetting(
-    navController: NavController,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        //Log.d(TAG, "NewWiFiSSIDSetting called")
-        var name by remember {
-            mutableStateOf("")
-        }
-
-        OutlinedTextField(
-            value = name,
-            onValueChange = {text ->
-                name = text
-            },
-            maxLines = 1,
-            label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
-            placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("wifi_ssid_screen") {
-                        popUpTo(("wifi_ssid_screen")) {
-                            inclusive = true
-                        }
-                    }
-                },
-                onClickConfirm = {
-                    if (name.isNotBlank()) {
-                        val mutableWifiSsidList = wifiSsidListSettingsState.value?.toMutableList() ?: emptyList<DataRepository.WifiSsidItem>().toMutableList()
-                        mutableWifiSsidList.add(DataRepository.WifiSsidItem(name))
-                        wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
-                    }
-
-                    navController.navigate("wifi_ssid_screen") {
-                        popUpTo(("wifi_ssid_screen")) {
-                            inclusive = true
-                        }
-                    }
-
-                })
-        }
-    }
-}
-
-@Composable
-fun EditedWiFiSSIDSetting(
-    navController: NavController,
-    index: Int
-) {
-    //Log.d(TAG, "EditedWiFiSSIDSetting called")
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
-        Log.d(TAG, "EditedWiFiSSIDSetting SSID list: $wifiSsidList")
-        var name by remember { mutableStateOf(wifiSsidList.getOrNull(index)?.name.orEmpty()) }
-        Log.d(TAG, "text = $name")
-
-        OutlinedTextField(
-            value = name,
-            onValueChange = { text -> name = text },
-            maxLines = 1,
-            label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
-            placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("wifi_ssid_screen") {
-                        popUpTo(("wifi_ssid_screen")) {
-                            inclusive = true
-                        }
-                    }
-                },
-                onClickConfirm = {
-                    val mutableWifiSsidList = wifiSsidList.toMutableList()
-                    mutableWifiSsidList.set(index, DataRepository.WifiSsidItem(name))
-                    wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
-
-                    navController.navigate("wifi_ssid_screen") {
-                        popUpTo(("wifi_ssid_screen")) {
-                            inclusive = true
-                        }
-                    }
-
-                })
-        }
-    }
-}
-
-@Composable
-fun LoadingDialog(
-    shouldShowDialog: MutableState<Boolean>,
-) {
-    if (shouldShowDialog.value) {
-        Dialog(
-            onDismissRequest = { shouldShowDialog.value = false },
-            properties = DialogProperties(
-                dismissOnBackPress = false,
-                dismissOnClickOutside = false
-            )
-        ) {
-
-            Card(
-             colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = stringResource(R.string.registering_device_with_tak_server),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ServerRegistrationDialog(
-    isNetworkConnected: MutableState<Boolean>,
-    shouldShowDialog: MutableState<Boolean>,
-    shouldShowLoadingDialog: MutableState<Boolean>,
-    navController: NavController,
-    isServerConnected: MutableState<Boolean>,
-    serverDetailsChanged: MutableState<Boolean>
-) {
-    val invalidCredText = stringResource(R.string.invalid_credentials_try_again)
-    val retryText = stringResource(R.string.retry)
-    if (shouldShowDialog.value) {
-        Log.d(TAG, "ServerRegistrationDialog: shouldShowDialog=${shouldShowDialog.value}, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}")
-        shouldShowLoadingDialog.value = false
-        AlertDialog(
-            modifier = Modifier.wrapContentHeight(),
-            containerColor = Color.DarkGray,
-            onDismissRequest = {
-                Log.d(TAG, "onDismissRequest")
-                shouldShowDialog.value = false
-            },
-            title = {
-                if (isServerConnected.value) {
-                    Text(stringResource(R.string.registration_complete), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
-                } else {
-                    Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 15.dp))
-                }
-            },
-            text = {
-                if (isNetworkConnected.value) {
-                    if (isServerConnected.value) {
-                        Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
-                    } else {
-                        Text(invalidCredText, textAlign = TextAlign.Center, fontSize = if(invalidCredText.length!!<35) 15.sp else 13.sp)
-                    }
-                } else {
-                    Log.d(TAG, "text=(${stringResource(R.string.network_disconnected_try_later)}), isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}")
-                    Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center)
-                }
-            },
-            confirmButton = {
-                Log.d(TAG, "ServerRegistrationDialog confirmButton: isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}, shouldShowDialog=${shouldShowDialog.value}")
-                if (isNetworkConnected.value && !isServerConnected.value) {
-                    // Create retry button only if network is connected && server is NOT connected
-                    Log.d(TAG, "ServerRegistrationDialog confirmButton: RetryButton is shown")
-                    Button(
-                        onClick = { shouldShowDialog.value = false
-                         serverDetailsChanged.value = false
-                                  },
-                        modifier = Modifier.fillMaxWidth(0.45f),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.LightGray,
-                        ),
-                    ) {
-                        Text(text = retryText, fontSize = if(retryText.length!!<9) 15.sp else 13.sp, color = Color.Black)
-                    }
-                } else {
-                    Log.d(TAG, "ServerRegistrationDialog confirmButton: RetryButton is NOT shown")
-                }
-            },
-
-            dismissButton = {
-                    Button(
-                        onClick = {
-                            shouldShowDialog.value = false
-                            serverDetailsChanged.value = false
-                            navController.navigate("tak_server_screen") {
-                                popUpTo(("tak_server_screen")) {
-                                    inclusive = true
-                                }
-                            }
-                        },
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = if (isServerConnected.value) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(0.45f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Gray,
-                        )
-                    ) {
-                        if (isServerConnected.value) {
-                            Text(text = stringResource(R.string.okay))
-                        } else {
-                            Text(text = stringResource(R.string.cancel))
-                        }
-                    }
-            }
-        )
-    }
-}
-
-@Composable
-fun ConfirmationDialog(
-    shouldShowDialog: MutableState<Boolean>,
-    navController: NavController,
-    description: String,
-    icon: ImageVector,
-    confirmColor: Color,
-    path: String,
-    isConfirmed: MutableState<Boolean>
-    ) {
-    if (shouldShowDialog.value) {
-            AlertDialog(
-                containerColor = colors.background,
-                modifier = Modifier.fillMaxSize(),
-                onDismissRequest = {
-                    shouldShowDialog.value = false
-                },
-                icon = {
-                    Icon(
-                        icon,
-                        modifier = Modifier.size(25.dp),
-                        contentDescription = null,
-                        tint = Color.LightGray
-                    )
-                },
-                text = {
-                    Text(
-                        description,
-                        textAlign = TextAlign.Center,
-                        fontSize = if (description.length > 40) 13.sp else 14.sp
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            shouldShowDialog.value = false
-                            isConfirmed.value = true
-                        },
-                        modifier = Modifier.fillMaxWidth(0.45f),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = confirmColor,
-                        ),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.confirm),
-                            color = Color.Black
-                        )
-                    }
-                },
-
-                dismissButton = {
-                    Button(
-                        onClick = {
-                            shouldShowDialog.value = false
-                            isConfirmed.value = false
-                        },
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = Modifier.fillMaxWidth(0.45f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Gray,
-                        )
-                        ) {
-                        Text(
-                            text = stringResource(R.string.dismiss),
-                        )
-                    }
-                }
-            )
-        }
-}
-
-@Composable
-fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>) {
-    var offsetX by remember { mutableStateOf(0f) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-
-            var licenseTextFieldValue by remember {
-            mutableStateOf(
-                TextFieldValue(
-                    licenseLiveDataState.value ?: "null"
-                )
-            )
-        }
-
-        OutlinedTextField(
-            value = licenseTextFieldValue,
-            onValueChange = {
-                licenseTextFieldValue = it
-            },
-            maxLines = 1,
-            label = { Text(text = stringResource(R.string.license_key), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            var settingsChanged: Boolean = false
-            var licenseChanged: Boolean = false
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    settingsChanged = false; licenseChanged = false
-                    if (isLicenseValid()) {
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    } else {
-                        navController.navigate("invalid_license_screen")
-                    }
-                },
-                onClickConfirm = {
-                    val enteredLicense = licenseTextFieldValue.text
-                    val currentLicense = licenseSettingsState.value
-                    Log.d(
-                        TAG, """
-                            === === Licensing Information === ===
-                            License Entered: $enteredLicense
-                            License Current: $currentLicense
-                            """.trimIndent()
-                    )
-
-                    if (enteredLicense != currentLicense) {
-                        settingsChanged = true; licenseChanged = true
-                        license = licenseTextFieldValue.text ?: license
-                        Log.d(TAG, "License Changed. Updating DataRepository.")
-                        CoroutineScope(Dispatchers.Main).launch {
-                            licenseSettingsState.postValue(license)
-                            licenseLiveDataState.postValue(license)
-                            dataRepository.storeLicense(license)
-                        }
-                        Log.d(TAG, "Sending License for Validation.")
-                    } else {
-                        Log.d(TAG, "License Did not Change.")
-                    }
-                    validateLicense(license)
-
-                    if (isLicenseValid()) {
-                        Log.d(
-                            TAG, """
-                        License is valid. Navigating to Settings Screen & Starting Application Services. 
-                        =====================================
-                        """.trimIndent()
-                        )
-                        navController.navigate("settings_screen") {
-                            popUpTo(("invalid_license_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    } else {
-                        Log.d(
-                            TAG, """
-                            License is invalid. Navigating to Invalid License Screen & Stopping Services if started
-                            =====================================
-                            """.trimIndent()
-                        )
-                        navController.navigate("invalid_license_screen"){
-                            popUpTo("settings_screen") { inclusive = true }
-                        }
-                    }
-                    startStopServicesLicense()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun InvalidLicenseScreen (navController: NavController) {
-    WearTAKCIVTheme {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = stringResource(R.string.invalid_license_key),
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.size(5.dp))
-            //Maybe add info here for how to contact Ascent for the key?
-            Text(
-                text = stringResource(R.string.please_add_correct_key_to_use_weartak),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.size(10.dp))
-            Button(
-                onClick = { navController.navigate("license_setting_screen") {
-                    popUpTo("invalid_license_screen") { inclusive = true }
-                } },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.primary,
-                    contentColor = Color.Black
-                )
-            ) {
-                Text (
-                    text = stringResource(R.string.update_license),
-                    color = Color.Black,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun HeartRate () {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
-    var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+    val biometricsCheckedLive by enableBiometricsServiceLiveData.observeAsState()
 
     Column(
         modifier = Modifier
@@ -3491,7 +1723,7 @@ fun HeartRate () {
                     .size(14.dp)
                     // Clip image to be shaped as a circle
             )
-            if (biometricsChecked) {
+            if (biometricsCheckedLive == true) {
                 Text(
                     text = " $heartRateText",
                     textAlign = TextAlign.Start,
@@ -3516,6 +1748,36 @@ fun HeartRate () {
     }
 }
 
+//2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
+fun connectivityComplicationString() {
+    networkManager.checkNetworkConnected()
+    var networkConnectedLiveData: MutableLiveData<Boolean> = NetworkManager.isNetworkConnectedLiveData
+    var cellConnectedLiveData: MutableLiveData<Boolean> = NetworkManager.isCellularConnectedLiveData
+
+    if (networkConnectedLiveData.value == true) {
+        if (cellConnectedLiveData.value == true) {
+            connectivityStatusComplication = "cell"
+        } else {
+            connectivityStatusComplication = "wifi"
+        }
+    } else {
+        connectivityStatusComplication = "none"
+    }
+}
+
+fun takServerComplicationString() {
+    var takServerLiveData: MutableLiveData<Boolean> = TAKConnectService.isAnyTakConnectedLiveData
+    var takServerConnectingLiveData: MutableLiveData<Boolean> = TAKConnectService.isAnyTakConnectingLiveData
+
+    if (takServerLiveData.value == true) {
+        takServerStatusComplication = "connected"
+    } else if (takServerConnectingLiveData.value == true){
+        takServerStatusComplication = "connecting"
+    } else if (takServerLiveData.value == false) {
+        takServerStatusComplication = "disconnected"
+    }
+}
+
 @Composable
 fun TroubleshootingIcons() {
     val iconSizeSmall= 20.dp
@@ -3527,7 +1789,7 @@ fun TroubleshootingIcons() {
             .height(70.dp),
             contentAlignment = Alignment.TopCenter
     ) {
-        var locationChecked by remember{ mutableStateOf(enableLocationService)}
+        val locationCheckedLive by enableLocationServiceLiveData.observeAsState()
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val anyTakServerConnected by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
@@ -3571,13 +1833,13 @@ fun TroubleshootingIcons() {
                     x = (15).dp, // Adjust this value
                     y = (15).dp // Adjust this value
                 )
-                .size(if (cellConnected == true) 15.dp else 25.dp),
+                .size(if (cellConnected == true) 25.dp else 25.dp),
             tint = if (isConnected == true) Color.White else Color.Unspecified
         )
 
         // Icon on the top right curve
         Icon(
-            if (locationChecked) painterResource(R.drawable.location_on) else painterResource(R.drawable.location_off),
+            if (locationCheckedLive == true) painterResource(R.drawable.location_on) else painterResource(R.drawable.location_off),
             contentDescription = "Top Right Icon",
             modifier = Modifier
                 .align(Alignment.CenterEnd)
@@ -3586,8 +1848,9 @@ fun TroubleshootingIcons() {
                     y = (-10).dp // Adjust this value
                 )
                 .size(iconSizeSmall),
-            tint = if (locationChecked) Color.White else Color.DarkGray
+            tint = if (locationCheckedLive == true) Color.White else Color.DarkGray
         )
+
 
         // Icon on the bottom right curve
 
@@ -3615,62 +1878,9 @@ fun TroubleshootingIcons() {
     }
 }
 
-@Composable
-fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>, isConfirmed : MutableState<Boolean>) {
-    if (shouldShowDialog.value) {
-        Dialog(onDismissRequest = { shouldShowDialog.value = false }) {
-            LaunchedEffect(Unit) {
-                delay(2000) // Delay for 5 seconds
-                shouldShowDialog.value = false // Dismiss the dialog
-                isConfirmed.value = false
-            }
-
-            Card(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .height(200.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.background)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    if (successBoolean.value) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            modifier = Modifier.size(25.dp),
-                            contentDescription = null,
-                            tint = Color.Green
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = stringResource(R.string.success),
-                            textAlign = TextAlign.Center,
-                        )
-                    } else {
-                        Icon(
-                            Icons.Rounded.Clear,
-                            modifier = Modifier.size(25.dp),
-                            contentDescription = null,
-                            tint = Color.Red
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = stringResource(R.string.error),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
-fun Callsign(navController: NavController, callsignState: MutableLiveData<String>) {
+fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
     val greetingName: String? by callsignState.observeAsState()
     val maxChar = 10
     AssistChip(
@@ -3686,7 +1896,9 @@ fun Callsign(navController: NavController, callsignState: MutableLiveData<String
             wifiSsidListSettingsState.postValue(wifiSsidList)
             takServerListState.postValue(takServerList)
             saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-            navController.navigate("settings_screen") },
+            context.startActivity(Intent(context, SettingsActivity::class.java))
+//            navController.navigate("settings_screen")
+                  },
         label = { Text(
             "${greetingName}",
             maxLines = 1,
@@ -3840,445 +2052,6 @@ fun MarkerDropButton(
     }
 }
 
-@Composable
-fun SettingSwitchToggle(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    title: String,
-    description: String,
-    enabled: Boolean = true,
-) {
-    // The primary label should have a maximum 3 lines of text
-    // and the secondary label should have max 2 lines of text.
-    ToggleChip(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
-        secondaryLabel = {
-            Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        },
-        checked = checked,
-        // For Switch  toggle controls the Wear Material UX guidance is to set the
-        // unselected toggle control color to ToggleChipDefaults.switchUncheckedIconColor()
-        // rather than the default.
-        colors =
-        ToggleChipDefaults.toggleChipColors(
-            uncheckedToggleControlColor = ToggleChipDefaults.SwitchUncheckedIconColor
-        ),
-        toggleControl = {
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                enabled = enabled,
-            )
-        },
-        onCheckedChange = onCheckedChange,
-        enabled = true,
-    )
-}
-
-//Contains functionality for settings screen
-@Composable
-fun SettingsScreen(
-    navController: NavController,
-    callsignLiveDataState: MutableLiveData<String>,
-    licenseLiveDataState: MutableLiveData<String>
-) {
-    //Log.d(TAG, "SettingsScreen called")
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            var locationChecked by remember{ mutableStateOf(enableLocationService)}
-            var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
-            var dittoChecked by remember{ mutableStateOf(enableDittoService)}
-            val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
-            val text = stringResource(R.string.callsign_settings)
-
-//            when (displayedSecondaryText) {
-//                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
-//                SOME_WIFI_NETWORKS -> { SOME_WIFI_NETWORKS = stringResource(R.string.some_wifi_connections) }
-//                else -> { NO_WIFI_NETWORKS = stringResource(R.string.no_wifi_connections) }
-//            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = text,
-                    fontSize = if(text.length!!<20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                CallsignRoleTeamChip(
-                    "callsign_screen",
-                    stringResource(R.string.callsign),
-                    callsignSettingsState,
-                    navController
-                )
-                CallsignRoleTeamChip("team_screen",
-                    stringResource(R.string.team), teamSettingsState, navController)
-                CallsignRoleTeamChip("role_screen",
-                    stringResource(R.string.role), roleSettingsState, navController)
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = stringResource(R.string.connection_settings),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                Chip(
-                    onClick = {
-                        takServerListState.postValue(takServerList)
-                        navController.navigate("tak_server_screen") },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.tak_servers)) },
-                    secondaryLabel = {
-//                        Text(text = name)
-                                     },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
-                )
-
-                Chip(
-
-                    onClick = {
-                        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimizationState.value)
-                        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimizationState.value)
-                        wifiSsidListSettingsState.postValue(wifiSsidListState.value)
-                        navController.navigate("optimize_battery_on_wifi_screen") {
-                        popUpTo("optimize_battery_on_wifi_screen") { inclusive = true }
-                    } },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.save_battery_on_wifi)) },
-                    secondaryLabel = {Text(
-                        text = if (displayedSecondaryText == ALL_WIFI_NETWORKS) stringResource(R.string.all_wifi_connections)
-                        else if (displayedSecondaryText == SOME_WIFI_NETWORKS) stringResource(R.string.some_wifi_connections)
-                        else stringResource(R.string.no_wifi_connections)
-                    )
-                    },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
-                )
-
-                val licenseText: String? by licenseSettingsState.observeAsState()
-
-                Chip(
-                    onClick = { navController.navigate("license_setting_screen") {
-                        popUpTo("license_setting_screen") { inclusive = true }
-                    } },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.license_key)) },
-                    secondaryLabel = {
-                        Text(text = licenseText.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
-                    },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = stringResource(R.string.general_settings),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                SettingSwitchToggle(
-                    checked = locationChecked, onCheckedChange = { locationChecked = it },
-                    title = stringResource(R.string.location_service), description = stringResource(R.string.service_on_off)
-                )
-
-                SettingSwitchToggle(
-                    checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
-                    title = stringResource(R.string.biometrics),
-                    description = stringResource(R.string.service_on_off),
-                )
-
-                SettingSwitchToggle(
-                    checked = dittoChecked, onCheckedChange = { dittoChecked = it },
-                    title = stringResource(R.string.ditto),
-                    description = stringResource(R.string.service_on_off),
-                )
-
-                Text(
-                    modifier = Modifier.padding(top = 7.dp),
-                    text = stringResource(R.string.version, versionNumber),
-                    fontSize = 11.sp,
-                    color = colors.primary,
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "SettingsScreen Settings NOT saved")
-                        navController.navigate("main_screen") {
-                            popUpTo(("main_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    },
-                    onClickConfirm = {
-                        var settingsChanged: Boolean = false
-                        var callsignChanged: Boolean = false
-                        var teamChanged = false
-                        var roleChanged = false
-                        var licenseChanged: Boolean = false
-                        val maxReportRate: Int = 100000000
-                        val minReportRate: Int = 1
-                        var locationCheckedChanged: Boolean = false
-                        var biometricsCheckedChanged: Boolean = false
-                        var dittoCheckedChanged: Boolean = false
-                        var saveBattOnWifiChanged = false
-                        var takServerListChanged = false
-
-                        if (!callsign.equals(callsignSettingsState.value)) {
-                            settingsChanged = true; callsignChanged = true
-                            callsign = callsignSettingsState.value ?: callsign
-                            runBlocking {
-                                callsignLiveDataState.postValue(callsign)
-                            }
-                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
-                        }
-                        if (!team.equals(teamSettingsState.value)) {
-                            settingsChanged = true; teamChanged = true
-                            team = teamSettingsState.value ?: team
-                            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
-                            // This cannot happen, but still...
-                            if (teamIndex == -1) {
-                                Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
-                                teamIndex = 0
-                                team = teamEntriesValuesList.ltEntries[0]
-                                teamSettingsState.postValue(team)
-                            }
-                            teamValue = teamEntriesValuesList.ltValues[teamIndex]
-                            runBlocking {
-                                teamState.postValue(team)
-                            }
-                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
-                        }
-                        if (!role.equals(roleSettingsState.value)) {
-                            settingsChanged = true; roleChanged = true
-                            role = roleSettingsState.value ?: role
-                            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-                            // This cannot happen, but still...
-                            if (roleIndex == -1) {
-                                Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
-                                roleIndex = 0
-                                role = roleEntriesValuesList.lrEntries[0]
-                                roleSettingsState.postValue(role)
-                            }
-                            roleValue = roleEntriesValuesList.lrValues[roleIndex]
-                            runBlocking {
-                                roleState.postValue(role)
-                            }
-                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
-                        }
-
-                        if ((saveBattOnWifiString != saveBattOnWifiStringState.value) || (wifiSsidList != wifiSsidListState.value)) {
-                            settingsChanged = true; saveBattOnWifiChanged = true
-                            wifiSsidList = wifiSsidListState.value ?: wifiSsidList
-                            saveBattOnWifiString = saveBattOnWifiStringState.value ?: saveBattOnWifiString
-                            enableWifiBatteryOptimization = enableWifiBatteryOptimizationState.value ?: enableWifiBatteryOptimization
-                            enableAllWifiBatteryOptimization = enableAllWifiBatteryOptimizationState.value ?: enableAllWifiBatteryOptimization
-                        }
-//                            if (!license.equals(licenseSettingsState.value)) {
-//                                settingsChanged = true; licenseChanged = true
-//                                license = licenseSettingsState.value ?: license
-//                                licenseLiveDataState.postValue(license)
-//                            }
-
-                        if (takServerList != takServerListState.value) {
-                            settingsChanged = true; takServerListChanged = true
-                            takServerList = takServerListState.value ?: takServerList
-                        }
-                        Log.d(TAG, "takServerList: $takServerList")
-                        Log.d(TAG, "takServerListState: " + takServerListState.value)
-                        Log.d(TAG, "takServerListChanged: $takServerListChanged")
-
-
-                        if (enableLocationService != locationChecked) {
-                            settingsChanged = true; locationCheckedChanged = true
-                            enableLocationService = locationChecked
-                            if (enableLocationService) {
-                                Log.d(TAG, "Trying to start location service")
-                                startLocationService()
-                            } else {
-                                Log.d(TAG, "Trying to stop location service")
-                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                            }
-                        }
-
-                        if (enableBiometricsService != biometricsChecked) {
-                            settingsChanged = true; biometricsCheckedChanged = true
-                            enableBiometricsService = biometricsChecked
-                            if (enableBiometricsService) {
-                                Log.d(TAG, "Trying to start biometric service")
-                                startBiometricService()
-                            } else {
-                                Log.d(TAG, "Trying to stop biometric service")
-                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                            }
-                        }
-
-                        if (enableDittoService != dittoChecked) {
-                            settingsChanged = true; dittoCheckedChanged = true
-                            enableDittoService = dittoChecked
-                            if (enableDittoService) {
-                                Log.d(TAG, "Trying to start ditto service")
-                                startDittoService()
-                            } else {
-                                Log.d(TAG, "Trying to stop ditto service")
-                                mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                            }
-                        }
-
-                        if (settingsChanged) {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                if (callsignChanged) {
-                                    Log.d(TAG, "Storing Callsign ($callsign)")
-                                    dataRepository.storeCallsign(callsign)
-                                }
-                                if (teamChanged) {
-                                    Log.d(TAG, "Storing Team ($team)")
-                                    dataRepository.storeTeam(team)
-                                }
-                                if (roleChanged) {
-                                    Log.d(TAG, "Storing Role ($role)")
-                                    dataRepository.storeRole(role)
-                                }
-//                                    if(licenseChanged) {
-//                                        dataRepository.storeLicense(license)
-//
-//                                    }
-                                if (saveBattOnWifiChanged) {
-                                    Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
-                                    runBlocking {
-                                        dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
-                                        dataRepository.storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization)
-                                        dataRepository.storeWifiSsidList(wifiSsidList)
-                                    }
-                                    EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
-                                }
-                                if (takServerListChanged) {
-                                    Log.d(TAG, "Storing updated TAK Server List: $takServerList")
-                                    dataRepository.storeTakServerList(takServerList)
-                                }
-
-                                if (locationCheckedChanged) {
-                                    Log.d(TAG, "Storing enableLocationService $enableLocationService")
-                                    dataRepository.storeEnableLocationService(enableLocationService)
-                                }
-                                if (biometricsCheckedChanged) {
-                                    Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
-                                    dataRepository.storeEnableBiometricsService(enableBiometricsService)
-                                }
-                                if (dittoCheckedChanged) {
-                                    Log.d(TAG, "Storing enableDittoService $enableDittoService")
-                                    dataRepository.storeEnableDittoService(enableDittoService)
-                                }
-
-                                Log.d(TAG, "Finished saving settings")
-                            }
-                        } else {
-                            Log.v(TAG, "Settings not changed and hence NOT saved")
-                        }
-                            navController.navigate("main_screen") {
-                                popUpTo(("main_screen")) {
-                                    inclusive = true
-                                }
-                            }
-                    })
-            }
-
-        }
-    }
-}
-
-@Composable
-fun ConfirmCancelButtons(
-    onClickCancel: () -> Unit,
-    onClickConfirm: () -> Unit
-) {
-    Box(
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            IconButton(
-                onClick = onClickCancel,
-                modifier = Modifier
-                    .size(50.dp)
-                    .border(1.dp, color = Color.Black, shape = CircleShape),
-                colors = IconButtonDefaults.iconButtonColors(
-                    contentColor = Color.Red,
-                    containerColor = Color.DarkGray,
-                ),
-            ) {
-                Icon(imageVector = Icons.Filled.Close, contentDescription = "Close icon")
-
-            }
-            Spacer(modifier = Modifier.width(20.dp))
-            IconButton(
-                onClick = onClickConfirm,
-                modifier = Modifier
-                    .size(50.dp)
-                    .border(1.dp, color = Color.Black, shape = CircleShape),
-                colors = IconButtonDefaults.iconButtonColors(
-                    contentColor = Color.Black,
-                    containerColor = colors.primary
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "Confirm icon",
-                    tint = Color.Black
-                )
-
-            }
-        }
-    }
-}
-
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)
 @Composable
 fun DefaultPreview() {
@@ -4292,7 +2065,7 @@ fun DefaultPreview() {
 @Composable
 fun CallsignSettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
-    CallsignSetting(rememberSwipeDismissableNavController(),callsignState)
+    CallsignSetting(rememberSwipeDismissableNavController(), callsignState)
 }
 
 @Preview(widthDp = 192, heightDp = 800)
@@ -4301,7 +2074,7 @@ fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     var licenseState = MutableLiveData<String>("AscentLicense")
 
-    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState)
+    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
 }
 
 @Preview(widthDp = 192, heightDp = 500)

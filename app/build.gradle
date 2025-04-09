@@ -13,8 +13,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 24
-        versionName "0.43"
+        versionCode 25
+        versionName "0.44"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -111,6 +111,7 @@ dependencies {
     implementation libs.horologist.compose.tools
     implementation libs.horologist.tiles
     implementation libs.watchface.complications.data.source.ktx
+
 //    implementation libs.navigation.compose
     implementation 'com.beust:klaxon:5.5'
 
@@ -148,6 +149,7 @@ dependencies {
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
     implementation("org.greenrobot:eventbus:3.3.1")
 
+
     // Kotlin
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 
@@ -157,6 +159,8 @@ dependencies {
     implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"
     implementation libs.runtime.livedata
     implementation libs.material3.android
+
+    implementation "androidx.wear.watchface:watchface-complications-data-source:1.2.1"
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
