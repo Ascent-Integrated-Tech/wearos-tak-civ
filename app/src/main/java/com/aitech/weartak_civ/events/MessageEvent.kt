@@ -4,7 +4,7 @@ package com.aitech.weartak_civ.events
 class MessageEvent(val message: String, val addlIntInfo: Int) {
 
     companion object {
-        val DROP_MARKER = "DropMarker"
+        //val DROP_MARKER = "DropMarker"
         val SERVER_CHANGED = "ServerChanged"
         val SERVER_ADDED = "ServerAdded"
         val SERVER_ADDED_VIA_UI = "ServerAddedViaUI"

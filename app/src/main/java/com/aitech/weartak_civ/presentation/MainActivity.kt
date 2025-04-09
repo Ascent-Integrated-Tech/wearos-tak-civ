@@ -19,7 +19,6 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.Intent.ACTION_TIME_TICK
 import android.content.IntentFilter
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -38,7 +37,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,10 +46,8 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,34 +55,14 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Clear
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -94,63 +70,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavController
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
-import androidx.wear.compose.foundation.RevealValue
-import androidx.wear.compose.foundation.rememberRevealState
 import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.CircularProgressIndicator
-import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
-import androidx.wear.compose.material.SelectableChip
-import androidx.wear.compose.material.SplitToggleChip
 import androidx.wear.compose.material.SwipeToDismissBox
-import androidx.wear.compose.material.SwipeToRevealChip
-import androidx.wear.compose.material.SwipeToRevealDefaults
-import androidx.wear.compose.material.SwipeToRevealPrimaryAction
-import androidx.wear.compose.material.SwipeToRevealSecondaryAction
-import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TimeText
-import androidx.wear.compose.material.ToggleChip
-import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -161,13 +104,10 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
@@ -175,35 +115,21 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.generateSaveBattOnWifiString
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
@@ -220,18 +146,14 @@ import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import kotlin.random.Random
 import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.text.format.DateFormat
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -243,33 +165,21 @@ import androidx.wear.compose.foundation.CurvedModifier
 import androidx.wear.compose.foundation.CurvedTextStyle
 import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.foundation.padding
-import androidx.wear.compose.material.TimeSource
-import androidx.wear.compose.material.TimeTextDefaults
 import androidx.wear.compose.material.curvedText
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
-import java.io.File
 import java.io.FileWriter
 import java.io.IOException
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.complication.CallsignComplicationService
-import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.complication.LocationComplicationService
-import com.aitech.weartak_civ.complication.TakServerComplicationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServerComplicationUpdate
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -303,7 +213,8 @@ class MainActivity : ComponentActivity() {
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
-        lateinit var networkManager : NetworkManager
+        @SuppressLint("StaticFieldLeak")
+        var networkManager : NetworkManager? = null
         private val klaxon = Klaxon()
 
         var team = ""
@@ -772,7 +683,7 @@ class MainActivity : ComponentActivity() {
         mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
         if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
-        networkManager.deInit()
+        networkManager?.deInit()
 
         unregisterReceiver(restrictionReceiver)
 
@@ -1070,7 +981,7 @@ class MainActivity : ComponentActivity() {
 //        setRolesJson()
 //        setDataFromDatastore()
         networkManager = NetworkManager.getInstance()
-        networkManager.init()
+        networkManager?.init()
 
         //Obtain version # from build.gradle
         try {
@@ -1597,7 +1508,6 @@ fun MainScreen(
                 }
                 TroubleshootingIcons()
 
-                //TODO: Seconds appears but only updates every minute?
                 TimeWithSecondsAware(context)
             }
         }
@@ -1700,7 +1610,6 @@ fun displayServerDialogs(
     Log.d(TAG, "Exiting displayServerDialogs: isNetworkConnected=$isNetworkConnected, loadingDialog=$loadingDialog, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}, shouldShowConfirmDialog=${shouldShowConfirmDialog.value}, isServerConnected=${isServerConnected.value}")
 }
 
-
 @Composable
 fun HeartRate () {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
@@ -1750,15 +1659,21 @@ fun HeartRate () {
 
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun connectivityComplicationString() {
-    networkManager.checkNetworkConnected()
-    var networkConnectedLiveData: MutableLiveData<Boolean> = NetworkManager.isNetworkConnectedLiveData
-    var cellConnectedLiveData: MutableLiveData<Boolean> = NetworkManager.isCellularConnectedLiveData
+    if (null != networkManager) {
+        networkManager?.checkNetworkConnected()
+        var networkConnectedLiveData: MutableLiveData<Boolean> =
+            NetworkManager.isNetworkConnectedLiveData
+        var cellConnectedLiveData: MutableLiveData<Boolean> =
+            NetworkManager.isCellularConnectedLiveData
 
-    if (networkConnectedLiveData.value == true) {
-        if (cellConnectedLiveData.value == true) {
-            connectivityStatusComplication = "cell"
+        if (networkConnectedLiveData.value == true) {
+            if (cellConnectedLiveData.value == true) {
+                connectivityStatusComplication = "cell"
+            } else {
+                connectivityStatusComplication = "wifi"
+            }
         } else {
-            connectivityStatusComplication = "wifi"
+            connectivityStatusComplication = "none"
         }
     } else {
         connectivityStatusComplication = "none"
@@ -1781,7 +1696,7 @@ fun takServerComplicationString() {
 @Composable
 fun TroubleshootingIcons() {
     val iconSizeSmall= 20.dp
-    networkManager.checkNetworkConnected()
+    networkManager?.checkNetworkConnected()
 
     Box(
         modifier = Modifier
@@ -1982,58 +1897,10 @@ fun MarkerDropButton(
     dataRepository: DataRepository,
     context: Context
 ) {
-    val shouldShowDialog = remember { mutableStateOf(false) }
-    val successBoolean = remember {mutableStateOf(false)}
-    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
-    val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
-    val location = dataRepository.latestLocation.value
-    var locationChecked by remember{ mutableStateOf(enableLocationService)}
-
-
-    // State for button color
-    var isPressed by remember { mutableStateOf(false) }
-    val buttonColor by animateColorAsState(
-        targetValue = if (isPressed) Color.Green else Color.White,
-        label = "ButtonColorAnimation"
-    )
-
-    val coroutineScope = rememberCoroutineScope()
-
-    if (shouldShowConfirmationDialog.value) {
-        ConfirmationDialog(
-            shouldShowConfirmationDialog,
-            rememberSwipeDismissableNavController(),
-            stringResource(R.string.marker_drop_prompt),
-            Icons.Default.LocationOn,
-            Color.Green,
-            "main_screen",
-            isConfirmed
-        )
-    }
-    if (isConfirmed.value) {
-        shouldShowDialog.value = true
-        if (takServer == true) {
-            if (location != null && locationChecked) {
-                successBoolean.value = true
-                EventBus.getDefault().post(MessageEvent(DROP_MARKER, 0))
-            }
-        } else {
-            successBoolean.value = false
-        }
-        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
-    }
-
     IconButton(
         onClick = {
-		    shouldShowConfirmationDialog.value = true
-            vibrateWatch(context)
+            context.startActivity(Intent(context, MarkerActivity::class.java))
 
-            isPressed = true
-            coroutineScope.launch {
-                delay(500)  // temporary color change
-                isPressed = false
-            }
             Log.d(TAG, "DropMarkerButton Clicked")
         },
         modifier = Modifier
@@ -2046,10 +1913,78 @@ fun MarkerDropButton(
     ) {
         Icon(
             painterResource(R.drawable.markerdrop),
-            contentDescription = "Localized description",
+            contentDescription = "Marker Drop Button",
             modifier = Modifier.size(30.dp)
         )
     }
+//    val shouldShowDialog = remember { mutableStateOf(false) }
+//    val successBoolean = remember {mutableStateOf(false)}
+//    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
+//    val isConfirmed = remember { mutableStateOf(false) }
+//    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
+//    val location = dataRepository.latestLocation.value
+//    var locationChecked by remember{ mutableStateOf(enableLocationService)}
+//
+//
+//    // State for button color
+//    var isPressed by remember { mutableStateOf(false) }
+//    val buttonColor by animateColorAsState(
+//        targetValue = if (isPressed) Color.Green else Color.White,
+//        label = "ButtonColorAnimation"
+//    )
+//
+//    val coroutineScope = rememberCoroutineScope()
+//
+//    if (shouldShowConfirmationDialog.value) {
+//        ConfirmationDialog(
+//            shouldShowConfirmationDialog,
+//            rememberSwipeDismissableNavController(),
+//            stringResource(R.string.marker_drop_prompt),
+//            Icons.Default.LocationOn,
+//            Color.Green,
+//            "main_screen",
+//            isConfirmed
+//        )
+//    }
+//    if (isConfirmed.value) {
+//        shouldShowDialog.value = true
+//        if (takServer == true) {
+//            if (location != null && locationChecked) {
+//                successBoolean.value = true
+//                EventBus.getDefault().post(MessageEvent(DROP_MARKER, 0))
+//            }
+//        } else {
+//            successBoolean.value = false
+//        }
+//        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
+//    }
+//
+//    IconButton(
+//        onClick = {
+//		    shouldShowConfirmationDialog.value = true
+//            vibrateWatch(context)
+//
+//            isPressed = true
+//            coroutineScope.launch {
+//                delay(500)  // temporary color change
+//                isPressed = false
+//            }
+//            Log.d(TAG, "DropMarkerButton Clicked")
+//        },
+//        modifier = Modifier
+//            .border(
+//                width = 2.dp,
+//                color = Color.White,
+//                shape = CircleShape
+//            )
+//            .size(100.dp),
+//    ) {
+//        Icon(
+//            painterResource(R.drawable.markerdrop),
+//            contentDescription = "Localized description",
+//            modifier = Modifier.size(30.dp)
+//        )
+//    }
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)
