@@ -86,6 +86,11 @@ class TAKConnectService: Service() {
         var ca1: String? = null // getters/setters not strictly needed for basic usage
     }
 
+    data class NameValueEntry(
+        var name: String,
+        var value: String
+    )
+
     data class TakServerDetail(
         var isEnabled: Boolean,
         var name: String,
@@ -126,7 +131,7 @@ class TAKConnectService: Service() {
                     takServer.isP12Cert, takServer.username, takServer.password,
                     takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval,
                     numConnAttempts = 0, numSocketConnectAttempts = 0))
-                Log.d(TAG, "setFromDatastore takServer(${takServer.name}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}), reportInterval(${takServer.reportingUpdateInterval})")
+                Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}), reportInterval(${takServer.reportingUpdateInterval})")
                 Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
         }
@@ -456,7 +461,7 @@ class TAKConnectService: Service() {
             Log.d(TAG, "setIsAnyNetworkConnecting: $isAnyTakConnecting")
         }
 
-        private fun generateBase64CSR(org: String?, orgUnit: String?, takServerDetail: TakServerDetail): String? {
+        private fun generateBase64CSR(nameValueList: MutableList<NameValueEntry>, takServerDetail: TakServerDetail): String? {
             val cnName = takServerDetail.username
             var base64CSR: String? = null
             try {
@@ -471,21 +476,18 @@ class TAKConnectService: Service() {
 
                 // Build the X.500 Name (subject) for the CSR
                 //    e.g., "C=US, ST=NY, L=New York, O=MyOrg, CN=example.com"
-                // TAK Server expects exactly the 3 fields: O, OU and CN.
-                // Anything more and less and getting singed cert fails
+                // TAK Server expects exactly those name value fields input as well as CN=$cnName
                 // TODO: Also send version information as separate POST message I think??
-                if (null == org) {
-                    Log.d(TAG, "generateBase64CSR: org is NULL")
-                }
-                val subject = if ((null != org) && (null != orgUnit)) {
-                    X500Name("O=$org, OU=$orgUnit, CN=$cnName")
-                } else if ((null == org) && (null != orgUnit)) {
-                    X500Name("O=null, OU=$orgUnit, CN=$cnName")
-                } else if ((null != org) && (null == orgUnit)) {
-                    X500Name("O=$org, CN=$cnName")
+                var subjectStr = "CN=$cnName"
+                if (nameValueList.size == 0) {
+                    Log.w(TAG, "generateBase64CSR: size of nameValueList is 0")
                 } else {
-                    X500Name("CN=$cnName")
+                    for (nameValueEntry in nameValueList) {
+                        subjectStr = "$subjectStr, ${nameValueEntry.name}=${nameValueEntry.value}"
+                    }
                 }
+                Log.d(TAG, "subjectStr =($subjectStr)")
+                val subject = X500Name(subjectStr)
 
                 // 4. Create the CSR builder
                 val p10Builder = JcaPKCS10CertificationRequestBuilder(subject, keyPair.public)
@@ -507,10 +509,11 @@ class TAKConnectService: Service() {
             return base64CSR
         }
 
-        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): Pair<String?, String?> {
+        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry> {
             val takServer = takServerDetail.address
             val username = takServerDetail.username
             val password = takServerDetail.password
+            val nameValueList : MutableList<NameValueEntry> = mutableListOf()
 
             val url = "https://$takServer:8446/Marti/api/tls/config"
             val client = OkHttpClient()
@@ -529,43 +532,36 @@ class TAKConnectService: Service() {
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
-                        return Pair("TAK", "TAK")
+                        return nameValueList
                     }
 
                     val responseBody = response.body?.string()
                     if (null == responseBody) {
                         Log.e(TAG, "ERROR fetch certification config response is null")
-                        return Pair("TAK", "TAK")
+                        return nameValueList
                     } else {
                         Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
                     }
 
                     // Parse XML response
                     val document = parseXml(responseBody)
-
                     val nameEntries = document.getElementsByTagName("nameEntry")
-
-                    var organization: String? = null
-                    var organizationalUnit: String? = null
-
                     for (i in 0 until nameEntries.length) {
                         val element = nameEntries.item(i) as? org.w3c.dom.Element
                         val name = element?.getAttribute("name")
                         val value = element?.getAttribute("value")
-
-                        when (name) {
-                            "O" -> organization = value
-                            "OU" -> organizationalUnit = value
-                        }
+                        if ((null !=name) && (null != value)) {
+                                nameValueList.add(NameValueEntry(name, value))
+                            }
                     }
 
-                    Log.d(TAG, "fetchAndParseCertificateConfig: Received Organization (O): $organization, Organizational Unit (OU): $organizationalUnit")
-                    return Pair(organization, organizationalUnit)
+                    Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: (O): $nameValueList")
+                    return nameValueList
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
             }
-            return Pair("TAK", "TAK")
+            return nameValueList
         }
 
         fun parseXml(xml: String): Document {
@@ -858,8 +854,8 @@ class TAKConnectService: Service() {
                             } else {
                                 deleteFile("${takServerDetail.address}.jks")
                                 Log.d(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
-                                val (organization, organizationUnit) = fetchAndParseCertificateConfig(takServerDetail)
-                                val base64CSR = generateBase64CSR(organization, organizationUnit, takServerDetail)
+                                val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
+                                val base64CSR = generateBase64CSR(nameValueList, takServerDetail)
                                 var signClientResponse: SignClientResponse? = null
                                 if (null != base64CSR) {
                                     //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
