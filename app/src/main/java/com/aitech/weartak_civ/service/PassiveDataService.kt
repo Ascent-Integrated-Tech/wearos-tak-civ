@@ -115,7 +115,7 @@ class PassiveDataService : PassiveListenerService() {
 
         // Send the CoT message
         Log.d(TAG, "Sending biometric COT msg: $cotMsg")
-        sendDataTAKServers(cotMsg)
+        sendDataTAKServers(cotMsg, false)
     }
 
     companion object {

@@ -349,13 +349,13 @@ class CotDispatchService : Service() {
 
     private fun sendMarkerCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
-        sendDataTAKServers(cotMessage)
+        sendDataTAKServers(cotMessage, true)
         Log.v(TAG, "Marker CoT message sent: $cotMessage")
     }
 
     private fun sendEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String) {
         val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
-        sendDataTAKServers(cotMessage)
+        sendDataTAKServers(cotMessage, true)
         Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
     }
 
@@ -382,7 +382,7 @@ class CotDispatchService : Service() {
 
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
-        sendDataTAKServers(cotMessage)
+        sendDataTAKServers(cotMessage, false)
         //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
 
         /*
@@ -399,11 +399,9 @@ class CotDispatchService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         //Log.d(TAG, "onLocationRcvdEvent called")
-        if (TAKConnectService.isAnyTakConnected) {
-            // We would like to send the "freshest" location especially if location update is 10s or greater
-            lastLocationUpdateRcvd = System.currentTimeMillis()
-            buildAndSendLocationBiometricCotMessage()
-        }
+        // We would like to send the "freshest" location especially if location update is 10s or greater
+        lastLocationUpdateRcvd = System.currentTimeMillis()
+        buildAndSendLocationBiometricCotMessage()
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
