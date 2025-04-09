@@ -15,30 +15,30 @@ import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
+import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
+import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import java.util.Calendar
 
 /**
  * Skeleton for complication data source that returns short text.
  */
-class MainComplicationService : SuspendingComplicationDataSourceService() {
+class CallsignComplicationService : SuspendingComplicationDataSourceService() {
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.SHORT_TEXT) {
             return null
         }
-        return createComplicationData("Mon", "Monday")
+        return createComplicationData(callsign, getString(R.string.watch_callsign))
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
-        return when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
-            Calendar.SUNDAY -> createComplicationData("Sun", "Sunday")
-            Calendar.MONDAY -> createComplicationData("Mon", "Monday")
-            Calendar.TUESDAY -> createComplicationData("Tue", "Tuesday")
-            Calendar.WEDNESDAY -> createComplicationData("Wed", "Wednesday")
-            Calendar.THURSDAY -> createComplicationData("Thu", "Thursday")
-            Calendar.FRIDAY -> createComplicationData("Fri!", "Friday!")
-            Calendar.SATURDAY -> createComplicationData("Sat", "Saturday")
-            else -> throw IllegalArgumentException("too many days")
+        return when (isLicenseValid()) {
+            true -> createComplicationData(callsign, getString(R.string.watch_callsign))
+            false -> createComplicationData("INVALID LICENSE", getString(R.string.invalid_license_key))
+            else -> throw IllegalArgumentException(getString(R.string.callsign_could_not_be_found))
         }
     }
 

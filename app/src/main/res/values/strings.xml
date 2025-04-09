@@ -94,35 +94,35 @@
     <string name="role_rto">RTO</string>
     <string name="role_k9">K9</string>
 
-<!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
-<!--    <string name="tak_server_connection_name_title">TAK Server Connection Name</string>-->
-<!--    <string name="tak_server_connection_name_description">Enter the connection name for the TAK server</string>-->
-<!--    <string name="tak_server_connection_name_default">Tak Default Server</string>-->
+    <!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
+    <!--    <string name="tak_server_connection_name_title">TAK Server Connection Name</string>-->
+    <!--    <string name="tak_server_connection_name_description">Enter the connection name for the TAK server</string>-->
+    <!--    <string name="tak_server_connection_name_default">Tak Default Server</string>-->
 
-<!--    <string name="tak_server_connection_enabled_title">TAK Server Connection Enabled</string>-->
-<!--    <string name="tak_server_connection_enabled_description">Enable/Disable this TAK server connection</string>-->
-<!--    <string name="tak_server_connection_enabled_default">true</string>-->
+    <!--    <string name="tak_server_connection_enabled_title">TAK Server Connection Enabled</string>-->
+    <!--    <string name="tak_server_connection_enabled_description">Enable/Disable this TAK server connection</string>-->
+    <!--    <string name="tak_server_connection_enabled_default">true</string>-->
 
-<!--    <string name="tak_server_address_title">TAK Server Address/URL</string>-->
-<!--    <string name="tak_server_address_description">Enter the IP address / URL of the TAK server</string>-->
-<!--    <string name="tak_server_address_default">tak.test.ops.ascentitech.com</string>-->
+    <!--    <string name="tak_server_address_title">TAK Server Address/URL</string>-->
+    <!--    <string name="tak_server_address_description">Enter the IP address / URL of the TAK server</string>-->
+    <!--    <string name="tak_server_address_default">tak.test.ops.ascentitech.com</string>-->
 
-<!--    <string name="tak_server_port_title">TAK Server Port</string>-->
-<!--    <string name="tak_server_port_description">Enter the port number for the TAK server</string>-->
-<!--    <string name="tak_server_port_default">8089</string>-->
+    <!--    <string name="tak_server_port_title">TAK Server Port</string>-->
+    <!--    <string name="tak_server_port_description">Enter the port number for the TAK server</string>-->
+    <!--    <string name="tak_server_port_default">8089</string>-->
 
-<!--    &lt;!&ndash; TAK Server Username and Password Configs &ndash;&gt;-->
-<!--    <string name="tak_server_username_title">TAK Server Username</string>-->
-<!--    <string name="tak_server_username_description">Enter the username for the TAK server</string>-->
-<!--    <string name="tak_server_username_default">TEST.AIT.WEAROS</string>-->
+    <!--    &lt;!&ndash; TAK Server Username and Password Configs &ndash;&gt;-->
+    <!--    <string name="tak_server_username_title">TAK Server Username</string>-->
+    <!--    <string name="tak_server_username_description">Enter the username for the TAK server</string>-->
+    <!--    <string name="tak_server_username_default">TEST.AIT.WEAROS</string>-->
 
-<!--    <string name="tak_server_password_title">TAK Server Password</string>-->
-<!--    <string name="tak_server_password_description">Enter the password for the TAK server</string>-->
-<!--    <string name="tak_server_password_default">TEST.AIT.WEAROS.Password01</string>-->
+    <!--    <string name="tak_server_password_title">TAK Server Password</string>-->
+    <!--    <string name="tak_server_password_description">Enter the password for the TAK server</string>-->
+    <!--    <string name="tak_server_password_default">TEST.AIT.WEAROS.Password01</string>-->
 
-<!--    &lt;!&ndash; Certs Configuration &ndash;&gt;-->
-<!--    <string name="tak_server_cert_title">TAK Server Certificate (base64)</string>-->
-<!--    <string name="tak_server_cert_description">Enter the base64-encoded P12 certificate for authentication</string>-->
+    <!--    &lt;!&ndash; Certs Configuration &ndash;&gt;-->
+    <!--    <string name="tak_server_cert_title">TAK Server Certificate (base64)</string>-->
+    <!--    <string name="tak_server_cert_description">Enter the base64-encoded P12 certificate for authentication</string>-->
 
     <!-- Tak Server Configurations -->
     <!--     Server Defaults: 0=DEFAULT, 1=TEST, 2=DEVELOP -->
@@ -226,4 +226,28 @@
     <!-- Developer bundle array -->
     <string name="custom_developer_bundle_array_title" translatable="false">Developer bundle array</string>
     <string name="custom_developer_bundle_array_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment" translatable="false" >Hello blank fragment</string>
+
+    <!-- complication strings -->
+    <string name="watch_callsign" translatable="false" >Watch Callsign</string>
+    <string name="callsign_could_not_be_found" translatable="false">Callsign could not be found</string>
+    <string name="cell" translatable="false">Cell</string>
+    <string name="wifi" translatable="false">Wifi</string>
+    <string name="no_connection" translatable="false">No Connection</string>
+    <string name="not_capturing_connectivitystatuscomplication" translatable="false">not capturing connectivityStatusComplication: %1$s</string>
+    <string name="heart_rate" translatable="false">Heart Rate</string>
+    <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
+    <string name="server_connected" translatable="false">Server Connected</string>
+    <string name="server_connecting" translatable="false">Server Connecting</string>
+    <string name="server_disconnected" translatable="false">Server Disconnected</string>
+    <string name="not_capturing_takserverstatuscomplication" translatable="false">not capturing takServerStatusComplication: %1$s</string>
+    <string name="location_on" translatable="false">Location ON</string>
+    <string name="location_off" translatable="false">Location OFF</string>
+    <string name="callsign_complication" translatable="false">Callsign Complication</string>
+    <string name="heart_rate_complication" translatable="false">Heart Rate Complication</string>
+    <string name="location_services_complication" translatable="false">Location Services Complication</string>
+    <string name="connectivity_complication" translatable="false">Connectivity Complication</string>
+    <string name="tak_server_complication" translatable="false">Tak Server Complication</string>
+    <string name="heart_rate_disabled" translatable="false">Heart Rate Disabled</string>
 </resources>

@@ -13,6 +13,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,10 +28,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -136,12 +140,20 @@ class HeartrateService: Service() {
                 runBlocking {
                     //Log.d(TAG, "Posting hr value to hrStringLiveData")
                     hrStringLiveData.postValue("N/A")
+                    requestHeartRateComplicationUpdate(context)
                     sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
 
                 }
             }
             deviceWorn = currDeviceWorn
         }
+    }
+
+    fun requestHeartRateComplicationUpdate(context: Context) {
+        val componentName = ComponentName(context, HeartRateComplicationService::class.java)
+
+        val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
+        requester.requestUpdateAll()
     }
 
     fun startSensors() {
@@ -196,6 +208,7 @@ class HeartrateService: Service() {
                         //Log.d(TAG, "Posting hr value to hrStringLiveData")
                         hrStringLiveData.postValue(hr.toString())
 //                        dataRepository.storeLatestHeartRate(hr)
+                        requestHeartRateComplicationUpdate(context)
                         sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
 
                     }
@@ -243,5 +256,7 @@ class HeartrateService: Service() {
 //        var heartrateSendIntervalSecs : Int = 5
         val hrStringLiveData = MutableLiveData<String>("N/A")
         val isRunning = AtomicBoolean(false)
+        val context: Context = mainActivity.applicationContext
+
     }
 }
