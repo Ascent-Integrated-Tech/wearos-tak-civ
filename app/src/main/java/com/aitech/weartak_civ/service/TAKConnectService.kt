@@ -922,6 +922,7 @@ class TAKConnectService: Service() {
                     isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
                     takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                    requestTakServerComplicationUpdate(context)
 
                     if (takServerDetail.isP12Cert) {
                         Log.d(TAG, "isP12Cert true")

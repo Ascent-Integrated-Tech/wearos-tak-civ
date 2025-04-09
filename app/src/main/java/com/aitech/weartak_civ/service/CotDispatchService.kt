@@ -23,12 +23,16 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
-import com.aitech.weartak_civ.events.MessageEvent.Companion.DROP_MARKER
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
+import com.aitech.weartak_civ.events.MarkerEvent
+import com.aitech.weartak_civ.events.MarkerEvent.Companion.FRIENDLY
+import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
+import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
+import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
@@ -67,6 +71,8 @@ class CotDispatchService : Service() {
     private var manualSosReceivedTime: Long = 0L
     private var manualSosReceivedCategory: String = ""
     private var manualSosReceivedDescription: String  = ""
+    private var iconSetPath: String = ""
+    private var markerType: String = ""
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -313,14 +319,14 @@ class CotDispatchService : Service() {
 
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <event version="2.0" uid="$uid" type="a-u-G" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
+        <event version="2.0" uid="$uid" type="$markerType" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
             <point lat="$latActual" lon="$lonActual" hae="$haeActual" ce="$ceActual" le="$leActual"/>
             <detail>
                 <status readiness="true" battery='$battery'/>
                 <precisionlocation altsrc="SRTM1"/>
                 <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
-                <usericon iconsetpath="COT_MAPPING_2525C/a-u/a-u-G"/>
+                <usericon iconsetpath="$iconSetPath"/>
                 <remarks>HeartRate: $heartRate bpm; Battery Level: $battery%</remarks>
                 <contact callsign="$markerCallsign"/>
             </detail>
@@ -441,30 +447,48 @@ class CotDispatchService : Service() {
         buildAndSendLocationBiometricCotMessage()
     }
 
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    public fun onMarkerEvent(event: MarkerEvent) {
+        val msg = event.message
+
+        if (HOSTILE == msg) {
+            iconSetPath = "COT_MAPPING_2525C/a-h/a-h-G"
+            markerType = "a-h-G"
+        } else if (FRIENDLY == msg) {
+            iconSetPath = "COT_MAPPING_2525C/a-f/a-f-G"
+            markerType = "a-f-G"
+        } else if (NEUTRAL == msg) {
+            iconSetPath = "COT_MAPPING_2525C/a-n/a-n-G"
+            markerType = "a-n-G"
+        } else { // UNKNOWN or any other
+            iconSetPath = "COT_MAPPING_2525C/a-u/a-u-G"
+            markerType = "a-u-G"
+        }
+        val currTime = System.currentTimeMillis()
+        if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
+            Log.d(TAG, "MarkerEvent with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+            markerDropReceivedTime = currTime
+            sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
+        } else {
+            if (markerDropToBeSent.getAndSet(true) == false) {
+                Log.d(TAG, "MarkerEvent with markerDropToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+                markerDropReceivedTime = currTime
+                EventBus.getDefault().post(LocationUpdateRequired())
+            } else {
+                Log.d(TAG, "MarkerEvent with markerDropToBeSent true & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+            }
+        }
+    }
+
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
         Log.d(TAG, "onMessageEvent w/ msg($msg)")
-            if (DROP_MARKER == msg) {
-                val currTime = System.currentTimeMillis()
-                if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
-                    Log.d(TAG, "DROP_MARKER with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-                    markerDropReceivedTime = currTime
-                    sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
-                } else {
-                    if (markerDropToBeSent.getAndSet(true) == false) {
-                        Log.d(TAG, "DROP_MARKER with markerDropToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-                        markerDropReceivedTime = currTime
-                        EventBus.getDefault().post(LocationUpdateRequired())
-                    } else {
-                        Log.d(TAG, "DROP_MARKER with markerDropToBeSent true & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-                    }
-                }
-            } else if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
-                // send the "freshest" cot message with the newly updated callsign
-                buildAndSendLocationBiometricCotMessage()
-            }
+        if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
+            // send the "freshest" cot message with the newly updated callsign
+            buildAndSendLocationBiometricCotMessage()
+        }
     }
 
     /*
