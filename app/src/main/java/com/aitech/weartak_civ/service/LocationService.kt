@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.service
 
 import android.Manifest
 import android.app.Notification
+import android.app.Notification.PRIORITY_MAX
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -33,7 +34,7 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -46,9 +47,6 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.io.FileWriter
-import java.io.IOException
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -60,9 +58,6 @@ class LocationService : Service() {
     private var fusedLocationProviderClient: FusedLocationProviderClient? = null
     private val binder = LocationServiceBinder()
     private var handler: Handler? = null
-    private var currentLocation: Location? = null
-    private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
@@ -96,7 +91,7 @@ class LocationService : Service() {
         val notification = notificationBuilder.setOngoing(true)
                 .setSmallIcon(R.drawable.splash_icon)
                 .setContentText("WearTAK-CIV location service running")
-                .setPriority(Context.BIND_WAIVE_PRIORITY)
+                .setPriority(PRIORITY_MAX)
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .build()
         try {
@@ -179,22 +174,13 @@ class LocationService : Service() {
     }
 
     private inner class MyLocationCallback : LocationCallback() {
-        fun writeToFileLocation(location: Location) {
-            try {
-                val writer = FileWriter(logFile, true) // Append to existing file
-                writer.write("${LocalDateTime.now().format(formatter)}: Received location update: $location\n")
-                writer.close()
-            } catch (e: IOException) {
-                Log.e("Error", "Failed to write log to file", e)
-            }
-        }
 
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
                 //Log.d(TAG, "Received location update: $location")
-                //writeToFileLocation(location)
+                writeToLogFileLocation("Received location update: $location")
                 EventBus.getDefault().post(LocationRcvd())
             }
         }

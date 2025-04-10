@@ -230,16 +230,23 @@ import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.collectAsState
+import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
+import com.aitech.weartak_civ.service.BleBeaconService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import java.io.File
+import java.io.FileWriter
+import java.io.IOException
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.math.min
 
 
@@ -252,6 +259,8 @@ class MainActivity : ComponentActivity() {
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
+        var enableBleBeaconService : Boolean = false
+        var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
         var biometricServiceRunning : Boolean = false
@@ -298,7 +307,18 @@ class MainActivity : ComponentActivity() {
 
 
         var versionNumber : String = ""
+        // TODO: Move logFile to Utils file
         var logFile: java.io.File? = null
+        private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        fun writeToLogFileLocation(data: String) {
+            try {
+                val writer = FileWriter(logFile, true) // Append to existing file
+                writer.write("${LocalDateTime.now().format(logFileFormatter)}: $data\n")
+                writer.close()
+            } catch (e: IOException) {
+                Log.e("Error", "Failed to write log to file", e)
+            }
+        }
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
@@ -444,14 +464,6 @@ class MainActivity : ComponentActivity() {
         }
 
         fun startLocationService() {
-            if (hasGps()) {
-                //Log.i(TAG, "This hardware has GPS")
-            } else {
-                //Log.i(TAG, "This hardware does NOT have GPS")
-            }
-            //fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-            //locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(2)).build()
-
             if ((ActivityCompat.checkSelfPermission(
                     mainActivity.applicationContext,
                     Manifest.permission.ACCESS_FINE_LOCATION
@@ -476,6 +488,44 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     Log.d(TAG, "enableLocationService is false. So NOT starting location service")
+                }
+            }
+        }
+
+        fun startStopBleBeaconService() {
+            if (isLicenseValid()) {
+                if (enableBleBeaconService) {
+                    startBleBeaconService()
+                } else {
+                    if (BleBeaconService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
+                }
+            } else {
+                if (BleBeaconService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
+            }
+        }
+
+        fun startBleBeaconService() {
+            if ((ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.ACCESS_FINE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) &&
+                (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BLUETOOTH_SCAN)
+                        != PackageManager.PERMISSION_GRANTED) &&
+                (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED)) {
+                Log.d(TAG, "Don't have permissions. So NOT starting BleBeaconService")
+            } else {
+                if (enableBleBeaconService) {
+                    if (!BleBeaconService.isRunning.get()) {
+                        Log.d(TAG, "Starting BleBeaconService")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            mainActivity.startForegroundService(Intent(mainActivity, BleBeaconService::class.java))
+                        } else {
+                            mainActivity.startService(Intent(mainActivity, BleBeaconService::class.java))
+                        }
+                    } else {
+                        Log.d(TAG, "BleBeaconService is already running")
+                    }
+                } else {
+                    Log.d(TAG, "BleBeaconService is disabled")
                 }
             }
         }
@@ -564,6 +614,7 @@ class MainActivity : ComponentActivity() {
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()
+                startBleBeaconService()
             } else {
                 Log.d(TAG, """
                             ===   Application Services Info   ===                                
@@ -591,6 +642,9 @@ class MainActivity : ComponentActivity() {
                 }
                 if (PowerManagerService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
+                }
+                if (BleBeaconService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
                 }
             }
         }
@@ -844,6 +898,9 @@ class MainActivity : ComponentActivity() {
             wifiSsidList = dataRepository.getWifiSsidList.first()
             saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
 
+            enableBleBeaconService = dataRepository.getEnableBleBeaconService.first()
+            localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
+
             Log.d(TAG, "============= Done Initializing Settings ===============")
         }
     }
@@ -893,43 +950,25 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "enable wifi opt:", enableWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "enable all wifi:", enableAllWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
-                """.trimIndent()
+                    ${String.format("%-25s %-30s", "enable BleBeacon:", enableBleBeaconService.toString())}
+                    
+                    === === Ble Beacons === ===
+                    ${String.format("%-25s %-30s", "Number of Localization Ble Beacons:", localizationBleBeaconItemList.size)}
+                    
+                    
+                    """.trimIndent()
+
+        for (i in localizationBleBeaconItemList.indices) {
+            val bleBeacon = localizationBleBeaconItemList.get(i)
+            logOutput += """
+                    ${String.format("%-25s %-30s", "Beacon $i Id:", "${bleBeacon.uuid}, ${bleBeacon.major}, ${bleBeacon.minor}")}
+                    ${String.format("%-25s %-30s", "Beacon $i Location:", "${bleBeacon.lat}, ${bleBeacon.lon}, ${bleBeacon.alt}")}
+                       
+                    
+                    """.trimIndent()
+        }
         Log.v(TAG, logOutput)
     }
-
-//    private fun startHealthCapabilitiesCollection() {
-//        val healthClient = HealthServices.getClient(this)
-//        val passiveMonitoringClient = healthClient.passiveMonitoringClient
-//        measureClient = healthClient.measureClient
-//
-//        lifecycleScope.launch {
-//            try {
-//                // Await the Passive Monitoring capabilities
-//                val capabilities = passiveMonitoringClient.getCapabilitiesAsync().await()
-//                val supportedDataTypes = capabilities.supportedDataTypesPassiveMonitoring
-//
-//                Log.d(TAG, "Supported passive monitoring data: $supportedDataTypes")
-//
-//                val supportsHeartRate = DataType.HEART_RATE_BPM in supportedDataTypes
-//                val supportsVo2Max = DataType.VO2_MAX in supportedDataTypes
-//                val supportsLocation = DataType.LOCATION in supportedDataTypes
-//
-//                Log.d(TAG, "supportsHeartRate: $supportsHeartRate; supportsVo2Max: $supportsVo2Max; supportsLocation: $supportsLocation")
-//
-//                // Await the Measure capabilities
-//                val measureCapabilities = measureClient?.getCapabilitiesAsync()?.await()
-//                val measureSupportsHeartRate = DataType.HEART_RATE_BPM in (measureCapabilities?.supportedDataTypesMeasure ?: emptySet())
-//
-//                Log.d(TAG, "measureCapabilities: $measureCapabilities")
-//                Log.d(TAG, "measureSupportsHeartRate: $measureSupportsHeartRate")
-//
-//                // If needed, register callbacks
-//                // measureClient?.registerMeasureCallback(DataType.HEART_RATE_BPM, heartRateCallback)
-//            } catch (e: Exception) {
-//                Log.e(TAG, "Error fetching health capabilities: ${e.message}")
-//            }
-//        }
-//    }
 
     private fun checkAndRequestPermissions() {
         val requiredPermissions = listOf(
@@ -939,7 +978,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH,
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_ADVERTISE)
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION)
 
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -1008,13 +1048,9 @@ class MainActivity : ComponentActivity() {
         }
 
          */
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
+        val file: File? = null
+        logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
-//        Log.d(TAG, " === === Teams And Roles === ===")
-//        setTeamsJson()
-//        setRolesJson()
-//        setDataFromDatastore()
         networkManager = NetworkManager.getInstance()
         networkManager.init()
 
@@ -1235,6 +1271,54 @@ class MainActivity : ComponentActivity() {
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
 
+        val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
+        val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
+        val bleBeaconMutableList : MutableList<DataRepository.LocalizationBleBeaconItem> = mutableListOf()
+        if (bleBeaconParcels != null) {
+            val bleBeaconCount = bleBeaconParcels.size
+            Log.v(TAG, "=== Number of Localization iBeacons: $bleBeaconCount ===")
+
+            var uuid: String? = null
+            var major: Int = -1
+            var minor: Int = -1
+            var lat: String? = null
+            var lon: String? = null
+            var alt: String? = null
+            // Loop through each Localization iBeacon
+            for (i in bleBeaconParcels.indices) {
+                // Each element should be a Bundle representing one localization iBeacon
+                val bleBeaconBundle = bleBeaconParcels[i] as? Bundle
+                if (bleBeaconBundle != null) {
+                    Log.v(TAG, "=== Localization iBeacon [$i] ===")
+                    // Iterate through all keys in this localization iBeacon Bundle
+                    for (key in bleBeaconBundle.keySet()) {
+                        val value = bleBeaconBundle.get(key)
+                        // Format each key/value pair into a fixed-width layout for clarity.
+                        Log.v(TAG, String.format("   %-30s : %s", key, value))
+                    }
+
+                    uuid = bleBeaconBundle.getString("localization_iBeacon_uuid", null)
+                    major = bleBeaconBundle.getInt("localization_iBeacon_major", -1)
+                    minor = bleBeaconBundle.getInt("localization_iBeacon_minor", -1)
+                    lat = bleBeaconBundle.getString("localization_iBeacon_lat", null)
+                    lon = bleBeaconBundle.getString("localization_iBeacon_lon", null)
+                    alt = bleBeaconBundle.getString("localization_iBeacon_alt", null)
+
+                    if ((null != uuid) && (major >= 0) && (minor >= 0) && (null != lat) && (null != lon) && (null != alt)) {
+                        bleBeaconMutableList.add(DataRepository.LocalizationBleBeaconItem(uuid, major, minor,
+                            lat.toDouble(), lon.toDouble(), alt.toDouble()))
+                    } else {
+                        Log.w(TAG, "Incorrect value received: uuid($uuid), major($major), minor($minor), lat($lat), lon($lon), alt($alt)")
+                    }
+                    Log.v(TAG, "========================================")
+                } else {
+                    Log.e(TAG, "Invalid localization iBeacon bundle at index $i")
+                }
+            }
+        } else {
+            Log.d(TAG, "localization_iBeacon_list is null or empty.")
+        }
+
         // store settings persistently & send out events as necessary
         validateLicense(license) // validate the license
 
@@ -1328,10 +1412,37 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            changed = false
+            if (bleBeaconMutableList.size > 0) {
+                if (bleBeaconMutableList.size != localizationBleBeaconItemList.size) {
+                    changed = true
+                } else {
+                    for (i in bleBeaconMutableList.indices) {
+                        val bleBeaconUpdate = bleBeaconMutableList[i]
+                        val locBleBeacon = localizationBleBeaconItemList[i]
+                        if ((bleBeaconUpdate.uuid != locBleBeacon.uuid) ||
+                            (bleBeaconUpdate.major != locBleBeacon.major) ||
+                            (bleBeaconUpdate.minor != locBleBeacon.minor) ||
+                            (bleBeaconUpdate.lat != locBleBeacon.lat) ||
+                            (bleBeaconUpdate.lon != locBleBeacon.lon) ||
+                            (bleBeaconUpdate.alt != locBleBeacon.alt)) {
+                            changed = true
+                            break
+                        }
+                    }
+                }
+                if (true == changed) {
+                    localizationBleBeaconItemList = bleBeaconMutableList.toList()
+                    dataRepository.storeLocalizationBleBeaconList(localizationBleBeaconItemList)
+                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(LOCALIZATION_BEACONS_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
+                }
+            }
+
             dataRepository.storeLicense(license)
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
+            dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
 
             // At the end, enable / disable services and then enable/disable based on license
             if (enableLocationServiceConfigUpdate != enableLocationService) {
@@ -1348,6 +1459,11 @@ class MainActivity : ComponentActivity() {
                 enableDittoService = enableDittoServiceConfigUpdate
                 Log.d(TAG, "enableDittoService=$enableDittoService")
                 if (!calledOnCreate) startStopDittoService()
+            }
+            if (enableBleBeaconServiceConfigUpdate != enableBleBeaconService) {
+                enableBleBeaconService = enableBleBeaconServiceConfigUpdate
+                Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
+                if (!calledOnCreate) startStopBleBeaconService()
             }
             if (!calledOnCreate) {
                 if (prevLicenseIsValid != isLicenseValid()) {

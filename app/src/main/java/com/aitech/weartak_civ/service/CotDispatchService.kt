@@ -31,9 +31,15 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.STALE_TIME_INTERVAL_MS
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaconUpdateTime
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDistance
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,16 +47,13 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.io.FileWriter
-import java.io.IOException
 import java.text.SimpleDateFormat
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
 
 class CotDispatchService : Service() {
@@ -63,7 +66,6 @@ class CotDispatchService : Service() {
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
-    private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -135,15 +137,7 @@ class CotDispatchService : Service() {
     }
 
     private val cotDispatchRunnable = object : Runnable {
-        fun writeToFileLocation() {
-            try {
-                val writer = FileWriter(logFile, true) // Append to existing file
-                writer.write("${LocalDateTime.now().format(formatter)}: Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable\n")
-                writer.close()
-            } catch (e: IOException) {
-                Log.e("Error", "Failed to write log to file", e)
-            }
-        }
+
         override fun run() {
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
@@ -151,7 +145,7 @@ class CotDispatchService : Service() {
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
                 // Once watch catches GPS, updates are at max 1s.
                 //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
-                //writeToFileLocation()
+                writeToLogFileLocation("Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
@@ -160,7 +154,7 @@ class CotDispatchService : Service() {
     }
 
 
-    private fun buildLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int): String {
+    private fun buildLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -169,21 +163,46 @@ class CotDispatchService : Service() {
 
         // Format and set the startTime with the currentTime
         val startTime = dateTimeFormatter.format(calendar.time)
+        val startTimeInMs = calendar.timeInMillis
 
         // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
         calendar.add(Calendar.SECOND, 3*currReportingIntervalInSecs)
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
-        val latActual = location?.latitude ?: 0.0
-        val lonActual = location?.longitude ?: 0.0
-        val haeActual = location?.altitude ?: 0.0
+        var latActual = location?.latitude ?: 0.0
+        var lonActual = location?.longitude ?: 0.0
+        var haeActual = location?.altitude ?: 0.0
         var ceActual = location?.accuracy ?: 9999999.0F
         if (ceActual.isNaN() == true) ceActual = 9999999.0F
         var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
         if (leActual.isNaN() == true) leActual = 9999999.0F
         val bearingActual = location?.bearing ?: 0.0F
         val speedActual = location?.speed ?: 0.0F
+
+        // Ble Beacon
+        if (MainActivity.enableBleBeaconService == true) {
+            //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
+            if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= STALE_TIME_INTERVAL_MS)) {
+                if (ceActual > closestBleDistance) {
+                    val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    Log.d(TAG, logString)
+                    writeToLogFileLocation(logString)
+                    ceActual = closestBleDistance.toFloat()
+                    latActual = closestBleLat
+                    lonActual = closestBleLon
+                    haeActual = closestBleAlt
+                } else {
+                    val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    Log.d(TAG, logString)
+                    writeToLogFileLocation(logString)
+                }
+            } else {
+                val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
+                Log.d(TAG, logString)
+                writeToLogFileLocation(logString)
+            }
+        }
 
         val uid = MainActivity.device_uid
 
@@ -372,23 +391,21 @@ class CotDispatchService : Service() {
                 val location = dataRepository.latestLocation.value
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
-                if (location != null && battery != null) {
-                    if (heartRate == null) {
-                        heartRate = -1
-                    }
-                    sendLocationBiometricCotMessage(location, heartRate, battery)
-                } else {
-                    Log.w(TAG, "Missing data for CoT message. Not sending.")
+                if (heartRate == null) {
+                    heartRate = -1
                 }
+                sendLocationBiometricCotMessage(location, heartRate, battery)
             }
         }
 
     }
 
-    private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
+    private fun sendLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServers(cotMessage, false)
-        //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        val logString = "Location/Biometric CoT message sent: $cotMessage"
+        Log.d(TAG, logString)
+        writeToLogFileLocation(logString)
 
         /*
         try {

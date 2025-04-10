@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -397,6 +396,45 @@ class DataRepository(private val context: Context) {
         }
     }
 
+
+    val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BLE_BEACON_SERVICE] ?: false
+    }
+
+    suspend fun storeEnableBleBeaconService(enableBleBeaconService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BLE_BEACON_SERVICE] = enableBleBeaconService
+        }
+    }
+
+    data class LocalizationBleBeaconItem(
+        val uuid: String,
+        val major: Int,
+        val minor: Int,
+        val lat: Double,
+        val lon: Double,
+        val alt: Double
+    )
+    val getLocalizationBleBeaconItemList: Flow<List<LocalizationBleBeaconItem>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[LOCALIZATION_BLE_BEACON_LIST_KEY]
+            if (jsonString.isNullOrEmpty()) {
+                emptyList()
+            } else {
+                val type = object : TypeToken<List<LocalizationBleBeaconItem>>() {}.type
+                gson.fromJson<List<LocalizationBleBeaconItem>>(jsonString, type)
+            }
+        }
+
+    suspend fun storeLocalizationBleBeaconList(newList: List<LocalizationBleBeaconItem>) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(newList)
+            // Store in DataStore
+            preferences[LOCALIZATION_BLE_BEACON_LIST_KEY] = jsonString
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -417,5 +455,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
         private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
+        private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")
+        private val LOCALIZATION_BLE_BEACON_LIST_KEY=stringPreferencesKey("localization_ble_beacon_list")
     }
 }
