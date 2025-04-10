@@ -234,6 +234,38 @@
     <!-- Developer bundle array -->
     <string name="custom_developer_bundle_array_title" translatable="false">Developer bundle array</string>
     <string name="custom_developer_bundle_array_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
+
+    <!-- Localization via proximity to known BLE iBeacons -->
+    <string name="ble_beacon_service_enabled_title" translatable="false">Enable Localization via proximity to known iBeacons</string>
+    <string name="ble_beacon_service_enabled_description" translatable="false">Enable or disable localization via proximity to known iBeacons.</string>
+    <string name="ble_beacon_service_enabled_default" translatable="false">false</string>
+
+    <!-- Localization iBeacon Configuration -->
+    <string name="localization_iBeacon_list_title" translatable="false">Localization iBeacons</string>
+    <string name="localization_iBeacon_list_description" translatable="false">List of Localization iBeacon details.</string>
+
+    <string name="localization_iBeacon_details_title" translatable="false">Localization iBeacon details</string>
+    <string name="localization_iBeacon_details_description" translatable="false">Enter details of the localization iBeacon: UUID, Major, Minor, lat, lon, alt</string>
+
+    <string name="localization_iBeacon_uuid_title" translatable="false">UUID</string>
+    <string name="localization_iBeacon_uuid_description" translatable="false">Enter UUID (e.g., 426c7565-4368-6172-6d42-6561636f6e73).</string>
+    <string name="localization_iBeacon_uuid_default" translatable="false">426c7565-4368-6172-6d42-6561636f6e73</string>
+
+    <string name="localization_iBeacon_major_title" translatable="false">Major Number</string>
+    <string name="localization_iBeacon_major_description" translatable="false">Enter Major Number (between 0 and 65535).</string>
+
+    <string name="localization_iBeacon_minor_title" translatable="false">Minor Number</string>
+    <string name="localization_iBeacon_minor_description" translatable="false">Enter Minor Number (between 0 and 65535).</string>
+
+    <string name="localization_iBeacon_lat_title" translatable="false">Latitude (deg)</string>
+    <string name="localization_iBeacon_lat_description" translatable="false">Enter latitude of iBeacon in degrees (between -90.0 and 90.0 inclusive).</string>
+
+    <string name="localization_iBeacon_lon_title" translatable="false">Longitude (deg)</string>
+    <string name="localization_iBeacon_lon_description" translatable="false">Enter longitude of iBeacon in degrees (between -180.0 and 180.0 inclusive).</string>
+
+    <string name="localization_iBeacon_alt_title" translatable="false">Altitude HAE (m)</string>
+    <string name="localization_iBeacon_alt_description" translatable="false">Enter Height Above Ellipsoid of iBeacon in meters.</string>
+
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment" translatable="false" >Hello blank fragment</string>
 
@@ -258,4 +290,5 @@
     <string name="connectivity_complication" translatable="false">Connectivity Complication</string>
     <string name="tak_server_complication" translatable="false">Tak Server Complication</string>
     <string name="heart_rate_disabled" translatable="false">Heart Rate Disabled</string>
+
 </resources>
