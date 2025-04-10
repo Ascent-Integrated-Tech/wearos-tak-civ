@@ -185,4 +185,64 @@
                 android:defaultValue="@string/update_interval_default" />
         </restriction>
     </restriction>
+
+    <restriction
+        android:key="ble_beacon_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/ble_beacon_service_enabled_title"
+        android:description="@string/ble_beacon_service_enabled_description"
+        android:defaultValue="@string/ble_beacon_service_enabled_default" />
+
+    <restriction
+        android:key="localization_iBeacon_list"
+        android:restrictionType="bundle_array"
+        android:title="@string/localization_iBeacon_list_title"
+        android:description="@string/localization_iBeacon_list_description">
+
+        <!-- Server 0 Default: DEFAULT -->
+        <restriction
+            android:key="localization_iBeacon_details"
+            android:restrictionType="bundle"
+            android:title="@string/localization_iBeacon_details_title"
+            android:description="@string/localization_iBeacon_details_description">
+            <restriction
+                android:key="localization_iBeacon_uuid"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_uuid_title"
+                android:description="@string/localization_iBeacon_uuid_description"
+                android:defaultValue="@string/localization_iBeacon_uuid_default" />
+
+            <restriction
+                android:key="localization_iBeacon_major"
+                android:restrictionType="integer"
+                android:title="@string/localization_iBeacon_major_title"
+                android:description="@string/localization_iBeacon_major_description" />
+
+            <restriction
+                android:key="localization_iBeacon_minor"
+                android:restrictionType="integer"
+                android:title="@string/localization_iBeacon_minor_title"
+                android:description="@string/localization_iBeacon_minor_description" />
+
+            <restriction
+                android:key="localization_iBeacon_lat"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_lat_title"
+                android:description="@string/localization_iBeacon_lat_description" />
+
+            <restriction
+                android:key="localization_iBeacon_lon"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_lon_title"
+                android:description="@string/localization_iBeacon_lon_description" />
+
+            <restriction
+                android:key="localization_iBeacon_alt"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_alt_title"
+                android:description="@string/localization_iBeacon_alt_description" />
+
+        </restriction>
+
+    </restriction>
 </restrictions>

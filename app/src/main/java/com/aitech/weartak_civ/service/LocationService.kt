@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.service
 
 import android.Manifest
 import android.app.Notification
+import android.app.Notification.PRIORITY_MAX
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -27,7 +28,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationCompat.PRIORITY_MAX
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.LocationRcvd
@@ -35,7 +35,6 @@ import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -182,7 +181,7 @@ class LocationService : Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
                 //Log.d(TAG, "Received location update: $location")
-                //writeToLogFileLocation("Received location update: $location")
+                writeToLogFileLocation("Received location update: $location")
                 EventBus.getDefault().post(LocationRcvd())
             }
         }
