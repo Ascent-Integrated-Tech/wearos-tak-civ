@@ -61,7 +61,7 @@ class LocationService : Service() {
     private val binder = LocationServiceBinder()
     private var handler: Handler? = null
     private var currentLocation: Location? = null
-    //private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
 
     override fun onCreate() {
@@ -179,23 +179,22 @@ class LocationService : Service() {
     }
 
     private inner class MyLocationCallback : LocationCallback() {
+        fun writeToFileLocation(location: Location) {
+            try {
+                val writer = FileWriter(logFile, true) // Append to existing file
+                writer.write("${LocalDateTime.now().format(formatter)}: Received location update: $location\n")
+                writer.close()
+            } catch (e: IOException) {
+                Log.e("Error", "Failed to write log to file", e)
+            }
+        }
+
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
                 //Log.d(TAG, "Received location update: $location")
-
-                /*
-                try {
-                    val writer = FileWriter(logFile, true) // Append to existing file
-                    writer.write("${LocalDateTime.now().format(formatter)}: Received location update: $location\n")
-                    writer.close()
-                } catch (e: IOException) {
-                    Log.e("Error", "Failed to write log to file", e)
-                }
-                
-                 */
-
+                //writeToFileLocation(location)
                 EventBus.getDefault().post(LocationRcvd())
             }
         }

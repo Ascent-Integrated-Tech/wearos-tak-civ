@@ -598,14 +598,16 @@ class MainActivity : ComponentActivity() {
         fun getMinReportingInterval(takServerList : List<DataRepository.TakServerItem>) : Int {
             var minReportingInterval : Int = 100000001
             for (takServer in takServerList) {
-                minReportingInterval = min(minReportingInterval, takServer.reportingUpdateInterval)
+                if (takServer.isEnabled) {
+                    Log.d(TAG, "getMinReportingInterval: ${takServer.address} reportingUpdateInterval ${takServer.reportingUpdateInterval}")
+                    minReportingInterval = min(minReportingInterval, takServer.reportingUpdateInterval)
+                }
             }
             if (minReportingInterval == 100000001) {
                 minReportingInterval = 10
             }
             return minReportingInterval
         }
-
     }
 
 
@@ -1837,6 +1839,20 @@ fun TakServerSetting(navController: NavController) {
                                 CoroutineScope(Dispatchers.Main).launch {
                                     dataRepository.updateTakServerItem(index, takServerItem)
                                     Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, index)) }, EVENT_SEND_DELAY_MS)
+                                    val minReportingInterval = getMinReportingInterval(takServerList)
+                                    var prevReportingInterval = 1
+                                    runBlocking {
+                                        prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
+                                    }
+                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
+                                    if (prevReportingInterval != minReportingInterval) {
+                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
+                                        runBlocking {
+                                            dataRepository.storeReportingUpdateInterval(minReportingInterval)
+                                        }
+                                        CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
+                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
+                                    }
                                 } },
                             onPrimaryActionClick = {
                                 Log.d(TAG, "Remove takServerItem ($takServerItem)")
@@ -2299,8 +2315,8 @@ fun EditServerPage(
         var reportingUpdateInterval by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
         var isP12Cert by remember { mutableStateOf(takServerListLocal.get(index)?.isP12Cert ?: false) }
         val context = LocalContext.current
-        val serverSettingsChanged = remember { mutableStateOf(false) }
-        Log.d(TAG, "address=$address, serverSettingsChanged=${serverSettingsChanged.value}")
+        val serverConnSettingsChanged = remember { mutableStateOf(false) }
+        Log.d(TAG, "address=$address, serverSettingsChanged=${serverConnSettingsChanged.value}")
 
         Box(
             modifier = Modifier
@@ -2468,6 +2484,7 @@ fun EditServerPage(
                                     Toast.makeText(mainActivity,
                                         context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                                 } else {
+                                    var reportingIntervalChanged = false
                                     val takServerDetails = takServerList.get(index)
                                     Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
                                     Log.d(TAG, "takServerDetails: $takServerDetails")
@@ -2475,19 +2492,27 @@ fun EditServerPage(
                                     if (name != takServerDetails.name || address != takServerDetails.address || port != takServerDetails.port.toString() ||
                                         username != takServerDetails.username || password != takServerDetails.password ||
                                         takServerDetails.reportingUpdateInterval != reportingUpdateInterval.toInt()) {
-                                        Log.d(TAG, "EditServerPage onClickConfirm: something has changed")
                                         if (name == takServerDetails.name) {
+                                            // Name is same, so something else in address, port, username, password or reporting interval has changed
                                             if (takServerDetails.reportingUpdateInterval == reportingUpdateInterval.toInt()) {
-                                                // Name and reporting interval are same, so something else in address, port, username or password has changed
-                                                serverSettingsChanged.value = true
-                                                Log.d(TAG, "serverSettingsChanged set to true")
+                                                serverConnSettingsChanged.value = true
+                                                Log.d(TAG, "serverConnSettingsChanged set to true")
+                                            } else {
+                                                reportingIntervalChanged = true
+                                                Log.d(TAG, "reportingIntervalChanged set to true")
                                             }
                                         } else { // Name is different
                                             if (address != takServerDetails.address || port.toInt() != takServerDetails.port ||
-                                                username != takServerDetails.username || password != takServerDetails.password) {
-                                                // Apart from name, omething else is different
-                                                serverSettingsChanged.value = true
-                                                Log.d(TAG, "serverSettingsChanged set to true with name being different")
+                                                username != takServerDetails.username || password != takServerDetails.password ||
+                                                reportingUpdateInterval.toInt() != takServerDetails.reportingUpdateInterval) {
+                                                // Apart from name, something else is different
+                                                if (reportingUpdateInterval.toInt() == takServerDetails.reportingUpdateInterval) {
+                                                    serverConnSettingsChanged.value = true
+                                                    Log.d(TAG, "serverConnSettingsChanged set to true with name being different")
+                                                } else {
+                                                    reportingIntervalChanged = true
+                                                    Log.d(TAG, "reportingIntervalChanged set to true with name being different")
+                                                }
                                             }
                                         }
                                         val changedTakServerDetail: DataRepository.TakServerItem =
@@ -2504,14 +2529,12 @@ fun EditServerPage(
                                             dataRepository.updateTakServerItem(index, changedTakServerDetail)
                                         }
 
-                                        Log.d(TAG, "onClickConfirm: dataRepo updated")
                                         val mutableTakServerList = takServerListLocal.toMutableList()
                                         mutableTakServerList.set(index, changedTakServerDetail)
                                         takServerList = mutableTakServerList.toList()
                                         takServerListState.postValue(takServerList)
 
                                         val changedReportingUpdateInterval = reportingUpdateInterval.toInt()
-                                        Log.d(TAG, "reportingUpdateInterval.toInt()=${changedReportingUpdateInterval}; COT:${CotDispatchService.reportingUpdateIntervalSecs}")
                                         val minReportingInterval = getMinReportingInterval(takServerList)
                                         var prevReportingInterval = 1
                                         runBlocking {
@@ -2526,22 +2549,18 @@ fun EditServerPage(
                                             CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
                                             EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
                                         }
-                                        /*
-                                        if (changedReportingUpdateInterval < CotDispatchService.reportingUpdateIntervalSecs) {
-                                            Log.d(TAG, "Setting reportingUpdateIntervalSecs (curr= ${CotDispatchService.reportingUpdateIntervalSecs}) to ${changedReportingUpdateInterval}")
-                                            runBlocking {
-                                                dataRepository.storeReportingUpdateInterval(changedReportingUpdateInterval)
-                                            }
-                                            CotDispatchService.reportingUpdateIntervalSecs = changedReportingUpdateInterval
-                                            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                            EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, changedReportingUpdateInterval))
-                                        }
 
-                                         */
-
-                                        if (serverSettingsChanged.value) {
-                                            Log.d(TAG, "EditServerPage serverSettingsChanged=${serverSettingsChanged.value}")
+                                        if (serverConnSettingsChanged.value || reportingIntervalChanged) {
+                                            Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value} or reportingIntervalChanged=$reportingIntervalChanged")
                                             EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
+                                            if (reportingIntervalChanged) {
+                                                // Go back to previous page
+                                                navController.navigate("tak_server_screen") {
+                                                    popUpTo(("tak_server_screen")) {
+                                                        inclusive = true
+                                                    }
+                                                }
+                                            }
                                         } else {
                                             navController.navigate("tak_server_screen") {
                                                 popUpTo(("tak_server_screen")) {
@@ -2551,7 +2570,7 @@ fun EditServerPage(
                                         }
                                     } else {
                                         Log.d(TAG, "EditServerPage onClickConfirm: nothing has changed")
-                                        serverSettingsChanged.value = false
+                                        serverConnSettingsChanged.value = false
                                         navController.navigate("tak_server_screen") {
                                             popUpTo(("tak_server_screen")) {
                                                 inclusive = true
@@ -2564,8 +2583,8 @@ fun EditServerPage(
                             }
                     }
                 )
-                Log.d(TAG, "EditServerPage: loadingDialog serverSettingsChanged=${serverSettingsChanged.value}")
-                if (serverSettingsChanged.value) {
+                Log.d(TAG, "EditServerPage: loadingDialog serverSettingsChanged=${serverConnSettingsChanged.value}")
+                if (serverConnSettingsChanged.value) {
                     val loadingDialog by TAKConnectService.takServerDetails.get(index).connectionStatusLiveData.observeAsState()
                     val shouldShowLoadingDialog = remember { mutableStateOf(false) }
                     val shouldShowConfirmDialog = remember { mutableStateOf(false) }
@@ -2576,14 +2595,14 @@ fun EditServerPage(
 
                         displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
                         LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
+                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
                     } else {
                         Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network disconnected")
                         val isNetworkConnected = remember { mutableStateOf(false)}
 
                         displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
                         //LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
+                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
                     }
                 }
             }
