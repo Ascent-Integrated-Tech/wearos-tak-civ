@@ -186,6 +186,12 @@ class CotDispatchService : Service() {
         val speedActual = location?.speed ?: 0.0F
 
         val uid = MainActivity.device_uid
+        /*
+        val messageLegacy = """
+        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><status battery='$battery'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
+        """.trimIndent()
+         */
+        /*
         val messageLegacy = """
         <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
         <event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
@@ -206,7 +212,13 @@ class CotDispatchService : Service() {
             </detail>
         </event>
         """.trimIndent()
+         */
 
+        // TODO: set phone number to actual phone number
+        val message = """
+        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual'/><detail><status battery='$battery'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device model='WEAROS' uid='$uid' hr='$heartRate' bat='$battery'/></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
+        """.trimIndent()
+        /*
         val message = """
         <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
         <event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
@@ -222,9 +234,9 @@ class CotDispatchService : Service() {
             </detail>
         </event>
         """.trimIndent()
+         */
 
 //        Log.v(TAG, "Cot: $message")
-        // TODO: set phone number to actual phone number
         return message
 //        return """
 //        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><ditto ip='0.0.0.0' pks='$localPeerKeyString' deviceName='$callsign' version='AndJ4.8.1_9afa7353b2'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
