@@ -31,6 +31,7 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
@@ -40,7 +41,11 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.io.FileWriter
+import java.io.IOException
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.TimeZone
@@ -52,14 +57,13 @@ class CotDispatchService : Service() {
     private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
-    private val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     var lastLocationUpdateRcvd : Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
     private val ioScope = CoroutineScope(Dispatchers.IO)
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
-    //private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -131,22 +135,23 @@ class CotDispatchService : Service() {
     }
 
     private val cotDispatchRunnable = object : Runnable {
+        fun writeToFileLocation() {
+            try {
+                val writer = FileWriter(logFile, true) // Append to existing file
+                writer.write("${LocalDateTime.now().format(formatter)}: Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable\n")
+                writer.close()
+            } catch (e: IOException) {
+                Log.e("Error", "Failed to write log to file", e)
+            }
+        }
         override fun run() {
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
-                // Maybe locationService is using fused indoor and currReportingIntevalInSecs < 5s OR some other reason
-                Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)*1000)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
-
-                /*
-                try {
-                    val writer = FileWriter(logFile, true) // Append to existing file
-                    writer.write("${LocalDateTime.now().format(formatter)}: Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable\n")
-                    writer.close()
-                } catch (e: IOException) {
-                    Log.e("Error", "Failed to write log to file", e)
-                }
-                 */
-
+                // Mostly because watch does not have GPS (e.g., indoor) and fused location at this time
+                // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
+                // Once watch catches GPS, updates are at max 1s.
+                //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
+                //writeToFileLocation()
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
@@ -463,5 +468,6 @@ class CotDispatchService : Service() {
         var reportingUpdateIntervalSecs = 10
         var currReportingIntervalInSecs = 10
         lateinit var instance: CotDispatchService
+        val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     }
 }

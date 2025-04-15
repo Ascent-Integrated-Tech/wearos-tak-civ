@@ -181,23 +181,6 @@ class PowerManagerService : Service() {
         }
     }
 
-    private fun slowDownCurrReportingInterval(reportingUpdateIntervalSecs: Int) {
-        // TODO: Can add better logic below
-        if (reportingUpdateIntervalSecs <= 10) {
-            CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs * 6
-        } else if (reportingUpdateIntervalSecs > 10 && reportingUpdateIntervalSecs <= 60) {
-            // The 60 below is the max time from previous if statement. So 10 * 6.
-            // The 10 below is the max reportingUpdateIntervalSecs from previous if statement
-            // This guarantees that reportingUpdateIntervalSecs for 11s is greater than that for 10s but now the increase is slower
-            CotDispatchService.currReportingIntervalInSecs = 60 + (CotDispatchService.reportingUpdateIntervalSecs - 10) * 4
-        } else {
-            // The 260 below is the max time from previous else if statement. So 60 + (60 - 10) * 4 = 260
-            // The 60 below is the max reportingUpdateIntervalSecs from previous else if statement
-            // This guarantees that reportingUpdateIntervalSecs for 61s is greater than that for 60s but now the increase is a constant of 200s more
-            CotDispatchService.currReportingIntervalInSecs = 260 + (CotDispatchService.reportingUpdateIntervalSecs - 60)
-        }
-    }
-
     // onStart: Location and Heartrate are started with reportingUpdateIntervalSecs, i.e., at fastest rate,
     // and this corresponds to cellular. So if onStart == true and on cellular, DO NOTHING.
     private fun dynamicUpdates(nwConnected: Boolean, nwTransport: Int, connWifiSsid : String?,
@@ -210,7 +193,7 @@ class PowerManagerService : Service() {
                     if (enablePowerOptimOnAllWifiSsids) {
                         // Slow down the GPS update as we assume that the device is NOT in critical area
                         // TODO: This will have to change this below when we add custom geofence
-                        slowDownCurrReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
+                        CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
                         Log.d(TAG, "WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids true: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                         // Send eventbus message so that LocationService can soft restart
                         EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
@@ -218,7 +201,7 @@ class PowerManagerService : Service() {
                         // Check SSID and slow down if connWifiSsid is in powerOptimWifiSsidList
                         if (powerOptimWifiSsidList.any { it.name == connWifiSsid }) {
                             // connWifiSsid is in powerOptimWifiSsidList
-                            slowDownCurrReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
+                            CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
                             Log.d(TAG, "WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                             // Send eventbus message so that LocationService can soft restart
                             EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
@@ -252,7 +235,7 @@ class PowerManagerService : Service() {
             }
         } else {
             // Not connected. Slow down the GPS update
-            slowDownCurrReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
+            CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
             Log.d(TAG, "Disconnected: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
             // Send eventbus message so that LocationService can soft restart
             EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
@@ -286,5 +269,23 @@ class PowerManagerService : Service() {
         var isWifiOpt : Boolean = true
         var isAllWifiOpt : Boolean = true
 
+        fun slowDownReportingInterval(reportingUpdateIntervalSecs: Int): Int {
+            var newReportingUpdateInterval: Int = 10
+            // TODO: Can add better logic below
+            if (reportingUpdateIntervalSecs <= 10) {
+                newReportingUpdateInterval = reportingUpdateIntervalSecs * 6
+            } else if (reportingUpdateIntervalSecs > 10 && reportingUpdateIntervalSecs <= 60) {
+                // The 60 below is the max time from previous if statement. So 10 * 6.
+                // The 10 below is the max reportingUpdateIntervalSecs from previous if statement
+                // This guarantees that reportingUpdateIntervalSecs for 11s is greater than that for 10s but now the increase is slower
+                newReportingUpdateInterval = 60 + (reportingUpdateIntervalSecs - 10) * 4
+            } else {
+                // The 260 below is the max time from previous else if statement. So 60 + (60 - 10) * 4 = 260
+                // The 60 below is the max reportingUpdateIntervalSecs from previous else if statement
+                // This guarantees that reportingUpdateIntervalSecs for 61s is greater than that for 60s but now the increase is a constant of 200s more
+                newReportingUpdateInterval = 260 + (reportingUpdateIntervalSecs - 60)
+            }
+            return newReportingUpdateInterval
+        }
     }
 }
