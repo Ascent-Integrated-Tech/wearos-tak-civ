@@ -1788,6 +1788,7 @@ fun TakServerSetting(navController: NavController) {
     //val selectedIndexState = MutableLiveData<Int?>(null)
     //val selectedIndex by selectedIndexState.observeAsState(initial = null)
     Log.d(TAG, "TakServerSetting called")
+    val text = stringResource(R.string.tak_server_connections)
 
     WearTAKCIVTheme {
         Box(
@@ -1808,10 +1809,11 @@ fun TakServerSetting(navController: NavController) {
                 LazyColumn {
                     item {
                         Text(
-                            text = "TAK Server Connections",
+                            text = text,
+                            fontSize = if (text.length!! < 20) 15.sp else 13.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(10.dp)
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 20.dp).align(Alignment.CenterHorizontally)
                         )
                     }
                     itemsIndexed(takServerSettingList){ index, takServerItem ->
@@ -1864,7 +1866,7 @@ fun TakServerSetting(navController: NavController) {
                                 }
                             } },
                             enabled = true,
-                            label = { Text(text = "Add Network") },
+                            label = { Text(text = stringResource(R.string.add_network)) },
                             colors = ChipDefaults.chipColors(
                                 backgroundColor = Color.DarkGray,
                                 contentColor = Color.White,
@@ -1983,8 +1985,8 @@ fun SwipeableTakServerChip(
         primaryAction = {
             SwipeToRevealPrimaryAction(
                 revealState = revealState,
-                icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
-                label = { Text("Delete") },
+                icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
+                label = { Text(stringResource(R.string.delete)) },
                 onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
         },
@@ -1999,14 +2001,14 @@ fun SwipeableTakServerChip(
         undoPrimaryAction = {
             SwipeToRevealUndoAction(
                 revealState = revealState,
-                label = { Text("Undo") },
+                label = { Text(stringResource(R.string.undo)) },
                 onClick = { /* Add the undo handler for primary action */ }
             )
         },
         undoSecondaryAction = {
             SwipeToRevealUndoAction(
                 revealState = revealState,
-                label = { Text("Undo") },
+                label = { Text(stringResource(R.string.undo)) },
                 onClick = { /* Add the undo handler for secondary action */ }
             )
         },
@@ -2059,6 +2061,7 @@ fun NewServerPage(navController: NavController) {
         var password by remember { mutableStateOf("") }
         var reportingUpdateInterval by remember { mutableStateOf("10") }
         var isP12Cert = false
+        val context = LocalContext.current
         val serverSettingsChanged = remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
@@ -2080,7 +2083,7 @@ fun NewServerPage(navController: NavController) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "New Server",
+                    text = stringResource(R.string.new_server),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -2138,9 +2141,11 @@ fun NewServerPage(navController: NavController) {
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Interval Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,
+                                    context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, "Reporting Interval 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity,
+                                    context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2157,14 +2162,14 @@ fun NewServerPage(navController: NavController) {
                     },
                     label = {
                         Text(
-                            text = "Reporting Interval",
+                            text = stringResource(R.string.reporting_interval),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
                     },
                     placeholder = {
                         Text(
-                            text = "Interval in secs",
+                            text = stringResource(R.string.interval_in_secs),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
@@ -2194,11 +2199,11 @@ fun NewServerPage(navController: NavController) {
                             if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
                                 password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
                                 if (reportingUpdateInterval.equals("")) {
-                                    Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                                 } else if (reportingUpdateInterval.equals("0")) {
-                                    Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                                 } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                    Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                                 } else {
                                     val newReportingUpdateInterval = reportingUpdateInterval.toInt()
                                     val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
@@ -2245,7 +2250,8 @@ fun NewServerPage(navController: NavController) {
                                      */
                                 }
                             } else {
-                                Toast.makeText(mainActivity, "Please enter valid values for all fields", Toast.LENGTH_LONG).show()
+                                Toast.makeText(mainActivity,
+                                    context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
                             }
                         }
                     }
@@ -2292,6 +2298,7 @@ fun EditServerPage(
         var password by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.password.orEmpty()) }
         var reportingUpdateInterval by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
         var isP12Cert by remember { mutableStateOf(takServerListLocal.get(index)?.isP12Cert ?: false) }
+        val context = LocalContext.current
         val serverSettingsChanged = remember { mutableStateOf(false) }
         Log.d(TAG, "address=$address, serverSettingsChanged=${serverSettingsChanged.value}")
 
@@ -2314,14 +2321,14 @@ fun EditServerPage(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Edit Server",
+                    text = stringResource(R.string.edit_server),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
 
                 ServerSettingText(
-                    "Connection Name",
+                    stringResource(R.string.connection_name),
                     name,
                     onValueChanged = { name = it },
                     false,
@@ -2331,7 +2338,7 @@ fun EditServerPage(
 
                 if (isP12Cert == true) {
                     ServerSettingText(
-                        "Address/URL",
+                        stringResource(R.string.address_url),
                         address,
                         onValueChanged = { address = it },
                         false,
@@ -2339,7 +2346,7 @@ fun EditServerPage(
                         false
                     )
                     ServerSettingText(
-                        "Port",
+                        stringResource(R.string.port),
                         port,
                         onValueChanged = { port = it },
                         false,
@@ -2347,7 +2354,7 @@ fun EditServerPage(
                         true)
                 } else {
                     ServerSettingText(
-                        "Address/URL",
+                        stringResource(R.string.address_url),
                         address,
                         onValueChanged = { address = it },
                         false,
@@ -2355,14 +2362,14 @@ fun EditServerPage(
                         true
                     )
                     ServerSettingText(
-                        "Port",
+                        stringResource(R.string.port),
                         port,
                         onValueChanged = { port = it },
                         false,
                         true,
                         true)
                     ServerSettingText(
-                        "Username",
+                        stringResource(R.string.username),
                         username,
                         onValueChanged = { username = it },
                         false,
@@ -2370,7 +2377,7 @@ fun EditServerPage(
                         true
                     )
                     ServerSettingText(
-                        "Password",
+                        stringResource(R.string.password),
                         password,
                         onValueChanged = { password = it },
                         true,
@@ -2389,9 +2396,9 @@ fun EditServerPage(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, "Reporting Interval Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, "Reporting Interval 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -2408,14 +2415,14 @@ fun EditServerPage(
                     },
                     label = {
                         Text(
-                            text = "Reporting Interval",
+                            text = stringResource(R.string.reporting_interval),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
                     },
                     placeholder = {
                         Text(
-                            text = "Interval in secs",
+                            text = stringResource(R.string.interval_in_secs),
                             color = colors.primary,
                             style = MaterialTheme.typography.caption3
                         )
@@ -2454,11 +2461,12 @@ fun EditServerPage(
                                 (if (isP12Cert) { true } else { username.isNotBlank() } ) &&
                                 (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
                                 if (reportingUpdateInterval.equals("")) {
-                                    Toast.makeText(mainActivity, "Reporting Rate Empty, Enter Again", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                                 } else if (reportingUpdateInterval.equals("0")) {
-                                    Toast.makeText(mainActivity, "Reporting Rate 0, Enter Again", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                                 } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                    Toast.makeText(mainActivity, "Reporting Rate Outside Bounds " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(mainActivity,
+                                        context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
                                 } else {
                                     val takServerDetails = takServerList.get(index)
                                     Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
@@ -2552,7 +2560,7 @@ fun EditServerPage(
                                     }
                                 }
                             } else {
-                                Toast.makeText(mainActivity, "Please enter valid values for all fields", Toast.LENGTH_LONG).show()
+                                Toast.makeText(mainActivity, context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
                             }
                     }
                 )
@@ -2776,6 +2784,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
 fun WifiSsidSelectScreen(navController: NavController) {
     //Log.d(TAG, "WifiSsidSelectScreen called")
     val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
+    val text = stringResource(R.string.enabled_wifi_connections)
 
     WearTAKCIVTheme {
         Box(
@@ -2797,10 +2806,11 @@ fun WifiSsidSelectScreen(navController: NavController) {
                 LazyColumn {
                     item {
                         Text(
-                            text = stringResource(R.string.enabled_wifi_connections),
+                            text = text,
+                            fontSize = if(text.length!!<20) 15.sp else 13.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(10.dp)
+                            modifier = Modifier.padding(horizontal =20.dp, vertical = 10.dp)
                         )
                     }
                     Log.d(TAG, "SSID List = $wifiSsidList")
@@ -3101,6 +3111,8 @@ fun ServerRegistrationDialog(
     isServerConnected: MutableState<Boolean>,
     serverDetailsChanged: MutableState<Boolean>
 ) {
+    val invalidCredText = stringResource(R.string.invalid_credentials_try_again)
+    val retryText = stringResource(R.string.retry)
     if (shouldShowDialog.value) {
         Log.d(TAG, "ServerRegistrationDialog: shouldShowDialog=${shouldShowDialog.value}, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}")
         shouldShowLoadingDialog.value = false
@@ -3123,11 +3135,11 @@ fun ServerRegistrationDialog(
                     if (isServerConnected.value) {
                         Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
                     } else {
-                        Text(stringResource(R.string.invalid_credentials_try_again), textAlign = TextAlign.Center)
+                        Text(invalidCredText, textAlign = TextAlign.Center, fontSize = if(invalidCredText.length!!<35) 15.sp else 13.sp)
                     }
                 } else {
                     Log.d(TAG, "text=(${stringResource(R.string.network_disconnected_try_later)}), isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}")
-                    Text(stringResource(R.string.network_disconnected_try_later), textAlign = TextAlign.Center)
+                    Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center)
                 }
             },
             confirmButton = {
@@ -3145,7 +3157,7 @@ fun ServerRegistrationDialog(
                             containerColor = Color.LightGray,
                         ),
                     ) {
-                        Text(text = stringResource(R.string.retry), color = Color.Black)
+                        Text(text = retryText, fontSize = if(retryText.length!!<9) 15.sp else 13.sp, color = Color.Black)
                     }
                 } else {
                     Log.d(TAG, "ServerRegistrationDialog confirmButton: RetryButton is NOT shown")
@@ -3637,7 +3649,7 @@ fun SOSButton() {
     val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
     val location = dataRepository.latestLocation.value
     var locationChecked by remember{ mutableStateOf(enableLocationService)}
-
+    var sosText = stringResource(R.string.sos)
 
     if (shouldShowConfirmationDialog.value) {
         ConfirmationDialog(
@@ -3680,8 +3692,8 @@ fun SOSButton() {
         )
     ) {
         Text (
-            stringResource(R.string.sos),
-            fontSize = 25.sp,
+            sosText,
+            fontSize = if (sosText!!.length <= 10) 25.sp else 20.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Red
         )
@@ -3827,6 +3839,7 @@ fun SettingsScreen(
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
+            val text = stringResource(R.string.callsign_settings)
 
 //            when (displayedSecondaryText) {
 //                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
@@ -3844,7 +3857,8 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = stringResource(R.string.callsign_settings),
+                    text = text,
+                    fontSize = if(text.length!!<20) 15.sp else 13.sp,
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
