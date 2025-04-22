@@ -1031,7 +1031,7 @@ class MainActivity : ComponentActivity() {
 
         setTheme(android.R.style.Theme_DeviceDefault)
 
-        //printSensorDetails(this)
+        printSensorDetails(this)
 
         // Request all necessary permissions
         checkAndRequestPermissions()
@@ -1040,8 +1040,10 @@ class MainActivity : ComponentActivity() {
         startStopServicesLicense()
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
-        val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
+        var isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
         Log.d(TAG, "isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
+        // TODO: ONLY FOR TESTiNG. Remove line below and set var isAccessibilityServiceEnabled to val
+        isAccessibilityServiceEnabled = true
         if (!isAccessibilityServiceEnabled) {
             Log.d(TAG, "isAccessibilityServiceEnabled false and trying to open Accessibility Settings")
             /*
@@ -2272,7 +2274,7 @@ fun NewServerPage(navController: NavController) {
                         }
                     }
                 )
-                Log.d(TAG, "NewServerPage serverSettingsChanged=${serverSettingsChanged.value}")
+                //Log.d(TAG, "NewServerPage serverSettingsChanged=${serverSettingsChanged.value}")
                 if (serverSettingsChanged.value) {
                     //TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                     val loadingDialog by TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.observeAsState()

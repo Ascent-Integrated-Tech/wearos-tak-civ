@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-keep class live.ditto.internal.swig.ffi.** { *; }
+-keep class live.ditto.** { *; }
+-keepnames class com.fasterxml.jackson.** { *; }
