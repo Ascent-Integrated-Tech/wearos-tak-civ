@@ -1040,10 +1040,10 @@ class MainActivity : ComponentActivity() {
         startStopServicesLicense()
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
-        var isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
+        val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
         Log.d(TAG, "isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
         // TODO: ONLY FOR TESTiNG. Remove line below and set var isAccessibilityServiceEnabled to val
-        isAccessibilityServiceEnabled = true
+        //isAccessibilityServiceEnabled = true
         if (!isAccessibilityServiceEnabled) {
             Log.d(TAG, "isAccessibilityServiceEnabled false and trying to open Accessibility Settings")
             /*

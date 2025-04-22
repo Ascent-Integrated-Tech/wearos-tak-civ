@@ -231,7 +231,8 @@ class DataRepository(private val context: Context) {
             if (jsonString.isNullOrEmpty()) {
                 emptyList()
             } else {
-                val type = object : TypeToken<List<WifiSsidItem>>() {}.type
+                val typeToken = object : TypeToken<List<WifiSsidItem>>() {}
+                val type = typeToken.type
                 gson.fromJson<List<WifiSsidItem>>(jsonString, type)
             }
         }
@@ -325,7 +326,8 @@ class DataRepository(private val context: Context) {
             if (jsonString.isNullOrEmpty()) {
                 emptyList()
             } else {
-                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+                val type = typeToken.type
                 gson.fromJson<List<TakServerItem>>(jsonString, type)
             }
         }
@@ -344,7 +346,8 @@ class DataRepository(private val context: Context) {
             val currentJson = preferences[TAK_SERVER_LIST_KEY]
             Log.d(TAG, "addTakServerItem: $item, currJsonList: ${currentJson.toString()}")
             val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+                val type = typeToken.type
                 gson.fromJson(currentJson, type)
             } else {
                 mutableListOf()
@@ -362,7 +365,8 @@ class DataRepository(private val context: Context) {
             val currentJson = preferences[TAK_SERVER_LIST_KEY]
             Log.d(TAG, "removeTakServerItem: $item, currJsonList: ${currentJson.toString()}")
             val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+                val type = typeToken.type
                 gson.fromJson(currentJson, type)
             } else {
                 mutableListOf()
@@ -380,7 +384,8 @@ class DataRepository(private val context: Context) {
             val currentJson = preferences[TAK_SERVER_LIST_KEY]
             Log.d(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")
             val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-                val type = object : TypeToken<List<TakServerItem>>() {}.type
+                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+                val type = typeToken.type
                 gson.fromJson(currentJson, type)
             } else {
                 mutableListOf()
