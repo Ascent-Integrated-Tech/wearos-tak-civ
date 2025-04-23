@@ -30,6 +30,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.events.LocationRcvd
+import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
@@ -200,10 +201,17 @@ class LocationService : Service() {
         }
     }
 
-
     inner class LocationServiceBinder : Binder() {
         val service: LocationService
             get() = this@LocationService
+    }
+
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    public fun onLocationUpdateRequiredEvent(locationUpdateRequired: LocationUpdateRequired) {
+        Log.d(TAG, "Received LocationUpdateRequired. Stopping and starting location updates")
+        stopLocationProvider()
+        destroyLocationThread()
+        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
