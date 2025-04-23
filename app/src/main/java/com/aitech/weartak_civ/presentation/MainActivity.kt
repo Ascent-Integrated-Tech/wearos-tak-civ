@@ -2272,7 +2272,7 @@ fun NewServerPage(navController: NavController) {
                         }
                     }
                 )
-                Log.d(TAG, "NewServerPage serverSettingsChanged=${serverSettingsChanged.value}")
+                //Log.d(TAG, "NewServerPage serverSettingsChanged=${serverSettingsChanged.value}")
                 if (serverSettingsChanged.value) {
                     //TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                     val loadingDialog by TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.observeAsState()
