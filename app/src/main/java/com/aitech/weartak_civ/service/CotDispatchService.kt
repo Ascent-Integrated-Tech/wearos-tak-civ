@@ -28,6 +28,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
+import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
@@ -57,9 +58,15 @@ class CotDispatchService : Service() {
     private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
-    var lastLocationUpdateRcvd : Long = 0L
+    private var lastLocationUpdateRcvd: Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
     private val ioScope = CoroutineScope(Dispatchers.IO)
+    private val markerDropToBeSent = AtomicBoolean(false)
+    private var markerDropReceivedTime: Long = 0L
+    private val manualSosToBeSent = AtomicBoolean(false)
+    private var manualSosReceivedTime: Long = 0L
+    private var manualSosReceivedCategory: String = ""
+    private var manualSosReceivedDescription: String  = ""
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -216,10 +223,20 @@ class CotDispatchService : Service() {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            if (location != null) {
-                sendEmergencyAlertCotMessage(location, event.category, event.description)
+        manualSosReceivedCategory = event.category
+        manualSosReceivedDescription = event.description
+        val currTime = System.currentTimeMillis()
+        if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
+            Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+            manualSosReceivedTime = currTime
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
+        } else {
+            if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
+                Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+                manualSosReceivedTime = currTime
+                EventBus.getDefault().post(LocationUpdateRequired())
+            } else {
+                Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent ${manualSosToBeSent.get()} & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             }
         }
     }
@@ -352,16 +369,43 @@ class CotDispatchService : Service() {
          */
     }
 
-    private fun sendMarkerCotMessage(location: Location, heartRate: Int, battery: Int) {
-        val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
-        sendDataTAKServers(cotMessage, true)
-        Log.v(TAG, "Marker CoT message sent: $cotMessage")
+    private fun sendMarkerCotMessage() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val location = dataRepository.latestLocation.value
+            if (TAKConnectService.isAnyTakConnected && (location != null)) {
+                markerDropToBeSent.set(false)
+                var heartRate = dataRepository.latestHeartRate.value
+                var battery = dataRepository.latestBatteryPercentage.value
+                if (heartRate == null) {
+                    heartRate = -1
+                }
+                if (battery == null) {
+                    battery = -1
+                }
+                val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
+                sendDataTAKServers(cotMessage, true)
+                Log.v(TAG, "Marker CoT message sent: $cotMessage")
+            } else {
+                Log.w(TAG, "Marker CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
+                markerDropToBeSent.set(true)
+                //markerDropReceivedTime = System.currentTimeMillis() // NOTE: This is taken care of in the calling function
+            }
+        }
     }
 
-    private fun sendEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String) {
-        val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
-        sendDataTAKServers(cotMessage, true)
-        Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val location = dataRepository.latestLocation.value
+            if (TAKConnectService.isAnyTakConnected && (location != null)) {
+                manualSosToBeSent.set(false)
+                val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
+                sendDataTAKServers(cotMessage, true)
+                Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
+            } else {
+                Log.w(TAG, "EmergencyAlert CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
+                manualSosToBeSent.set(true)
+            }
+        }
     }
 
     fun buildAndSendLocationBiometricCotMessage() {
@@ -405,6 +449,14 @@ class CotDispatchService : Service() {
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         //Log.d(TAG, "onLocationRcvdEvent called")
         // We would like to send the "freshest" location especially if location update is 10s or greater
+        if (markerDropToBeSent.get() == true) {
+            Log.d(TAG, "onLocationRcvdEvent called with markerDropToBeSent true")
+            sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
+        }
+        if (manualSosToBeSent.get() == true) {
+            Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription)
+        }
         lastLocationUpdateRcvd = System.currentTimeMillis()
         buildAndSendLocationBiometricCotMessage()
     }
@@ -413,28 +465,26 @@ class CotDispatchService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
-        //Log.d(TAG, "onMessageEvent w/ msg($msg)")
-        if (TAKConnectService.isAnyTakConnected) {
+        Log.d(TAG, "onMessageEvent w/ msg($msg)")
             if (DROP_MARKER == msg) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    val location = dataRepository.latestLocation.value
-                    var heartRate = dataRepository.latestHeartRate.value
-                    var battery = dataRepository.latestBatteryPercentage.value
-                    if (location != null) {
-                        if (heartRate == null) {
-                            heartRate = -1
-                        }
-                        if (battery == null) {
-                            battery = -1
-                        }
-                        sendMarkerCotMessage(location, heartRate, battery)
+                val currTime = System.currentTimeMillis()
+                if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
+                    Log.d(TAG, "DROP_MARKER with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+                    markerDropReceivedTime = currTime
+                    sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
+                } else {
+                    if (markerDropToBeSent.getAndSet(true) == false) {
+                        Log.d(TAG, "DROP_MARKER with markerDropToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+                        markerDropReceivedTime = currTime
+                        EventBus.getDefault().post(LocationUpdateRequired())
+                    } else {
+                        Log.d(TAG, "DROP_MARKER with markerDropToBeSent true & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
                     }
                 }
             } else if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
                 // send the "freshest" cot message with the newly updated callsign
                 buildAndSendLocationBiometricCotMessage()
             }
-        }
     }
 
     /*
@@ -463,6 +513,9 @@ class CotDispatchService : Service() {
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
+        // Time interval within which GPS is considered "fresh"
+        // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed
+        private const val FRESH_GPS_INTERVAL = 3_000L
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         var reportingUpdateIntervalSecs = 10
