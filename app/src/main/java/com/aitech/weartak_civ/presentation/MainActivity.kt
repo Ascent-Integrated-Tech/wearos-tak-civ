@@ -1128,6 +1128,20 @@ class MainActivity : ComponentActivity() {
         return changed
     }
 
+    fun convertWifiSsidListToStringWithSeparator(wifiSsidList: List<DataRepository.WifiSsidItem>, separatorStr: String): String {
+        var result = ""
+        if (!wifiSsidList.isEmpty()) {
+            for (wifiSsid in wifiSsidList) {
+                if ("".equals(result)) {
+                    result = wifiSsid.name
+                } else {
+                    result = "$result$separatorStr${wifiSsid.name}"
+                }
+            }
+        }
+        return result
+    }
+
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, " === === Handling Managed Config Update ===")
 
@@ -1224,7 +1238,7 @@ class MainActivity : ComponentActivity() {
 
         val enableWifiBatteryOptimizationConfigUpdate = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
         val enableAllWifiBatteryOptimizationConfigUpdate = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
-        val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", "")
+        val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", convertWifiSsidListToStringWithSeparator(wifiSsidList, "||"))
         val wifiOptimizationSsidList: List<DataRepository.WifiSsidItem> = wifiOptimizationSsidString.split("||") // Split by two pipes, unlikely a random generated SSID has
             .map { it.trim() } // Trim whitespace from each SSID
             .filter { it.isNotEmpty() } // Remove any empty values
@@ -1243,6 +1257,7 @@ class MainActivity : ComponentActivity() {
             if (enableWifiBatteryOptimization != enableWifiBatteryOptimizationConfigUpdate) {
                 enableWifiBatteryOptimization = enableWifiBatteryOptimizationConfigUpdate
                 dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
+                Log.d(TAG, "enableWifiBatteryOptimization changed to $enableWifiBatteryOptimization")
                 changed = true
             }
             if (enableAllWifiBatteryOptimization != enableAllWifiBatteryOptimizationConfigUpdate) {
@@ -1250,9 +1265,11 @@ class MainActivity : ComponentActivity() {
                 dataRepository.storeEnableAllWifiBatteryOptimization(
                     enableAllWifiBatteryOptimization
                 )
+                Log.d(TAG, "enableAllWifiBatteryOptimization changed to $enableAllWifiBatteryOptimization")
                 changed = true
             }
             if (wifiSsidList != wifiOptimizationSsidList) {
+                Log.d(TAG, "MC wifiSsidList($wifiOptimizationSsidList), wifiSsidList($wifiSsidList)")
                 wifiSsidList = wifiOptimizationSsidList
                 dataRepository.storeWifiSsidList(wifiSsidList)
                 changed = true
@@ -1269,7 +1286,7 @@ class MainActivity : ComponentActivity() {
                 roleEntriesValuesList = RolesJson(rolesList, rolesList)
                 initRoleAndRoleValue()
             }
-            if ((null != teamsNames) || (null != teamsColors)) {
+            if ((null != teamsNames) && (null != teamsColors)) {
                 Log.v(TAG, "teamsNames: $teamsNames")
                 Log.v(TAG, "teamsColors: $teamsColors")
                 if (null != teamsNames) { dataRepository.storeTeamNames(teamsNames) }
@@ -1277,8 +1294,10 @@ class MainActivity : ComponentActivity() {
                 initTeamEntriesValuesList(teamsNames.split(","), teamsColors.split(","))
                 initTeamAndTeamValue()
             }
-            // Send out EventBus message even if there is no change
-            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+            if ((null != rolesEntries) || ((null != teamsNames) && (null != teamsColors))) {
+                // Send out EventBus message even if there is no actual change
+                EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+            }
 
             changed = false
             if (takServerListConfig.size > 0) {
