@@ -2099,6 +2099,8 @@ fun NewServerPage(navController: NavController) {
         val context = LocalContext.current
         val serverSettingsChanged = remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
+        val index by remember { mutableStateOf(takServerListState.value?.size ?: 0)}
+        Log.d(TAG, "NewServerPage takServerListState index=$index")
 
         Box(
             modifier = Modifier
@@ -2244,10 +2246,14 @@ fun NewServerPage(navController: NavController) {
                                     val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
                                         isP12Cert, username, password, "", "", newReportingUpdateInterval)
                                     runBlocking {
-                                        dataRepository.addTakServerItem(takServerItem)
+                                        dataRepository.updateTakServerItem(index, takServerItem)
                                     }
                                     val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                                    mutableTakServerList.add(takServerItem)
+                                    if (index == mutableTakServerList.size) {
+                                        mutableTakServerList.add(takServerItem)
+                                    } else {
+                                        mutableTakServerList.set(index, takServerItem)
+                                    }
                                     takServerList = mutableTakServerList.toList()
                                     takServerListState.postValue(takServerList)
                                     serverSettingsChanged.value = true
@@ -2572,7 +2578,7 @@ fun EditServerPage(
                                         if (serverConnSettingsChanged.value || reportingIntervalChanged) {
                                             Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value} or reportingIntervalChanged=$reportingIntervalChanged")
                                             EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
-                                            if (reportingIntervalChanged) {
+                                            if (reportingIntervalChanged || !changedTakServerDetail.isEnabled) {
                                                 // Go back to previous page
                                                 navController.navigate("tak_server_screen") {
                                                     popUpTo(("tak_server_screen")) {
