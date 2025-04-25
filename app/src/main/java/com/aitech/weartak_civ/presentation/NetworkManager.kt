@@ -23,6 +23,7 @@ import com.aitech.weartak_civ.events.NwConnEvent.Companion.CELLULAR
 import org.greenrobot.eventbus.EventBus
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.events.WifiSsidRcvd
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
 
 
 class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags)  {
@@ -63,12 +64,14 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     fun checkNetworkConnected(network: Network?, networkCapabilities: NetworkCapabilities?) {
         //Log.d(TAG, "network (${network?.toString()}); networkCapabilities (${connectivityManager?.getNetworkCapabilities(network)?.toString()})")
         //Log.d(TAG, "activeNetwork (${connectivityManager?.activeNetwork?.toString()}); activeNetworkCapabilities (${connectivityManager?.getNetworkCapabilities(connectivityManager?.activeNetwork)?.toString()})")
-
+        //writeToLogFileLocation("network (${network?.toString()}); networkCapabilities (${connectivityManager?.getNetworkCapabilities(network)?.toString()})")
+        //writeToLogFileLocation("activeNetwork (${connectivityManager?.activeNetwork?.toString()}); activeNetworkCapabilities (${connectivityManager?.getNetworkCapabilities(connectivityManager?.activeNetwork)?.toString()})")
         val activeNetwork = network ?: connectivityManager?.activeNetwork
         val activeNetworkCapabilities = networkCapabilities ?: connectivityManager?.getNetworkCapabilities(activeNetwork)
         var networkInfoChanged = false
         var currWifiSsid : String? = null
         //Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); activeNetworkCapabilities (${activeNetworkCapabilities?.toString()})")
+        //writeToLogFileLocation("checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); activeNetworkCapabilities (${activeNetworkCapabilities?.toString()})")
         // TODO: Need to test with SSIDs of hidden networks
         // If wifi is connected but the wifi AP is NOT connected to internet, we still show as connected to wifi.
         if ((null != activeNetwork) && (null != activeNetworkCapabilities)) {
@@ -118,8 +121,10 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
             }
         }
         Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
+        //writeToLogFileLocation("isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         if (networkInfoChanged) {
             Log.d(TAG, "Change detected in network connection information.Sending NwConnEvent")
+            //writeToLogFileLocation("Change detected in network connection information.Sending NwConnEvent")
             EventBus.getDefault().post(NwConnEvent(isNetworkConnected, if (isWifi == true) { WIFI } else { CELLULAR }))
             if (currWifiSsid != connectedWifiSsid) {
                 Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
@@ -130,6 +135,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
             }
         } else {
             //Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
+            //writeToLogFileLocation("No change detected in network connection information.So NOT sending NwConnEvent")
             // If checkNetworkConnected is called with both params null, we only change SSID if isNetworkConnected is false (i.e., currWifiSsid == null)
             if ((null == network) && (null == networkCapabilities)) {
                 if ((null == currWifiSsid) && (currWifiSsid != connectedWifiSsid)) {
@@ -150,23 +156,27 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
         Log.d(TAG, "onCapabilitiesChanged called")
+        //writeToLogFileLocation("onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
     }
 
     override fun onAvailable(network: Network) {
         super.onAvailable(network)
         Log.d(TAG, "onAvailable called")
+        //writeToLogFileLocation("onAvailable called")
         checkNetworkConnected()
     }
 
     override fun onLost(network: Network) {
         super.onLost(network)
         Log.d(TAG, "onLost called")
+        //writeToLogFileLocation("onLost called")
         checkNetworkConnected()
         // Immediately checking network connectivity when previously only on cellular via checkNetworkConnected sometimes returns network (especially cellular) as still being connected.
         // Hence we call checkNetworkConnected function twice with delay of 2s and 10s. Never seen 2s fail to give the correct information but just in case, we do a repeat after 8 seconds.
         handler.postDelayed({ Log.d(TAG, "Calling checkNetworkConnected from onLost with delay $INITIAL_ON_LOST_DELAY_MS"); checkNetworkConnected() }, INITIAL_ON_LOST_DELAY_MS)
         handler.postDelayed({ Log.d(TAG, "Calling checkNetworkConnected from onLost with delay $RECHECK_ON_LOST_DELAY_MS"); checkNetworkConnected() }, RECHECK_ON_LOST_DELAY_MS)
+        //handler.postDelayed({ Log.d(TAG, "Calling checkNetworkConnected from onLost with delay $RECHECK_ON_LOST_DELAY_MS"); writeToLogFileLocation("Calling checkNetworkConnected from onLost with delay $RECHECK_ON_LOST_DELAY_MS"); checkNetworkConnected() }, RECHECK_ON_LOST_DELAY_MS)
     }
 
     override fun onUnavailable() {

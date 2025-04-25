@@ -240,6 +240,11 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import java.io.File
+import java.io.FileWriter
+import java.io.IOException
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.math.min
 
 
@@ -298,7 +303,18 @@ class MainActivity : ComponentActivity() {
 
 
         var versionNumber : String = ""
+        // TODO: Move logFile to new Utils.kt file
         var logFile: java.io.File? = null
+        private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        fun writeToLogFileLocation(data: String) {
+            try {
+                val writer = FileWriter(logFile, true) // Append to existing file
+                writer.write("${LocalDateTime.now().format(logFileFormatter)}: $data\n")
+                writer.close()
+            } catch (e: IOException) {
+                Log.e("Error", "Failed to write log to file", e)
+            }
+        }
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
