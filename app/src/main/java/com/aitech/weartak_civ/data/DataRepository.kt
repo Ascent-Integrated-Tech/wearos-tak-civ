@@ -389,6 +389,7 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // updateTakServerItem will act as addTakServerItem if oldItemIndex is greater than or equal to size of already stored list
     suspend fun updateTakServerItem(oldItemIndex: Int, newItem: TakServerItem) {
         context.dataStore.edit { preferences ->
             val currentJson = preferences[TAK_SERVER_LIST_KEY]
@@ -402,8 +403,16 @@ class DataRepository(private val context: Context) {
                 mutableListOf()
             }
 
+            val currentListSize = currentList.size
             if (oldItemIndex != -1) {
-                currentList[oldItemIndex] = newItem
+                if (oldItemIndex < currentListSize) {
+                    currentList[oldItemIndex] = newItem
+                } else {
+                    currentList.add(newItem)
+                    if (oldItemIndex != currentListSize) {
+                        Log.w(TAG, "updateTakServerItem: WARNING index($oldItemIndex) passed is greater than stored list size($currentListSize)")
+                    }
+                }
             }
 
             val newJson = gson.toJson(currentList)
