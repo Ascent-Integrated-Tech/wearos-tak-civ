@@ -70,7 +70,6 @@ class CotDispatchService : Service() {
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
-    private var formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -142,15 +141,6 @@ class CotDispatchService : Service() {
     }
 
     private val cotDispatchRunnable = object : Runnable {
-        fun writeToFileLocation() {
-            try {
-                val writer = FileWriter(logFile, true) // Append to existing file
-                writer.write("${LocalDateTime.now().format(formatter)}: Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable\n")
-                writer.close()
-            } catch (e: IOException) {
-                Log.e("Error", "Failed to write log to file", e)
-            }
-        }
         override fun run() {
             if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
@@ -158,7 +148,7 @@ class CotDispatchService : Service() {
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
                 // Once watch catches GPS, updates are at max 1s.
                 //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
-                //writeToFileLocation()
+                //writeToLogFileLocation("Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
@@ -433,16 +423,6 @@ class CotDispatchService : Service() {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServers(cotMessage, false)
         //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
-
-        /*
-        try {
-            val writer = FileWriter(logFile, true) // Append to existing file
-            writer.write("${LocalDateTime.now().format(formatter)}: Location/Biometric CoT message sent: $cotMessage\n")
-            writer.close()
-        } catch (e: IOException) {
-            Log.e("Error", "Failed to write log to file", e)
-        }
-         */
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)

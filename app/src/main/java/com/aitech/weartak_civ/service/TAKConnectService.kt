@@ -727,10 +727,14 @@ class TAKConnectService: Service() {
         }
 
         fun deleteFile(fileName: String) {
-            if (MainActivity.mainActivity.deleteFile(fileName)) {
-                Log.d(TAG, "Successfully removed $fileName")
-            } else {
-                Log.w(TAG, "Could not remove $fileName")
+            try {
+                if (MainActivity.mainActivity.deleteFile(fileName)) {
+                    Log.d(TAG, "Successfully removed $fileName")
+                } else {
+                    Log.w(TAG, "Could not remove $fileName")
+                }
+            } catch(e: Exception) {
+                Log.e(TAG, "ERROR in deleteFile: ${e.message}", e)
             }
         }
 
@@ -1084,6 +1088,7 @@ class TAKConnectService: Service() {
 
 
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
+            //Log.d(TAG, "sendData called")
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     if ((null != takServerDetail.secureSocket) && (takServerDetail.secureSocket?.isConnected == true)) {
