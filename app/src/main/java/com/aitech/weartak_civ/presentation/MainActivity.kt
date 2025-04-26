@@ -1024,8 +1024,8 @@ class MainActivity : ComponentActivity() {
         }
 
          */
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
+        val file: File? = null
+        logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
 //        Log.d(TAG, " === === Teams And Roles === ===")
 //        setTeamsJson()

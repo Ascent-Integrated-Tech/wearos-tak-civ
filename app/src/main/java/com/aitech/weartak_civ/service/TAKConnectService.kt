@@ -21,6 +21,8 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -40,6 +42,7 @@ import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
 import com.aitech.weartak_civ.presentation.NetworkManager
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -60,6 +63,7 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.w3c.dom.Document
 import org.xml.sax.InputSource
+import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -84,6 +88,8 @@ import kotlin.math.max
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
+    private var takReconnectHandler: Handler? = null
+    private var takReconnectThread: HandlerThread? = null
 
     class SignClientResponse {
         var signedCert: String? = null
@@ -117,7 +123,6 @@ class TAKConnectService: Service() {
         var lastTimeMsgSent: Long = 0L
     )
 
-
     override fun onCreate() {
         Log.d(TAG, "TAKConnectService onCreate")
         if (!EventBus.getDefault().isRegistered(this)) {
@@ -126,6 +131,41 @@ class TAKConnectService: Service() {
         return super.onCreate()
     }
 
+    private fun startTakReconnectScheduler() {
+        Log.v(TAG, "Starting TAK Reconnect scheduler")
+        writeToLogFileLocation("Starting TAK Reconnect scheduler")
+        takReconnectThread = HandlerThread("TakReconnectThread")
+        takReconnectThread?.start()
+        takReconnectHandler = takReconnectThread?.looper?.let { Handler(it) }
+
+        // Schedule first run
+        takReconnectHandler?.postDelayed(takReconnectRunnable, TAK_RECONNECT_INTERVAL_MS)
+    }
+
+    private fun stopTakReconnectScheduler() {
+        Log.v(TAG, "Stopping TAK Reconnect scheduler")
+        takReconnectHandler?.removeCallbacks(takReconnectRunnable)
+        takReconnectThread?.quitSafely()
+    }
+
+    private val takReconnectRunnable = object : Runnable {
+        override fun run() {
+            Log.d(TAG, "Called takReconnectRunnable")
+            writeToLogFileLocation("Called takReconnectRunnable")
+            for (takServer in takServerDetails) {
+                if (takServer.isEnabled) {
+                    val connStatus = takServer.connectionStatus.get()
+                    if ((TAK_SERVER_DISCONNECTED == connStatus) ||
+                        (TAK_SERVER_CONNECTED_COT_PORT == connStatus) ||
+                        (TAK_SERVER_CONNECTION_FAILED == connStatus)) {
+                        Log.d(TAG, "takReconnectRunnable numConnAttempts=${takServer.numConnAttempts}")
+                        takServer.numConnAttempts = 0
+                    }
+                }
+            }
+            takReconnectHandler?.postDelayed(this, TAK_RECONNECT_INTERVAL_MS)
+        }
+    }
 
     fun setFromDatastore() {
         runBlocking {
@@ -161,6 +201,7 @@ class TAKConnectService: Service() {
                 Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
                 connectToTakServers()
             }
+            startTakReconnectScheduler()
         }
         return START_NOT_STICKY
     }
@@ -207,6 +248,7 @@ class TAKConnectService: Service() {
         }
         networkManager = null
         closeTakServerSockets()
+        stopTakReconnectScheduler()
     }
 
     private fun resetTakServerConnectionDetails() {
@@ -504,6 +546,8 @@ class TAKConnectService: Service() {
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         const private val TAK_CERT_PASSWORD = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
+        const private val TAK_RECONNECT_INTERVAL_MS = 300_000L // 300 seconds = 5 minutes
+
         var isNetworkConnected = false
         var isWifiConnected = false
         var isAnyTakConnected : Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
@@ -1038,6 +1082,7 @@ class TAKConnectService: Service() {
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
+                    takServerDetail.secureSocket?.soTimeout = 500
                     // Reset counters for connection attempts
                     takServerDetail.numConnAttempts = 0
                     setIsAnyNetworkConnecting()
@@ -1086,16 +1131,45 @@ class TAKConnectService: Service() {
             isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         }
 
+        fun isSSLSocketClosed(socket: SSLSocket?): Boolean {
+            if ((null == socket) || socket.isClosed) {
+                return true
+            }
+            try {
+                // Attempt to read 1 byte without blocking
+                val inputStream = BufferedInputStream(socket.inputStream)
+                inputStream.mark(1) // Mark the current position
+
+                val byteRead = inputStream.read()
+                inputStream.reset()
+                writeToLogFileLocation("isSSLSocketClosed: byteRead($byteRead)")
+                if (-1 == byteRead) {
+                    // End of stream reached, socket is closed
+                    return true
+                } else {
+                    // Data is available or the read would block, socket is likely open
+                    return false
+                }
+            } catch (e: Exception) {
+                writeToLogFileLocation("isSSLSocketClosed exception: ${e.message}")
+                return true
+            }
+        }
 
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
-            //Log.d(TAG, "sendData called")
+            Log.d(TAG, "sendData called")
+            writeToLogFileLocation("sendData called")
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    if ((null != takServerDetail.secureSocket) && (takServerDetail.secureSocket?.isConnected == true)) {
+                    val secureSocket = takServerDetail.secureSocket
+                    Log.d(TAG, "isOutputShutdown: ${secureSocket?.isOutputShutdown}; isClosed: ${secureSocket?.isClosed}; isSSLSocketClosed: ${isSSLSocketClosed(secureSocket)}")
+                    writeToLogFileLocation("isOutputShutdown: ${secureSocket?.isOutputShutdown}; isClosed: ${secureSocket?.isClosed}; isSSLSocketClosed: ${isSSLSocketClosed(secureSocket)}")
+                    if ((null != secureSocket) && (secureSocket.isConnected == true)) {
                         val outputStream = takServerDetail.secureSocket!!.getOutputStream()
                         outputStream.write(msg.toByteArray(charset("UTF-8")))
                         outputStream.flush()
-                        //Log.d(TAG, "Sent data to ${takServerDetail.address}: $msg")
+                        Log.d(TAG, "Sent data to ${takServerDetail.address}: $msg")
+                        writeToLogFileLocation("Sent data to ${takServerDetail.address}: $msg")
                         if (!isNotPli) {
                             takServerDetail.lastTimeMsgSent = max(currTime, takServerDetail.lastTimeMsgSent + takServerDetail.currReportingUpdateInterval*1000L)
 
@@ -1105,6 +1179,8 @@ class TAKConnectService: Service() {
                             Log.d(TAG, "sendData: sent non-PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
                         } */
                     } else {
+                        Log.d(TAG, "sendData 1")
+                        writeToLogFileLocation("sendData 1")
                         if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                             Log.i(TAG, "ERROR sendDataTAKServers to server(${takServerDetail.address}): secureSocket=${takServerDetail.secureSocket}; isConnected: ${takServerDetail.secureSocket?.isConnected ?: false}. Reconnecting....")
                             takServerDetail.secureSocket?.close()
@@ -1116,6 +1192,8 @@ class TAKConnectService: Service() {
                         }
                     }
                 } catch (e: IOException) {
+                    Log.d(TAG, "sendData 2")
+                    writeToLogFileLocation("sendData 2")
                     if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                         Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}): ${e.message}", e)
                         takServerDetail.secureSocket?.close()
@@ -1126,6 +1204,8 @@ class TAKConnectService: Service() {
                         getClientCertificateAndConnect(takServerDetail)
                     }
                 } catch (e: java.lang.Exception) {
+                    Log.d(TAG, "sendData 3")
+                    writeToLogFileLocation("sendData 3")
                     if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                         Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}): ${e.message}", e)
                         takServerDetail.secureSocket?.close()
@@ -1174,7 +1254,8 @@ class TAKConnectService: Service() {
                         } else {
                             if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
                                 // TODO: What about wifi optimization?
-                                //Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
+                                Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
+                                writeToLogFileLocation("${takServerDetail.address}: takServer and COT reporting intervals same")
                                 sendData(takServerDetail, msg, isNotPli, currTime)
                             } else {
                                 //Log.d(TAG, "currTime($currTime) - takServerDetail.lastTimeMsgSent(${takServerDetail.lastTimeMsgSent}) = ${(currTime - takServerDetail.lastTimeMsgSent)*1.2} >= ${(takServerDetail.currReportingUpdateInterval * 1000L)}")
@@ -1194,6 +1275,8 @@ class TAKConnectService: Service() {
                                     } catch (e: Exception) {
                                         Log.e(TAG, "sendDataTAKServers stale time manipulation ERROR: ${e.message}", e)
                                     }
+                                    Log.d(TAG, "sending data")
+                                    writeToLogFileLocation("${takServerDetail.address}: takServer and COT reporting intervals are NOT the same")
                                     sendData(takServerDetail, newMsg, isNotPli, currTime)
                                 }
                                 /* else {
