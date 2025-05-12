@@ -96,6 +96,13 @@
         android:defaultValue=""/>
 
     <restriction
+        android:key="enable_dynamic_reporting_strategy"
+        android:restrictionType="bool"
+        android:title="@string/enable_dynamic_reporting_strategy_title"
+        android:description="@string/enable_dynamic_reporting_strategy_description"
+        android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
+
+    <restriction
         android:key="custom_developer_config_json"
         android:restrictionType="string"
         android:title="@string/custom_developer_config_json_title"
