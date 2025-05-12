@@ -44,6 +44,8 @@ import live.ditto.DittoSyncSubscription
 import live.ditto.android.DefaultAndroidDittoDependencies
 import live.ditto.transports.DittoTransportConfig
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 
 class DittoService : Service() {
 
@@ -58,11 +60,12 @@ class DittoService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        dataRepository = MainActivity.dataRepository // or another injection approach
+
         if (null == getDittoInstance()) {
-            initializeDitto(applicationContext)
+            initializeDitto(applicationContext, dataRepository)
         }
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
-        dataRepository = MainActivity.dataRepository // or another injection approach
         Log.d(TAG, "Oncreate Called")
     }
 
@@ -385,25 +388,33 @@ class DittoService : Service() {
         lateinit var localPeerKeyString: String
         private lateinit var ditto: Ditto
 
-        fun getDittoInstance(): Ditto? {
-            if (!::ditto.isInitialized) {
-                Log.w(TAG, "Ditto instance is not initialized!")
-                return null
-            }
-            return ditto
-        }
 
-        private fun initializeDitto(applicationContext: Context) {
+        fun getDittoInstance(): Ditto? =
+            if (::ditto.isInitialized) ditto else null
+
+        private fun initializeDitto(
+            applicationContext: Context,
+            dataRepository: DataRepository
+        ) {
             Log.d(TAG, "Initializing Ditto")
-            // Initialize Ditto
+
+            if (::ditto.isInitialized) return                 // already done
+
             try {
-                val androidDependencies = DefaultAndroidDittoDependencies(applicationContext)
-                val identity = DittoIdentity.OnlinePlayground(
-                    androidDependencies,
-                    appId = "d0a0ed19-be6f-43ed-bb70-ff95653c98b7",
-                    token = "8b7efdee-5a96-409e-842c-1ed48045de24"
+                // ⬇️  ONE-LINER FIX: block just long enough to get the first value
+                val appId  = runBlocking { dataRepository.dittoAppId.first() }
+                val token  = runBlocking { dataRepository.dittoAuthToken.first() }
+
+                val androidDeps = DefaultAndroidDittoDependencies(applicationContext)
+                val identity    = DittoIdentity.OnlinePlayground(
+                    androidDeps,
+                    appId = appId,
+                    token = token
                 )
-                ditto = Ditto(androidDependencies, identity)
+
+                ditto = Ditto(androidDeps, identity)
+                Log.d(TAG, "Ditto initialized with $appId")
+
             } catch (e: DittoError) {
                 Log.e(TAG, "Failed to initialize Ditto: ${e.message}", e)
             }

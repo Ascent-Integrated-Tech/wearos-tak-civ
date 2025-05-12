@@ -163,6 +163,26 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    suspend fun storeDittoAppId(appId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[DITTO_APP_ID] = appId
+        }
+    }
+
+    val dittoAppId: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[DITTO_APP_ID] ?: "Default Ditto App Id"
+    }
+
+    suspend fun storeDittoAuthToken(token: String) {
+        context.dataStore.edit { prefs ->
+            prefs[DITTO_AUTH_TOKEN] = token
+        }
+    }
+
+    val dittoAuthToken: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[DITTO_AUTH_TOKEN] ?: "Default Ditto Auth Token"
+        }
+
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_LOCATION_SERVICE] ?: true
     }
@@ -432,6 +452,8 @@ class DataRepository(private val context: Context) {
         private val ROLE = stringPreferencesKey("role")
         private val ROLES_LIST = stringPreferencesKey("roles_list")
         private val LICENSE = stringPreferencesKey("license")
+        private val DITTO_APP_ID = stringPreferencesKey("ditto_app_id")
+        private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
