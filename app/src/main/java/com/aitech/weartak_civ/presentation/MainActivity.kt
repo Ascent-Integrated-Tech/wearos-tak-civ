@@ -175,6 +175,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DEL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.service.BleBeaconService
+import com.aitech.weartak_civ.service.MovementDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -203,6 +204,7 @@ class MainActivity : ComponentActivity() {
     companion object Constants {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
         const val EVENT_SEND_DELAY_MS = 1000L
+        const val MOVEMENT_DETECTION_SERVICE_START_DELAY = 20_000L
         lateinit var mainActivity : MainActivity
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
@@ -263,6 +265,7 @@ class MainActivity : ComponentActivity() {
         val wifiSsidListState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf())
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
 
+        var enableDynamicReportingStrategy = false
         var versionNumber : String = ""
         var logFile: java.io.File? = null
 
@@ -503,6 +506,36 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startMovementDetectionService() {
+            if (enableDynamicReportingStrategy) {
+                if (!MovementDetectionService.isRunning.get()) {
+                    Log.d(TAG, "Starting MovementDetectionService")
+                    Handler(Looper.getMainLooper()).postDelayed({ mainActivity.startService(Intent(mainActivity, MovementDetectionService::class.java)) }, MOVEMENT_DETECTION_SERVICE_START_DELAY)
+
+                } else {
+                    Log.d(TAG, "MovementDetection is already running")
+                }
+            } else {
+                Log.d(TAG, "MovementDetection is disabled (enableDynamicReportingStrategy == false)")
+            }
+        }
+
+        fun startStopMovementDetectionService() {
+            if (isLicenseValid()) {
+                if (enableDynamicReportingStrategy) {
+                    startMovementDetectionService()
+                } else {
+                    if (MovementDetectionService.isRunning.get()) {
+                        mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
+                    }
+                }
+            } else {
+                if (MovementDetectionService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
+                }
+            }
+        }
+
         fun startStopoffBodyDetectService() {
             if (isLicenseValid()) {
                 if (enableBiometricsService) {
@@ -556,6 +589,7 @@ class MainActivity : ComponentActivity() {
                 startOffBodyDetectService()
                 startBiometricService()
                 startBatteryService()
+                startMovementDetectionService()
                 startLocationService()
                 startCotDispatchService()
                 startDittoService()
@@ -591,6 +625,9 @@ class MainActivity : ComponentActivity() {
                 }
                 if (BleBeaconService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
+				}
+                if (MovementDetectionService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
                 }
             }
         }
@@ -707,6 +744,7 @@ class MainActivity : ComponentActivity() {
 
          */
         mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
+        mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
         mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
         if (enableBiometricsService) {
@@ -844,6 +882,8 @@ class MainActivity : ComponentActivity() {
             wifiSsidList = dataRepository.getWifiSsidList.first()
             saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
 
+            enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
+
             enableBleBeaconService = dataRepository.getEnableBleBeaconService.first()
             localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
 
@@ -895,13 +935,14 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "License Key:", license)}
                     ${String.format("%-25s %-30s", "Ditto App Id:", dittoAppId)}
                     ${String.format("%-25s %-30s", "Ditto Auth Token:", dittoAuthToken)}
-                    ${String.format("%-25s %-30s", "enable Loc:", enableLocationService.toString())}
-                    ${String.format("%-25s %-30s", "enable Bio:", enableBiometricsService.toString())}
-                    ${String.format("%-25s %-30s", "enable Ditto:", enableDittoService.toString())}
-                    ${String.format("%-25s %-30s", "enable wifi opt:", enableWifiBatteryOptimization.toString())}
-                    ${String.format("%-25s %-30s", "enable all wifi:", enableAllWifiBatteryOptimization.toString())}
+                    ${String.format("%-25s %-30s", "Enable Dynamic Reporting:", enableDynamicReportingStrategy.toString())}
+                    ${String.format("%-25s %-30s", "Enable Loc:", enableLocationService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Bio:", enableBiometricsService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Ditto:", enableDittoService.toString())}
+                    ${String.format("%-25s %-30s", "Enable wifi opt:", enableWifiBatteryOptimization.toString())}
+                    ${String.format("%-25s %-30s", "Enable all wifi:", enableAllWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
-                    ${String.format("%-25s %-30s", "enable BleBeacon:", enableBleBeaconService.toString())}
+                    ${String.format("%-25s %-30s", "Enable BleBeacon:", enableBleBeaconService.toString())}
                     
                     === === Ble Beacons === ===
                     ${String.format("%-25s %-30s", "Number of Localization Ble Beacons:", localizationBleBeaconItemList.size)}
@@ -1125,6 +1166,26 @@ class MainActivity : ComponentActivity() {
         return changed
     }
 
+    fun vibrateWatch(context: Context, durationMs: Long, amplitude: Int) {
+        val vibrator = context.getSystemService(Vibrator::class.java)
+        vibrator?.let {
+            if (it.hasVibrator()) {
+                /*
+                val vibrationEffect = VibrationEffect.createOneShot(
+                    100, // Duration in milliseconds
+                    VibrationEffect.DEFAULT_AMPLITUDE
+                )
+
+                 */
+                val vibrationEffect = VibrationEffect.createOneShot(
+                    durationMs, // Duration in milliseconds
+                    amplitude
+                )
+                it.vibrate(vibrationEffect)
+            }
+        }
+    }
+
     fun convertWifiSsidListToStringWithSeparator(wifiSsidList: List<DataRepository.WifiSsidItem>, separatorStr: String): String {
         var result = ""
         if (!wifiSsidList.isEmpty()) {
@@ -1254,6 +1315,8 @@ class MainActivity : ComponentActivity() {
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
         Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
+
+        val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
 
         val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
@@ -1444,6 +1507,7 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
+            dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
 
             if (!isStringEmptyJson(configJson)) {
                 // Currently don't check for any changes but just post to dataRepository
@@ -1471,6 +1535,11 @@ class MainActivity : ComponentActivity() {
                 enableBleBeaconService = enableBleBeaconServiceConfigUpdate
                 Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
                 if (!calledOnCreate) startStopBleBeaconService()
+            }
+            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
+                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
+                Log.d(TAG, "enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
+                if (!calledOnCreate) startStopMovementDetectionService()
             }
             if (!calledOnCreate) {
                 if (prevLicenseIsValid != isLicenseValid()) {
@@ -2233,20 +2302,6 @@ fun ConfirmationDialogPreview() {
         "pp",
         isConfirmed
     )
-}
-
-
-fun vibrateWatch(context: Context) {
-    val vibrator = context.getSystemService(Vibrator::class.java)
-    vibrator?.let {
-        if (it.hasVibrator()) {
-            val vibrationEffect = VibrationEffect.createOneShot(
-                100, // Duration in milliseconds
-                VibrationEffect.DEFAULT_AMPLITUDE
-            )
-            it.vibrate(vibrationEffect)
-        }
-    }
 }
 
 public fun Modifier.unswipeable() =

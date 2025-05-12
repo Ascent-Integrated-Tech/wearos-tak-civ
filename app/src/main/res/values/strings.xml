@@ -245,6 +245,10 @@
     <string name="wifiOptimization_ssid_list_title" translatable="false">Enabled WiFi Connections List</string>
     <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
 
+    <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
+    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval is increased when device is detected to be moving slowly or stationary.</string>
+    <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
+
     <!-- Developer Json -->
     <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
     <string name="custom_developer_config_json_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>

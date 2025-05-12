@@ -13,8 +13,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 26
-        versionName "0.45"
+        versionCode 30
+        versionName "0.47"
         vectorDrawables {
             useSupportLibrary true
         }

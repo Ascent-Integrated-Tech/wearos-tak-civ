@@ -490,6 +490,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableDynamicReportingStrategy: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: false
+    }
+
+    suspend fun storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = enableDynamicReportingStrategy
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -515,5 +525,6 @@ class DataRepository(private val context: Context) {
         private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")
         private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
+        private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
     }
 }

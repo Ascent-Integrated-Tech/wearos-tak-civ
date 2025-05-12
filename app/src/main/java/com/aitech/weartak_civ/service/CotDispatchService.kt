@@ -500,7 +500,7 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServers(cotMessage, false)
-        //val logString = "Location/Biometric CoT message sent: $cotMessage"
+        //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
         //Log.d(TAG, logString)
         //writeToLogFileLocation(logFile, logString)
     }
