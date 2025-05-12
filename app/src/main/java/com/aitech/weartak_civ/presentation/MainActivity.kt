@@ -851,6 +851,8 @@ class MainActivity : ComponentActivity() {
         logOutput += """
                     === === Service Settings === ===
                     ${String.format("%-25s %-30s", "License Key:", license)}
+                    ${String.format("%-25s %-30s", "Ditto App Id:", dataRepository.dittoAppId)}
+                    ${String.format("%-25s %-30s", "Ditto Auth Token:", dataRepository.dittoAuthToken)}
                     ${String.format("%-25s %-30s", "enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "enable Bio:", enableBiometricsService.toString())}
                     ${String.format("%-25s %-30s", "enable Ditto:", enableDittoService.toString())}
@@ -1221,6 +1223,10 @@ class MainActivity : ComponentActivity() {
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
 
+        val dittoAppId = appRestrictions.getString("ditto_app_id", "defaultAppId")
+        val dittoAuthToken = appRestrictions.getString("ditto_auth_token", "defaultAuthToken")
+        Log.v(TAG, "APP ID: $dittoAppId   |   AUTH TOKEN: $dittoAuthToken")
+
         // store settings persistently & send out events as necessary
         validateLicense(license) // validate the license
 
@@ -1320,9 +1326,12 @@ class MainActivity : ComponentActivity() {
             }
 
             dataRepository.storeLicense(license)
+            dataRepository.storeDittoAppId(dittoAppId)
+            dataRepository.storeDittoAuthToken(dittoAuthToken)
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
+
 
             // At the end, enable / disable services and then enable/disable based on license
             if (enableLocationServiceConfigUpdate != enableLocationService) {

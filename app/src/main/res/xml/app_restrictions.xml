@@ -29,6 +29,21 @@
         android:description="@string/license_key_description"
         android:defaultValue="@string/license_key_default" />
 
+    <!-- Ditto -->
+    <restriction
+        android:key="ditto_auth_token"
+        android:restrictionType="string"
+        android:title="@string/ditto_auth_token_title"
+        android:description="@string/ditto_auth_token_description"
+        android:defaultValue="@string/ditto_auth_token_default" />
+
+    <restriction
+        android:key="ditto_app_id"
+        android:restrictionType="string"
+        android:title="@string/ditto_app_id_title"
+        android:description="@string/ditto_app_id_description"
+        android:defaultValue="@string/ditto_app_id_default" />
+
     <!-- Update Interval -->
 <!--    <restriction-->
 <!--        android:key="update_interval"-->
