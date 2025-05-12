@@ -422,7 +422,7 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServers(cotMessage, false)
-        //Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
+        Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)

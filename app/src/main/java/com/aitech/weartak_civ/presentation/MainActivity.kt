@@ -236,6 +236,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
+import com.aitech.weartak_civ.service.MovementDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -523,6 +524,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startMovementDetectionService(){
+            if (!MovementDetectionService.isRunning.get()) {
+                Log.d(TAG, "Starting MovementDetectionService")
+                mainActivity.startService(Intent(mainActivity, MovementDetectionService::class.java))
+            } else {
+                Log.d(TAG, "MovementDetection is already running")
+            }
+        }
+
         fun startStopoffBodyDetectService() {
             if (isLicenseValid()) {
                 if (enableBiometricsService) {
@@ -576,6 +586,7 @@ class MainActivity : ComponentActivity() {
                 startOffBodyDetectService()
                 startBiometricService()
                 startBatteryService()
+                startMovementDetectionService()
                 startLocationService()
                 startCotDispatchService()
                 startDittoService()
@@ -607,6 +618,9 @@ class MainActivity : ComponentActivity() {
                 }
                 if (PowerManagerService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
+                }
+                if (MovementDetectionService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
                 }
             }
         }
