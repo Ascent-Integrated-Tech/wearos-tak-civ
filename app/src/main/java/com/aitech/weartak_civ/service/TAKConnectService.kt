@@ -529,6 +529,10 @@ class TAKConnectService: Service() {
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
 
+        private val TAK_CONNECT_SERVICE = TAKConnectService()
+        public fun getInstance() : TAKConnectService {
+            return TAK_CONNECT_SERVICE
+        }
         private fun setIsAnyNetworkConnecting() {
             var anyTakConnecting = false
             for (takServerDetail in takServerDetails) {

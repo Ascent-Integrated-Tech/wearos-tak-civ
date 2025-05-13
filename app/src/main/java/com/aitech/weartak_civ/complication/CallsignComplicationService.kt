@@ -9,6 +9,7 @@
 
 package com.aitech.weartak_civ.complication
 
+import android.util.Log
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.PlainComplicationText
@@ -17,8 +18,6 @@ import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
-import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import java.util.Calendar
 
@@ -26,6 +25,9 @@ import java.util.Calendar
  * Skeleton for complication data source that returns short text.
  */
 class CallsignComplicationService : SuspendingComplicationDataSourceService() {
+    companion object {
+        val TAG = "WearTAK-" + CallsignComplicationService::class.java.simpleName
+    }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.SHORT_TEXT) {
@@ -35,6 +37,7 @@ class CallsignComplicationService : SuspendingComplicationDataSourceService() {
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+        //Log.d(TAG, "onComplicationRequest called")
         return when (isLicenseValid()) {
             true -> createComplicationData(callsign, getString(R.string.watch_callsign))
             false -> createComplicationData("INVALID LICENSE", getString(R.string.invalid_license_key))
