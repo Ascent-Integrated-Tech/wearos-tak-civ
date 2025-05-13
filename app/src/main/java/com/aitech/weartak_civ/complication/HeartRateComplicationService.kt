@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.complication
 
+import android.util.Log
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.PlainComplicationText
@@ -13,6 +14,9 @@ import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class HeartRateComplicationService : SuspendingComplicationDataSourceService() {
+    companion object {
+        val TAG = "WearTAK-" + HeartRateComplicationService::class.java.simpleName
+    }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.SHORT_TEXT) {
@@ -22,8 +26,8 @@ class HeartRateComplicationService : SuspendingComplicationDataSourceService() {
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+        //Log.d(TAG, "onComplicationRequest called")
         return when (isLicenseValid()) {
-
             true -> return when (enableBiometricsServiceLiveData.value) {
 //            return when (hr) {
 //                hr -> createComplicationData(hr.toString(), getString(R.string.heart_rate))

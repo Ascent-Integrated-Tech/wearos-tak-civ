@@ -191,6 +191,7 @@ import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 
 
@@ -200,6 +201,7 @@ class MainActivity : ComponentActivity() {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
         const val EVENT_SEND_DELAY_MS = 1000L
         lateinit var mainActivity : MainActivity
+        var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
@@ -221,6 +223,7 @@ class MainActivity : ComponentActivity() {
         lateinit var dataRepository: DataRepository
         @SuppressLint("StaticFieldLeak")
         var networkManager : NetworkManager? = null
+        var takConnectService : TAKConnectService? = null
         private val klaxon = Klaxon()
 
         var team = ""
@@ -228,6 +231,8 @@ class MainActivity : ComponentActivity() {
         var license = "License"
         var teamValue = ""
         var roleValue = ""
+        var dittoAppId = ""
+        var dittoAuthToken = ""
         lateinit var teamEntriesValuesList : TeamsJson
         lateinit var roleEntriesValuesList : RolesJson
         var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
@@ -851,6 +856,9 @@ class MainActivity : ComponentActivity() {
             enableBleBeaconService = dataRepository.getEnableBleBeaconService.first()
             localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
 
+            dittoAppId = dataRepository.getDittoAppId.first()
+            dittoAuthToken = dataRepository.getDittoAuthToken.first()
+
             Log.d(TAG, "============= Done Initializing Settings ===============")
         }
     }
@@ -894,8 +902,8 @@ class MainActivity : ComponentActivity() {
         logOutput += """
                     === === Service Settings === ===
                     ${String.format("%-25s %-30s", "License Key:", license)}
-                    ${String.format("%-25s %-30s", "Ditto App Id:", dataRepository.getDittoAppId)}
-                    ${String.format("%-25s %-30s", "Ditto Auth Token:", dataRepository.getDittoAuthToken)}
+                    ${String.format("%-25s %-30s", "Ditto App Id:", dittoAppId)}
+                    ${String.format("%-25s %-30s", "Ditto Auth Token:", dittoAuthToken)}
                     ${String.format("%-25s %-30s", "enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "enable Bio:", enableBiometricsService.toString())}
                     ${String.format("%-25s %-30s", "enable Ditto:", enableDittoService.toString())}
@@ -972,6 +980,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "MainActivity onCreate called")
         mainActivity = this
+        mainActivityIsInit = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
@@ -984,6 +993,7 @@ class MainActivity : ComponentActivity() {
         // Register BroadcastReceiver to listen for changes
         restrictionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
+                Log.d(TAG, "onReceive Broadcast: ${intent?.action}")
                 if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
                     Log.d(TAG, "Managed Configurations Updated")
                     handleManagedConfigUpdate(false)
@@ -1006,6 +1016,7 @@ class MainActivity : ComponentActivity() {
 
         networkManager = NetworkManager.getInstance()
         networkManager?.init()
+        takConnectService = TAKConnectService.getInstance()
 
         //Obtain version # from build.gradle
         try {
@@ -1245,9 +1256,9 @@ class MainActivity : ComponentActivity() {
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
 
-        val dittoAppId = appRestrictions.getString("ditto_app_id", "")
-        val dittoAuthToken = appRestrictions.getString("ditto_auth_token", "")
-        Log.v(TAG, "APP ID: $dittoAppId   |   AUTH TOKEN: $dittoAuthToken")
+        val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
+        val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
+        Log.v(TAG, "APP ID: $dittoAppIdConfigUpdate   |   AUTH TOKEN: $dittoAuthTokenConfigUpdate")
 
         val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
@@ -1422,11 +1433,17 @@ class MainActivity : ComponentActivity() {
             }
 
             dataRepository.storeLicense(license)
-            if (!dittoAppId.isEmpty()) {
-                dataRepository.storeDittoAppId(dittoAppId)
+            if (!dittoAppIdConfigUpdate.isEmpty()) {
+                if (dittoAppId != dittoAppIdConfigUpdate) {
+                    dittoAppId = dittoAppIdConfigUpdate
+                    dataRepository.storeDittoAppId(dittoAppIdConfigUpdate)
+                }
             }
-            if (!dittoAuthToken.isEmpty()) {
-                dataRepository.storeDittoAuthToken(dittoAuthToken)
+            if (!dittoAuthTokenConfigUpdate.isEmpty()) {
+                if (dittoAuthToken != dittoAuthTokenConfigUpdate) {
+                    dittoAuthToken = dittoAuthTokenConfigUpdate
+                    dataRepository.storeDittoAuthToken(dittoAuthTokenConfigUpdate)
+                }
             }
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
@@ -1795,14 +1812,20 @@ fun connectivityComplicationString() {
 }
 
 fun takServerComplicationString() {
-    var takServerLiveData: MutableLiveData<Boolean> = TAKConnectService.isAnyTakConnectedLiveData
-    var takServerConnectingLiveData: MutableLiveData<Boolean> = TAKConnectService.isAnyTakConnectingLiveData
+    if (null != takConnectService) {
+        var takServerLiveData: MutableLiveData<Boolean> =
+            TAKConnectService.isAnyTakConnectedLiveData
+        var takServerConnectingLiveData: MutableLiveData<Boolean> =
+            TAKConnectService.isAnyTakConnectingLiveData
 
-    if (takServerLiveData.value == true) {
-        takServerStatusComplication = "connected"
-    } else if (takServerConnectingLiveData.value == true){
-        takServerStatusComplication = "connecting"
-    } else if (takServerLiveData.value == false) {
+        if (takServerLiveData.value == true) {
+            takServerStatusComplication = "connected"
+        } else if (takServerConnectingLiveData.value == true) {
+            takServerStatusComplication = "connecting"
+        } else if (takServerLiveData.value == false) {
+            takServerStatusComplication = "disconnected"
+        }
+    } else {
         takServerStatusComplication = "disconnected"
     }
 }

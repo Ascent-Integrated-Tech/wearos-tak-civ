@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.complication
 
 import android.graphics.drawable.Icon
+import android.util.Log
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.PlainComplicationText
@@ -22,8 +23,15 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.connectivityComplicationString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 
 class ConnectivityComplicationService : SuspendingComplicationDataSourceService() {
+    companion object {
+        val TAG = "WearTAK-" + ConnectivityComplicationService::class.java.simpleName
+        var cellComplicationData : SmallImageComplicationData? = null
+        var wifiComplicationData : SmallImageComplicationData? = null
+        var noneComplicationData : SmallImageComplicationData? = null
+    }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.SMALL_IMAGE) {
@@ -32,13 +40,48 @@ class ConnectivityComplicationService : SuspendingComplicationDataSourceService(
         return createComplicationData(Icon.createWithResource(applicationContext, R.drawable.no_cell_wifi), getString(R.string.no_connection))
     }
 
-    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
+        if (null == mainActivityIsInit) {
+            return null
+            /*
+            return when (null != noneComplicationData) {
+                true -> noneComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new noneComplicationData")
+                    noneComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.no_cell_wifi), getString(R.string.no_connection))
+                    return noneComplicationData
+                }
+            }
+
+             */
+        }
+        //Log.d(TAG, "onComplicationRequest called")
         connectivityComplicationString()
         return when (connectivityStatusComplication) {
-            "cell" -> createComplicationData(Icon.createWithResource(applicationContext, R.drawable.cell), getString(R.string.cell))
-            "wifi" -> createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi), getString(R.string.wifi))
-            "none" -> createComplicationData(Icon.createWithResource(applicationContext, R.drawable.no_cell_wifi), getString(R.string.no_connection))
-            else -> throw IllegalArgumentException(getString(R.string.not_capturing_connectivitystatuscomplication, connectivityStatusComplication))
+            "cell" -> when (null != cellComplicationData) {
+                true -> cellComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new cellComplicationData")
+                    cellComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.cell), getString(R.string.cell))
+                    return cellComplicationData
+                }
+            }
+            "wifi" -> when (null != wifiComplicationData) {
+                true -> wifiComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiComplicationData")
+                    wifiComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi), getString(R.string.wifi))
+                    return wifiComplicationData
+                }
+            }
+            else -> when (null != noneComplicationData) {
+                true -> noneComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new noneComplicationData")
+                    noneComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.no_cell_wifi), getString(R.string.no_connection))
+                    return noneComplicationData
+                }
+            }
         }
     }
 

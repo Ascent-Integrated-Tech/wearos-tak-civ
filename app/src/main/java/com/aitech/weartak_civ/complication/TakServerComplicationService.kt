@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.complication
 
 import android.graphics.drawable.Icon
+import android.util.Log
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.PlainComplicationText
@@ -19,13 +20,20 @@ import androidx.wear.watchface.complications.data.SmallImageType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.presentation.takServerComplicationString
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.TAKConnectService
 
 class TakServerComplicationService : SuspendingComplicationDataSourceService() {
+    companion object {
+        val TAG = "WearTAK-" + TakServerComplicationService::class.java.simpleName
+        var connectedComplicationData : SmallImageComplicationData? = null
+        var connectingComplicationData : SmallImageComplicationData? = null
+        var disconnectedComplicationData : SmallImageComplicationData? = null
+    }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.SMALL_IMAGE) {
@@ -34,44 +42,109 @@ class TakServerComplicationService : SuspendingComplicationDataSourceService() {
         return createComplicationData(Icon.createWithResource(applicationContext, R.drawable.tak_server_connected), getString(R.string.server_connected))
     }
 
-    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
+        if (null == mainActivityIsInit) {
+            return null
+            /*
+            return when (null != disconnectedComplicationData) {
+                true -> disconnectedComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new disconnectedComplicationData")
+                    disconnectedComplicationData = createComplicationData(
+                        Icon.createWithResource(
+                            applicationContext,
+                            R.drawable.tak_server_disconnected
+                        ), getString(R.string.server_disconnected)
+                    )
+                    return disconnectedComplicationData
+                }
+            }
+
+             */
+        }
+        //Log.d(TAG, "onComplicationRequest called")
         takServerComplicationString()
+        /*
+        try {
+            Log.d(TAG, "onComplicationRequest called w/ ${TAKConnectService.isRunning.get()}")
+            if (TAKConnectService.isRunning.get()) {
+                takServerComplicationString()
+            } else {
+                takServerStatusComplication = "disconnected"
+            }
+        } catch (e: java.lang.ExceptionInInitializerError) {
+            Log.w(TAG, "ERROR onComplicationRequest: ${e.message}")
+            takServerStatusComplication = "disconnected"
+        } catch (e: java.lang.NoClassDefFoundError) {
+            Log.w(TAG, "ERROR onComplicationRequest: ${e.message}")
+            takServerStatusComplication = "disconnected"
+        }
+
+         */
         return when (isLicenseValid()) {
             true -> return when (takServerStatusComplication) {
-                "connected" -> createComplicationData(
-                    Icon.createWithResource(
-                        applicationContext,
-                        R.drawable.tak_server_connected
-                    ), getString(R.string.server_connected)
-                )
+                "connected" -> when (null != connectedComplicationData) {
+                    true -> connectedComplicationData
+                    false -> {
+                        Log.d(TAG, "Creating new connectedComplicationData")
+                        connectedComplicationData = createComplicationData(
+                            Icon.createWithResource(
+                                applicationContext,
+                                R.drawable.tak_server_connected
+                            ), getString(R.string.server_connected)
+                        )
+                        return connectedComplicationData
+                    }
+                }
 
-                "connecting" -> createComplicationData(
-                    Icon.createWithResource(
-                        applicationContext,
-                        R.drawable.tak_server_connecting
-                    ), getString(R.string.server_connecting)
-                )
+                "connecting" -> when (null != connectingComplicationData) {
+                    true -> connectingComplicationData
+                    false -> {
+                        Log.d(TAG, "Creating new connectingComplicationData")
+                        connectingComplicationData = createComplicationData(
+                            Icon.createWithResource(
+                                applicationContext,
+                                R.drawable.tak_server_connecting
+                            ), getString(R.string.server_connecting)
+                        )
+                        return connectingComplicationData
+                    }
+                }
 
-                "disconnected" -> createComplicationData(
-                    Icon.createWithResource(
-                        applicationContext,
-                        R.drawable.tak_server_disconnected
-                    ), getString(R.string.server_disconnected)
-                )
+                else -> when (null != disconnectedComplicationData) {
+                    true -> disconnectedComplicationData
+                    false -> {
+                        Log.d(TAG, "Creating new disconnectedComplicationData")
+                        disconnectedComplicationData = createComplicationData(
+                            Icon.createWithResource(
+                                applicationContext,
+                                R.drawable.tak_server_disconnected
+                            ), getString(R.string.server_disconnected)
+                        )
+                        return disconnectedComplicationData
+                    }
+                }
 
-                else -> throw IllegalArgumentException(
-                    getString(
-                        R.string.not_capturing_takserverstatuscomplication,
-                        takServerStatusComplication
-                    )
-                )
+//                else -> throw IllegalArgumentException(
+//                    getString(
+//                        R.string.not_capturing_takserverstatuscomplication,
+//                        takServerStatusComplication
+//                    )
+//                )
             }
-            false -> createComplicationData(
-                Icon.createWithResource(
-                    applicationContext,
-                    R.drawable.tak_server_disconnected
-                ), getString(R.string.server_disconnected)
-            )
+            false -> when (null != disconnectedComplicationData) {
+                true -> disconnectedComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new disconnectedComplicationData")
+                    disconnectedComplicationData = createComplicationData(
+                        Icon.createWithResource(
+                            applicationContext,
+                            R.drawable.tak_server_disconnected
+                        ), getString(R.string.server_disconnected)
+                    )
+                    return disconnectedComplicationData
+                }
+            }
         }
 
     }

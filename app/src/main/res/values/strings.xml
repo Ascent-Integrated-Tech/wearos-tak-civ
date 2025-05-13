@@ -94,6 +94,28 @@
     <string name="role_rto">RTO</string>
     <string name="role_k9">K9</string>
 
+    <!-- complication strings -->
+    <string name="watch_callsign" translatable="false" >Watch Callsign</string>
+    <string name="callsign_could_not_be_found" translatable="false">Callsign could not be found</string>
+    <string name="cell" translatable="false">Cell</string>
+    <string name="wifi" translatable="false">Wifi</string>
+    <string name="no_connection" translatable="false">No Connection</string>
+    <string name="not_capturing_connectivitystatuscomplication" translatable="false">not capturing connectivityStatusComplication: %1$s</string>
+    <string name="heart_rate" translatable="false">Heart Rate</string>
+    <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
+    <string name="server_connected" translatable="false">Server Connected</string>
+    <string name="server_connecting" translatable="false">Server Connecting</string>
+    <string name="server_disconnected" translatable="false">Server Disconnected</string>
+    <string name="not_capturing_takserverstatuscomplication" translatable="false">not capturing takServerStatusComplication: %1$s</string>
+    <string name="location_on" translatable="false">Location ON</string>
+    <string name="location_off" translatable="false">Location OFF</string>
+    <string name="callsign_complication" translatable="false">Callsign Complication</string>
+    <string name="heart_rate_complication" translatable="false">Heart Rate Complication</string>
+    <string name="location_services_complication" translatable="false">Location Services Complication</string>
+    <string name="connectivity_complication" translatable="false">Connectivity Complication</string>
+    <string name="tak_server_complication" translatable="false">Tak Server Complication</string>
+    <string name="heart_rate_disabled" translatable="false">Heart Rate Disabled</string>
+
     <!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
     <!--    <string name="tak_server_connection_name_title">TAK Server Connection Name</string>-->
     <!--    <string name="tak_server_connection_name_description">Enter the connection name for the TAK server</string>-->
@@ -265,30 +287,4 @@
 
     <string name="localization_iBeacon_alt_title" translatable="false">Altitude HAE (m)</string>
     <string name="localization_iBeacon_alt_description" translatable="false">Enter Height Above Ellipsoid of iBeacon in meters.</string>
-
-    <!-- TODO: Remove or change this placeholder text -->
-    <string name="hello_blank_fragment" translatable="false" >Hello blank fragment</string>
-
-    <!-- complication strings -->
-    <string name="watch_callsign" translatable="false" >Watch Callsign</string>
-    <string name="callsign_could_not_be_found" translatable="false">Callsign could not be found</string>
-    <string name="cell" translatable="false">Cell</string>
-    <string name="wifi" translatable="false">Wifi</string>
-    <string name="no_connection" translatable="false">No Connection</string>
-    <string name="not_capturing_connectivitystatuscomplication" translatable="false">not capturing connectivityStatusComplication: %1$s</string>
-    <string name="heart_rate" translatable="false">Heart Rate</string>
-    <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
-    <string name="server_connected" translatable="false">Server Connected</string>
-    <string name="server_connecting" translatable="false">Server Connecting</string>
-    <string name="server_disconnected" translatable="false">Server Disconnected</string>
-    <string name="not_capturing_takserverstatuscomplication" translatable="false">not capturing takServerStatusComplication: %1$s</string>
-    <string name="location_on" translatable="false">Location ON</string>
-    <string name="location_off" translatable="false">Location OFF</string>
-    <string name="callsign_complication" translatable="false">Callsign Complication</string>
-    <string name="heart_rate_complication" translatable="false">Heart Rate Complication</string>
-    <string name="location_services_complication" translatable="false">Location Services Complication</string>
-    <string name="connectivity_complication" translatable="false">Connectivity Complication</string>
-    <string name="tak_server_complication" translatable="false">Tak Server Complication</string>
-    <string name="heart_rate_disabled" translatable="false">Heart Rate Disabled</string>
-
 </resources>

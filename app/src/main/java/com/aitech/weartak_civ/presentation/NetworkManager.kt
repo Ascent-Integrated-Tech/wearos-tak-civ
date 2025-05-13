@@ -26,7 +26,6 @@ import org.greenrobot.eventbus.EventBus
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.complication.ConnectivityComplicationService
-import com.aitech.weartak_civ.complication.TakServerComplicationService
 import com.aitech.weartak_civ.events.WifiSsidRcvd
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
