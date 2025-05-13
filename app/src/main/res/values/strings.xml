@@ -188,10 +188,10 @@
     <!-- Ditto -->
     <string name="ditto_auth_token_title" translatable="false">Ditto Online Playground Authentication Token</string>
     <string name="ditto_auth_token_description" translatable="false">Developer token for the big peer instance</string>
-    <string name="ditto_auth_token_default" translatable="false">Insert Online Playground Authentication Token here</string>
+    <string name="ditto_auth_token_default" translatable="false"></string>
     <string name="ditto_app_id_title" translatable="false">Ditto App ID Token</string>
     <string name="ditto_app_id_description" translatable="false">App ID token for ditto big peer</string>
-    <string name="ditto_app_id_default" translatable="false">Insert App ID Token here</string>
+    <string name="ditto_app_id_default" translatable="false"></string>
 
     <!-- Cot Update Interval -->
     <string name="update_interval_title" translatable="false">Update Interval</string>
