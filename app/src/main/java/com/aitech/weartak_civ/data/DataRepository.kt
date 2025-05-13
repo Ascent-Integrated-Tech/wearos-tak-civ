@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -169,7 +168,7 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val dittoAppId: Flow<String> = context.dataStore.data.map { prefs ->
+    val getDittoAppId: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[DITTO_APP_ID] ?: "Default Ditto App Id"
     }
 
@@ -179,9 +178,9 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val dittoAuthToken: Flow<String> = context.dataStore.data.map { prefs ->
+    val getDittoAuthToken: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[DITTO_AUTH_TOKEN] ?: "Default Ditto Auth Token"
-        }
+    }
 
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_LOCATION_SERVICE] ?: true

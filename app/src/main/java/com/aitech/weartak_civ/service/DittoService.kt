@@ -402,8 +402,8 @@ class DittoService : Service() {
 
             try {
                 // ⬇️  ONE-LINER FIX: block just long enough to get the first value
-                val appId  = runBlocking { dataRepository.dittoAppId.first() }
-                val token  = runBlocking { dataRepository.dittoAuthToken.first() }
+                val appId  = runBlocking { dataRepository.getDittoAppId.first() }
+                val token  = runBlocking { dataRepository.getDittoAuthToken.first() }
 
                 val androidDeps = DefaultAndroidDittoDependencies(applicationContext)
                 val identity    = DittoIdentity.OnlinePlayground(

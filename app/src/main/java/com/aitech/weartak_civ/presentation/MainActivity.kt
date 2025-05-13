@@ -180,14 +180,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivitySt
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
-import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.util.Date
-import java.util.Locale
-import kotlin.time.AbstractLongTimeSource
-import kotlin.time.DurationUnit
 
 
 class MainActivity : ComponentActivity() {
@@ -851,8 +846,8 @@ class MainActivity : ComponentActivity() {
         logOutput += """
                     === === Service Settings === ===
                     ${String.format("%-25s %-30s", "License Key:", license)}
-                    ${String.format("%-25s %-30s", "Ditto App Id:", dataRepository.dittoAppId)}
-                    ${String.format("%-25s %-30s", "Ditto Auth Token:", dataRepository.dittoAuthToken)}
+                    ${String.format("%-25s %-30s", "Ditto App Id:", dataRepository.getDittoAppId)}
+                    ${String.format("%-25s %-30s", "Ditto Auth Token:", dataRepository.getDittoAuthToken)}
                     ${String.format("%-25s %-30s", "enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "enable Bio:", enableBiometricsService.toString())}
                     ${String.format("%-25s %-30s", "enable Ditto:", enableDittoService.toString())}
@@ -1223,8 +1218,8 @@ class MainActivity : ComponentActivity() {
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
 
-        val dittoAppId = appRestrictions.getString("ditto_app_id", "defaultAppId")
-        val dittoAuthToken = appRestrictions.getString("ditto_auth_token", "defaultAuthToken")
+        val dittoAppId = appRestrictions.getString("ditto_app_id", "")
+        val dittoAuthToken = appRestrictions.getString("ditto_auth_token", "")
         Log.v(TAG, "APP ID: $dittoAppId   |   AUTH TOKEN: $dittoAuthToken")
 
         // store settings persistently & send out events as necessary
@@ -1326,12 +1321,15 @@ class MainActivity : ComponentActivity() {
             }
 
             dataRepository.storeLicense(license)
-            dataRepository.storeDittoAppId(dittoAppId)
-            dataRepository.storeDittoAuthToken(dittoAuthToken)
+            if (!dittoAppId.isEmpty()) {
+                dataRepository.storeDittoAppId(dittoAppId)
+            }
+            if (!dittoAuthToken.isEmpty()) {
+                dataRepository.storeDittoAuthToken(dittoAuthToken)
+            }
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
-
 
             // At the end, enable / disable services and then enable/disable based on license
             if (enableLocationServiceConfigUpdate != enableLocationService) {
