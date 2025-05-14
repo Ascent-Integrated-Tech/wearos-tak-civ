@@ -182,6 +182,16 @@ class DataRepository(private val context: Context) {
         prefs[DITTO_AUTH_TOKEN] ?: "Default Ditto Auth Token"
     }
 
+    suspend fun storeCustomDeveloperConfigJson(jsonString: String) {
+        context.dataStore.edit { prefs ->
+            prefs[CUSTOM_DEVELOPER_CONFIG_JSON] = jsonString
+        }
+    }
+
+    val getCustomDeveloperConfigJson: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CUSTOM_DEVELOPER_CONFIG_JSON] ?: "{}"
+    }
+
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_LOCATION_SERVICE] ?: true
     }
@@ -503,6 +513,7 @@ class DataRepository(private val context: Context) {
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
         private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
         private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")
-        private val LOCALIZATION_BLE_BEACON_LIST_KEY=stringPreferencesKey("localization_ble_beacon_list")
+        private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
+        private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
     }
 }

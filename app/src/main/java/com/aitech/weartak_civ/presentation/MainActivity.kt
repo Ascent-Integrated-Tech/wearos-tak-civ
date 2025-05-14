@@ -20,6 +20,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.RestrictionEntry
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -186,8 +187,10 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.LocationComplicationService
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
@@ -260,20 +263,8 @@ class MainActivity : ComponentActivity() {
         val wifiSsidListState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf())
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
 
-
         var versionNumber : String = ""
-        // TODO: Move logFile to new Utils.kt file
         var logFile: java.io.File? = null
-        private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        fun writeToLogFileLocation(data: String) {
-            try {
-                val writer = FileWriter(logFile, true) // Append to existing file
-                writer.write("${LocalDateTime.now().format(logFileFormatter)}: $data\n")
-                writer.close()
-            } catch (e: IOException) {
-                Log.e("Error", "Failed to write log to file", e)
-            }
-        }
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
@@ -1158,18 +1149,22 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        /* for (key in appRestrictions.keySet()) {
+        Log.d(TAG, "Managed Configuration Item Size: ${appRestrictions.keySet().size}")
+        /*
+        for (key in appRestrictions.keySet()) {
             val value = appRestrictions.get(key)
             // Retrieve the runtime type name, if available
             val typeName = value?.javaClass?.simpleName ?: "null"
-            //Log.v(TAG, "Key: $key, Value: $value, Type: $typeName")
-        } */
+            Log.v(TAG, "Key: $key, Value: $value, Type: $typeName")
+        }
+         */
 
         val manifestRestrictions = restrictionsManager.getManifestRestrictions("com.aitech.weartak_civ") ?: listOf()
         if (manifestRestrictions.size == 0) {
             Log.w(TAG, "Size of manifestRestrictions is 0. Returning...")
             return
         }
+
         /*
         for (entry in manifestRestrictions) {
             Log.v(TAG, "Manifest Key: ${entry.key}, Declared Type: ${entry.type}")
@@ -1254,11 +1249,11 @@ class MainActivity : ComponentActivity() {
         val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
         val enableBiometricsServiceConfigUpdate = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
-        val configJson = appRestrictions.getString("custom_developer_config_json", "{}")
+        val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
-        Log.v(TAG, "APP ID: $dittoAppIdConfigUpdate   |   AUTH TOKEN: $dittoAuthTokenConfigUpdate")
+        Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
@@ -1449,6 +1444,12 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
+
+            if (!isStringEmptyJson(configJson)) {
+                // Currently don't check for any changes but just post to dataRepository
+                dataRepository.storeCustomDeveloperConfigJson(configJson)
+                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
+            }
 
             // At the end, enable / disable services and then enable/disable based on license
             if (enableLocationServiceConfigUpdate != enableLocationService) {

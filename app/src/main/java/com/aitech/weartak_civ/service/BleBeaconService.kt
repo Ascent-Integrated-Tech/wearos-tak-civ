@@ -24,21 +24,26 @@ import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.Observer
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.getValueFromJson
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
 import com.davidgyoungtech.beaconparsers.IBeaconParser
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.altbeacon.beacon.Beacon
 import org.altbeacon.beacon.BeaconManager
 import org.altbeacon.beacon.BeaconRegion
 import org.altbeacon.beacon.MonitorNotifier
 import org.altbeacon.beacon.Settings
-import org.altbeacon.beacon.service.ArmaRssiFilter
 import org.altbeacon.beacon.service.RunningAverageRssiFilter
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -63,6 +68,7 @@ class BleBeaconService: Service() {
         val alt: Double,
         var bluetoothAddress: String = "", // This field is for debugging and not currently used.
         var proximity: Double = 30.0, // In meters
+        var bleExitHysteresisCount : Int = 0,
         var overrideGpsWithBle: Boolean = true,
         var overrideGpsWithBleExitHysteresisCount: Int = 20, // Number of times BLE distance can be above proximity
                                                               // before we start considering GPS again. (Must be greater than or equal to 0)
@@ -98,8 +104,10 @@ class BleBeaconService: Service() {
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         if(!isRunning.getAndSet(true)) {
             startForegroundService()
-            setDataFromDatastore()
-            startMonitoringBleBeacons()
+            CoroutineScope(Dispatchers.Main).launch {
+                setDataFromDatastore()
+                startMonitoringBleBeacons()
+            }
         }
         return START_NOT_STICKY
     }
@@ -110,17 +118,18 @@ class BleBeaconService: Service() {
             mapLocalizationBeacons.clear()
             if (localizationBleBeaconItemList.size > 0) {
                 for (bleBeacon in localizationBleBeaconItemList) {
-                    val uuid = bleBeacon.uuid
+                    val uuid = bleBeacon.uuid.lowercase()
                     val major = bleBeacon.major
                     val minor = bleBeacon.minor
                     val id: String = "$uuid|$major|$minor"
                     val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, ${bleBeacon.alt})"
-                    //Log.d(TAG, logString)
-                    //writeToLogFileLocation(logString)
-                    val beacon = LocalizationBleBeacon(bleBeacon.uuid, bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, bleBeacon.alt)
+                    Log.d(TAG, logString)
+                    writeToLogFileLocation(logFile, logString)
+                    val beacon = LocalizationBleBeacon(bleBeacon.uuid.lowercase(), bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, bleBeacon.alt)
                     mapLocalizationBeacons.put(id, beacon)
                 }
             }
+            setValuesFromCustomDeveloperConfig()
         }
     }
 
@@ -158,15 +167,42 @@ class BleBeaconService: Service() {
         beaconManager.startRangingBeacons(iBeaconRegion)
     }
 
+    suspend private fun setValuesFromCustomDeveloperConfig() {
+        val jsonString = dataRepository.getCustomDeveloperConfigJson.first()
+        // Check for BLE_EXIT_HYSTERESIS_COUNT and BLE_STALE_TIME_INTERVAL_MS
+        // Json could be {"bleExitHysteresisCount" : "20", "bleStaleTimeIntervalMs" : "5000", "overrideGpsWithBleExitHysteresisCount" : "30", "gpsStaleTimeInterval" : "10000" }
+        var value: String? = getValueFromJson(jsonString, BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY)
+        if (null != value) {
+            val intValue = value.toIntOrNull()
+            Log.d(TAG, "$BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY: $intValue")
+            if (null != intValue) {
+                BLE_EXIT_HYSTERESIS_COUNT = intValue
+            }
+        }
+        value = getValueFromJson(jsonString, BLE_STALE_TIME_INTERVAL_MS_JSON_KEY)
+        if (null != value) {
+            val longValue = value.toLongOrNull()
+            Log.d(TAG, "$BLE_STALE_TIME_INTERVAL_MS_JSON_KEY: $longValue")
+            if (null != longValue) {
+                BLE_STALE_TIME_INTERVAL_MS = longValue
+            }
+        }
+    }
+
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
-        if (event.message == LOCALIZATION_BEACONS_CHANGED) {
+        val msg = event.message
+        if (LOCALIZATION_BEACONS_CHANGED == msg) {
             Log.d(TAG, "Received LOCALIZATION_BEACONS_CHANGED message")
             beaconManager.stopRangingBeacons(iBeaconRegion)
             setDataFromDatastore()
-            closestBleBeacon= null;closestBleDistance= -1.0; closestBleBeaconUpdateTime = -1
+            closestBleBeaconId = null; closestBleBeacon = null; closestBleDistance= -1.0; closestBleBeaconUpdateTime = -1
             closestBleLat = 0.0; closestBleLon = 0.0; closestBleAlt = 0.0
             beaconManager.startRangingBeacons(iBeaconRegion)
+        } else if (CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED == msg) {
+            CoroutineScope(Dispatchers.Main).launch {
+                setValuesFromCustomDeveloperConfig()
+            }
         }
     }
 
@@ -201,7 +237,7 @@ class BleBeaconService: Service() {
 
     val centralRangingObserver = Observer<Collection<Beacon>> { beacons ->
         val rangeAgeMillis = System.currentTimeMillis() - (beacons.firstOrNull()?.lastCycleDetectionTimestamp ?: 0)
-        //Log.d(TAG, "centralRangingObserver: rangeAgeMillis($rangeAgeMillis); beacons(${beacons.count()}): $beacons")
+        Log.d(TAG, "centralRangingObserver: rangeAgeMillis($rangeAgeMillis); beacons(${beacons.count()}): $beacons")
         if (rangeAgeMillis < 10000) {
             val updateTime = System.currentTimeMillis()
             for (beacon: Beacon in beacons) {
@@ -209,8 +245,8 @@ class BleBeaconService: Service() {
                 val locBeacon = mapLocalizationBeacons.get(id)
                 if (null != locBeacon) {
                     val logString = "${String.format("%.2f", beacon.distance)}m $beacon"
-                    //Log.d(TAG, logString)
-                    //writeToLogFileLocation(logString)
+                    Log.d(TAG, logString)
+                    //writeToLogFileLocation(logFile, logString)
                     locBeacon.distance = beacon.distance
                     //locBeacon.lastUpdateTime = beacon.lastCycleDetectionTimestamp
                     locBeacon.lastUpdateTime = updateTime
@@ -221,8 +257,8 @@ class BleBeaconService: Service() {
         }
         else {
             val logString = "Ignoring stale ranged beacons from $rangeAgeMillis millis ago"
-            //Log.d(TAG, logString)
-            //writeToLogFileLocation(logString)
+            Log.d(TAG, logString)
+            //writeToLogFileLocation(logFile, logString)
         }
     }
 
@@ -231,7 +267,7 @@ class BleBeaconService: Service() {
         var closestLat : Double = 0.0; var closestLon : Double = 0.0; var closestAlt : Double = 0.0
         for (id in mapLocalizationBeacons.keys) {
             val beacon = mapLocalizationBeacons.get(id)
-            if ((null != beacon) && (beacon.lastUpdateTime >= currTimeMs - STALE_TIME_INTERVAL_MS)) { // Less than STALE_TIME_INTERVAL_MS (5 secs) ago
+            if ((null != beacon) && (beacon.lastUpdateTime >= currTimeMs - BLE_STALE_TIME_INTERVAL_MS)) { // Less than STALE_TIME_INTERVAL_MS (5 secs) ago
                 if (closestDist < 0) {
                     closestId = id; closestDist = beacon.distance; closestUpdateTime = beacon.lastUpdateTime
                     closestLat = beacon.lat; closestLon = beacon.lon; closestAlt = beacon.alt
@@ -239,17 +275,43 @@ class BleBeaconService: Service() {
                     if (beacon.distance < closestDist) {
                         closestId = id; closestDist = beacon.distance; closestUpdateTime = beacon.lastUpdateTime
                         closestLat = beacon.lat; closestLon = beacon.lon; closestAlt = beacon.alt
+                        Log.d(TAG, "4: $id")
                     }
                 }
             }
         }
         if (closestDist >= 0) {
-            closestBleBeacon = closestId; closestBleDistance = closestDist; closestBleBeaconUpdateTime = closestUpdateTime
-            closestBleLat = closestLat; closestBleLon = closestLon; closestBleAlt = closestAlt
+            if (null == closestBleBeaconId) {
+                closestBleBeaconId = closestId; closestBleBeacon = mapLocalizationBeacons[closestId]; closestBleDistance = closestDist
+                closestBleBeaconUpdateTime = closestUpdateTime; closestBleLat = closestLat; closestBleLon = closestLon; closestBleAlt = closestAlt
+                closestBleBeacon?.bleExitHysteresisCount = 0
+            } else {
+                // closestBleBeacon != null
+                val currClosestBeacon: LocalizationBleBeacon = closestBleBeacon!!
+                if (currClosestBeacon.lastUpdateTime < (currTimeMs - 2*BLE_STALE_TIME_INTERVAL_MS)) {
+                    closestBleBeaconId = closestId; closestBleBeacon = mapLocalizationBeacons[closestId]; closestBleDistance = closestDist
+                    closestBleBeaconUpdateTime = closestUpdateTime; closestBleLat = closestLat; closestBleLon = closestLon; closestBleAlt = closestAlt
+                    closestBleBeacon?.bleExitHysteresisCount = 0
+                } else {
+                    if (closestId != closestBleBeaconId) {
+                        if (currClosestBeacon.bleExitHysteresisCount++ >= BLE_EXIT_HYSTERESIS_COUNT) {
+                            currClosestBeacon.bleExitHysteresisCount = 0
+                            closestBleBeaconId = closestId; closestBleBeacon = mapLocalizationBeacons[closestId]; closestBleDistance = closestDist
+                            closestBleBeaconUpdateTime = closestUpdateTime; closestBleLat = closestLat; closestBleLon = closestLon; closestBleAlt = closestAlt
+                        } else {
+                            Log.d(TAG, "In BLE hysteresis w/ count: ${currClosestBeacon.bleExitHysteresisCount}")
+                        }
+                    } else {
+                        currClosestBeacon.bleExitHysteresisCount = 0
+                        closestBleDistance = closestDist; closestBleBeaconUpdateTime = closestUpdateTime
+                        closestBleLat = closestLat; closestBleLon = closestLon; closestBleAlt = closestAlt
+                    }
+                }
+            }
         }
-        val logString = "Closest Beacon($closestBleBeacon, ${mapLocalizationBeacons.get(closestBleBeacon)?.bluetoothAddress}): updated($closestBleBeaconUpdateTime, ${convertTimestampToLocalDateTime(closestBleBeaconUpdateTime)}) dist($closestBleDistance) loc($closestBleLat, $closestBleLon, $closestBleAlt)"
-        //Log.d(TAG, logString)
-        //writeToLogFileLocation(logString)
+        val logString = "Closest Beacon($closestBleBeaconId, ${closestBleBeacon?.bluetoothAddress}): updated($closestBleBeaconUpdateTime, ${convertTimestampToLocalDateTime(closestBleBeaconUpdateTime)}) dist($closestBleDistance) loc($closestBleLat, $closestBleLon, $closestBleAlt)"
+        Log.d(TAG, logString)
+        writeToLogFileLocation(logFile, logString)
     }
 
     fun convertTimestampToLocalDateTime(timestamp: Long, zoneId: ZoneId = ZoneId.systemDefault()): LocalDateTime {
@@ -314,9 +376,13 @@ class BleBeaconService: Service() {
         private val TAG = "WearTAK-" + BleBeaconService::class.java.simpleName
         private const val BLE_BEACON_SERVICE_NOTIFICATION_ID = 1166
         private const val ALT_BEABON_SERVICE_NOTIFICATION_ID = 1167
-        const val STALE_TIME_INTERVAL_MS = 20_000L
+        private var BLE_STALE_TIME_INTERVAL_MS = 5_000L
+        private var BLE_EXIT_HYSTERESIS_COUNT = 10
+        private const val BLE_STALE_TIME_INTERVAL_MS_JSON_KEY = "bleStaleTimeIntervalMs"
+        private const val BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "bleExitHysteresisCount"
         val isRunning: AtomicBoolean = AtomicBoolean(false)
-        var closestBleBeacon: String? = null
+        var closestBleBeaconId: String? = null
+        var closestBleBeacon: LocalizationBleBeacon? = null
         var closestBleDistance: Double = -1.0 // This gives an estimation also of error and currently we assume that horizontal error is the same as the distance
                                               // TODO: we can explicitly provide error estimates
         var closestBleBeaconUpdateTime: Long = -1
