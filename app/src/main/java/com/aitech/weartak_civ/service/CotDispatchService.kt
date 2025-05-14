@@ -24,6 +24,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.getValueFromJson
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.LocationRcvd
@@ -34,13 +36,14 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.writeToLogFileLocation
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.STALE_TIME_INTERVAL_MS
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaconUpdateTime
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDistance
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
@@ -48,6 +51,7 @@ import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -89,6 +93,9 @@ class CotDispatchService : Service() {
         if (!isRunning.getAndSet(true)) {
             startForegroundService()
             startDispatchScheduler()
+            CoroutineScope(Dispatchers.Main).launch {
+                setValuesFromCustomDeveloperConfig()
+            }
         }
         return START_NOT_STICKY
     }
@@ -156,8 +163,8 @@ class CotDispatchService : Service() {
                 // Mostly because watch does not have GPS (e.g., indoor) and fused location at this time
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
                 // Once watch catches GPS, updates are at max 1s.
-                //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
-                //writeToLogFileLocation("Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
+                Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
+                writeToLogFileLocation(logFile, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
@@ -195,24 +202,37 @@ class CotDispatchService : Service() {
         // Ble Beacon
         if (MainActivity.enableBleBeaconService == true) {
             //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
-            if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= STALE_TIME_INTERVAL_MS)) {
+            if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= GPS_STALE_TIME_INTERVAL_MS)) {
                 if (ceActual > closestBleDistance) {
-                    val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                    //Log.d(TAG, logString)
-                    //writeToLogFileLocation(logString)
+                    val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) > bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    Log.d(TAG, logString)
+                    writeToLogFileLocation(logFile, logString)
                     ceActual = closestBleDistance.toFloat()
                     latActual = closestBleLat
                     lonActual = closestBleLon
                     haeActual = closestBleAlt
+                    closestBleBeacon?.overrideGPSWithBLECount = 0
                 } else {
-                    val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                    //Log.d(TAG, logString)
-                    //writeToLogFileLocation(logString)
+                    val currClosestBleBeacon = closestBleBeacon!!
+                    if (currClosestBleBeacon.overrideGPSWithBLECount++ < OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT) {
+                        val logString = "GPS Hysteresis(${currClosestBleBeacon.overrideGPSWithBLECount}) Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                        Log.d(TAG, logString)
+                        writeToLogFileLocation(logFile, logString)
+                        ceActual = closestBleDistance.toFloat()
+                        latActual = closestBleLat
+                        lonActual = closestBleLon
+                        haeActual = closestBleAlt
+                    } else {
+                        currClosestBleBeacon.overrideGPSWithBLECount = 0
+                        val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                        Log.d(TAG, logString)
+                        writeToLogFileLocation(logFile, logString)
+                    }
                 }
             } else {
                 val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
-                //Log.d(TAG, logString)
-                //writeToLogFileLocation(logString)
+                Log.d(TAG, logString)
+                writeToLogFileLocation(logFile, logString)
             }
         }
 
@@ -452,9 +472,9 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServers(cotMessage, false)
-        val logString = "Location/Biometric CoT message sent: $cotMessage"
+        //val logString = "Location/Biometric CoT message sent: $cotMessage"
         //Log.d(TAG, logString)
-        //writeToLogFileLocation(logString)
+        //writeToLogFileLocation(logFile, logString)
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -514,6 +534,12 @@ class CotDispatchService : Service() {
         if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
             // send the "freshest" cot message with the newly updated callsign
             buildAndSendLocationBiometricCotMessage()
+        } else if (CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED == msg) {
+            // Check for OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT and GPS_STALE_TIME_INTERVAL_MS
+            // Json could be {"bleExitHysteresisCount" : "20", "bleStaleTimeIntervalMs" : "5000", "overrideGpsWithBleExitHysteresisCount" : "30", "gpsStaleTimeInterval" : "10000" }
+            CoroutineScope(Dispatchers.Main).launch {
+                setValuesFromCustomDeveloperConfig()
+            }
         }
     }
 
@@ -540,6 +566,28 @@ class CotDispatchService : Service() {
         isRunning.set(false)
     }
 
+    suspend private fun setValuesFromCustomDeveloperConfig() {
+        val jsonString = MainActivity.Constants.dataRepository.getCustomDeveloperConfigJson.first()
+        // Check for BLE_EXIT_HYSTERESIS_COUNT and BLE_STALE_TIME_INTERVAL_MS
+        // Json could be {"bleExitHysteresisCount" : "20", "bleStaleTimeIntervalMs" : "5000", "overrideGpsWithBleExitHysteresisCount" : "30", "gpsStaleTimeInterval" : "10000" }
+        var value: String? = getValueFromJson(jsonString, OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY)
+        if (null != value) {
+            val intValue = value.toIntOrNull()
+            Log.d(TAG, "$OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY: $intValue")
+            if (null != intValue) {
+                OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT = intValue
+            }
+        }
+        value = getValueFromJson(jsonString, GPS_STALE_TIME_INTERVAL_MS_JSON_KEY)
+        if (null != value) {
+            val longValue = value.toLongOrNull()
+            Log.d(TAG, "$GPS_STALE_TIME_INTERVAL_MS_JSON_KEY: $longValue")
+            if (null != longValue) {
+                GPS_STALE_TIME_INTERVAL_MS = longValue
+            }
+        }
+    }
+
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
@@ -547,6 +595,10 @@ class CotDispatchService : Service() {
         // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed
         private const val FRESH_GPS_INTERVAL = 3_000L
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
+        private var GPS_STALE_TIME_INTERVAL_MS = 10_000L
+        private var OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT = 30
+        private const val GPS_STALE_TIME_INTERVAL_MS_JSON_KEY = "gpsStaleTimeInterval"
+        private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         var reportingUpdateIntervalSecs = 10
         var currReportingIntervalInSecs = 10
