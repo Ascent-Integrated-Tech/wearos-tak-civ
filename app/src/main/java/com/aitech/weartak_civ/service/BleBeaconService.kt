@@ -25,6 +25,7 @@ import android.util.Log
 import androidx.lifecycle.Observer
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.getValueFromJson
+import com.aitech.weartak_civ.Utils.jitteredLatLon
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -63,8 +64,10 @@ class BleBeaconService: Service() {
         val uuid: String,
         val major: Int,
         val minor: Int,
-        val lat: Double,
-        val lon: Double,
+        val origLat: Double,
+        val origLon: Double,
+        var lat: Double,
+        var lon: Double,
         val alt: Double,
         var bluetoothAddress: String = "", // This field is for debugging and not currently used.
         var proximity: Double = 30.0, // In meters
@@ -114,6 +117,7 @@ class BleBeaconService: Service() {
 
     private fun setDataFromDatastore() {
         runBlocking {
+            setValuesFromCustomDeveloperConfig()
             val localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
             mapLocalizationBeacons.clear()
             if (localizationBleBeaconItemList.size > 0) {
@@ -122,10 +126,11 @@ class BleBeaconService: Service() {
                     val major = bleBeacon.major
                     val minor = bleBeacon.minor
                     val id: String = "$uuid|$major|$minor"
-                    //val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, ${bleBeacon.alt})"
-                    //Log.d(TAG, logString)
+                    val (jitteredLat, jitteredLon) = jitteredLatLon(bleBeacon.lat, bleBeacon.lon, JITTER_MAX_M)
+                    val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, (jittered: $jitteredLat, $jitteredLon), ${bleBeacon.alt})"
+                    Log.d(TAG, logString)
                     //writeToLogFileLocation(logFile, logString)
-                    val beacon = LocalizationBleBeacon(bleBeacon.uuid.lowercase(), bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, bleBeacon.alt)
+                    val beacon = LocalizationBleBeacon(bleBeacon.uuid.lowercase(), bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, jitteredLat, jitteredLon, bleBeacon.alt)
                     mapLocalizationBeacons.put(id, beacon)
                 }
             }
@@ -187,6 +192,22 @@ class BleBeaconService: Service() {
                 BLE_STALE_TIME_INTERVAL_MS = longValue
             }
         }
+        value = getValueFromJson(jsonString, JITTER_MIN_M_JSON_KEY)
+        if (null != value) {
+            val doubleValue = value.toDoubleOrNull()
+            Log.d(TAG, "$JITTER_MIN_M_JSON_KEY: $doubleValue")
+            if (null != doubleValue) {
+                JITTER_MIN_M = doubleValue
+            }
+        }
+        value = getValueFromJson(jsonString, JITTER_MAX_M_JSON_KEY)
+        if (null != value) {
+            val doubleValue = value.toDoubleOrNull()
+            Log.d(TAG, "$JITTER_MAX_M_JSON_KEY: $doubleValue")
+            if (null != doubleValue) {
+                JITTER_MAX_M = doubleValue
+            }
+        }
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -202,6 +223,11 @@ class BleBeaconService: Service() {
         } else if (CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED == msg) {
             CoroutineScope(Dispatchers.Main).launch {
                 setValuesFromCustomDeveloperConfig()
+                for (beacon in mapLocalizationBeacons.values) {
+                    val (jitteredLat, jitteredLon) = jitteredLatLon(beacon.origLat, beacon.origLon, JITTER_MAX_M)
+                    beacon.lat = jitteredLat
+                    beacon.lon = jitteredLon
+                }
             }
         }
     }
@@ -391,5 +417,9 @@ class BleBeaconService: Service() {
         var closestBleLat: Double = 0.0
         var closestBleLon: Double = 0.0
         var closestBleAlt: Double = 0.0
+        private var JITTER_MIN_M : Double = -2.0
+        private var JITTER_MAX_M : Double = 2.0
+        private const val JITTER_MIN_M_JSON_KEY = "jitterMinM"
+        private const val JITTER_MAX_M_JSON_KEY = "jitterMaxM"
     }
 }
