@@ -10,10 +10,16 @@ import java.io.FileWriter
 import java.io.IOException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 object Utils {
     private const val TAG = "WearTAK-Utils"
     private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
+    const val EARTH_RADIUS = 6378137.0  // in meters
 
     fun isValidJson(jsonString: String) : Boolean {
         if (jsonString.isNullOrEmpty()) return false
@@ -59,5 +65,33 @@ object Utils {
         } catch (e: IOException) {
             Log.e(TAG, "Failed to write log to file: ${e.message}", e)
         }
+    }
+
+    fun jitteredLatLon(lat: Double, lon: Double, maxJitterM: Double): Pair<Double, Double> {
+        val maxJitterUnsignedM = abs(maxJitterM)
+        // Generate random offsets in [-maxJitterUnsignedM, maxJitterUnsignedM] meters
+        val dx = (Math.random() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // East-West
+        val dy = (Math.random() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // North-South
+        Log.d(TAG, "jitteredLatLon: dlatM($dy), dLonM($dx): dist(${(sqrt(dx*dx + dy*dy))})")
+
+        // Convert to angular distance in radians
+        val dLat = dy / EARTH_RADIUS
+        val dLon = dx / (EARTH_RADIUS * cos(Math.toRadians(lat)))
+
+        // Apply to original coordinates
+        val newLat = lat + Math.toDegrees(dLat)
+        val newLon = lon + Math.toDegrees(dLon)
+
+        return Pair(newLat, newLon)
+    }
+
+    fun jitteredLatLon1(lat: Double, lon: Double, minJitterM: Double, maxJitterM: Double): Pair<Double, Double> {
+        val jitterDist = Random.nextDouble(minJitterM, maxJitterM)
+
+        val latitudeJitter = jitterDist * DECIMAL_DEGREES_PER_METER
+        val longitudeJitter = jitterDist * DECIMAL_DEGREES_PER_METER
+
+        return Pair(lat + latitudeJitter, lon + longitudeJitter)
+
     }
 }
