@@ -122,9 +122,9 @@ class BleBeaconService: Service() {
                     val major = bleBeacon.major
                     val minor = bleBeacon.minor
                     val id: String = "$uuid|$major|$minor"
-                    val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, ${bleBeacon.alt})"
-                    Log.d(TAG, logString)
-                    writeToLogFileLocation(logFile, logString)
+                    //val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, ${bleBeacon.alt})"
+                    //Log.d(TAG, logString)
+                    //writeToLogFileLocation(logFile, logString)
                     val beacon = LocalizationBleBeacon(bleBeacon.uuid.lowercase(), bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, bleBeacon.alt)
                     mapLocalizationBeacons.put(id, beacon)
                 }
@@ -237,15 +237,15 @@ class BleBeaconService: Service() {
 
     val centralRangingObserver = Observer<Collection<Beacon>> { beacons ->
         val rangeAgeMillis = System.currentTimeMillis() - (beacons.firstOrNull()?.lastCycleDetectionTimestamp ?: 0)
-        Log.d(TAG, "centralRangingObserver: rangeAgeMillis($rangeAgeMillis); beacons(${beacons.count()}): $beacons")
+        //Log.d(TAG, "centralRangingObserver: rangeAgeMillis($rangeAgeMillis); beacons(${beacons.count()}): $beacons")
         if (rangeAgeMillis < 10000) {
             val updateTime = System.currentTimeMillis()
             for (beacon: Beacon in beacons) {
                 val id = "${beacon.id1}|${beacon.id2}|${beacon.id3}"
                 val locBeacon = mapLocalizationBeacons.get(id)
                 if (null != locBeacon) {
-                    val logString = "${String.format("%.2f", beacon.distance)}m $beacon"
-                    Log.d(TAG, logString)
+                    //val logString = "${String.format("%.2f", beacon.distance)}m $beacon"
+                    //Log.d(TAG, logString)
                     //writeToLogFileLocation(logFile, logString)
                     locBeacon.distance = beacon.distance
                     //locBeacon.lastUpdateTime = beacon.lastCycleDetectionTimestamp
@@ -255,11 +255,14 @@ class BleBeaconService: Service() {
             }
             setClosestBleBeacon(updateTime)
         }
+        /*
         else {
             val logString = "Ignoring stale ranged beacons from $rangeAgeMillis millis ago"
             Log.d(TAG, logString)
             //writeToLogFileLocation(logFile, logString)
         }
+
+         */
     }
 
     private fun setClosestBleBeacon(currTimeMs: Long) {
@@ -275,7 +278,6 @@ class BleBeaconService: Service() {
                     if (beacon.distance < closestDist) {
                         closestId = id; closestDist = beacon.distance; closestUpdateTime = beacon.lastUpdateTime
                         closestLat = beacon.lat; closestLon = beacon.lon; closestAlt = beacon.alt
-                        Log.d(TAG, "4: $id")
                     }
                 }
             }
@@ -299,7 +301,7 @@ class BleBeaconService: Service() {
                             closestBleBeaconId = closestId; closestBleBeacon = mapLocalizationBeacons[closestId]; closestBleDistance = closestDist
                             closestBleBeaconUpdateTime = closestUpdateTime; closestBleLat = closestLat; closestBleLon = closestLon; closestBleAlt = closestAlt
                         } else {
-                            Log.d(TAG, "In BLE hysteresis w/ count: ${currClosestBeacon.bleExitHysteresisCount}")
+                            //Log.d(TAG, "In BLE hysteresis w/ count: ${currClosestBeacon.bleExitHysteresisCount}")
                         }
                     } else {
                         currClosestBeacon.bleExitHysteresisCount = 0
@@ -309,9 +311,9 @@ class BleBeaconService: Service() {
                 }
             }
         }
-        val logString = "Closest Beacon($closestBleBeaconId, ${closestBleBeacon?.bluetoothAddress}): updated($closestBleBeaconUpdateTime, ${convertTimestampToLocalDateTime(closestBleBeaconUpdateTime)}) dist($closestBleDistance) loc($closestBleLat, $closestBleLon, $closestBleAlt)"
-        Log.d(TAG, logString)
-        writeToLogFileLocation(logFile, logString)
+        //val logString = "Closest Beacon($closestBleBeaconId, ${closestBleBeacon?.bluetoothAddress}): updated($closestBleBeaconUpdateTime, ${convertTimestampToLocalDateTime(closestBleBeaconUpdateTime)}) dist($closestBleDistance) loc($closestBleLat, $closestBleLon, $closestBleAlt)"
+        //Log.d(TAG, logString)
+        //writeToLogFileLocation(logFile, logString)
     }
 
     fun convertTimestampToLocalDateTime(timestamp: Long, zoneId: ZoneId = ZoneId.systemDefault()): LocalDateTime {

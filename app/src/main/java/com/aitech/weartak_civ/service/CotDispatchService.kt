@@ -163,8 +163,8 @@ class CotDispatchService : Service() {
                 // Mostly because watch does not have GPS (e.g., indoor) and fused location at this time
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
                 // Once watch catches GPS, updates are at max 1s.
-                Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
-                writeToLogFileLocation(logFile, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
+                //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
+                //writeToLogFileLocation(logFile, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
                 buildAndSendLocationBiometricCotMessage()
             }
             // Schedule the next run
@@ -204,9 +204,9 @@ class CotDispatchService : Service() {
             //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
             if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= GPS_STALE_TIME_INTERVAL_MS)) {
                 if (ceActual > closestBleDistance) {
-                    val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) > bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                    Log.d(TAG, logString)
-                    writeToLogFileLocation(logFile, logString)
+                    //val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) > bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    //Log.d(TAG, logString)
+                    //writeToLogFileLocation(logFile, logString)
                     ceActual = closestBleDistance.toFloat()
                     latActual = closestBleLat
                     lonActual = closestBleLon
@@ -215,24 +215,24 @@ class CotDispatchService : Service() {
                 } else {
                     val currClosestBleBeacon = closestBleBeacon!!
                     if (currClosestBleBeacon.overrideGPSWithBLECount++ < OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT) {
-                        val logString = "GPS Hysteresis(${currClosestBleBeacon.overrideGPSWithBLECount}) Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                        Log.d(TAG, logString)
-                        writeToLogFileLocation(logFile, logString)
+                        //val logString = "GPS Hysteresis(${currClosestBleBeacon.overrideGPSWithBLECount}) Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                        //Log.d(TAG, logString)
+                        //writeToLogFileLocation(logFile, logString)
                         ceActual = closestBleDistance.toFloat()
                         latActual = closestBleLat
                         lonActual = closestBleLon
                         haeActual = closestBleAlt
                     } else {
                         currClosestBleBeacon.overrideGPSWithBLECount = 0
-                        val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                        Log.d(TAG, logString)
-                        writeToLogFileLocation(logFile, logString)
+                        //val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                        //Log.d(TAG, logString)
+                        //writeToLogFileLocation(logFile, logString)
                     }
                 }
             } else {
                 val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
                 Log.d(TAG, logString)
-                writeToLogFileLocation(logFile, logString)
+                //writeToLogFileLocation(logFile, logString)
             }
         }
 
