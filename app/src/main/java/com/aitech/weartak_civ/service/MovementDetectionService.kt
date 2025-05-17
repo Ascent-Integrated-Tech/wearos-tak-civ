@@ -39,7 +39,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var motionStartCandidateTime: Long = 0L
     private var stillStartCandidateTime: Long = 0L
 
-    private val MOVEMENT_THRESHOLD = 10.0f
+    private val MOVEMENT_THRESHOLD = 8.0f
 
     // COT packet interval management
     private val INTERVAL_MOVING = 5000L    // 5 sec
@@ -48,6 +48,15 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     private val transitionHandler = Handler(Looper.getMainLooper())
     private val stillConfirmDelay = 5000L // 5 seconds
+
+    private val HIGH_THRESHOLD = MOVEMENT_THRESHOLD
+    private var lastHighTimestamp = 0L
+    private val MAX_HIGH_INTERVAL = 1000L // max time between highs to be considered consecutive
+
+    private var highCount = 0
+    private var lowCount = 0
+    private val REQUIRED_CONSECUTIVE_HIGHS = 3
+    private val REQUIRED_CONSECUTIVE_LOWS = 3
 
     private val TAG = "MovementDetectionService"
 
@@ -116,9 +125,32 @@ class MovementDetectionService : Service(), SensorEventListener {
                             linearAccel[2] * linearAccel[2]
                 )
 
-                val isPotentialStep = accelMag > MOVEMENT_THRESHOLD
+                //val isPotentialStep = accelMag > MOVEMENT_THRESHOLD
 
-                if (isPotentialStep) {
+                if (accelMag > MOVEMENT_THRESHOLD) {
+                    highCount++
+                    lowCount = 0
+
+                    // Cancel any pending still confirmation
+                    transitionHandler.removeCallbacks(confirmStillRunnable)
+
+                    if (!isUserMoving && highCount >= REQUIRED_CONSECUTIVE_HIGHS) {
+                        isUserMoving = true
+                        updateCotInterval(INTERVAL_MOVING)
+                        Log.d(TAG, "✅ MOVING (3 consecutive HIGHs)")
+                        highCount = 0
+                    }
+                } else {
+                    highCount = 0
+                    lowCount++
+
+                    if (isUserMoving && lowCount >= REQUIRED_CONSECUTIVE_LOWS) {
+                        Log.d(TAG, "⏳ 3 LOWs detected. Scheduling STILL confirmation in 5s")
+                        transitionHandler.postDelayed(confirmStillRunnable, stillConfirmDelay)
+                    }
+                }
+
+                /*if (isPotentialStep) {
                     lastStepTime = currentTime
                     lastMovementTime = currentTime
 
@@ -145,7 +177,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                     } else {
                         stillStartCandidateTime = 0L
                     }
-                }
+                }*/
             }
 
             Sensor.TYPE_GYROSCOPE -> {
