@@ -47,6 +47,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.esriGeojsonMsg
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
@@ -91,6 +92,12 @@ import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategy
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
 import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
@@ -163,6 +170,8 @@ class TAKConnectService: Service() {
                 Log.d(TAG, "                 reportInterval(${takServer.reportingUpdateInterval}), currReportingUpdateInterval($currReportingUpdateInterval),")
                 Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
+            enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
+            esriEndpoint = dataRepository.getEsriEndpoint.first()
         }
     }
 
@@ -1297,7 +1306,6 @@ class TAKConnectService: Service() {
             isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         }
 
-
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
             //Log.d(TAG, "sendData called")
             CoroutineScope(Dispatchers.IO).launch {
@@ -1370,6 +1378,57 @@ class TAKConnectService: Service() {
             return text.substring(valueStartIndex, endIndex)
         }
 
+        fun sendEsriData(msg: String) {
+            val client = OkHttpClient()
+            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+            val body = RequestBody.create(mediaType, msg)
+            val request = Request.Builder()
+                .url(esriEndpoint)
+                .post(body)
+                .build()
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(
+                            TAG,
+                            "ERROR sendEsriData returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()} and response: $response"
+                        )
+                    } else {
+                        Log.d(TAG, "sendEsriData Response Code: ${response.code} w/ Body: ${response.body?.string()}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ERROR in sendEsriData: ${e.message}", e)
+            }
+        }
+
+        fun sendTabletCommandData(msg: String) {
+            if (tabletCommandEndpoint.isEmpty() || tabletCommandApikey.isEmpty()) {
+                return
+            }
+            try {
+                val client = OkHttpClient()
+                val mediaType = "application/json".toMediaTypeOrNull()
+                val body = RequestBody.create(mediaType, msg)
+                val request = Request.Builder()
+                .url(tabletCommandEndpoint)
+                .method("POST", body)
+                .addHeader("apikey", tabletCommandApikey)
+                .addHeader("Content-Type", "application/json")
+                .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "ERROR sendTabletCommandData returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()} and response: $response")
+                    }
+                    //else {
+                    //    Log.d(TAG, "sendTabletCommandData Response Code: ${response.code} w/ Body: ${response.body?.string()}")
+                    //}
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ERROR in sendTabletCommandData: ${e.message}", e)
+            }
+        }
+
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
             if (isLicenseValid() && isNetworkConnected) {
                 val currTime = System.currentTimeMillis()
@@ -1386,12 +1445,24 @@ class TAKConnectService: Service() {
                             if (enableDynamicReportingStrategy) {
                                 Log.d(TAG, "enableDynamicReportingStrategy true")
                                 sendData(takServerDetail, msg, isNotPli, currTime)
+                                if (enableEsriEndpoint && !esriEndpoint.isNullOrEmpty() && !esriGeojsonMsg.isNullOrEmpty()) {
+                                    sendEsriData(esriGeojsonMsg)
+                                }
+                                if (enableTabletCommandEndpoint && !tabletCommandEndpoint.isNullOrEmpty() && !tabletCommandApikey.isNullOrEmpty() && !tabletCommandJsonMsg.isNullOrEmpty()) {
+                                    sendTabletCommandData(tabletCommandJsonMsg)
+                                }
                                 return
                             }
                             if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
                                 // TODO: What about wifi optimization?
                                 //Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
                                 sendData(takServerDetail, msg, isNotPli, currTime)
+                                if (enableEsriEndpoint && !esriEndpoint.isNullOrEmpty() && !esriGeojsonMsg.isNullOrEmpty()) {
+                                    sendEsriData(esriGeojsonMsg)
+                                }
+                                if (enableTabletCommandEndpoint && !tabletCommandEndpoint.isNullOrEmpty() && !tabletCommandApikey.isNullOrEmpty() && !tabletCommandJsonMsg.isNullOrEmpty()) {
+                                    sendTabletCommandData(tabletCommandJsonMsg)
+                                }
                             } else {
                                 //Log.d(TAG, "currTime($currTime) - takServerDetail.lastTimeMsgSent(${takServerDetail.lastTimeMsgSent}) = ${(currTime - takServerDetail.lastTimeMsgSent)*1.2} >= ${(takServerDetail.currReportingUpdateInterval * 1000L)}")
                                 if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >= (takServerDetail.currReportingUpdateInterval * 1000.0)) {

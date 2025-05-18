@@ -151,6 +151,13 @@
     <!--    <string name="tak_server_cert_title">TAK Server Certificate (base64)</string>-->
     <!--    <string name="tak_server_cert_description">Enter the base64-encoded P12 certificate for authentication</string>-->
 
+    <!-- Select Data Endpoints -->
+    <string name="select_data_endpoints_title" translatable="false">Select Data Endpoints</string>
+    <string name="select_data_endpoints_description" translatable="false">Select 1 or more endpoints to send data to.</string>
+    <string name="select_data_endpoint_tak" translatable="false">TAK</string>
+    <string name="select_data_endpoint_esri" translatable="false">ESRI</string>
+    <string name="select_data_endpoint_tabletcommand" translatable="false">Tablet Command</string>
+
     <!-- Tak Server Configurations -->
     <!--     Server Defaults: 0=DEFAULT, 1=TEST, 2=DEVELOP -->
     <string name="tak_server_list_title" translatable="false">TAK Server Connections</string>
@@ -193,6 +200,30 @@
     <string name="tak_server_cert_password_description" translatable="false">Enter the password for the P12 certificate</string>
     <string name="tak_server_cert_title" translatable="false">TAK Server Certificate (base64)</string>
     <string name="tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate used for authentication</string>
+
+    <!-- Cot Update Interval -->
+    <string name="update_interval_title" translatable="false">Update Interval</string>
+    <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
+    <string name="update_interval_default" translatable="false">60</string>
+
+
+    <!-- ESRI Endpoint -->
+    <string name="esri_endpoint_title" translatable="false">ESRI Endpoint</string>
+    <string name="esri_endpoint_description" translatable="false">Enter ESRI HTTPS endpoint to send data to.</string>
+
+    <string name="esri_reporting_interval_title" translatable="false">ESRI Reporting Interval</string>
+    <string name="esri_reporting_interval_description" translatable="false">Interval in seconds for ESRI GeoJSON updates.</string>
+
+    <!-- Tablet Command Endpoint -->
+    <string name="tabletcommand_endpoint_title" translatable="false">Tablet Command Endpoint</string>
+    <string name="tabletcommand_endpoint_description" translatable="false">Enter Tablet Command HTTPS endpoint to send data to.</string>
+
+    <string name="tabletcommand_apikey_title" translatable="false">Tablet Command Apikey</string>
+    <string name="tabletcommand_apikey_description" translatable="false">Enter Tablet Command apikey.</string>
+
+    <string name="tabletcommand_reporting_interval_title" translatable="false">Tablet Command Reporting Interval</string>
+    <string name="tabletcommand_reporting_interval_description" translatable="false">Interval in seconds for Tablet Command JSON updates.</string>
+
     <!-- Teams Configuration -->
     <string name="custom_teams_names_title" translatable="false">Custom Teams Name</string>
     <string name="custom_teams_names_description" translatable="false">Comma separated list of custom team NAMES. Entries must map to team colors one to one! </string>
@@ -216,14 +247,10 @@
     <string name="ditto_auth_token_title" translatable="false">Ditto Online Playground Authentication Token</string>
     <string name="ditto_auth_token_description" translatable="false">Developer token for the big peer instance</string>
     <string name="ditto_auth_token_default" translatable="false"></string>
+
     <string name="ditto_app_id_title" translatable="false">Ditto App ID Token</string>
     <string name="ditto_app_id_description" translatable="false">App ID token for ditto big peer</string>
     <string name="ditto_app_id_default" translatable="false"></string>
-
-    <!-- Cot Update Interval -->
-    <string name="update_interval_title" translatable="false">Update Interval</string>
-    <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
-    <string name="update_interval_default" translatable="false">60</string>
 
     <!-- Enable / Disable Services -->
     <string name="location_service_title" translatable="false">Enable Location Service</string>

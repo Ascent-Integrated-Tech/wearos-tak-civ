@@ -789,6 +789,87 @@ class DataRepository(private val context: Context) {
     suspend fun getUnreadMsgsCount(): Int =
         ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
 
+    val getEnableTakEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_TAK_ENDPOINT] ?: true
+    }
+
+    suspend fun storeEnableTakEndpoint(enableTakEndpoint: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_TAK_ENDPOINT] = enableTakEndpoint
+        }
+    }
+
+    val getEnableEsriEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_ESRI_ENDPOINT] ?: false
+    }
+
+    suspend fun storeEnableEsriEndpoint(enableEsriEndpoint: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_ESRI_ENDPOINT] = enableEsriEndpoint
+        }
+    }
+
+    val getEsriEndpoint: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[ESRI_ENDPOINT] ?: ""
+    }
+
+    suspend fun storeEsriEndpoint(esriEndpoint: String) {
+        context.dataStore.edit { prefs ->
+            prefs[ESRI_ENDPOINT] = esriEndpoint
+        }
+    }
+
+    val getEsriReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[ESRI_REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+    }
+
+    suspend fun storeEsriReportingUpdateInterval(esriReportingUpdateInterval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[ESRI_REPORTING_UPDATE_INTERVAL] = esriReportingUpdateInterval
+        }
+    }
+
+    val getEnableTabletCommandEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_TABLET_COMMAND_ENDPOINT] ?: false
+    }
+
+    suspend fun storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_TABLET_COMMAND_ENDPOINT] = enableTabletCommandEndpoint
+        }
+    }
+
+    val getTabletCommandEndpoint: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[TABLET_COMMAND_ENDPOINT] ?: ""
+    }
+
+    suspend fun storeTabletCommandEndpoint(tabletCommandEndpoint: String) {
+        context.dataStore.edit { prefs ->
+            prefs[TABLET_COMMAND_ENDPOINT] = tabletCommandEndpoint
+        }
+    }
+
+    val getTabletCommandApikey: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[TABLET_COMMAND_APIKEY] ?: ""
+    }
+
+    suspend fun storeTabletCommandApikey(tabletCommandApikey: String) {
+        context.dataStore.edit { prefs ->
+            prefs[TABLET_COMMAND_APIKEY] = tabletCommandApikey
+        }
+    }
+
+
+    val getTabletCommandReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[TABLET_COMMAND_REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+    }
+
+    suspend fun storeTabletCommandReportingUpdateInterval(tabletCommandReportingUpdateInterval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[TABLET_COMMAND_REPORTING_UPDATE_INTERVAL] = tabletCommandReportingUpdateInterval
+        }
+    }
+
 
     data class TakServerItem(
         var isEnabled: Boolean,
@@ -1289,5 +1370,13 @@ class DataRepository(private val context: Context) {
         private val BLOOD_TYPE = stringPreferencesKey("blood_type")
         private val ALLERGIES_KEY = stringPreferencesKey("allergies")
         private val USER_TYPE = stringPreferencesKey("user_type")
+        private val ENABLE_TAK_ENDPOINT = booleanPreferencesKey("enable_tak_endpoint")
+        private val ENABLE_ESRI_ENDPOINT = booleanPreferencesKey("enable_esri_endpoint")
+        private val ESRI_ENDPOINT = stringPreferencesKey("esri_endpoint")
+        private val ESRI_REPORTING_UPDATE_INTERVAL = intPreferencesKey("esri_reporting_update_interval")
+        private val ENABLE_TABLET_COMMAND_ENDPOINT = booleanPreferencesKey("enable_tablet_command_endpoint")
+        private val TABLET_COMMAND_ENDPOINT = stringPreferencesKey("tablet_command_endpoint")
+        private val TABLET_COMMAND_APIKEY = stringPreferencesKey("tablet_command_apikey")
+        private val TABLET_COMMAND_REPORTING_UPDATE_INTERVAL = intPreferencesKey("tablet_command_reporting_update_interval")
     }
 }

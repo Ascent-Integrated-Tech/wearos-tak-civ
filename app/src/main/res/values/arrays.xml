@@ -80,4 +80,17 @@
         <item>@string/user_type_entry_opposing_force_detainee</item>
         <item>@string/user_type_entry_child</item>
     </string-array>
+    <string-array name="select_data_endpoints_entries">
+        <item>@string/select_data_endpoint_tak</item>
+        <item>@string/select_data_endpoint_esri</item>
+        <item>@string/select_data_endpoint_tabletcommand</item>
+    </string-array>
+    <string-array name="select_data_endpoints_entry_values">
+        <item>@string/select_data_endpoint_tak</item>
+        <item>@string/select_data_endpoint_esri</item>
+        <item>@string/select_data_endpoint_tabletcommand</item>
+    </string-array>
+    <string-array name="select_data_endpoints_default_value">
+        <item>@string/select_data_endpoint_tak</item>
+    </string-array>
 </resources>
