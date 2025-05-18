@@ -41,6 +41,8 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CON
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
@@ -499,6 +501,39 @@ class CotDispatchService : Service() {
         //Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
         //Log.i(TAG, "===> HailCotDetail: $hailCotDetailString")
 
+
+        if (enableEsriEndpoint) {
+            val isWorn = if (-1 == physioData.heartRate) { false } else { true }
+            esriGeojsonMsg =
+                if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+                    """
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${physioData.battery}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": ${physioData.heartRate}, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": ${physioData.steps}, "floors": ${physioData.floors.roundToInt()}, "calories": ${physioData.calories.roundToInt()}, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": ${physioData.battery} } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
+        """.trimIndent()
+
+                } else {
+                    """
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${physioData.battery}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": ${physioData.heartRate}, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": ${physioData.battery} } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
+        """.trimIndent()
+                }
+
+            Log.d(TAG, "esriGeojsonMsg: $esriGeojsonMsg")
+        }
+
+        if (enableTabletCommandEndpoint) {
+            val isWorn = if (-1 == physioData.heartRate) { false } else { true }
+            tabletCommandJsonMsg = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+                """
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${physioData.battery},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${physioData.heartRate},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":${physioData.steps},"floors":${physioData.floors.roundToInt()},"calories":${physioData.calories.roundToInt()},"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${physioData.battery}}],"alerts":[],"resolvedalerts":[]}
+                """.trimIndent()
+            } else {
+                """
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${physioData.battery},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${physioData.heartRate},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":-1,"floors":-1,"calories":-1,"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${physioData.battery}}],"alerts":[],"resolvedalerts":[]}
+                """.trimIndent()
+            }
+            //Log.d(TAG, "tabletCommandJsonMsg: $tabletCommandJsonMsg")
+        }
+
+
         return cot
     }
 
@@ -534,6 +569,12 @@ class CotDispatchService : Service() {
         }
     }
 
+    /*
+     * Full GeoJSON sent to ESRI:
+     * { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "WEAROS_cffb09973cda1813", "properties": { "timeutc": "2025-05-14T19:21:51.401Z", "staletimeutc": "2025-05-14T19:27:57.401Z", "callsign": "SIERRAPAPA-WTC-1", "role": "Engine 1 - Firefighter", "color": "orange", "phone": "+13014058648", "model": "WEAROS", "device": "Samsung Galaxy Watch 7", "hae": 161.3000030517578, "horizaccuracy": 12.191, "vertaccuracy": 1.9328669, "heading": 359.3, "speed": 1.3, "batt": 17, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch 7 (44mm)", "isworn": true, "hr": 78, "hribi": -1, "hrv": -1, "skintemp": -1, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": -1, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": 17 } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ -87.6590724, 41.8870087 ] } } ] }
+     * Compact GeoJSON sent to ESRI:
+     * { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "WEAROS_cffb09973cda1813", "properties": { "timeutc": "2025-05-17T19:21:51.401Z", "staletimeutc": "2025-05-17T19:27:57.401Z", "callsign": "SIERRAPAPA-WTC-1", "role": "Engine 1 - Firefighter", "color": "orange", "phone": "+13014058648", "model": "WEAROS", "device": "Samsung Galaxy Watch 7", "hae": 161.3000030517578, "horizaccuracy": 12.191, "vertaccuracy": 1.9328669, "heading": 359.3, "speed": 1.3, "batt": 17, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch 7 (44mm)", "isworn": true, "hr": 78 } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ -87.6590724, 41.8870087 ] } } ] }
+    */
     private fun buildVerboseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
@@ -569,6 +610,38 @@ class CotDispatchService : Service() {
         val uid = MainActivity.device_uid
         val skinTempStr = String.format("%.2f", physioData.skinTemp).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
         val exertionStr = String.format("%.2f", physioData.exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
+
+        if (enableEsriEndpoint) {
+            val isWorn = if (-1 == physioData.heartRate) { false } else { true }
+
+            esriGeojsonMsg =
+                if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+                    """
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $haeActual, "horizaccuracy": $ceActual, "vertaccuracy": $leActual, "heading": $bearingActual, "speed": $speedActual, "batt": ${physioData.battery}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": ${physioData.heartRate}, "hribi": -1, "hrv": -1, "skintemp": $skinTempStr, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": ${physioData.steps}, "floors": ${physioData.floors.roundToInt()}, "calories": ${physioData.calories.roundToInt()}, "exertion": $exertionStr, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": ${physioData.battery} } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lonActual, $latActual ] } } ] }
+        """.trimIndent()
+
+                } else {
+                    """
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $haeActual, "horizaccuracy": $ceActual, "vertaccuracy": $leActual, "heading": $bearingActual, "speed": $speedActual, "batt": ${physioData.battery}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": ${physioData.heartRate}, "hribi": -1, "hrv": -1, "skintemp": $skinTempStr, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": $exertionStr, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": ${physioData.battery} } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lonActual, $latActual ] } } ] }
+        """.trimIndent()
+                }
+
+            Log.d(TAG, "esriGeojsonMsg: $esriGeojsonMsg")
+        }
+
+        if (enableTabletCommandEndpoint) {
+            val isWorn = if (-1 == physioData.heartRate) { false } else { true }
+            tabletCommandJsonMsg = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+                """
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$latActual,"lon":$lonActual,"hae":$haeActual,"horizaccuracy":$ceActual,"vertaccuracy":$leActual,"heading":$bearingActual,"speed":$speedActual,"batt":${physioData.battery},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${physioData.heartRate},"hribi":-1,"hrv":-1,"skintemp":$skinTempStr,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":${physioData.steps},"floors":${physioData.floors.roundToInt()},"calories":${physioData.calories.roundToInt()},"exertion":$exertionStr,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${physioData.battery}}],"alerts":[],"resolvedalerts":[]}
+                """.trimIndent()
+            } else {
+                """
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$latActual,"lon":$lonActual,"hae":$haeActual,"horizaccuracy":$ceActual,"vertaccuracy":$leActual,"heading":$bearingActual,"speed":$speedActual,"batt":${physioData.battery},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${physioData.heartRate},"hribi":-1,"hrv":-1,"skintemp":$skinTempStr,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":-1,"floors":-1,"calories":-1,"exertion":$exertionStr,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${physioData.battery}}],"alerts":[],"resolvedalerts":[]}
+                """.trimIndent()
+            }
+            //Log.d(TAG, "tabletCommandJsonMsg: $tabletCommandJsonMsg")
+        }
 
         // TODO: set phone number to actual phone number
 //        return """
@@ -1193,5 +1266,7 @@ class CotDispatchService : Service() {
         var currReportingIntervalInSecs = DEFAULT_REPORTING_INTERVAL
         lateinit var instance: CotDispatchService
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+        var esriGeojsonMsg = ""
+        var tabletCommandJsonMsg = ""
     }
 }

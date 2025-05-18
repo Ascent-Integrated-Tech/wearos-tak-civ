@@ -193,6 +193,7 @@ import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import java.io.File
 
+
 class MainActivity : ComponentActivity() {
 
     companion object Constants {
@@ -294,6 +295,14 @@ class MainActivity : ComponentActivity() {
         var wifiSsidList : List<DataRepository.WifiSsidItem> = listOf()
         val wifiSsidListState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf())
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
+        var enableTakEndpoint : Boolean = true
+        var enableEsriEndpoint : Boolean = false
+        var esriEndpoint : String = ""
+        var esriReportingUpdateInterval : Int = DEFAULT_REPORTING_INTERVAL
+        var enableTabletCommandEndpoint: Boolean = false
+        var tabletCommandEndpoint : String = ""
+        var tabletCommandApikey : String = ""
+        var tabletCommandReportingUpdateInterval : Int = DEFAULT_REPORTING_INTERVAL
 
         var enableDynamicReportingStrategy = false
         var staticReportingInterval = DEFAULT_REPORTING_INTERVAL
@@ -1100,6 +1109,16 @@ class MainActivity : ComponentActivity() {
             onFootReportingInterval = dataRepository.getOnFootReportingInterval.first()
             vehicleReportingInterval = dataRepository.getVehicleReportingInterval.first()
             stationaryReportingInterval = dataRepository.getStationaryReportingInterval.first()
+            enableTakEndpoint = dataRepository.getEnableTakEndpoint.first()
+            enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
+            enableTabletCommandEndpoint = dataRepository.getEnableTabletCommandEndpoint.first()
+
+            esriEndpoint = dataRepository.getEsriEndpoint.first()
+            esriReportingUpdateInterval = dataRepository.getEsriReportingUpdateInterval.first()
+
+            tabletCommandEndpoint = dataRepository.getTabletCommandEndpoint.first()
+            tabletCommandApikey = dataRepository.getTabletCommandApikey.first()
+            tabletCommandReportingUpdateInterval = dataRepository.getTabletCommandReportingUpdateInterval.first()
 
             // Initially on start ActivityRecognized is UNKNOWN
             val dynamicReportingInterval = calcDynamicReportingInterval(false, ActivityRecognized.UNKNOWN,
@@ -1160,8 +1179,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Colors:", teamEntriesValuesList.ltValues)}
                     ${String.format("%-25s %-30s", "Category Roles List:", categoryRolesEntryLists.toString())}
 
+                    ${String.format("%-25s %-30s", "Enable Tak Endpoint:", enableTakEndpoint)}
+                    ${String.format("%-25s %-30s", "Enable Esri Endpoint:", enableEsriEndpoint)}
+                    ${String.format("%-25s %-30s", "Enable Tablet Command Endpoint:", enableTabletCommandEndpoint)}
                     
-                    === === Server Settings === ===
+                    === === TAK Server Settings === ===
                     ${String.format("%-25s %-30s", "Number of Servers:", takServerList.size)}
                     
                     
@@ -1184,7 +1206,17 @@ class MainActivity : ComponentActivity() {
                     """.trimIndent()
         }
 
+        // TODO: Maybe obfuscate Tablet Command Apikey
         logOutput += """
+                    === === ESRI Server Settings === ===
+                    ${String.format("%-25s %-30s", "ESRI Endpoint:", esriEndpoint)}
+                    ${String.format("%-25s %-30s", "ESRI Reporting Interval:", esriReportingUpdateInterval)}
+                    
+                    === === Tablet Command Server Settings === ===
+                    ${String.format("%-25s %-30s", "Tablet Command Endpoint:", tabletCommandEndpoint)}
+                    ${String.format("%-25s %-30s", "Tablet Command Apikey:", tabletCommandApikey)}
+                    ${String.format("%-25s %-30s", "Tablet Command Reporting Interval:", tabletCommandReportingUpdateInterval)}
+                    
                     === === Service Settings === ===
                     ${String.format("%-25s %-30s", "License Key:", license)}
                     ${String.format("%-25s %-30s", "Ditto App Id:", dittoAppId)}
@@ -1580,6 +1612,30 @@ class MainActivity : ComponentActivity() {
         val teamsColors = appRestrictions.getString("custom_teams_colors", null)
         val categoryRolesJsonStr = appRestrictions.getString("custom_roles", null)
 
+        val dataEndpoints = appRestrictions.getStringArray("select_data_endpoints")
+        var enableTakEndpointConfigUpdate = false
+        var enableEsriEndpointConfigUpdate = false
+        var enableTabletCommandEndpointConfigUpdate = false
+        Log.d(TAG, "Send to data endpoints (${dataEndpoints?.size}): ${dataEndpoints?.joinToString(", ")}")
+        if (null != dataEndpoints) {
+            for (endpoint in dataEndpoints) {
+                if ("ESRI" == endpoint) {
+                    enableEsriEndpointConfigUpdate = true
+                } else if ("Tablet Command" == endpoint) {
+                    enableTabletCommandEndpointConfigUpdate = true
+                } else if ("TAK" == endpoint) {
+                    enableTakEndpointConfigUpdate = true
+                }
+            }
+        }
+        // TODO: Do we need this below
+        /*
+        if (!enableEsriEndpointConfigUpdate && !enableTakEndpointConfigUpdate) {
+            enableTakEndpointConfigUpdate = true
+        }
+
+         */
+
         var serverEnableTAKConnectService: Boolean = true
         var serverName: String? = null
         var serverAddress: String? = null
@@ -1630,6 +1686,15 @@ class MainActivity : ComponentActivity() {
         } else {
             Log.d(TAG, "tak_server_list is null or empty.")
         }
+
+        val esriEndpointConfigUpdate = appRestrictions.getString("esri_endpoint", null)
+        val esriReportingIntervalConfigUpdate = appRestrictions.getInt("esri_reporting_interval")
+        Log.d(TAG, "esriEndpoint($esriEndpointConfigUpdate), esriReportingInterval($esriReportingIntervalConfigUpdate)")
+
+        val tabletCommandEndpointConfigUpdate = appRestrictions.getString("tabletcommand_endpoint", null)
+        val tabletCommandApikeyConfigUpdate = appRestrictions.getString("tabletcommand_apikey", null)
+        val tabletCommandReportingIntervalConfigUpdate = appRestrictions.getInt("tabletcommand_reporting_interval")
+        Log.d(TAG, "tabletCommandEndpoint($tabletCommandEndpointConfigUpdate), tabletCommandApikey($tabletCommandApikeyConfigUpdate), tabletCommandReportingInterval($tabletCommandReportingIntervalConfigUpdate)")
 
         val enableWifiBatteryOptimizationConfigUpdate = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
         val enableAllWifiBatteryOptimizationConfigUpdate = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
@@ -1827,6 +1892,41 @@ class MainActivity : ComponentActivity() {
                     dataRepository.storeStaticReportingInterval(minStaticReportingInterval)
                     staticReportingIntervalChanged = true
                 }
+            }
+
+            if ((null != esriEndpointConfigUpdate) && (esriEndpoint != esriEndpointConfigUpdate)) {
+                esriEndpoint = esriEndpointConfigUpdate
+                dataRepository.storeEsriEndpoint(esriEndpointConfigUpdate)
+            }
+            if ((0 != esriReportingIntervalConfigUpdate) && (esriReportingUpdateInterval != esriReportingIntervalConfigUpdate)) {
+                esriReportingUpdateInterval = esriReportingIntervalConfigUpdate
+                dataRepository.storeEsriReportingUpdateInterval(esriReportingIntervalConfigUpdate)
+            }
+            if (enableEsriEndpointConfigUpdate != enableEsriEndpoint) {
+                enableEsriEndpoint = enableEsriEndpointConfigUpdate
+                dataRepository.storeEnableEsriEndpoint(enableEsriEndpointConfigUpdate)
+            }
+
+            if ((null != tabletCommandEndpointConfigUpdate) && (tabletCommandEndpoint != tabletCommandEndpointConfigUpdate)) {
+                tabletCommandEndpoint = tabletCommandEndpointConfigUpdate
+                dataRepository.storeTabletCommandEndpoint(tabletCommandEndpointConfigUpdate)
+            }
+            if ((null != tabletCommandApikeyConfigUpdate) && (tabletCommandApikey != tabletCommandApikeyConfigUpdate)) {
+                tabletCommandApikey = tabletCommandApikeyConfigUpdate
+                dataRepository.storeTabletCommandApikey(tabletCommandApikeyConfigUpdate)
+            }
+            if ((0 != tabletCommandReportingIntervalConfigUpdate) && (tabletCommandReportingUpdateInterval != tabletCommandReportingIntervalConfigUpdate)) {
+                tabletCommandReportingUpdateInterval = tabletCommandReportingIntervalConfigUpdate
+                dataRepository.storeTabletCommandReportingUpdateInterval(tabletCommandReportingIntervalConfigUpdate)
+            }
+            if (enableTabletCommandEndpointConfigUpdate != enableTabletCommandEndpoint) {
+                enableTabletCommandEndpoint = enableTabletCommandEndpointConfigUpdate
+                dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpointConfigUpdate)
+            }
+
+            if (enableTakEndpointConfigUpdate != enableTakEndpoint) {
+                enableTakEndpoint = enableTakEndpointConfigUpdate
+                dataRepository.storeEnableTakEndpoint(enableTakEndpointConfigUpdate)
             }
 
             changed = false

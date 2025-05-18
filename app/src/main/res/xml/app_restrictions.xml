@@ -271,6 +271,15 @@
         android:defaultValue="{}" />
 
     <restriction
+        android:key="select_data_endpoints"
+        android:restrictionType="multi-select"
+        android:title="@string/select_data_endpoints_title"
+        android:description="@string/select_data_endpoints_description"
+        android:entries="@array/select_data_endpoints_entries"
+        android:entryValues="@array/select_data_endpoints_entry_values"
+        android:defaultValue="@array/select_data_endpoints_default_value" />
+
+    <restriction
         android:key="tak_server_list"
         android:restrictionType="bundle_array"
         android:title="@string/tak_server_list_title"
@@ -353,6 +362,41 @@
                 android:defaultValue="@string/update_interval_default" />
         </restriction>
     </restriction>
+
+    <restriction
+        android:key="esri_endpoint"
+        android:restrictionType="string"
+        android:title="@string/esri_endpoint_title"
+        android:description="@string/esri_endpoint_description"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="esri_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/esri_reporting_interval_title"
+        android:description="@string/esri_reporting_interval_description"
+        android:defaultValue="@string/update_interval_default" />
+
+    <restriction
+        android:key="tabletcommand_endpoint"
+        android:restrictionType="string"
+        android:title="@string/tabletcommand_endpoint_title"
+        android:description="@string/tabletcommand_endpoint_description"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="tabletcommand_apikey"
+        android:restrictionType="string"
+        android:title="@string/tabletcommand_apikey_title"
+        android:description="@string/tabletcommand_apikey_description"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="tabletcommand_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/tabletcommand_reporting_interval_title"
+        android:description="@string/tabletcommand_reporting_interval_description"
+        android:defaultValue="@string/update_interval_default" />
 
     <restriction
         android:key="ble_beacon_service_enabled"
