@@ -172,6 +172,51 @@ class CotDispatchService : Service() {
         }
     }
 
+    data class BleLocationOutput(
+        val lat: Double,
+        val lon: Double,
+        val hae: Double,
+        val ce: Float // Horizontal Error
+    )
+
+    private fun mapLocationAgainstClosestBleBeacon(startTimeInMs: Long, lat: Double, lon: Double, hae: Double, ce: Float): BleLocationOutput {
+        var latActual = lat; var lonActual = lon; var haeActual = hae; var ceActual = ce
+
+        //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
+        if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= GPS_STALE_TIME_INTERVAL_MS)) {
+            if (ceActual > closestBleDistance) {
+                //val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) > bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                //Log.d(TAG, logString)
+                //writeToLogFileLocation(logFile, logString)
+                ceActual = closestBleDistance.toFloat()
+                latActual = closestBleLat
+                lonActual = closestBleLon
+                haeActual = closestBleAlt
+                closestBleBeacon?.overrideGPSWithBLECount = 0
+            } else {
+                val currClosestBleBeacon = closestBleBeacon!!
+                if (currClosestBleBeacon.overrideGPSWithBLECount++ < OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT) {
+                    //val logString = "GPS Hysteresis(${currClosestBleBeacon.overrideGPSWithBLECount}) Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    //Log.d(TAG, logString)
+                    //writeToLogFileLocation(logFile, logString)
+                    ceActual = closestBleDistance.toFloat()
+                    latActual = closestBleLat
+                    lonActual = closestBleLon
+                    haeActual = closestBleAlt
+                } else {
+                    currClosestBleBeacon.overrideGPSWithBLECount = 0
+                    //val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    //Log.d(TAG, logString)
+                    //writeToLogFileLocation(logFile, logString)
+                }
+            }
+        } else {
+            val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
+            Log.d(TAG, logString)
+            //writeToLogFileLocation(logFile, logString)
+        }
+        return BleLocationOutput(latActual, lonActual, haeActual, ceActual)
+    }
 
     private fun buildLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
@@ -201,39 +246,8 @@ class CotDispatchService : Service() {
 
         // Ble Beacon
         if (MainActivity.enableBleBeaconService == true) {
-            //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
-            if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= GPS_STALE_TIME_INTERVAL_MS)) {
-                if (ceActual > closestBleDistance) {
-                    //val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) > bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                    //Log.d(TAG, logString)
-                    //writeToLogFileLocation(logFile, logString)
-                    ceActual = closestBleDistance.toFloat()
-                    latActual = closestBleLat
-                    lonActual = closestBleLon
-                    haeActual = closestBleAlt
-                    closestBleBeacon?.overrideGPSWithBLECount = 0
-                } else {
-                    val currClosestBleBeacon = closestBleBeacon!!
-                    if (currClosestBleBeacon.overrideGPSWithBLECount++ < OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT) {
-                        //val logString = "GPS Hysteresis(${currClosestBleBeacon.overrideGPSWithBLECount}) Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                        //Log.d(TAG, logString)
-                        //writeToLogFileLocation(logFile, logString)
-                        ceActual = closestBleDistance.toFloat()
-                        latActual = closestBleLat
-                        lonActual = closestBleLon
-                        haeActual = closestBleAlt
-                    } else {
-                        currClosestBleBeacon.overrideGPSWithBLECount = 0
-                        //val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
-                        //Log.d(TAG, logString)
-                        //writeToLogFileLocation(logFile, logString)
-                    }
-                }
-            } else {
-                val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
-                Log.d(TAG, logString)
-                //writeToLogFileLocation(logFile, logString)
-            }
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
         }
 
         val uid = MainActivity.device_uid
@@ -294,6 +308,7 @@ class CotDispatchService : Service() {
 
         // Format and set the startTime with the currentTime
         val startTime = dateTimeFormatter.format(calendar.time)
+        val startTimeInMs = calendar.timeInMillis
         val emergencyCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
         emergencyCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val emergencyCallsignAppendTime = emergencyCallsignDateTimeFormatter.format(calendar.time)
@@ -305,13 +320,19 @@ class CotDispatchService : Service() {
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
-        val latActual = location?.latitude ?: 0.0
-        val lonActual = location?.longitude ?: 0.0
-        val haeActual = location?.altitude ?: 0.0
+        var latActual = location?.latitude ?: 0.0
+        var lonActual = location?.longitude ?: 0.0
+        var haeActual = location?.altitude ?: 0.0
         var ceActual = location?.accuracy ?: 9999999.0F
         if (ceActual.isNaN() == true) ceActual = 9999999.0F
         var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
         if (leActual.isNaN() == true) leActual = 9999999.0F
+
+        // Ble Beacon
+        if (MainActivity.enableBleBeaconService == true) {
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+        }
 
         val uid = UUID.randomUUID().toString()
         val linkUid = MainActivity.device_uid
@@ -341,6 +362,7 @@ class CotDispatchService : Service() {
 
         // Format and set the startTime with the currentTime
         val startTime = dateTimeFormatter.format(calendar.time)
+        val startTimeInMs = calendar.timeInMillis
         val markerCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
         markerCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val markerCallsignAppendTime = markerCallsignDateTimeFormatter.format(calendar.time)
@@ -351,15 +373,21 @@ class CotDispatchService : Service() {
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
-        val latActual = location?.latitude ?: 0.0
-        val lonActual = location?.longitude ?: 0.0
-        val haeActual = location?.altitude ?: 0.0
+        var latActual = location?.latitude ?: 0.0
+        var lonActual = location?.longitude ?: 0.0
+        var haeActual = location?.altitude ?: 0.0
         var ceActual = location?.accuracy ?: 9999999.0F
         if (ceActual.isNaN() == true) ceActual = 9999999.0F
         var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
         if (leActual.isNaN() == true) leActual = 9999999.0F
         val bearingActual = location?.bearing ?: 0.0F
         val speedActual = location?.speed ?: 0.0F
+
+        // Ble Beacon
+        if (MainActivity.enableBleBeaconService == true) {
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+        }
 
         val uid = UUID.randomUUID().toString()
         val linkUid = MainActivity.device_uid
