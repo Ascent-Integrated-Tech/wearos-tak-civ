@@ -164,6 +164,23 @@
         </service>
 
         <service
+            android:name=".complication.ChatComplicationService"
+            android:exported="true"
+            android:label="@string/chat_complication_service"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SMALL_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
+        <service
             android:name=".tile.MainTileService"
             android:exported="true"
             android:label="@string/tile_label"
@@ -312,6 +329,17 @@
         </activity>
         <activity
             android:name=".presentation.MarkerActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.aitech.weartak_civ"
+            android:theme="@style/MainActivityTheme.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".presentation.ChatActivity"
             android:exported="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"

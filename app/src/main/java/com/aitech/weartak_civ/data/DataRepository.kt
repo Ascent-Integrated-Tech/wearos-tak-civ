@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
+import androidx.lifecycle.MutableLiveData
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -222,6 +223,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_CHAT_SERVICE] ?: false
+    }
+
+    suspend fun storeEnableChatService(enableChatService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_CHAT_SERVICE] = enableChatService
+        }
+    }
+
     val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[REPORTING_UPDATE_INTERVAL] ?: 10
     }
@@ -341,8 +352,32 @@ class DataRepository(private val context: Context) {
             preferences[WIFI_SSID_LIST_KEY] = gson.toJson(currentList)
         }
     }
-
      */
+
+    data class ChatMessage(
+        var message: String,
+        val uid: String,
+        var callsign: String,
+        var timeReceived: Long
+    )
+
+    data class ChatRoom(
+        val uid: String,
+        var title: String,
+        var chatMessage: List<ChatMessage>, //Messages that device has sent you
+        var newMessagesPresent: Boolean, //Are there unread messages, determined by timeLastOpened and timeLastClosed
+        var timeLastOpened: Long, //When the chat log has been opened, any messages received while its open are automatically marked as read
+        var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
+    )
+
+    //val messageList1 = listOf(ChatMessage("A", "11111", "ALPHA-01", 1747932042L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L),ChatMessage("D", "11111", "ALPHA-01", 1747932109L),ChatMessage("E", "11111", "BRAVO-05", 1748018316L),ChatMessage("F", "11111", "BRAVO-05", 1748018317L))
+    //val messageList2 = listOf(ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
+
+    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
+    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
+    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+    var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
+
 
     data class TakServerItem(
         var isEnabled: Boolean,
@@ -515,6 +550,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
+        private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
