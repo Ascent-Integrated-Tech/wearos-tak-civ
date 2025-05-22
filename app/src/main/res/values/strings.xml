@@ -106,6 +106,9 @@
     <string name="server_connected" translatable="false">Server Connected</string>
     <string name="server_connecting" translatable="false">Server Connecting</string>
     <string name="server_disconnected" translatable="false">Server Disconnected</string>
+    <string name="chat_disabled" translatable="false">Chat Disabled</string>
+    <string name="chat_enabled_no_new_messages" translatable="false">Chat enabled, no new messages</string>
+    <string name="chat_enabled_new_messages" translatable="false">Chat enabled, new message(s)</string>
     <string name="not_capturing_takserverstatuscomplication" translatable="false">not capturing takServerStatusComplication: %1$s</string>
     <string name="location_on" translatable="false">Location ON</string>
     <string name="location_off" translatable="false">Location OFF</string>
@@ -114,6 +117,7 @@
     <string name="location_services_complication" translatable="false">Location Services Complication</string>
     <string name="connectivity_complication" translatable="false">Connectivity Complication</string>
     <string name="tak_server_complication" translatable="false">Tak Server Complication</string>
+    <string name="chat_complication_service" translatable="false">Chat Complication Service</string>
     <string name="heart_rate_disabled" translatable="false">Heart Rate Disabled</string>
 
     <!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
@@ -232,6 +236,10 @@
     <string name="ditto_service_title" translatable="false">Enable Ditto Service</string>
     <string name="ditto_service_description" translatable="false">Enable or disable the Ditto service</string>
     <string name="ditto_service_enabled_default" translatable="false">false</string>
+
+    <string name="chat_service_title" translatable="false">Enable Chat Service</string>
+    <string name="chat_service_description" translatable="false">Enable or disable Chat service</string>
+    <string name="chat_service_enabled_default" translatable="false">false</string>
 
     <!-- WiFi Battery optimization-->
     <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>

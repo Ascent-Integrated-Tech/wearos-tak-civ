@@ -75,6 +75,13 @@
         android:defaultValue="@string/ditto_service_enabled_default" />
 
     <restriction
+        android:key="chat_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/chat_service_title"
+        android:description="@string/chat_service_description"
+        android:defaultValue="@string/chat_service_enabled_default" />
+
+    <restriction
         android:key="wifiOptimization_service_enabled"
         android:restrictionType="bool"
         android:title="@string/wifiOptimization_service_enabled_title"

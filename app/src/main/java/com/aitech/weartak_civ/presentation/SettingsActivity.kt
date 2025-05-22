@@ -38,10 +38,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
@@ -84,6 +84,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Devices
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -138,6 +140,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiB
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
@@ -627,23 +631,14 @@ fun TakServerSetting(navController: NavController) {
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                Button(
+                BackButton(
                     onClick = {
                         navController.navigate("settings_screen") {
                             popUpTo(("settings_screen")) {
                                 inclusive = true
                             }
                         } },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Gray,
-                        contentColor = Color.Red
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowLeft,
-                        contentDescription = "Go back to Main Settings Screen",
-                    )
-                }
+                )
             }
         }
     }
@@ -1573,22 +1568,12 @@ fun WifiSsidSelectScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(10.dp))
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                Button(
+                BackButton(
                     onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
-                        popUpTo(("optimize_battery_on_wifi_screen")) {
-                            inclusive = true
-                        }
-                    } },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Gray,
-                        contentColor = Color.Red
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowLeft,
-                        contentDescription = "Localized description",
-                    )
-                }
+                    popUpTo(("optimize_battery_on_wifi_screen")) {
+                        inclusive = true
+                    }
+                } })
             }
 
         }
@@ -2238,6 +2223,8 @@ fun SettingsScreen(
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
+            var chatChecked by remember{ mutableStateOf(enableChatService)}
+
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
             val text = stringResource(R.string.callsign_settings)
 
@@ -2378,6 +2365,12 @@ fun SettingsScreen(
                     description = stringResource(R.string.service_on_off),
                 )
 
+                SettingSwitchToggle(
+                    checked = chatChecked, onCheckedChange = { chatChecked = it },
+                    title = "Chat",
+                    description = stringResource(R.string.service_on_off),
+                )
+
                 Text(
                     modifier = Modifier.padding(top = 7.dp),
                     text = stringResource(R.string.version, versionNumber),
@@ -2410,6 +2403,7 @@ fun SettingsScreen(
                         var locationCheckedChanged: Boolean = false
                         var biometricsCheckedChanged: Boolean = false
                         var dittoCheckedChanged: Boolean = false
+                        var chatCheckedChanged: Boolean = false
                         var saveBattOnWifiChanged = false
                         var takServerListChanged = false
 
@@ -2519,6 +2513,22 @@ fun SettingsScreen(
                                 mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
                             }
                         }
+                        if (enableChatService != chatChecked) {
+                            settingsChanged = true; chatCheckedChanged = true
+                            enableChatService = chatChecked
+                            //TODO: Change to chat complication when ready
+//                            requestLocationComplicationUpdate(context)
+                            if (enableChatService) {
+                                Log.d(TAG, "Trying to start location service")
+                                //TODO: Change to chat start/stop service when ready
+//                                startLocationService()
+                            } else {
+                                Log.d(TAG, "Trying to stop location service")
+//                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                            }
+                            enableChatServiceLiveData.postValue(enableChatService)
+                            requestChatComplicationUpdate(context)
+                        }
 
                         if (settingsChanged) {
                             CoroutineScope(Dispatchers.Main).launch {
@@ -2570,6 +2580,11 @@ fun SettingsScreen(
                                 if (dittoCheckedChanged) {
                                     Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                     dataRepository.storeEnableDittoService(enableDittoService)
+                                }
+
+                                if (chatCheckedChanged) {
+                                    Log.d(TAG, "Storing enableChatService $enableChatService")
+                                    dataRepository.storeEnableChatService(enableChatService)
                                 }
 
                                 Log.d(TAG, "Finished saving settings")
@@ -2635,9 +2650,35 @@ fun ConfirmCancelButtons(
     }
 }
 
+@Composable
+fun BackButton(onClick: () -> Unit) {
+    Button(
+        onClick = { onClick() },
+        modifier = Modifier.size(height = 35.dp, width = 65.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Gray,
+            contentColor = Color.Red
+        ),
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+            contentDescription = "Go back to Main Settings Screen",
+        )
+    }
+}
+
 fun requestHeartRateComplicationUpdate(context: Context) {
     val componentName = ComponentName(context, HeartRateComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
+}
+
+@Preview(widthDp = 192, heightDp = 900, showBackground = true)
+@Composable
+fun SettingsPreview() {
+    var callsignState = MutableLiveData<String>("WEAROS-0")
+    var licenseState = MutableLiveData<String>("AscentLicense")
+
+    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
 }
