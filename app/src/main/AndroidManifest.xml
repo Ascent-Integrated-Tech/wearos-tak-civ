@@ -309,6 +309,17 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".presentation.ChatActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.aitech.weartak_civ"
+            android:theme="@style/MainActivityTheme.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name=".presentation.SettingsActivity"
             android:exported="true"
             android:launchMode="singleInstance"

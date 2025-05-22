@@ -156,6 +156,9 @@ import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonColors
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
@@ -166,6 +169,7 @@ import androidx.wear.compose.foundation.CurvedModifier
 import androidx.wear.compose.foundation.CurvedTextStyle
 import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.foundation.padding
+import androidx.wear.compose.material.LocalContentAlpha
 import androidx.wear.compose.material.curvedText
 import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
@@ -191,8 +195,11 @@ import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.presentation.ChatActivity.Constants.newMessagesPresentPublicBoolean
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
@@ -217,6 +224,8 @@ class MainActivity : ComponentActivity() {
         var biometricServiceRunning : Boolean = false
         var enableDittoService : Boolean = false
         var dittoServiceRunning : Boolean = false
+        var enableChatService : Boolean =  true
+        var enableChatServiceLiveData = MutableLiveData<Boolean>(true)
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -475,6 +484,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        //TODO: Add Start/Stop Chat service functions
 
         fun startPowerManagerService() {
             if (!PowerManagerService.isRunning.get()) {
@@ -828,6 +839,8 @@ class MainActivity : ComponentActivity() {
             enableLocationService = dataRepository.getEnableLocationService.first()
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
+            enableChatService = dataRepository.getEnableChatService.first()
+
 
             val minReportingInterval = getMinReportingInterval(takServerList)
 
@@ -1090,6 +1103,7 @@ class MainActivity : ComponentActivity() {
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceLiveData.postValue(enableLocationService)
         enableBiometricsServiceLiveData.postValue(enableBiometricsService)
+        enableChatServiceLiveData.postValue(enableChatService)
 
         requestCallsignComplicationUpdate(context)
         requestLocationComplicationUpdate(context)
@@ -1249,6 +1263,8 @@ class MainActivity : ComponentActivity() {
         val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
         val enableBiometricsServiceConfigUpdate = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+        val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
@@ -1444,6 +1460,8 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
+            dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
+
 
             if (!isStringEmptyJson(configJson)) {
                 // Currently don't check for any changes but just post to dataRepository
@@ -1471,6 +1489,11 @@ class MainActivity : ComponentActivity() {
                 enableBleBeaconService = enableBleBeaconServiceConfigUpdate
                 Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
                 if (!calledOnCreate) startStopBleBeaconService()
+            }
+            if (enableChatServiceConfigUpdate != enableChatService) {
+                enableChatService = enableChatServiceConfigUpdate
+                Log.d(TAG, "enableChatService=$enableChatService")
+                if (!calledOnCreate) /* StartStop chat service function here instead */startStopDittoService()
             }
             if (!calledOnCreate) {
                 if (prevLicenseIsValid != isLicenseValid()) {
@@ -1583,6 +1606,9 @@ fun MainScreen(
 ) {
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
+    var hasUnreadMessages = newMessagesPresentPublicBoolean.observeAsState()
+    val chatCheckedLive by enableChatServiceLiveData.observeAsState()
+
 
     WearTAKCIVTheme {
         SwipeToDismissBox(
@@ -1606,9 +1632,9 @@ fun MainScreen(
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(top = 35.dp)
+                            .padding(top = 30.dp)
                             .fillMaxWidth()
-                            .weight(1f)
+                            .weight(0.8f)
                     ) {
                         HeartRate()
                     }
@@ -1617,7 +1643,7 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
+//                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         SOSButton()
@@ -1631,9 +1657,49 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(top = 10.dp),
+                            .padding(top = 0.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
+                        FilledIconButton(
+                            onClick = { context.startActivity(Intent(context, ChatActivity::class.java))
+                            },
+                            modifier = Modifier.size(45.dp),
+                            colors = IconButtonColors(
+                                containerColor = Color.DarkGray,
+                                contentColor = Color.Unspecified,
+                                disabledContentColor = Color.Gray,
+                                disabledContainerColor = Color.Black
+                            ),
+                            enabled = if (chatCheckedLive == true) true else false
+                        ) {
+                            if (chatCheckedLive == true) {
+                            if (hasUnreadMessages.value == true) {
+                                Icon(
+                                    painter = painterResource(R.drawable.chat_newmessage),
+                                    contentDescription = "Favorite icon",
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(R.drawable.chat_nomessage),
+                                    contentDescription = "Favorite icon",
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            }
+                        } else {
+                                Icon(
+                                    painter = painterResource(R.drawable.chat_nomessage),
+                                    contentDescription = "Favorite icon",
+                                    tint = Color.DarkGray,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            }
+                        }
+                        Spacer(
+                            modifier = Modifier.width(10.dp)
+                        )
                         Callsign(context, callsignState)
                     }
 
@@ -1768,13 +1834,14 @@ fun HeartRate () {
                 Text(
                     text = " $heartRateText",
                     textAlign = TextAlign.Start,
-                    fontSize = 20.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
                 Text(
                     text = stringResource(R.string.bpm),
-                    color = Color.White
+                    color = Color.White,
+                    fontSize = 13.sp
                 )
             } else {
                 Text(
@@ -1884,7 +1951,7 @@ fun TroubleshootingIcons() {
                 .align(Alignment.CenterStart)
                 .offset(
                     x = (15).dp, // Adjust this value
-                    y = (15).dp // Adjust this value
+                    y = (10).dp // Adjust this value
                 )
                 .size(if (cellConnected == true) 25.dp else 25.dp),
             tint = if (isConnected == true) Color.White else Color.Unspecified
@@ -1922,7 +1989,7 @@ fun TroubleshootingIcons() {
                 .align(Alignment.CenterEnd)
                 .offset(
                     x = (-15).dp, // Adjust this value
-                    y = (15).dp // Adjust this value
+                    y = (10).dp // Adjust this value
                 )
                 .size(iconSizeSmall)
 
@@ -1956,8 +2023,8 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
             "${greetingName}",
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            fontSize = if (greetingName!!.length <= maxChar) 17.sp else 13.sp,
-            modifier = Modifier.padding(10.dp),
+            fontSize = if (greetingName!!.length <= maxChar) 15.sp else 13.sp,
+            modifier = Modifier.padding(8.dp),
 
         )},
         shape = RoundedCornerShape(40.dp),
@@ -2009,7 +2076,7 @@ fun SOSButton() {
                 color = Color.Red,
                 shape = RoundedCornerShape(40.dp),
             )
-            .size(110.dp),
+            .size(110.dp, 60.dp),
         shape = RoundedCornerShape(40.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
@@ -2047,7 +2114,7 @@ fun MarkerDropButton(
                 color = Color.White,
                 shape = CircleShape
             )
-            .size(100.dp),
+            .size(100.dp, 60.dp),
     ) {
         Icon(
             painterResource(R.drawable.markerdrop),
@@ -2141,14 +2208,7 @@ fun CallsignSettingsPreview() {
     CallsignSetting(rememberSwipeDismissableNavController(), callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 800)
-@Composable
-fun SettingsPreview() {
-    var callsignState = MutableLiveData<String>("WEAROS-0")
-    var licenseState = MutableLiveData<String>("AscentLicense")
 
-    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
-}
 
 @Preview(widthDp = 192, heightDp = 500)
 @Composable
