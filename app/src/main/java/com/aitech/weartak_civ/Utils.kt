@@ -16,6 +16,10 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sqrt
 import kotlin.random.Random
+import org.w3c.dom.Element
+import org.xml.sax.InputSource
+import java.io.StringReader
+import javax.xml.parsers.DocumentBuilderFactory
 
 object Utils {
     private const val TAG = "WearTAK-Utils"
@@ -249,6 +253,116 @@ object Utils {
         endpoint: String = "*:-1:stcp",
         phone: String = "11234567890"
     ): String {
-        return """<detail><remarks>HR: $heartRate bpm; Batt: $battery%</remarks><status battery='$battery'/><contact endpoint='$endpoint' phone='$phone' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail>""".trimIndent()
+        return """<detail><remarks>HR: $heartRate bpm; Batt: $battery%</remarks><status battery='$battery'/><contact endpoint='$endpoint' phone='$phone' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail>""".trimIndent()}
+
+    /** Minimal data models for chat rooms & messages. */
+    data class ChatMessage(
+        val message: String,
+        val uid: String,
+        val callsign: String,
+        val timeReceived: Long
+    )
+
+    data class ChatRoom(
+        val uid: String,
+        val title: String,
+        val messageList: List<ChatMessage>,
+        var newMessagesPresent: Boolean,
+        val timeLastOpened: Long,
+        var timeLastClosed: Long
+    )
+
+    object CotUtils {
+        /** Quick screen for chat‐related COTs. */
+        fun isChatMessage(raw: String): Boolean =
+            raw.contains("<__chat") && raw.contains("<remarks")
+
+        /** Is this message addressed to me or to “All Chat Rooms”? */
+        fun isChatForMe(raw: String, myUid: String): Boolean {
+            return raw.contains("""to='$myUid'""")
+                    || raw.contains("""to="$myUid"""")
+                    || raw.contains("""to='All Chat Rooms'""")
+                    || raw.contains("""to="All Chat Rooms"""")
+        }
+
+        /** DOM‐plus‐regex hybrid parser for extracting ChatRooms. */
+        fun parseChatRooms(raw: String, myUid: String): List<ChatRoom> {
+            val rooms = mutableListOf<ChatRoom>()
+
+            // 1) Try a secure DOM parse
+            val doc = try {
+                val factory = DocumentBuilderFactory.newInstance().apply {
+                    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                    setFeature("http://xml.org/sax/features/external-general-entities", false)
+                    setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                    isNamespaceAware = true
+                    isValidating = false
+                    isXIncludeAware = false
+                }
+                factory.newDocumentBuilder()
+                    .parse(InputSource(StringReader(raw)))
+            } catch (_: Exception) {
+                null
+            }
+
+            if (doc != null) {
+                val chatElems   = doc.getElementsByTagName("__chat")
+                val remarkElems = doc.getElementsByTagName("remarks")
+                for (i in 0 until chatElems.length) {
+                    val c = chatElems.item(i) as? Element ?: continue
+                    // extract sender device UID
+                    val grpEl        = c.getElementsByTagName("chatgrp").item(0) as? Element
+                    val senderUid    = grpEl?.getAttribute("uid0") ?: continue
+                    val senderCallsign = c.getAttribute("senderCallsign")
+
+                    for (j in 0 until remarkElems.length) {
+                        val r     = remarkElems.item(j) as? Element ?: continue
+                        val toUid = r.getAttribute("to")
+                        val text  = r.textContent.trim()
+                        if (toUid == myUid || toUid == "All Chat Rooms") {
+                            rooms += ChatRoom(
+                                uid               = senderUid,
+                                title             = senderCallsign,
+                                messageList       = listOf(ChatMessage(text, senderUid, senderCallsign, System.currentTimeMillis())),
+                                newMessagesPresent= true,
+                                timeLastOpened    = 0L,
+                                timeLastClosed    = 0L
+                            )
+                        }
+                    }
+                }
+            } else {
+                // 2) Regex fallback: grab senderUid and callsign, then remarks
+                val grpRx    = """<chatgrp[^>]*uid0=['"]([^'"]+)['"]""".toRegex()
+                val callRx   = """<__chat[^>]*senderCallsign=['"]([^'"]+)['"]""".toRegex()
+                val remarkRx = """<remarks[^>]*to=['"]([^'"]+)['"][^>]*>(.*?)</remarks>""".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+                val grpMatch  = grpRx.find(raw)
+                val callMatch = callRx.find(raw)
+                val rMatches  = remarkRx.findAll(raw)
+
+                if (grpMatch != null && callMatch != null) {
+                    val senderUid      = grpMatch.groupValues[1]
+                    val senderCallsign = callMatch.groupValues[1]
+
+                    for (m in rMatches) {
+                        val toUid = m.groupValues[1]
+                        val text  = m.groupValues[2].trim()
+                        if (toUid == myUid || toUid == "All Chat Rooms") {
+                            rooms += ChatRoom(
+                                uid               = senderUid,
+                                title             = senderCallsign,
+                                messageList       = listOf(ChatMessage(text, senderUid, senderCallsign, System.currentTimeMillis())),
+                                newMessagesPresent= true,
+                                timeLastOpened    = 0L,
+                                timeLastClosed    = 0L
+                            )
+                        }
+                    }
+                }
+            }
+
+            return rooms
+        }
     }
 }

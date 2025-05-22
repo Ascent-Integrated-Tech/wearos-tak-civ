@@ -145,6 +145,7 @@ import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
 import com.aitech.weartak_civ.service.TAKConnectService
+import com.aitech.weartak_civ.service.ChatService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -369,6 +370,28 @@ class MainActivity : ComponentActivity() {
                 mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
             } else {
                 Log.d(TAG, "TAKConnectService is already running.")
+            }
+        }
+
+        fun startStopChatService() {
+            if (isLicenseValid()) {
+                if (enableChatService) {
+                    startChatService()
+                } else {
+                    if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                }
+                startChatService()
+            } else {
+                if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+            }
+        }
+
+        fun startChatService() {
+            if (!ChatService.isRunning.get()) {
+                Log.d(TAG, "Starting ChatService")
+                mainActivity.startForegroundService(Intent(mainActivity, ChatService::class.java))
+            } else {
+                Log.w(TAG, "ChatService is already running.")
             }
         }
 
@@ -597,6 +620,7 @@ class MainActivity : ComponentActivity() {
                         =====================================
                         """.trimIndent())
                 startTAKConnectService()
+                startChatService()
                 startOffBodyDetectService()
                 startBiometricService()
                 startBatteryService()
@@ -1743,9 +1767,12 @@ fun MainScreen(
 ) {
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
-    var hasUnreadMessages = dataRepository.newMessagesPresentPublicBoolean.observeAsState()
+    val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceLiveData.observeAsState()
 
+    LaunchedEffect(Unit) {
+        dataRepository.refreshUnreadCount()
+    }
 
     WearTAKCIVTheme {
         SwipeToDismissBox(
@@ -1797,7 +1824,6 @@ fun MainScreen(
                             .padding(top = 0.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        newMessagesPresentPublic()
                         requestChatComplicationUpdate(context)
                         FilledIconButton(
                             onClick = { context.startActivity(Intent(context, ChatActivity::class.java))
@@ -1812,21 +1838,21 @@ fun MainScreen(
                             enabled = if (chatCheckedLive == true) true else false
                         ) {
                             if (chatCheckedLive == true) {
-                            if (hasUnreadMessages.value == true) {
-                                Icon(
-                                    painter = painterResource(R.drawable.chat_newmessage),
-                                    contentDescription = "Favorite icon",
-                                    tint = Color.Unspecified,
-                                    modifier = Modifier.size(25.dp),
-                                )
-                            } else {
-                                Icon(
-                                    painter = painterResource(R.drawable.chat_nomessage),
-                                    contentDescription = "Favorite icon",
-                                    tint = Color.Unspecified,
-                                    modifier = Modifier.size(25.dp),
-                                )
-                            }
+                                if (hasUnreadMessages) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.chat_newmessage),
+                                        contentDescription = "Favorite icon",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(25.dp),
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.chat_nomessage),
+                                        contentDescription = "Favorite icon",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(25.dp),
+                                    )
+                                }
                         } else {
                                 Icon(
                                     painter = painterResource(R.drawable.chat_nomessage),
@@ -2039,11 +2065,11 @@ fun takServerComplicationString() {
 
 fun chatComplicationString() {
     if (enableChatServiceLiveData.value == true) {
-        if (dataRepository.newMessagesPresentPublicBoolean.value == true) {
-            chatComplication = CHAT_ENABLED_NEW_MESSAGE
-        } else {
-            chatComplication = CHAT_ENABLED_NO_NEW_MESSAGE
-        }
+//        if (dataRepository.newMessagesPresentPublicBoolean.value == true) {
+//            chatComplication = CHAT_ENABLED_NEW_MESSAGE
+//        } else {
+//            chatComplication = CHAT_ENABLED_NO_NEW_MESSAGE
+//        }
     } else {
         chatComplication = CHAT_DISABLED
     }

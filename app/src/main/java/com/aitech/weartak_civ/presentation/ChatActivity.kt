@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material3.Button
@@ -34,16 +33,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,7 +47,6 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -68,43 +63,36 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import com.aitech.weartak_civ.service.TAKConnectService
-import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.TimeZone
-import kotlin.Unit
 
 class ChatActivity : ComponentActivity() {
     companion object {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
-                //Example lists
-//        val messageList1 = listOf(DataRepository.ChatMessage("this is a cool tactical message", "11111", "ALPHA-01", 1747932043L), DataRepository.ChatMessage("I love tak wow", "11111", "ALPHA-01", 1747932108L),DataRepository.ChatMessage("Go to point B", "11111", "BRAVO-05", 1748018316L))
-//        val messageList2 = listOf(DataRepository.ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), DataRepository.ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),DataRepository.ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
-//        val messageGroups = listOf(DataRepository.ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), DataRepository.ChatRoom("1111111", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
-//        var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
-        //lateinit var dataRepository: DataRepository
-
+        lateinit var dataRepository: DataRepository
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        dataRepository = DataRepository(applicationContext)
+
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    ChatCivApp(exitActivity = {finishAndRemoveTask()}, context)
-
+                    ChatCivApp(exitActivity = { finishAndRemoveTask() }, context)
                 }
             }
         }
@@ -118,7 +106,11 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val chatEnabledLive by enableChatServiceLiveData.observeAsState()
 
-// react to changes in the license.
+    // Now using Utils.ChatRoom
+    val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
+
+    val hasAnyNew = chatRooms.any { it.newMessagesPresent }
+
     LaunchedEffect(licenseKey) {
         Log.d(TAG, "Launch chatEnabledLive = $chatEnabledLive")
         val currentDestination = navController.currentBackStackEntry?.destination?.route
@@ -145,22 +137,18 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
     SwipeDismissableNavHost(
         navController = navController,
         startDestination =
-            if (isLicenseValid()) {
-                if (chatEnabledLive == true ) {
-                    "chat_screen"
-                } else {
-                    "chat_disabled_screen"
-                }
-            } else {
-                "invalid_license_screen"
-            }
+        if (isLicenseValid()) {
+            if (chatEnabledLive == true) "chat_screen" else "chat_disabled_screen"
+        } else {
+            "invalid_license_screen"
+        }
     ) {
-        composable("chat_screen" ) {
-            ChatScreen(navController, {exitActivity()})
+        composable("chat_screen") {
+            ChatScreen(navController, exitActivity, chatRooms)
         }
 
-        composable("chat_disabled_screen" ) {
-            ChatDisabledScreen(navController, {exitActivity()})
+        composable("chat_disabled_screen") {
+            ChatDisabledScreen(navController, exitActivity)
         }
 
         composable(
@@ -169,14 +157,10 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "chat_screen_detailed index: $index")
-            ChatScreenDetailed(navController, index)
+            ChatScreenDetailed(navController, index, chatRooms)
         }
-//        composable(
-//            "license_setting_screen") {
-//            LicenseKeyScreen(navController, licenseSettingsState, context)
-//        }
-        composable(
-            "invalid_license_screen") {
+
+        composable("invalid_license_screen") {
             context.startActivity(Intent(context, SettingsActivity::class.java))
             exitActivity()
         }
@@ -185,11 +169,12 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
 
 @SuppressLint("CoroutineCreationDuringComposition", "UnrememberedMutableState")
 @Composable
-fun ChatScreen(navController: NavController, exitActivity: () -> Unit) {
-//    val takServerSettingList by takServerListState.observeAsState(initial = emptyList())
+fun ChatScreen(
+    navController: NavController,
+    exitActivity: () -> Unit,
+    chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
+) {
     Log.d(TAG, "TakServerSetting called")
-    val text = "Chat Messages"
-    newMessagesPresentPublic()
 
     WearTAKCIVTheme {
         Box(
@@ -200,35 +185,34 @@ fun ChatScreen(navController: NavController, exitActivity: () -> Unit) {
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .align(Alignment.TopCenter)
-                .padding(bottom = 30.dp),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = text,
+                    text = "Chat Messages",
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
                 )
-                LazyColumn (horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(dataRepository.messageGroups){ index, messageGroup ->
-//                        val latestTimeReceived = messageGroup.chatMessage.maxByOrNull { it.timeReceived }?.timeReceived
-//                        val latestMessageReceived = messageGroup.chatMessage.maxByOrNull { it.message }?.message
-                        val lastMessage = messageGroup.chatMessage.firstOrNull()
+                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
+                    itemsIndexed(chatRooms) { index, room ->
+                        // room.messageList is the List<ChatMessage>
+                        val lastMessage = room.messageList.lastOrNull()
                         val lastMessageTime = lastMessage?.timeReceived ?: 0L
-                        val lastMessageText = lastMessage?.message ?: ""
+                        val lastMessageText = lastMessage?.message.orEmpty()
 
                         ChatCard(
-                            index,
-                            messageGroup.title,
+                            index = index,
+                            title = room.title,
                             time = utcToHoursMinutes(lastMessageTime),
-                            lastMessageText,
-                            messageGroup.newMessagesPresent,
+                            message = lastMessageText,
+                            newMessagesPresent = room.newMessagesPresent,
                             onClick = {
-                                //selectedIndexState.postValue(index)
                                 navController.navigate("chat_screen_detailed/$index")
                             }
                         )
@@ -239,7 +223,7 @@ fun ChatScreen(navController: NavController, exitActivity: () -> Unit) {
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton( onClick = { exitActivity()})
+                BackButton(onClick = { exitActivity() })
             }
         }
     }
@@ -258,10 +242,10 @@ fun ChatCard(
     TitleCard(
         onClick = { onClick() },
         title = {
-            if (newMessagesPresent){
+            if (newMessagesPresent) {
                 Image(
                     painter = painterResource(R.drawable.unread_circle),
-                    contentDescription = "Top Left Icon",
+                    contentDescription = "Unread icon",
                     modifier = Modifier
                         .size(15.dp)
                         .padding(end = 5.dp),
@@ -269,15 +253,16 @@ fun ChatCard(
                 Text(title)
             } else {
                 Text(title)
-            }},
+            }
+        },
         time = { Text(text = time, fontSize = 12.sp) },
         backgroundPainter = if (newMessagesPresent) CardDefaults.cardBackgroundPainter(
             startBackgroundColor = MaterialTheme.colors.primary
                 .copy(alpha = 0.60f)
-            .compositeOver(MaterialTheme.colors.background),
-        endBackgroundColor = MaterialTheme.colors.onSurfaceVariant
-            .copy(alpha = 0.20f)
-        .compositeOver(MaterialTheme.colors.background),
+                .compositeOver(MaterialTheme.colors.background),
+            endBackgroundColor = MaterialTheme.colors.onSurfaceVariant
+                .copy(alpha = 0.20f)
+                .compositeOver(MaterialTheme.colors.background),
         ) else CardDefaults.cardBackgroundPainter()
     ) {
         if (newMessagesPresent) {
@@ -297,13 +282,21 @@ fun ChatCard(
 @Composable
 fun ChatScreenDetailed(
     navController: NavController,
-    index: Int
+    index: Int,
+    chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
 ) {
     WearTAKCIVTheme {
-//        val takServerListLocal by takServerListState.observeAsState(initial = emptyList())
-//        Log.d(TAG, "Edited tak server list: $takServerListLocal")
-        var chatRoomTitle = dataRepository.messageGroups.getOrNull(index)?.title.orEmpty()
-        var messageListIndex = dataRepository.messageGroups.getOrNull(index)?.chatMessage.orEmpty()
+        val room = chatRooms.getOrNull(index)
+        val chatRoomTitle = room?.title.orEmpty()
+        val messageList = room?.messageList.orEmpty()
+        val roomId = room?.uid
+
+        // Mark this room as read when entering detail
+        LaunchedEffect(key1 = index) {
+            if (roomId != null) {
+                dataRepository.markRoomRead(roomId)
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -313,11 +306,12 @@ fun ChatScreenDetailed(
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .align(Alignment.TopCenter)
-                .padding(bottom = 30.dp),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -327,18 +321,15 @@ fun ChatScreenDetailed(
                     modifier = Modifier.padding(7.dp)
                 )
 
-                LazyColumn (horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(messageListIndex) { index, chatMsg ->
+                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
+                    itemsIndexed(messageList) { messageIndex, chatMsg ->
                         val currentDate = utcToDate(chatMsg.timeReceived)
-                        var displayDate = false
-                        if (index == 0) {
-                            displayDate = true
-                        } else { // index NOT 0
-                            if (utcToDate(messageListIndex[index-1].timeReceived) != currentDate) {
-                                displayDate = true
-                            }
+                        val displayDate = if (messageIndex == 0) {
+                            true
+                        } else {
+                            utcToDate(messageList[messageIndex - 1].timeReceived) != currentDate
                         }
-                        //Log.d(TAG, "displayDate = $displayDate")
+
                         if (displayDate) {
                             Text(
                                 text = currentDate,
@@ -348,44 +339,39 @@ fun ChatScreenDetailed(
                             )
                         }
                         ChatMessageItem(
-                            utcToHoursMinutes(chatMsg.timeReceived),
-                            chatMsg.callsign,
-                            chatMsg.message
+                            time = utcToHoursMinutes(chatMsg.timeReceived),
+                            callsign = chatMsg.callsign,
+                            message = chatMsg.message
                         )
                     }
                 }
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
-                    onClick = {
+                BackButton(onClick = {
                     navController.navigate("chat_screen") {
-                        popUpTo(("chat_screen")) {
-                            inclusive = true
-                        }
-                    } })
+                        popUpTo("chat_screen") { inclusive = true }
+                    }
+                })
             }
         }
     }
 }
 
 @Composable
-fun ChatMessageItem (
+fun ChatMessageItem(
     time: String,
     callsign: String,
     message: String,
-    ) {
-    val maxChar = 20
-
+) {
     Chip(
-        onClick = { /* Do something */ },
+        onClick = { /* no-op */ },
         enabled = true,
         modifier = Modifier.fillMaxWidth(),
         colors = ChipDefaults.outlinedChipColors(),
-        // CompactChip label should be no more than 1 line of text
         label = {
             Text(
-                text = callsign + " - " + time,
+                text = "$callsign - $time",
                 maxLines = 1,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Start,
@@ -406,7 +392,7 @@ fun ChatMessageItem (
 }
 
 @Composable
-fun ChatDisabledScreen (navController: NavController, exitActivity: () -> Unit) {
+fun ChatDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
     WearTAKCIVTheme {
         Column(
             modifier = Modifier
@@ -422,7 +408,6 @@ fun ChatDisabledScreen (navController: NavController, exitActivity: () -> Unit) 
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.size(5.dp))
-            //Maybe add info here for how to contact Ascent for the key?
             Text(
                 text = "Please enable Chat in order to use this feature",
                 textAlign = TextAlign.Center,
@@ -430,15 +415,17 @@ fun ChatDisabledScreen (navController: NavController, exitActivity: () -> Unit) 
             )
             Spacer(modifier = Modifier.size(10.dp))
             Button(
-                onClick = { navController.navigate("invalid_license_screen") {
-                    popUpTo("invalid_license_screen") { inclusive = true }
-                } },
+                onClick = {
+                    navController.navigate("invalid_license_screen") {
+                        popUpTo("invalid_license_screen") { inclusive = true }
+                    }
+                },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.primary,
                     contentColor = Color.Black
                 )
             ) {
-                Text (
+                Text(
                     text = "Go to Settings",
                     color = Color.Black,
                     fontWeight = FontWeight.SemiBold,
@@ -453,7 +440,7 @@ fun ChatDisabledScreen (navController: NavController, exitActivity: () -> Unit) 
                 ),
                 modifier = Modifier.padding(top = 2.dp)
             ) {
-                Text (
+                Text(
                     text = "Exit",
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
@@ -465,37 +452,29 @@ fun ChatDisabledScreen (navController: NavController, exitActivity: () -> Unit) 
 }
 
 fun utcToHoursMinutes(time: Long): String {
-    val instant = Instant.ofEpochSecond(time)
+    val instant = Instant.ofEpochMilli(time)
     val localTime = instant.atZone(ZoneId.systemDefault())
     val formatter = DateTimeFormatter.ofPattern("HH:mm a")
     return localTime.format(formatter)
 }
 
 fun utcToDate(time: Long): String {
-    val instant = Instant.ofEpochSecond(time)
+    val instant = Instant.ofEpochMilli(time)
     val localTime = instant.atZone(ZoneId.systemDefault())
-    val formatter = DateTimeFormatter.ofPattern("MM/dd/YYYY")
+    val formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy")
     return localTime.format(formatter)
-}
-
-fun newMessagesPresentPublic() {
-    if (dataRepository.messageGroups.any { it.newMessagesPresent }) {
-        dataRepository.newMessagesPresentPublicBoolean.value = true
-    } else {
-        dataRepository.newMessagesPresentPublicBoolean.value = false
-    }
 }
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
 fun ChatScreenPreview() {
-    ChatScreen(rememberSwipeDismissableNavController(), {})
+    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList())
 }
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
 fun ChatScreenDetailedPreview() {
-    ChatScreenDetailed(rememberSwipeDismissableNavController(), 0)
+    ChatScreenDetailed(rememberSwipeDismissableNavController(), 0, emptyList())
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
