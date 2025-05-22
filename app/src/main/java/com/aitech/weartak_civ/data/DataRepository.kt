@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -354,29 +356,67 @@ class DataRepository(private val context: Context) {
     }
      */
 
-    data class ChatMessage(
-        var message: String,
-        val uid: String,
-        var callsign: String,
-        var timeReceived: Long
-    )
-
-    data class ChatRoom(
-        val uid: String,
-        var title: String,
-        var chatMessage: List<ChatMessage>, //Messages that device has sent you
-        var newMessagesPresent: Boolean, //Are there unread messages, determined by timeLastOpened and timeLastClosed
-        var timeLastOpened: Long, //When the chat log has been opened, any messages received while its open are automatically marked as read
-        var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
-    )
+//    data class ChatMessage(
+//        var message: String,
+//        val uid: String,
+//        var callsign: String,
+//        var timeReceived: Long
+//    )
+//
+//    data class ChatRoom(
+//        val uid: String,
+//        var title: String,
+//        var chatMessage: List<ChatMessage>, //Messages that device has sent you
+//        var newMessagesPresent: Boolean, //Are there unread messages, determined by timeLastOpened and timeLastClosed
+//        var timeLastOpened: Long, //When the chat log has been opened, any messages received while its open are automatically marked as read
+//        var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
+//    )
 
     //val messageList1 = listOf(ChatMessage("A", "11111", "ALPHA-01", 1747932042L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L),ChatMessage("D", "11111", "ALPHA-01", 1747932109L),ChatMessage("E", "11111", "BRAVO-05", 1748018316L),ChatMessage("F", "11111", "BRAVO-05", 1748018317L))
     //val messageList2 = listOf(ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
 
-    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
-    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
-    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+//    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
+//    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
+//    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
     var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
+
+    private val _chatRoomsFlow = MutableStateFlow<List<Utils.ChatRoom>>(emptyList())
+    val chatRoomsFlow: StateFlow<List<Utils.ChatRoom>> = _chatRoomsFlow
+
+    /* ─── unread indicator ──────────────────────────────────────────────────── */
+    private val _unreadCount      = MutableStateFlow(0)
+    private val _hasUnread        = MutableStateFlow(false)
+
+    val unreadCount : StateFlow<Int>  = _unreadCount        // if you need the exact number
+    val hasUnread   : StateFlow<Boolean> = _hasUnread        // true/false for the badge
+
+    suspend fun refreshUnreadCount() {
+        val n = ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
+        _unreadCount.emit(n)
+        _hasUnread.emit(n > 0)
+    }
+
+    fun setChatRooms(rooms: List<Utils.ChatRoom>) {
+        _chatRoomsFlow.value = rooms
+        val anyUnread = rooms.any { it.newMessagesPresent }
+        newMessagesPresentPublicBoolean.postValue(anyUnread)
+    }
+
+    suspend fun markRoomRead(roomId: String) {
+        ChatService.markRoomReadStatic(roomId)
+        val fresh = ChatService.getInstance()?.getInbox() ?: emptyList()
+        _chatRoomsFlow.emit(fresh)
+
+        // update indicator
+        _unreadCount.emit(fresh.count { it.newMessagesPresent })
+        _hasUnread.emit(fresh.any  { it.newMessagesPresent })
+    }
+
+    /**
+     *  Returns the current unread-message total, 0 if the service isn’t running.
+     */
+    suspend fun getUnreadMsgsCount(): Int =
+        ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
 
 
     data class TakServerItem(

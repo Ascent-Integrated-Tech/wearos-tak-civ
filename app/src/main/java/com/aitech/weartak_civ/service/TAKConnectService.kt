@@ -51,6 +51,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.*
@@ -64,9 +65,11 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.w3c.dom.Document
 import org.xml.sax.InputSource
+import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.StringReader
 import java.security.*
 import java.security.cert.Certificate
@@ -85,6 +88,8 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
+import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.events.TakChatEvent
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
@@ -1084,6 +1089,39 @@ class TAKConnectService: Service() {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
+
+                    // start a background COT‐reader on the same socket
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            Log.v(TAG, "Trying to read cot messages in.")
+                            val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
+                            val buffer = StringBuilder()
+                            while (true) {
+                                val line = reader.readLine() ?: break
+                                buffer.append(line)
+
+                                // work against the String version so we can substring easily
+                                val bufStr = buffer.toString()
+                                val endIdx = bufStr.indexOf("</event>")
+                                if (endIdx >= 0) {
+                                    // extract one complete <event>…</event>
+                                    val rawXml = bufStr.substring(0, endIdx + "</event>".length)
+                                    // remove it from the buffer
+                                    buffer.delete(0, endIdx + "</event>".length)
+
+                                    // only forward chat messages addressed to us or “All Chat Rooms”
+                                    if (CotUtils.isChatMessage(rawXml)
+                                        && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
+                                        Log.v(TAG, "Posting a tak chat message Event.")
+                                        EventBus.getDefault().post(TakChatEvent(rawXml))
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "COT listener loop failed", e)
+                        }
+                    }
+
                 } catch (e: Exception) {
                     //sendTakConnectionStatusEvent(CONNECTION_FAILURE)
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
