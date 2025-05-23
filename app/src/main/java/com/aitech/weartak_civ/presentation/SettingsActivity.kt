@@ -2527,6 +2527,7 @@ fun SettingsScreen(
 //                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
                             }
                             enableChatServiceLiveData.postValue(enableChatService)
+                            requestChatComplicationUpdate(context)
                         }
 
                         if (settingsChanged) {

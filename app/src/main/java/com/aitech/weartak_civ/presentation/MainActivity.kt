@@ -193,9 +193,11 @@ import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.complication.CallsignComplicationService
+import com.aitech.weartak_civ.complication.ChatComplicationService
 import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.presentation.ChatActivity.Constants.newMessagesPresentPublicBoolean
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
@@ -229,6 +231,7 @@ class MainActivity : ComponentActivity() {
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
+        var chatComplication : String = ""
 
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
@@ -1544,6 +1547,14 @@ fun requestLocationComplicationUpdate(context: Context) {
     requester.requestUpdateAll()
 }
 
+//TODO: Possibly move to chat service wherever it goes
+fun requestChatComplicationUpdate(context: Context) {
+    val componentName = ComponentName(context, ChatComplicationService::class.java)
+
+    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
+    requester.requestUpdateAll()
+}
+
 
 //Contains functionality for all watch screens
 @Composable
@@ -1895,6 +1906,18 @@ fun takServerComplicationString() {
         }
     } else {
         takServerStatusComplication = "disconnected"
+    }
+}
+
+fun chatComplicationString() {
+    if (enableChatServiceLiveData.value == true) {
+        if (newMessagesPresentPublicBoolean.value == true) {
+            chatComplication = "enabledNewMessage"
+        } else {
+            chatComplication = "enabledNoMessage"
+        }
+    } else {
+        chatComplication = "disabled"
     }
 }
 

@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
+import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.presentation.ChatActivity
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -369,6 +371,10 @@ class DataRepository(private val context: Context) {
         var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
     )
 
+    val messageList1 = listOf(DataRepository.ChatMessage("this is a cool tactical message", "11111", "ALPHA-01", 1747932043L), DataRepository.ChatMessage("I love tak wow", "11111", "ALPHA-01", 1747932108L),DataRepository.ChatMessage("Go to point B", "11111", "BRAVO-05", 1748018316L))
+    val messageList2 = listOf(DataRepository.ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), DataRepository.ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),DataRepository.ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
+    val messageGroups = listOf(DataRepository.ChatRoom("1111111", "Group-01", chatMessage = ChatActivity.Constants.messageList1, true, 1L, 2L), DataRepository.ChatRoom("1111111", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+    var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
 
 
     data class TakServerItem(
