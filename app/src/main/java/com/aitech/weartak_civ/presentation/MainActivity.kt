@@ -2159,9 +2159,17 @@ fun SOSButton() {
         if (takServer == true) {
             if (location != null && locationChecked) {
                 successBoolean.value = true
-                SOSButtonEmergencyMessage()            }
+                SOSButtonEmergencyMessage()
+            }
         } else {
-            successBoolean.value = false
+            if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
+                Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
+                successBoolean.value = true
+                SOSButtonEmergencyMessage()
+            } else {
+                Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
+                successBoolean.value = false
+            }
         }
         SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
     }

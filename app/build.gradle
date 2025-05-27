@@ -97,7 +97,7 @@ dependencies {
         implementation 'com.google.code.gson:gson:2.10.1'
         // or whichever version you prefer
     }
-    implementation "live.ditto:ditto:4.8.1"
+    implementation "live.ditto:ditto:4.10.2"
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
     implementation libs.ui

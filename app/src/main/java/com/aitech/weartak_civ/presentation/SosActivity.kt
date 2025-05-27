@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -58,6 +59,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.TAKConnectService
 import kotlinx.coroutines.delay
@@ -136,6 +138,7 @@ fun ConfirmationDialogActivity(
         confirmButton = {
             Button(
                 onClick = {
+                    Log.w("WearTAK-SOSActivity", "SOS Clicked.")
                     isConfirmed.value = true
                     isDismissed.value = false
                 },
@@ -260,6 +263,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isConfirmed,
                 isDismissed
             )
+            Log.w("WearTAK-SOSActivity", "SOS_Screen Composable Reached.")
 
             if (isDismissed.value) {
                 exitActivity()
@@ -268,13 +272,22 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
             //shouldShowDialog = Should successdialog be shown
             //successBoolean = Success boolean (x or check)
             //isConfirmed = Was confirmation dialog confirm button pressed
+
             if (isConfirmed.value) {
                 if (takServer == true) {
                     if (location != null && locationChecked) {
                         successBoolean.value = true
-                        SOSButtonEmergencyMessage()            }
+                        SOSButtonEmergencyMessage()
+                    }
                 } else {
-                    successBoolean.value = false
+                    if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
+                        Log.w("WearTAK-SOSActivity", "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
+                        successBoolean.value = true
+                        SOSButtonEmergencyMessage()
+                    } else {
+                        Log.e("WearTAK-SOSActivity", "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
+                        successBoolean.value = false
+                    }
                 }
                 LaunchedEffect(Unit) {
                     delay(2000) // Delay for 5 seconds
@@ -286,7 +299,6 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                     shouldShowConfirm,
                     successBoolean,
                 )
-
             }
         }
 //        composable(
