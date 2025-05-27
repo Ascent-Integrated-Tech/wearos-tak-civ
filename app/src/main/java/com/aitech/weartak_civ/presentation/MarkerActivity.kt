@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -77,6 +78,7 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
+import com.aitech.weartak_civ.service.DittoService
 import kotlin.math.min
 
 class MarkerActivity : ComponentActivity() {
@@ -310,6 +312,7 @@ fun MarkerSuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean 
                         tint = Color.Red
                     )
                     Spacer(modifier = Modifier.height(10.dp))
+                    // TODO: Add more context to the error, for example "not connected to server & mesh/ditto is disabled. Enable meshing to fix"
                     androidx.wear.compose.material.Text(
                         text = stringResource(R.string.error),
                         textAlign = TextAlign.Center,
@@ -359,7 +362,12 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         successBoolean.value = true
                     }
                 } else {
-                    successBoolean.value = false
+                    if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
+                        Log.w("WearTAK-MarkerActivity", "Not connected to tak server, but Ditto is enabled and running. Marker will be sent through here.")
+                        successBoolean.value = true
+                    } else {
+                        successBoolean.value = false
+                    }
                 }
 
                 LaunchedEffect(Unit) {

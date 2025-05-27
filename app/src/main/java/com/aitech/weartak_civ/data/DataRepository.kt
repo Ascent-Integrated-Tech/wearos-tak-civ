@@ -170,7 +170,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getDittoAppId: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[DITTO_APP_ID] ?: "Default Ditto App Id"
+        prefs[DITTO_APP_ID] ?: "d0a0ed19-be6f-43ed-bb70-ff95653c98b7"
     }
 
     suspend fun storeDittoAuthToken(token: String) {
@@ -180,7 +180,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getDittoAuthToken: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[DITTO_AUTH_TOKEN] ?: "Default Ditto Auth Token"
+        prefs[DITTO_AUTH_TOKEN] ?: "8b7efdee-5a96-409e-842c-1ed48045de24"
     }
 
     suspend fun storeCustomDeveloperConfigJson(jsonString: String) {

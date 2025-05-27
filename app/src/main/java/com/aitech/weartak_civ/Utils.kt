@@ -1,6 +1,8 @@
 package com.aitech.weartak_civ
 
+import android.os.Build
 import android.util.Log
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -93,5 +95,160 @@ object Utils {
 
         return Pair(lat + latitudeJitter, lon + longitudeJitter)
 
+    }
+
+    /* Ditto Track Document uses this legacy cot field. It is
+     * some sort of convoluted, inefficient JSON string and is
+     * viciously unreadable, but required for meshing PLI in tak.
+     * This function alleviates the pain.
+    */
+    fun cotNode(
+        name: String,
+        attrs: Map<String, Any?> = emptyMap(),
+        children: Map<String, Any?> = emptyMap(),
+        indexValue: Any? = null
+    ): Map<String, Any?> = mapOf(
+        "a" to attrs,
+        "d" to children,
+        "i" to indexValue,
+        "n" to name
+    )
+
+    // 1) Ditto‐only version
+    fun buildCotDetailDitto(
+        callsign: String,
+        roleValue: String,
+        teamValue: String,
+        uid: String,
+        battery: Int,
+        // takv attributes
+        takvOs: String,
+        takvVersion: String,
+        takvDevice: String,
+        takvPlatform: String,
+        // precisionlocation (defaults to GPS)
+        altsrc: String = "GPS",
+        geopointsrc: String = "GPS",
+        // ditto attributes
+        dittoA: String,
+        dittoIp: String,
+        dittoVersion: String,
+        dittoDeviceName: String,
+        // contact endpoint
+        endpoint: String = "*:-1:stcp"
+    ): String {
+        return """
+        <detail>
+            <takv os='$takvOs' version='$takvVersion' device='$takvDevice' platform='$takvPlatform'/>
+            <contact endpoint='$endpoint' callsign='$callsign'/>
+            <uid Droid='$uid'/>
+            <precisionlocation altsrc='$altsrc' geopointsrc='$geopointsrc'/>
+            <__group role='$roleValue' name='$teamValue'/>
+            <status battery='$battery'/>
+            <ditto a='$dittoA' ip='$dittoIp' version='$dittoVersion' deviceName='$dittoDeviceName'/>
+        </detail>
+    """.trimIndent()
+    }
+
+    // 1
+    fun buildCotDetail(
+        // existing parameters
+        callsign: String,
+        roleValue: String,
+        teamValue: String,
+        uid: String,
+        battery: Int,
+        // takv-related
+        takvOs: String,
+        takvVersion: String,
+        takvDevice: String,
+        takvPlatform: String,
+        // precisionlocation (defaults to GPS)
+        altsrc: String = "GPS",
+        geopointsrc: String = "GPS",
+        // ditto-related
+        dittoA: String,
+        dittoIp: String,
+        dittoVersion: String,
+        dittoDeviceName: String,
+        // contact endpoint (default if you still want it)
+        endpoint: String = "*:-1:stcp"
+    ): String {
+        return """
+        <detail>
+            <takv 
+                os='$takvOs' 
+                version='$takvVersion' 
+                device='$takvDevice' 
+                platform='$takvPlatform'
+            />
+            <contact 
+                endpoint='$endpoint' 
+                callsign='$callsign'
+            />
+            <uid Droid='$uid'/>
+            <precisionlocation 
+                altsrc='$altsrc' 
+                geopointsrc='$geopointsrc'
+            />
+            <__group 
+                role='$roleValue' 
+                name='$teamValue'
+            />
+            <status battery='$battery'/>
+            <ditto 
+                a='$dittoA' 
+                ip='$dittoIp' 
+                version='$dittoVersion' 
+                deviceName='$dittoDeviceName'
+            />
+        </detail>
+    """.trimIndent()
+    }
+    fun buildCotDetailMerged(
+        // — your original fields —
+        heartRate: Int,
+        battery:    Int,
+        callsign:   String,
+        roleValue:  String,
+        teamValue:  String,
+        uid:        String,
+        bearingActual: Float,
+        speedActual:   Float,
+
+        // — ATAK version/device info (matches your Ditto‐only sample) —
+        takvOs:      String = "WEAROS",
+        takvVersion: String = "WearTAK-${Build.VERSION.RELEASE}",
+        takvDevice:  String,
+        takvPlatform:String = "ATAK-CIV",
+
+        // — precisionlocation defaults to GPS —
+        altsrc:      String = "GPS",
+        geopointsrc: String = "GPS",
+
+        // — ditto payload (matches your Ditto‐only sample) —
+        dittoA:          String,
+        dittoIp:         String = "0.0.0.0",
+        dittoVersion:    String,
+        dittoDeviceName: String,
+
+        // — contact defaults —
+        endpoint:   String = "*:-1:stcp",
+        phone:      String = "11234567890"
+    ): String = "<detail><takv os='$takvOs' version='$takvVersion' device='$takvDevice' platform='$takvPlatform'/><contact endpoint='$endpoint' callsign='$callsign'/><uid Droid='$uid'/><precisionlocation altsrc='$altsrc' geopointsrc='$geopointsrc'/><__group role='$roleValue' name='$teamValue'/><status battery='$battery'/><remarks>HR: $heartRate bpm; Batt: $battery%</remarks><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/><ditto a='$dittoA' ip='$dittoIp' version='$dittoVersion' deviceName='$dittoDeviceName'/></detail>"
+
+    fun buildCotDetailOld(
+        heartRate: Int,
+        battery: Int,
+        callsign: String,
+        roleValue: String,
+        teamValue: String,
+        uid: String,
+        bearingActual: Float,
+        speedActual: Float,
+        endpoint: String = "*:-1:stcp",
+        phone: String = "11234567890"
+    ): String {
+        return """<detail><remarks>HR: $heartRate bpm; Batt: $battery%</remarks><status battery='$battery'/><contact endpoint='$endpoint' phone='$phone' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail>""".trimIndent()
     }
 }
