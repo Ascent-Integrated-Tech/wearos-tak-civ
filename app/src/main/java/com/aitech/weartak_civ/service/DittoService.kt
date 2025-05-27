@@ -28,6 +28,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
@@ -44,8 +45,12 @@ import live.ditto.DittoSyncSubscription
 import live.ditto.android.DefaultAndroidDittoDependencies
 import live.ditto.transports.DittoTransportConfig
 import java.util.concurrent.atomic.AtomicBoolean
+import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
 
 class DittoService : Service() {
 
@@ -54,7 +59,10 @@ class DittoService : Service() {
     private var dittoUpdateThread: HandlerThread? = null
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO) // Single CoroutineScope for background I/O tasks, ensuring lifecycle management, error isolation, and cleaner code.
     private val uuid = MainActivity.device_uid
-    private var subscription: DittoSyncSubscription? = null
+    private var subscriptionTrack: DittoSyncSubscription? = null
+    private var subscriptionAlert: DittoSyncSubscription? = null
+    private var subscriptionMapItem: DittoSyncSubscription? = null
+
     private val model = android.os.Build.MODEL
     private val manufacturer = android.os.Build.MANUFACTURER
 
@@ -65,6 +73,11 @@ class DittoService : Service() {
         if (null == getDittoInstance()) {
             initializeDitto(applicationContext, dataRepository)
         }
+        // listen for ditto specific events for markers, alerts.
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
+
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
         Log.d(TAG, "Oncreate Called")
     }
@@ -107,6 +120,70 @@ class DittoService : Service() {
 
         // Schedule the first run
         dittoUpdateHandler?.postDelayed(dittoUpdateRunnable, DISPATCH_INTERVAL)
+    }
+
+    /** Fired whenever any dispatch code posts a DittoDocumentEvent */
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    fun onDittoDoc(evt: DittoDocumentEvent) {
+        ioScope.launch {
+            try {
+                val raw    = evt.cotXml
+                val id     = extract(raw, "uid")
+                val lat    = extract(raw, "lat").toDouble()
+                val lon    = extract(raw, "lon").toDouble()
+                val timeMs = Instant.parse(extract(raw, "time")).toEpochMilli()
+                val staleS = extract(raw, "stale")
+                val staleMs = Instant.parse(staleS).toEpochMilli() - timeMs
+                val type   = extract(raw, "type")
+                val authorType = extractLinkAttrOrNull(raw, "type") ?: "a-f-G-U-C"
+                val how    = extractOrNull(raw, "how")
+                val cs     = extractOrNull(raw, "callsign") ?: callsign
+                val pks    = extractOrNull(raw, "pks") ?: localPeerKeyString
+
+                val doc = when(evt.collection) {
+                    "mapitem" -> mapOf<String, Any?>(
+                        "_id"        to id,
+                        "authorCs"   to callsign,
+                        "authorId"   to uuid,
+                        "authorType" to authorType,
+                        "cs"         to cs,
+                        "lat"        to lat,
+                        "lon"        to lon,
+                        "pks"        to pks,
+                        "removed"    to false,
+                        "schver"     to 1,
+                        "staleMs"    to staleMs,
+                        "takUid"     to id,
+                        "timeMs"     to timeMs,
+                        "type"       to type,
+                        "visible"    to "true"
+                    )
+                    "alert" -> mapOf<String, Any?>(
+                        "_id"        to id,             // or "$uuid-$timeMs" if you need uniqueness
+                        "authorId"   to uuid,
+                        "authorType" to authorType,
+                        "cs"         to "$callsign-Alert",
+                        "how"        to (how ?: "m-g"),
+                        "lat"        to lat,
+                        "lon"        to lon,
+                        "pks"        to pks,
+                        "removed"    to false,
+                        "schver"     to 1,
+                        "staleMs"    to staleMs,
+                        "timeMs"     to timeMs,
+                        "type"       to type
+                    )
+                    else -> return@launch
+                }
+
+                val query = "INSERT INTO ${evt.collection} DOCUMENTS (:doc) ON ID CONFLICT DO UPDATE"
+                ditto.store.execute(query, mapOf("doc" to doc))
+                Log.v(TAG, "Wrote to ${evt.collection}: $doc")
+
+            } catch (t: Throwable) {
+                Log.e(TAG, "Ditto write failed", t)
+            }
+        }
     }
 
     private fun updateTrackDocument() {
@@ -317,20 +394,32 @@ class DittoService : Service() {
             } catch (e: DittoError) {
                 Log.e("DittoService", "Error stopping sync: ${e.message}")
             }
-            subscription?.close() // stop subscribing to track collection
-            Log.d(TAG, "Subscription has been closed.")
+            subscriptionTrack?.close() // stop subscribing to track collection
+            subscriptionAlert?.close()
+            subscriptionAlert?.close()
+            Log.d(TAG, "Subscriptions have been closed.")
 
         }
-        subscription = null
+
+        subscriptionTrack = null
+        subscriptionAlert = null
+        subscriptionMapItem = null
         ioScope.cancel() // cancel all coroutines when service is destroyed
+
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         if (!isRunning.getAndSet(true)) {
             startForegroundService() // service needs to work in the background when screen is off
             startDispatchScheduler() // we want to update our ditto data at fixed interval
-            Log.d(TAG, "Subscribing to [ track ] collection")
-            subscription = ditto.sync.registerSubscription("SELECT * FROM track")
+            Log.d(TAG, "Subscribing to [ track, alert, mapitem ] collection")
+
+            subscriptionTrack = ditto.sync.registerSubscription("SELECT * FROM track")
+            subscriptionMapItem = ditto.sync.registerSubscription("SELECT * FROM mapitem")
+            subscriptionAlert = ditto.sync.registerSubscription("SELECT * FROM alert")
 
             configureDitto() // configure all peer transports
             try {
@@ -379,6 +468,24 @@ class DittoService : Service() {
         service.createNotificationChannel(chan)
         return channelId
     }
+
+    //––––––––– | Helper tools for Cot Parsing from DittoDocumentEvent
+    /** Pulls a required attribute or throws if missing */
+    private fun extract(raw: String, name: String): String =
+        """$name=['"]([^'"]+)['"]""".toRegex()
+            .find(raw)!!.groupValues[1]
+
+    /** Pulls an optional attribute or null if absent */
+    private fun extractOrNull(raw: String, name: String): String? =
+        """$name=['"]([^'"]+)['"]""".toRegex()
+            .find(raw)?.groupValues?.get(1)
+
+    /** Pulls the type of the cot messages author **/
+    private fun extractLinkAttrOrNull(raw: String, attrName: String): String? =
+        """<link[^>]*\b$attrName=['"]([^'"]+)['"]""".toRegex()
+            .find(raw)
+            ?.groupValues
+            ?.get(1)
 
     companion object {
         private val TAG = "WearTAK-" + DittoService::class.java.simpleName

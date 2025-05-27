@@ -28,6 +28,7 @@ import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MarkerEvent
@@ -414,39 +415,68 @@ class CotDispatchService : Service() {
     }
 
     private fun sendMarkerCotMessage() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            if (TAKConnectService.isAnyTakConnected && (location != null)) {
-                markerDropToBeSent.set(false)
-                var heartRate = dataRepository.latestHeartRate.value
-                var battery = dataRepository.latestBatteryPercentage.value
-                if (heartRate == null) {
-                    heartRate = -1
-                }
-                if (battery == null) {
-                    battery = -1
-                }
-                val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
-                sendDataTAKServers(cotMessage, true)
-                Log.v(TAG, "Marker CoT message sent: $cotMessage")
-            } else {
-                Log.w(TAG, "Marker CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
+        ioScope.launch(Dispatchers.IO) {
+            // 1) Grab latest location; if null, take note & bail out
+            val loc = dataRepository.latestLocation.value
+            if (loc == null) {
+                Log.w(TAG, "Marker skipped: no location available")
                 markerDropToBeSent.set(true)
-                //markerDropReceivedTime = System.currentTimeMillis() // NOTE: This is taken care of in the calling function
+                return@launch
+            }
+
+            // 2) Gather telemetry (heartRate, battery) with defaults
+            val heartRate = dataRepository.latestHeartRate.value ?: -1
+            val battery   = dataRepository.latestBatteryPercentage.value ?: -1
+
+            // 3) Build CoT XML (unchanged signature)
+            val cotMessage = buildMarkerCotMessage(loc, heartRate, battery)
+
+            // 4) Mesh into Ditto if the DittoService is running
+            if (DittoService.isRunning.get()) {
+                EventBus.getDefault()
+                    .post(DittoDocumentEvent("mapitem", cotMessage))
+                Log.v(TAG, "Marker CoT meshed into Ditto: $cotMessage")
+            }
+
+            // 5) Only send to TAK servers if connected
+            if (TAKConnectService.isAnyTakConnected) {
+                markerDropToBeSent.set(false)
+                sendDataTAKServers(cotMessage, true)
+                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
+            } else {
+                Log.w(TAG, "Marker CoT NOT sent to TAK (disconnected)")
+                markerDropToBeSent.set(true)
             }
         }
     }
 
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            if (TAKConnectService.isAnyTakConnected && (location != null)) {
+        ioScope.launch(Dispatchers.IO) {
+            // don’t send an alert if we don’t have a location
+            val loc = dataRepository.latestLocation.value
+            if (loc == null) {
+                Log.w(TAG, "Skipping emergency alert: no GPS fix")
+                manualSosToBeSent.set(true)
+                return@launch
+            }
+
+            // build the CoT XML for this alert
+            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc)
+
+            // push into Ditto if the service is up
+            if (DittoService.isRunning.get()) {
+                EventBus.getDefault()
+                    .post(DittoDocumentEvent("alert", cotMessage))
+                Log.v(TAG, "Posted emergency alert to Ditto")
+            }
+
+            // only forward to TAK if we’re connected
+            if (TAKConnectService.isAnyTakConnected) {
                 manualSosToBeSent.set(false)
-                val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
                 sendDataTAKServers(cotMessage, true)
-                Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
+                Log.v(TAG, "Sent emergency alert to TAK server")
             } else {
-                Log.w(TAG, "EmergencyAlert CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
+                Log.w(TAG, "Not sending to TAK (service disconnected)")
                 manualSosToBeSent.set(true)
             }
         }
