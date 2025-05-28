@@ -18,6 +18,7 @@ import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import java.util.Calendar
 
@@ -37,7 +38,9 @@ class CallsignComplicationService : SuspendingComplicationDataSourceService() {
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
-        //Log.d(TAG, "onComplicationRequest called")
+        if (null == mainActivityIsInit) {
+            return createComplicationData("Loading...", "Callsign Loading")
+        }
         return when (isLicenseValid()) {
             true -> createComplicationData(callsign, getString(R.string.watch_callsign))
             false -> createComplicationData("INVALID LICENSE", getString(R.string.invalid_license_key))
