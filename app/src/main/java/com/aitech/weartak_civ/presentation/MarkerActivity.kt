@@ -59,6 +59,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.MutableState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -67,6 +68,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.wear.compose.material.Icon
 import com.aitech.weartak_civ.events.MarkerEvent
@@ -117,6 +119,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = -45f,
                     sweepAngle = 85f,
                     Alignment.CenterEnd,
+                    "Friendly",
                     marker = painterResource(R.drawable.friendly),
                     onClick = {
                         EventBus.getDefault().post(MarkerEvent(FRIENDLY, 0))
@@ -128,6 +131,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = 45f,
                     sweepAngle = 85f,
                     Alignment.BottomCenter,
+                    "Unknown",
                     marker = painterResource(R.drawable.unknown),
                     onClick = {
                         EventBus.getDefault().post(MarkerEvent(UNKNOWN, 0))
@@ -139,6 +143,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = 135f,
                     sweepAngle = 85f,
                     Alignment.CenterStart,
+                    "Neutral",
                     marker = painterResource(R.drawable.neutral),
                     onClick = {
                         EventBus.getDefault().post(MarkerEvent(NEUTRAL, 0))
@@ -150,6 +155,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = 225f,
                     sweepAngle = 85f,
                     Alignment.TopCenter,
+                    "Hostile",
                     marker = painterResource(R.drawable.hostile),
                     onClick = {
                         EventBus.getDefault().post(MarkerEvent(HOSTILE, 0))
@@ -188,6 +194,7 @@ fun DonutArcButton(
     startAngle: Float,
     sweepAngle: Float,
     alignment: Alignment,
+    markerTypeText: String,
     marker: Painter,
     onClick: () -> Unit
 ) {
@@ -200,12 +207,19 @@ fun DonutArcButton(
             .padding(10.dp),
         contentAlignment = alignment
     ) {
-        Image(
-            painter = marker,
-            contentDescription = "marker picture",
-            modifier = Modifier.size(30.dp),
-            alignment = alignment
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(
+                painter = marker,
+                contentDescription = "marker picture",
+                modifier = Modifier.size(25.dp),
+                alignment = alignment
+            )
+            Text(
+                text = markerTypeText,
+                color = Color.White,
+                fontSize = 10.sp
+            )
+        }
     }
 }
 
