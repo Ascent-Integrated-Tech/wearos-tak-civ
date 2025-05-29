@@ -1645,7 +1645,6 @@ fun MainScreen(
                         modifier = Modifier
                             .padding(top = 30.dp)
                             .fillMaxWidth()
-                            .weight(0.8f)
                     ) {
                         HeartRate()
                     }
@@ -1653,7 +1652,8 @@ fun MainScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .weight(.9f)
+                            .padding(top = 10.dp),
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -1663,12 +1663,10 @@ fun MainScreen(
                         )
                         MarkerDropButton(dataRepository = dataRepository, context = context)
                     }
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
-                            .padding(top = 0.dp),
+                            .padding(top = 7.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         FilledIconButton(
@@ -1712,6 +1710,39 @@ fun MainScreen(
                             modifier = Modifier.width(10.dp)
                         )
                         Callsign(context, callsignState)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 7.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.compass_watchface),
+                            contentDescription = "Compass",
+                            modifier = Modifier
+                                // Set image size to 40 dp
+                                .size(30.dp)
+                            // Clip image to be shaped as a circle
+                        )
+                        Spacer(
+                            modifier = Modifier.width(10.dp)
+                        )
+                        Column() {
+                            Text(
+                                text = "Bloodhound",
+                                textAlign = TextAlign.Start,
+                                fontSize = 12.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "200m",
+                                textAlign = TextAlign.Start,
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        }
                     }
 
                 }
