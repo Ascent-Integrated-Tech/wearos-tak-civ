@@ -1,11 +1,13 @@
 package com.aitech.weartak_civ.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -16,7 +18,16 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.algorithm.KalmanEstimator
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
@@ -58,6 +69,18 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val REQUIRED_CONSECUTIVE_HIGHS = 3
     private val REQUIRED_CONSECUTIVE_LOWS = 3
 
+    //KALMAN ESTIMATOR VARS
+    private lateinit var kalmanEstimator: KalmanEstimator
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var lastCorrectedLat: Float? = null
+    private var lastCorrectedLon: Float? = null
+    private val DRIFT_THRESHOLD_DEGREES = 0.01f // ~111m per 0.001 degree
+    private var smoothedAccel = FloatArray(3) { 0f }
+    private val smoothingAlpha = 0.1f // you can tune this (lower = smoother)
+    private var lastKalmanPredictionTime = 0L
+    private val MIN_KALMAN_INTERVAL_MS = 100L // Adjust this to your needs (e.g. 100ms = 10Hz)
+
+
     private val TAG = "MovementDetectionService"
 
     private val confirmStillRunnable = Runnable {
@@ -82,11 +105,11 @@ class MovementDetectionService : Service(), SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
 
         gyroscope?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
 
         Log.d(TAG, "Movement detection service started")
@@ -95,6 +118,49 @@ class MovementDetectionService : Service(), SensorEventListener {
         currentInterval = INTERVAL_STILL
 
         updateCotInterval(INTERVAL_STILL)
+
+        // 🔄 Kalman Integration: Initialize estimator
+        kalmanEstimator = KalmanEstimator()
+        kalmanEstimator.onGpsUpdateRequired = {
+            val pos = kalmanEstimator.getEstimatedPosition()
+            val vel = kalmanEstimator.getEstimatedVelocity()
+            val lat = pos[0]
+            val lon = pos[1]
+
+            val speedSquared = vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]
+            val isEffectivelyStill = speedSquared < 1e-2 // sqrt(1e-6) ≈ 0.001 m/s
+
+            if (isEffectivelyStill) {
+                Log.d(TAG, "🛑 Skipping GPS update: velocity ≈ 0")
+                //return
+            }
+
+            if (lastCorrectedLat != null && lastCorrectedLon != null) {
+                val latDrift = kotlin.math.abs(lat - lastCorrectedLat!!)
+                val lonDrift = kotlin.math.abs(lon - lastCorrectedLon!!)
+
+                if (latDrift > DRIFT_THRESHOLD_DEGREES || lonDrift > DRIFT_THRESHOLD_DEGREES) {
+                    Log.d(TAG, "📍 Drift > threshold and moving — requesting GPS fix")
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                        requestInitialGpsFix()
+                    }
+                }
+            } else {
+                Log.d(TAG, "📍 No baseline yet — requesting first GPS fix")
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    requestInitialGpsFix()
+                }
+            }
+        }
+
+
+        // 🚀 Trigger initial GPS fix to reset Kalman with real coordinates
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            requestInitialGpsFix()
+        } else {
+            Log.w(TAG, "⚠️ Skipping initial GPS fix: fine location permission not granted")
+        }
+
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -125,7 +191,22 @@ class MovementDetectionService : Service(), SensorEventListener {
                             linearAccel[2] * linearAccel[2]
                 )
 
+                // Low-pass filter
+                smoothedAccel[0] = smoothingAlpha * linearAccel[0] + (1 - smoothingAlpha) * smoothedAccel[0]
+                smoothedAccel[1] = smoothingAlpha * linearAccel[1] + (1 - smoothingAlpha) * smoothedAccel[1]
+                smoothedAccel[2] = smoothingAlpha * linearAccel[2] + (1 - smoothingAlpha) * smoothedAccel[2]
+
                 //val isPotentialStep = accelMag > MOVEMENT_THRESHOLD
+
+                // 🔄 Throttled Kalman prediction
+                if (currentTime - lastKalmanPredictionTime >= MIN_KALMAN_INTERVAL_MS) {
+                    kalmanEstimator.predict(smoothedAccel, currentTime)
+                    lastKalmanPredictionTime = currentTime
+
+                    val pos = kalmanEstimator.getEstimatedPosition()
+                    val vel = kalmanEstimator.getEstimatedVelocity()
+                    Log.d(TAG, "🔄 Kalman Pos: ${pos.joinToString()} | Vel: ${vel.joinToString()}")
+                }
 
                 if (accelMag > MOVEMENT_THRESHOLD) {
                     highCount++
@@ -137,7 +218,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                     if (!isUserMoving && highCount >= REQUIRED_CONSECUTIVE_HIGHS) {
                         isUserMoving = true
                         updateCotInterval(INTERVAL_MOVING)
-                        Log.d(TAG, "✅ MOVING (3 consecutive HIGHs)")
+                        //Log.d(TAG, "✅ MOVING (3 consecutive HIGHs)")
                         highCount = 0
                     }
                 } else {
@@ -145,7 +226,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                     lowCount++
 
                     if (isUserMoving && lowCount >= REQUIRED_CONSECUTIVE_LOWS) {
-                        Log.d(TAG, "⏳ 3 LOWs detected. Scheduling STILL confirmation in 5s")
+                        //Log.d(TAG, "⏳ 3 LOWs detected. Scheduling STILL confirmation in 5s")
                         transitionHandler.postDelayed(confirmStillRunnable, stillConfirmDelay)
                     }
                 }
@@ -180,14 +261,14 @@ class MovementDetectionService : Service(), SensorEventListener {
                 }*/
             }
 
-            Sensor.TYPE_GYROSCOPE -> {
+            /*Sensor.TYPE_GYROSCOPE -> {
                 gyroValues = event.values.clone()
             }
 
             Sensor.TYPE_STEP_DETECTOR -> {
                 val steps = event.values[0].toInt() // Usually 1 per trigger
                 Log.d("StepDetection", "Step detected! Steps = $steps")
-            }
+            }*/
         }
     }
 
@@ -203,11 +284,50 @@ class MovementDetectionService : Service(), SensorEventListener {
                 val newIntervalSecs = (newInterval / 1000L).toInt()
                 if (CotDispatchService.currReportingIntervalInSecs != newIntervalSecs) {
                     CotDispatchService.currReportingIntervalInSecs = newIntervalSecs
-                    Log.d(TAG, "CotDispatchService interval updated to ${newIntervalSecs}s")
+                    //Log.d(TAG, "CotDispatchService interval updated to ${newIntervalSecs}s")
                 }
             }
         }
     }
+
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+    private fun requestInitialGpsFix() {
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        val locationRequest = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY, 0
+        ).apply {
+            setMaxUpdates(1)
+            setMinUpdateIntervalMillis(0)
+            setWaitForAccurateLocation(true)
+        }.build()
+
+        val locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                val location = result.lastLocation
+                if (location != null) {
+                    lastCorrectedLat = location.latitude.toFloat()
+                    lastCorrectedLon = location.longitude.toFloat()
+
+                    kalmanEstimator.reset(
+                        floatArrayOf(location.latitude.toFloat(), location.longitude.toFloat(), location.altitude.toFloat()),
+                        floatArrayOf(0f, 0f, 0f),
+                        System.currentTimeMillis()
+                    )
+                    Log.d(TAG, "📍 Initial GPS fix: ${location.latitude}, ${location.longitude}, ${location.altitude}")
+                } else {
+                    Log.w(TAG, "⚠️ Initial GPS fix failed or null")
+                }
+
+                // Remove listener immediately
+                fusedLocationClient.removeLocationUpdates(this)
+            }
+        }
+
+        // Start one-time location update
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+    }
+
 
     /*private fun confirmMovement() {
         val now = System.currentTimeMillis()
