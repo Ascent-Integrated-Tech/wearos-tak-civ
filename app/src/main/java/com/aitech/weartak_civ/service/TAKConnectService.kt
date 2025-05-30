@@ -600,7 +600,7 @@ class TAKConnectService: Service() {
             return base64CSR
         }
 
-        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry> {
+        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry>? {
             val takServer = takServerDetail.address
             val username = takServerDetail.username
             val password = takServerDetail.password
@@ -612,14 +612,14 @@ class TAKConnectService: Service() {
             // Basic Authentication
             val credential = Credentials.basic(username, password)
 
-            val request = Request.Builder()
-                .url(url)
-                .header("Authorization", credential)
-                .get()
-                .build()
-
-            Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
             try {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", credential)
+                    .get()
+                    .build()
+
+                Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
@@ -651,6 +651,10 @@ class TAKConnectService: Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
             }
             return nameValueList
         }
@@ -970,8 +974,11 @@ class TAKConnectService: Service() {
                             deleteFile("${takServerDetail.address}.jks")
                             Log.d(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
                             val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
-                            val base64CSR = generateBase64CSR(nameValueList, takServerDetail)
                             var signClientResponse: SignClientResponse? = null
+                            var base64CSR: String? = null
+                            if (null != nameValueList) {
+                               base64CSR = generateBase64CSR(nameValueList, takServerDetail)
+                            }
                             if (null != base64CSR) {
                                 //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
                                 signClientResponse = postCsrAndParse(takServerDetail, base64CSR)
@@ -1006,7 +1013,7 @@ class TAKConnectService: Service() {
                                     }
                                 }
                             } else {
-                                Log.e(TAG, "ERROR generateBase64CSR returned NULL. Cannot connect to TAK Server")
+                                Log.e(TAG, "ERROR fetchAndParseCertificateConfig or generateBase64CSR returned NULL. Cannot connect to TAK Server")
                                 takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
                                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
                                 setIsAnyNetworkConnected()

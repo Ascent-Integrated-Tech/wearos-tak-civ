@@ -1371,8 +1371,9 @@ class MainActivity : ComponentActivity() {
                     lat = bleBeaconBundle.getString("localization_iBeacon_lat", null)
                     lon = bleBeaconBundle.getString("localization_iBeacon_lon", null)
                     alt = bleBeaconBundle.getString("localization_iBeacon_alt", null)
+                    //Log.d(TAG, "Beacon: $uuid $major $minor lat($lat) lon($lon) alt($alt)")
 
-                    if ((null != uuid) && (major >= 0) && (minor >= 0) && (null != lat) && (null != lon) && (null != alt)) {
+                    if ((null != uuid) && (major >= 0) && (minor >= 0) && (!lat.isNullOrBlank()) && (null != lat.toDoubleOrNull()) && (!lon.isNullOrBlank()) && (null != lon.toDoubleOrNull()) && (!alt.isNullOrBlank()) && (null != alt.toDoubleOrNull())) {
                         bleBeaconMutableList.add(DataRepository.LocalizationBleBeaconItem(uuid, major, minor,
                             lat.toDouble(), lon.toDouble(), alt.toDouble()))
                     } else {
