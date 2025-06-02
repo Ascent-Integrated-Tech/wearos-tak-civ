@@ -24,10 +24,6 @@ android {
         manifestPlaceholders["commit"] = gitCommit()
     }
 
-    lintOptions {
-        checkReleaseBuilds true
-        abortOnError true
-    }
 
     signingConfigs {
         debug {
@@ -89,9 +85,22 @@ android {
     }
     buildToolsVersion '35.0.0'
     ndkVersion '27.0.12077973'
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+
+    aaptOptions {
+        noCompress "tflite"
+    }
 }
 
 dependencies {
+    implementation libs.play.services.tflite.java
+    implementation libs.play.services.tflite.impl
+    implementation libs.core.ktx
+    implementation libs.junit.ktx
+
     //implementation libs.androidx.activity.compose
     dependencies {
         implementation 'com.google.code.gson:gson:2.10.1'
@@ -172,4 +181,34 @@ dependencies {
     androidTestImplementation libs.ui.test.junit4
     debugImplementation libs.ui.tooling
     debugImplementation libs.ui.test.manifest
+
+    // Bending Detection
+        // TensorFlow Lite Runtime via Google Play Services
+        implementation 'com.google.android.gms:play-services-tflite-java:16.2.0'
+
+        // TensorFlow Lite Support Library for file utilities
+        implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+
+        // Kotlin Coroutines (optional, for asynchronous operations)
+        implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+        implementation 'org.tensorflow:tensorflow-lite:2.13.0'
+        implementation 'org.tensorflow:tensorflow-lite-support:0.3.1'
+        implementation 'org.tensorflow:tensorflow-lite-gpu:2.13.0'
+        implementation 'org.tensorflow:tensorflow-lite-gpu-kotlin:2.13.0'
+
+        // Testing Bend Detection
+        androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+        androidTestImplementation 'androidx.test:core:1.5.0'
+        androidTestImplementation 'androidx.test:runner:1.5.2'
+        androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+
+        // LiteRT
+        implementation 'com.google.android.gms:play-services-tflite-java:16.1.0'
+        implementation 'org.tensorflow:tensorflow-lite-support:0.3.1'
+    implementation 'org.tensorflow:tensorflow-lite:2.13.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.3.1'
+
+    // Google Play Services TFLite (LiteRT)
+    implementation 'com.google.android.gms:play-services-tflite-java:16.1.0'
+
 }
