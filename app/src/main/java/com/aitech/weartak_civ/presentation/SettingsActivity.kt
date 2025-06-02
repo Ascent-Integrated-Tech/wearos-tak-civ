@@ -84,7 +84,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,6 +127,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
@@ -175,7 +175,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.callsignState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.DittoService

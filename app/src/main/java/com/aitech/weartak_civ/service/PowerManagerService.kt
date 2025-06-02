@@ -33,7 +33,7 @@ import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.events.WifiSsidRcvd
-import com.aitech.weartak_civ.presentation.NetworkManager
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking

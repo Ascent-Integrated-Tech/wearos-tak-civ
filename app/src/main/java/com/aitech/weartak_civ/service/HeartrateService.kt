@@ -32,9 +32,23 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_Biometric
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_HIGH_HEART_RATE_ALERT
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
+import com.aitech.weartak_civ.events.MessageEvent
+import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.google.common.collect.EvictingQueue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -47,6 +61,12 @@ class HeartrateService: Service() {
     private var heartRateSensor: Sensor? = null
     var permission: Boolean = false
     var deviceWorn = false
+    var enableHrAlerts : Boolean = false
+    var highAlertThreshold : Int = 140
+    var highAlertNumSecs : Int = 30
+    var hrValuesEvictingQ : EvictingQueue<Int>? = null
+    var highAlertSent : Boolean = false
+    var lowAlertThreshold : Int = 40
 
     // Instead of creating a new DataRepository, reference the same one from MainActivity
     private val sharedRepository: DataRepository // TODO: Use Constructor Injection for a more robust use of a shared DataRepository. Using hilt or dagger, you’d define a single @Singleton repository and annotate each service as @AndroidEntryPoint. Then each service receives the same repository instance automatically.
@@ -65,11 +85,27 @@ class HeartrateService: Service() {
         if (!isRunning.getAndSet(true)) {
             deviceWorn = sharedRepository.latestIsDeviceWorn.value
             startForegroundService()
-            if (deviceWorn) {
-                startSensors()
+            CoroutineScope(Dispatchers.Main).launch {
+                setDataFromDatastore()
+                if (deviceWorn) {
+                    startSensors()
+                }
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun createEvictingQ() {
+        if (highAlertNumSecs > 0) {
+            hrValuesEvictingQ = EvictingQueue.create<Int>(highAlertNumSecs)
+            Log.d(TAG, "hrValuesEvictingQ maxsize=${highAlertNumSecs} currsize=${hrValuesEvictingQ?.size}")
+        }
+    }
+
+    suspend private fun setDataFromDatastore() {
+        enableHrAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
+        highAlertThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
+        highAlertNumSecs = dataRepository.getHrHighAlertNumSecsThreshold.first()
     }
 
     override fun onDestroy() {
@@ -128,7 +164,7 @@ class HeartrateService: Service() {
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onMessageEvent(event: IsDeviceWornEvent) {
+    public fun onIsDeviceWornEvent(event: IsDeviceWornEvent) {
         val currDeviceWorn = event.isDeviceWorn
         Log.d(TAG, "Received IsDeviceWornEvent w/ isDeviceWorn=$currDeviceWorn & prev deviceWorn=$deviceWorn")
         if (deviceWorn != currDeviceWorn) {
@@ -149,6 +185,32 @@ class HeartrateService: Service() {
         }
     }
 
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onMessageEvent(msgEvent: MessageEvent) {
+        val msg = msgEvent.message
+        if (PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED == msg) {
+            enableHrAlerts = if (msgEvent.addlIntInfo == 1)  { true } else { false }
+            if (enableHrAlerts) {
+                runBlocking {
+                    createEvictingQ()
+                }
+            } else {
+                hrValuesEvictingQ = null
+            }
+        } else if (HR_ALERT_THRESHOLDS_CHANGED == msg) {
+            if (enableHrAlerts) {
+                runBlocking {
+                    val prevHighAlertNumSecs = highAlertNumSecs
+                    setDataFromDatastore()
+                    if (prevHighAlertNumSecs != highAlertNumSecs) {
+                        createEvictingQ()
+                    }
+                }
+            }
+        }
+    }
+
+
     fun requestHeartRateComplicationUpdate(context: Context) {
         val componentName = ComponentName(context, HeartRateComplicationService::class.java)
 
@@ -158,16 +220,17 @@ class HeartrateService: Service() {
 
     fun startSensors() {
         Log.d(TAG, "HeartrateService startSensors called")
+        if (enableHrAlerts) {
+            createEvictingQ()
+        } else {
+            hrValuesEvictingQ = null
+        }
 //        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         permission = checkPermissions()
         if (null != heartRateSensor) {
             Log.d(TAG, "Heartrate sensor callback registered")
-            sensorManager.registerListener(
-                sensorEventListener,
-                heartRateSensor,
-                SAMPLING_PERIOD_US
-            )
+            sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
         } else {
             Log.e(TAG, "Heartrate Sensor is null. CANNOT read heartrate")
         }
@@ -175,6 +238,7 @@ class HeartrateService: Service() {
 
     fun stopSensors() {
         sensorManager.unregisterListener(sensorEventListener)
+        hrValuesEvictingQ = null
     }
 
 
@@ -182,11 +246,32 @@ class HeartrateService: Service() {
         var localHr = 0
         var accuracyVal = -1
         var lastTimeHrSent : Long = 0L
-        var highAlertThreshold : Int = 140
-        var lowAlertThreshold : Int = 40
+
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
             Log.d(TAG, "onAccuracyChanged called w/ accuracy: $accuracy")
             accuracyVal = accuracy
+        }
+
+        @Synchronized
+        fun generateAlerts() {
+            if (enableHrAlerts) {
+                hrValuesEvictingQ?.add(localHr)
+                if ((hrValuesEvictingQ?.size ?: 0) == highAlertNumSecs) {
+                    Log.d(TAG, "hrValuesEvictingQ has size ${hrValuesEvictingQ?.size}, ${hrValuesEvictingQ.toString()}")
+                    Log.d(TAG, "${(hrValuesEvictingQ?.filter { it >= highAlertThreshold })?.size ?: 0}")
+                    if (((hrValuesEvictingQ?.filter { it >= highAlertThreshold })?.size ?: 0) >= highAlertNumSecs) {
+                        Log.d(TAG, "All values >= $highAlertThreshold")
+                        if (!highAlertSent) {
+                            val hrAlertDesc = "$DESC_HIGH_HEART_RATE_ALERT: Heartrate above $highAlertThreshold bpm for $highAlertNumSecs seconds"
+                            Log.d(TAG, "Sending alert: ($hrAlertDesc)")
+                            EventBus.getDefault().post(CustomEmergencyEvent(CAT_Biometric, hrAlertDesc, 1, true))
+                            highAlertSent = true
+                        }
+                    } else {
+                        highAlertSent = false
+                    }
+                }
+            }
         }
 
         override fun onSensorChanged(event: SensorEvent) {
@@ -200,6 +285,8 @@ class HeartrateService: Service() {
                 hr = localHr
                 //heartRateTextView.text = "Heart rate: $hr"
                 //Log.d(TAG, "Obtained heartrate: $hr")
+                generateAlerts()
+
 
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.currReportingIntervalInSecs * 1000L)) {
@@ -213,9 +300,6 @@ class HeartrateService: Service() {
 
                     }
 
-//                    val stickyEvent = EventBus.getDefault().getStickyEvent(
-//                        MessageEvent::class.java
-//                    )
 //                    if (stickyEvent == null) {
 //                        if (hr > highAlertThreshold) {
 //                            emergency = "HIGH HEART RATE"
@@ -257,6 +341,5 @@ class HeartrateService: Service() {
         val hrStringLiveData = MutableLiveData<String>("N/A")
         val isRunning = AtomicBoolean(false)
         val context: Context = mainActivity.applicationContext
-
     }
 }

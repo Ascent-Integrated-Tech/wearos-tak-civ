@@ -38,10 +38,12 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
@@ -79,6 +81,7 @@ class CotDispatchService : Service() {
     private var manualSosReceivedTime: Long = 0L
     private var manualSosReceivedCategory: String = ""
     private var manualSosReceivedDescription: String  = ""
+    private var manualSosReceivedSendSms: Boolean = false
     private var iconSetPath: String = ""
     private var markerType: String = ""
 
@@ -284,11 +287,12 @@ class CotDispatchService : Service() {
     public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
         manualSosReceivedCategory = event.category
         manualSosReceivedDescription = event.description
+        manualSosReceivedSendSms = event.sendSms
         val currTime = System.currentTimeMillis()
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
             Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             manualSosReceivedTime = currTime
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
         } else {
             if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
                 Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
@@ -483,10 +487,13 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String) {
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean) {
         ioScope.launch(Dispatchers.IO) {
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
+            if ((MainActivity.enableSmsForAlerts) && sendSms) {
+                SMSManager.sendSMSMessage(numbers = smsNumbersList, description = emergencyDesc)
+            }
             if (loc == null) {
                 Log.w(TAG, "Skipping emergency alert: no GPS fix")
                 manualSosToBeSent.set(true)
@@ -558,7 +565,7 @@ class CotDispatchService : Service() {
         }
         if (manualSosToBeSent.get() == true) {
             Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription)
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms)
         }
         lastLocationUpdateRcvd = System.currentTimeMillis()
         buildAndSendLocationBiometricCotMessage()

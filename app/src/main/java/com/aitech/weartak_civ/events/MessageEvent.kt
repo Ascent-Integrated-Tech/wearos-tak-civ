@@ -15,5 +15,7 @@ class MessageEvent(val message: String, val addlIntInfo: Int) {
         val OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED = "OptimizeBatteryOnWifiDetailsChanged"
         val LOCALIZATION_BEACONS_CHANGED = "LocalizationBeaconsChanged"
         val CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED = "CustomDeveloperConfigJsonChanged"
+        val PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED = "PhysiologicalAlertsEnabledChanged"
+        val HR_ALERT_THRESHOLDS_CHANGED = "HrAlertThresholdsChanged"
     }
 }

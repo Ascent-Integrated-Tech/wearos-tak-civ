@@ -257,6 +257,26 @@
     <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval is increased when device is detected to be moving slowly or stationary.</string>
     <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
 
+    <string name="enable_sms_title" translatable="false">Enable SMS for Alerts</string>
+    <string name="enable_sms_description" translatable="false">Boolean that determines if SMS will be sent on detection of alerts.</string>
+    <string name="enable_sms_default" translatable="false">false</string>
+
+    <string name="enable_sms_numbers_comma_separated_title" translatable="false">SMS Numbers (Comma Separated)</string>
+    <string name="enable_sms_numbers_comma_separated_description" translatable="false">Comma separated list of SMS numbers that alerts will be sent to.</string>
+    <string name="enable_sms_numbers_comma_separated_default" translatable="false"></string>
+
+    <string name="enable_physiological_alerts_title" translatable="false">Enable Physiological Alerts</string>
+    <string name="enable_physiological_alerts_description" translatable="false">Boolean that determines if physiological alerts will be enabled.</string>
+    <string name="enable_physiological_alerts_default" translatable="false">false</string>
+
+    <string name="hr_high_alert_bpm_threshold_title" translatable="false">High Heartrate Alert BPM Threshold</string>
+    <string name="hr_high_alert_bpm_threshold_description" translatable="false">Threshold in beats per minute beyond which high heartrate alert is sent if the heart rate says high for some number of seconds.</string>
+    <string name="hr_high_alert_bpm_threshold_default" translatable="false">140</string>
+
+    <string name="hr_high_alert_number_secs_threshold_title" translatable="false">High Heartrate Alert Number of Seconds Threshold</string>
+    <string name="hr_high_alert_number_secs_threshold_description" translatable="false">Number of seconds that hearrate has to be above \'High Heartrate Alert BPM Threshold\' for alert to be sent.</string>
+    <string name="hr_high_alert_number_secs_threshold_default" translatable="false">30</string>
+
     <!-- Developer Json -->
     <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
     <string name="custom_developer_config_json_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>

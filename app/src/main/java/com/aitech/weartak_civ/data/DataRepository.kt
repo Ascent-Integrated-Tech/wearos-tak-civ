@@ -535,6 +535,69 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableSmsForAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SMS_FOR_ALERTS] ?: false
+    }
+
+    suspend fun storeEnableSmsForAlerts(enableSmsForAlerts: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_SMS_FOR_ALERTS] = enableSmsForAlerts
+        }
+    }
+
+    data class SmsNumber(val telephoneNumber: String)
+    val getSmsNumbersList: Flow<List<SmsNumber>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[SMS_NUMBERS_LIST]
+            if (jsonString.isNullOrEmpty()) {
+                emptyList()
+            } else {
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<List<SmsNumber>>() {}
+                val type = typeToken.type
+                gson.fromJson<List<SmsNumber>>(jsonString, type)
+            }
+        }
+
+    suspend fun storeSmsNumbersList(newList: List<SmsNumber>) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(newList)
+            // Store in DataStore
+            preferences[SMS_NUMBERS_LIST] = jsonString
+        }
+    }
+
+    val getEnablePhysiologicalAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_PHYSIOLOGICAL_ALERTS] ?: false
+    }
+
+    suspend fun storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_PHYSIOLOGICAL_ALERTS] = enablePhysiologicalAlerts
+        }
+    }
+
+    val getHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HR_HIGH_ALERT_BPM_THRESHOLD] ?: 140
+    }
+
+    suspend fun storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HR_HIGH_ALERT_BPM_THRESHOLD] = hrHighAlertBpmThreshold
+        }
+    }
+
+    val getHrHighAlertNumSecsThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HR_HIGH_ALERT_NUM_SECS_THRESHOLD] ?: 30
+    }
+
+    suspend fun storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HR_HIGH_ALERT_NUM_SECS_THRESHOLD] = hrHighAlertNumSecsThreshold
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -562,5 +625,10 @@ class DataRepository(private val context: Context) {
         private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
         private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
+        private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
+        private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
+        private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
+        private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
+        private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
     }
 }

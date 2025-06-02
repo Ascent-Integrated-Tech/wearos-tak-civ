@@ -25,13 +25,11 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
-import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.complication.TakServerComplicationService
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
@@ -46,7 +44,7 @@ import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.NetworkManager
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
