@@ -536,6 +536,7 @@ class TAKConnectService: Service() {
         public fun getInstance() : TAKConnectService {
             return TAK_CONNECT_SERVICE
         }
+
         private fun setIsAnyNetworkConnecting() {
             var anyTakConnecting = false
             for (takServerDetail in takServerDetails) {
@@ -1092,6 +1093,13 @@ class TAKConnectService: Service() {
 
                     // start a background COT‐reader on the same socket
                     CoroutineScope(Dispatchers.IO).launch {
+                        var openTakReceiveReader = false
+                        runBlocking {
+                            openTakReceiveReader = dataRepository.getEnableChatService.first()
+                        }
+                        if (!openTakReceiveReader) {
+                            return@launch
+                        }
                         try {
                             Log.v(TAG, "Trying to read cot messages in.")
                             val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))

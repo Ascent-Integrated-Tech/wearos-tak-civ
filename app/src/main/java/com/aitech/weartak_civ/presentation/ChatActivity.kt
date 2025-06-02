@@ -322,7 +322,7 @@ fun ChatScreenDetailed(
                 )
 
                 LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(messageList) { messageIndex, chatMsg ->
+                    itemsIndexed(messageList.reversed()) { messageIndex, chatMsg ->
                         val currentDate = utcToDate(chatMsg.timeReceived)
                         val displayDate = if (messageIndex == 0) {
                             true

@@ -153,6 +153,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportin
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restartTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
@@ -161,6 +162,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
@@ -176,6 +178,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
@@ -2515,17 +2518,15 @@ fun SettingsScreen(
                         if (enableChatService != chatChecked) {
                             settingsChanged = true; chatCheckedChanged = true
                             enableChatService = chatChecked
-                            //TODO: Change to chat complication when ready
-//                            requestLocationComplicationUpdate(context)
                             if (enableChatService) {
-                                Log.d(TAG, "Trying to start location service")
-                                //TODO: Change to chat start/stop service when ready
-//                                startLocationService()
+                                Log.d(TAG, "Trying to start chat service")
+                                startChatService()
                             } else {
-                                Log.d(TAG, "Trying to stop location service")
-//                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
+                                Log.d(TAG, "Trying to stop chat service")
+                                mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                             }
                             enableChatServiceLiveData.postValue(enableChatService)
+                            restartTAKConnectService()
                             requestChatComplicationUpdate(context)
                         }
 
