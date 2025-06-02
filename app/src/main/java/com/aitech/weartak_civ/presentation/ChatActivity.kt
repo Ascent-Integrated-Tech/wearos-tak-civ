@@ -129,13 +129,19 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
                 exitActivity()
             }
-            isValid == true && currentDestination != "chat_screen" -> {
+            isValid && chatEnabledLive == true && currentDestination != "chat_screen" -> {
                 navController.navigate("chat_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
                 }
             }
+            isValid && chatEnabledLive == false && currentDestination != "chat_disabled_screen" -> {
+                navController.navigate("chat_disabled_screen") {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
         }
     }
+
     SwipeDismissableNavHost(
         navController = navController,
         startDestination =
