@@ -27,7 +27,6 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,13 +125,14 @@ class BatteryService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(LOG_TAG, "BatteryService onDestroy called")
         if ((batteryMonitorThread != null) && (batteryMonitorHandler != null)) {
             batteryMonitorHandler?.removeCallbacks(batteryMonitorRunnable)
             batteryMonitorHandler?.looper?.quit()
             batteryMonitorThread?.quitSafely()
         }
         isRunning.set(false)
-        Log.d(LOG_TAG, "BatteryService Destroyed")
+        //Log.d(LOG_TAG, "BatteryService Destroyed")
     }
 
     companion object {

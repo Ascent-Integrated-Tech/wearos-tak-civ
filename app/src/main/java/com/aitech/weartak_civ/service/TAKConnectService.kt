@@ -210,6 +210,7 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "TAKConnectService onDestroy called")
         isRunning.set(false)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)

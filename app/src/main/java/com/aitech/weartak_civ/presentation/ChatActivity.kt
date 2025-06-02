@@ -175,6 +175,7 @@ fun ChatScreen(
     chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
 ) {
     Log.d(TAG, "TakServerSetting called")
+    val context = LocalContext.current
 
     WearTAKCIVTheme {
         Box(
@@ -223,7 +224,7 @@ fun ChatScreen(
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(onClick = { exitActivity() })
+                BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
             }
         }
     }
