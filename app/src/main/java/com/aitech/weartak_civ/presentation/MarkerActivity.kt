@@ -108,10 +108,10 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
     val dismissState = rememberSwipeToDismissBoxState()
 
     WearTAKCIVTheme {
-        SwipeToDismissBox(
-            state = dismissState,
-            modifier = Modifier.unswipeable(),
-        ) {
+//        SwipeToDismissBox(
+//            state = dismissState,
+////            modifier = Modifier.unswipeable(),
+//        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -189,7 +189,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                 }
             }
         }
-    }
+//    }
 }
 
 @Composable
