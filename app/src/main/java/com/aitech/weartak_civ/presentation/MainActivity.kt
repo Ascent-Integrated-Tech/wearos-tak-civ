@@ -20,7 +20,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.RestrictionEntry
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -158,7 +157,6 @@ import android.os.Looper
 import android.text.format.DateFormat
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonColors
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
@@ -169,25 +167,14 @@ import androidx.wear.compose.foundation.CurvedModifier
 import androidx.wear.compose.foundation.CurvedTextStyle
 import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.foundation.padding
-import androidx.wear.compose.material.LocalContentAlpha
 import androidx.wear.compose.material.curvedText
 import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.service.BleBeaconService
 import com.aitech.weartak_civ.service.MovementDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
-import java.io.File
-import java.io.FileWriter
-import java.io.IOException
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.min
@@ -200,10 +187,12 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
@@ -280,6 +269,12 @@ class MainActivity : ComponentActivity() {
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
 
         var enableDynamicReportingStrategy = false
+        var enableSmsForAlerts = false
+        var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
+        var enablePhysiologicalAlerts = false
+        var hrHighAlertBpmThreshold : Int = 140
+        var hrHighAlertNumSecsThreshold : Int = 30
+
         var versionNumber : String = ""
         var logFile: java.io.File? = null
 
@@ -902,6 +897,13 @@ class MainActivity : ComponentActivity() {
 
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
 
+            enableSmsForAlerts = dataRepository.getEnableSmsForAlerts.first()
+            smsNumbersList = dataRepository.getSmsNumbersList.first()
+
+            enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
+            hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
+            hrHighAlertNumSecsThreshold = dataRepository.getHrHighAlertNumSecsThreshold.first()
+
             enableBleBeaconService = dataRepository.getEnableBleBeaconService.first()
             localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
 
@@ -960,6 +962,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable wifi opt:", enableWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Enable all wifi:", enableAllWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
+                    ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
+                    ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
+                    ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
+                    ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
+                    ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
                     ${String.format("%-25s %-30s", "Enable BleBeacon:", enableBleBeaconService.toString())}
                     
                     === === Ble Beacons === ===
@@ -989,7 +996,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.BLUETOOTH_ADVERTISE,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            Manifest.permission.SEND_SMS)
 
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -1219,6 +1227,20 @@ class MainActivity : ComponentActivity() {
         return result
     }
 
+    fun convertSmsNumbersListToStringWithSeparator(smsNumbersList: List<DataRepository.SmsNumber>, separatorStr: String): String {
+        var result = ""
+        if (!smsNumbersList.isEmpty()) {
+            for (smsNumber in smsNumbersList) {
+                if ("".equals(result)) {
+                    result = smsNumber.telephoneNumber
+                } else {
+                    result = "$result$separatorStr${smsNumber.telephoneNumber}"
+                }
+            }
+        }
+        return result
+    }
+
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, " === === Handling Managed Config Update ===")
 
@@ -1338,6 +1360,17 @@ class MainActivity : ComponentActivity() {
         Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
+
+        val enableSmsForAlertsConfigUpdate = appRestrictions.getBoolean("enable_sms", enableSmsForAlerts)
+        val smsNumbersString = appRestrictions.getString("sms_numbers_comma_separated", convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+        val smsNumbersListConfigUpdate: List<DataRepository.SmsNumber> = smsNumbersString.split(",")
+            .map { it.trim() } // Trim whitespace from each SSID
+            .filter { it.isNotEmpty() } // Remove any empty values
+            .map { DataRepository.SmsNumber(it) } // Map each SSID to a WifiSsidItem
+
+        val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
+        val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
+        val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
         val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
@@ -1531,7 +1564,11 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
-
+            dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
+            dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
+            dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
+            dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
+            dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
 
             if (!isStringEmptyJson(configJson)) {
                 // Currently don't check for any changes but just post to dataRepository
@@ -1573,6 +1610,20 @@ class MainActivity : ComponentActivity() {
                 if (!calledOnCreate) startStopChatService()
                  */
             }
+            enableSmsForAlerts = enableSmsForAlertsConfigUpdate
+            smsNumbersList = smsNumbersListConfigUpdate
+            if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
+                enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
+                Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
+                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+            }
+            if ((hrHighAlertBpmThreshold != hrHighAlertBpmThresholdConfigUpdate) || (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdConfigUpdate)) {
+                Log.d(TAG, "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)")
+                hrHighAlertBpmThreshold = hrHighAlertBpmThresholdConfigUpdate
+                hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdConfigUpdate
+                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+            }
+
             if (!calledOnCreate) {
                 if (prevLicenseIsValid != isLicenseValid()) {
                     Log.d(TAG, "isLicenseValid=${isLicenseValid()}: Going to startStopServicesLicense")
