@@ -236,17 +236,18 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
-        if (isLicenseValid()) {
-            navController.navigate("sos_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+        val currentDestination = navController.currentBackStackEntry?.destination?.route
+        val isValid = isLicenseValid()
+
+        when {
+            !isValid && currentDestination != "invalid_license_screen" -> {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+                exitActivity()
             }
-        } else {
-            navController.navigate("invalid_license_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+            isValid == true && currentDestination != "sos_screen" -> {
+                navController.navigate("sos_screen") {
+                    popUpTo(0) { inclusive = true } // clears the back stack
+                }
             }
         }
     }

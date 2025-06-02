@@ -121,25 +121,18 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
 // react to changes in the license.
     LaunchedEffect(licenseKey) {
         Log.d(TAG, "Launch chatEnabledLive = $chatEnabledLive")
-        if (isLicenseValid()) {
-            if (chatEnabledLive == true ) {
-                navController.navigate("chat_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
-                }
-            } else {
-                navController.navigate("chat_disabled_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
-                }
+        val currentDestination = navController.currentBackStackEntry?.destination?.route
+        val isValid = isLicenseValid()
+
+        when {
+            !isValid && currentDestination != "invalid_license_screen" -> {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+                exitActivity()
             }
-        } else {
-            navController.navigate("invalid_license_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+            isValid == true && currentDestination != "chat_screen" -> {
+                navController.navigate("chat_screen") {
+                    popUpTo(0) { inclusive = true } // clears the back stack
+                }
             }
         }
     }

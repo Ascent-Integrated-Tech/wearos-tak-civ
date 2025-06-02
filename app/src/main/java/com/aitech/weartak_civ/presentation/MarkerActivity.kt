@@ -77,6 +77,7 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.FRIENDLY
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.service.DittoService
 import kotlin.math.min
@@ -335,20 +336,22 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
     val successBoolean = remember { mutableStateOf(false) }
 // react to changes in the license.
     LaunchedEffect(licenseKey) {
-        if (isLicenseValid()) {
-            navController.navigate("marker_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+        val currentDestination = navController.currentBackStackEntry?.destination?.route
+        val isValid = isLicenseValid()
+
+        when {
+            !isValid && currentDestination != "invalid_license_screen" -> {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+                exitActivity()
             }
-        } else {
-            navController.navigate("invalid_license_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+            isValid == true && currentDestination != "marker_screen" -> {
+                navController.navigate("marker_screen") {
+                    popUpTo(0) { inclusive = true } // clears the back stack
+                }
             }
         }
     }
+
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = if (isLicenseValid()) "marker_screen" else "invalid_license_screen"
