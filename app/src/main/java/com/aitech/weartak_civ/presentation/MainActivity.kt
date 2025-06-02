@@ -364,6 +364,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun restartTAKConnectService() {
+            Log.d(TAG, "Restarting TAK Connect Service")
+            mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+        }
+
         fun startTAKConnectService() {
             if (!TAKConnectService.isRunning.get()) {
                 Log.d(TAG, "Starting TAKConnectService")
@@ -378,20 +384,21 @@ class MainActivity : ComponentActivity() {
                 if (enableChatService) {
                     startChatService()
                 } else {
-                    if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                    if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                 }
-                startChatService()
             } else {
-                if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
             }
         }
 
         fun startChatService() {
-            if (!ChatService.isRunning.get()) {
-                Log.d(TAG, "Starting ChatService")
-                mainActivity.startForegroundService(Intent(mainActivity, ChatService::class.java))
-            } else {
-                Log.w(TAG, "ChatService is already running.")
+            if (enableChatService) {
+                if (!ChatService.isRunning.get()) {
+                    Log.d(TAG, "Starting ChatService")
+                    mainActivity.startForegroundService(Intent(mainActivity, ChatService::class.java))
+                } else {
+                    Log.w(TAG, "ChatService is already running.")
+                }
             }
         }
 
@@ -511,8 +518,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        //TODO: Add Start/Stop Chat service functions
-
         fun startPowerManagerService() {
             if (!PowerManagerService.isRunning.get()) {
                 Log.d(TAG, "Starting PowerManagerService")
@@ -620,7 +625,6 @@ class MainActivity : ComponentActivity() {
                         =====================================
                         """.trimIndent())
                 startTAKConnectService()
-                startChatService()
                 startOffBodyDetectService()
                 startBiometricService()
                 startBatteryService()
@@ -630,6 +634,7 @@ class MainActivity : ComponentActivity() {
                 startDittoService()
                 startPowerManagerService()
                 startBleBeaconService()
+                startChatService()
             } else {
                 Log.d(TAG, """
                             ===   Application Services Info   ===                                
@@ -663,6 +668,9 @@ class MainActivity : ComponentActivity() {
 				}
                 if (MovementDetectionService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
+                }
+                if (enableChatService && ChatService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                 }
             }
         }
@@ -1629,10 +1637,10 @@ class MainActivity : ComponentActivity() {
             if (enableChatServiceConfigUpdate != enableChatService) {
                 enableChatService = enableChatServiceConfigUpdate
                 Log.d(TAG, "enableChatService=$enableChatService")
-                // TODO: Remove lines below after adding startStopChatService()
-                /*
-                if (!calledOnCreate) startStopChatService()
-                 */
+                if (!calledOnCreate) {
+                    startStopChatService()
+                    restartTAKConnectService()
+                }
             }
             enableSmsForAlerts = enableSmsForAlertsConfigUpdate
             smsNumbersList = smsNumbersListConfigUpdate
@@ -1839,6 +1847,7 @@ fun MainScreen(
                         ) {
                             if (chatCheckedLive == true) {
                                 if (hasUnreadMessages) {
+                                    requestChatComplicationUpdate(context)
                                     Icon(
                                         painter = painterResource(R.drawable.chat_newmessage),
                                         contentDescription = "Favorite icon",
@@ -1846,6 +1855,7 @@ fun MainScreen(
                                         modifier = Modifier.size(25.dp),
                                     )
                                 } else {
+                                    requestChatComplicationUpdate(context)
                                     Icon(
                                         painter = painterResource(R.drawable.chat_nomessage),
                                         contentDescription = "Favorite icon",
@@ -1854,6 +1864,7 @@ fun MainScreen(
                                     )
                                 }
                         } else {
+                                requestChatComplicationUpdate(context)
                                 Icon(
                                     painter = painterResource(R.drawable.chat_nomessage),
                                     contentDescription = "Favorite icon",
@@ -2065,11 +2076,15 @@ fun takServerComplicationString() {
 
 fun chatComplicationString() {
     if (enableChatServiceLiveData.value == true) {
-//        if (dataRepository.newMessagesPresentPublicBoolean.value == true) {
-//            chatComplication = CHAT_ENABLED_NEW_MESSAGE
-//        } else {
-//            chatComplication = CHAT_ENABLED_NO_NEW_MESSAGE
-//        }
+        var hasUnreadMessages = false
+        runBlocking {
+            hasUnreadMessages = dataRepository.hasUnread.first()
+        }
+        if (hasUnreadMessages == true) {
+            chatComplication = CHAT_ENABLED_NEW_MESSAGE
+        } else {
+            chatComplication = CHAT_ENABLED_NO_NEW_MESSAGE
+        }
     } else {
         chatComplication = CHAT_DISABLED
     }
