@@ -580,24 +580,19 @@ class MainActivity : ComponentActivity() {
                 if (enableBiometricsService) {
                     startOffBodyDetectService()
                 } else {
+                    Log.d(TAG, "startStopoffBodyDetectService OffBodyDetectService stop called")
                     if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
                 }
             } else {
+                Log.d(TAG, "startStopoffBodyDetectService OffBodyDetectService stop called")
                 if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
             }
         }
 
         fun startOffBodyDetectService() {
             if (enableBiometricsService) {
-                if ((ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS_BACKGROUND
-                    ) != PackageManager.PERMISSION_GRANTED)
-                ) {
+                if ((ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BODY_SENSORS) != PackageManager.PERMISSION_GRANTED) &&
+                    (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BODY_SENSORS_BACKGROUND) != PackageManager.PERMISSION_GRANTED)) {
                     Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking OffBodyDetectService")
                 } else {
                     if (!OffBodyDetectService.isRunning.get()) {
@@ -778,8 +773,47 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action})")
     }
 
+    override fun onPause() {
+        super.onPause()
+        Log.d(TAG, "MainActivity onPause called")
+        /*
+        if (OffBodyDetectService.isRunning.get()) {
+            Log.d(TAG, "Stopping OffBodyDetectService onPause")
+            mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
+        }
+        if (HeartrateService.isRunning.get()) {
+            Log.d(TAG, "Stopping HeartrateService onPause")
+            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+        }
+
+         */
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        Log.d(TAG, "MainActivity onRestart called")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.d(TAG, "MainActivity onStart called")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d(TAG, "MainActivity onStop called")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "MainActivity onResume called")
+
+        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startBiometricService() }, 1500L)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "MainActivity onDestroy called")
         /*
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)

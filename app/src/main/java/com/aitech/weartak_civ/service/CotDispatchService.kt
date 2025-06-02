@@ -467,17 +467,16 @@ class CotDispatchService : Service() {
             if (TAKConnectService.isAnyTakConnected) {
                 if (DittoService.isRunning.get()) {
                     EventBus.getDefault().post(DittoDocumentEvent("mapitem", cotMessage))
+                    Log.v(TAG, "Marker CoT meshed into Ditto: $cotMessage")
                 }
                 markerDropToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
-                    Log.v(TAG, "Marker CoT meshed into Ditto: $cotMessage")
                 Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
             } else {
                 Log.w(TAG, "Marker CoT NOT sent to TAK (disconnected)")
                 // 4) Mesh into Ditto if the DittoService is running
                 if (DittoService.isRunning.get()) {
-                    EventBus.getDefault()
-                        .post(DittoDocumentEvent("mapitem", cotMessage))
+                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", cotMessage))
                     markerDropToBeSent.set(false)
                     Log.v(TAG, "Marker CoT meshed into Ditto: $cotMessage")
                 } else {
@@ -637,6 +636,8 @@ class CotDispatchService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "CotDispatchService onDestroy called")
+
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }

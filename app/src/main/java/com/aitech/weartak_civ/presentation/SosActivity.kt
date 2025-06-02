@@ -58,6 +58,7 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -69,6 +70,7 @@ import org.greenrobot.eventbus.EventBus
 class SosActivity : ComponentActivity() {
 companion object Constants{
     lateinit var sosActivity : SosActivity
+    val TAG = "WearTAK-" + SosActivity::class.java.simpleName
 }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,8 +80,7 @@ companion object Constants{
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-
-                   SosCivApp(exitActivity = {finishAndRemoveTask()}, context)
+                    SosCivApp(exitActivity = {finishAndRemoveTask()}, context)
                 }
             }
         }
@@ -116,6 +117,7 @@ fun ConfirmationDialogActivity(
     isConfirmed: MutableState<Boolean>,
     isDismissed: MutableState<Boolean>,
 ) {
+    val context = LocalContext.current
     AlertDialog(
         containerColor = colors.background,
         modifier = Modifier.fillMaxSize(),
@@ -138,9 +140,10 @@ fun ConfirmationDialogActivity(
         confirmButton = {
             Button(
                 onClick = {
-                    Log.w("WearTAK-SOSActivity", "SOS Clicked.")
+                    Log.w(TAG, "SOS Clicked.")
                     isConfirmed.value = true
                     isDismissed.value = false
+                    context.startActivity(Intent(context, MainActivity::class.java))
                 },
                 modifier = Modifier.fillMaxWidth(0.45f),
                 contentPadding = PaddingValues(0.dp),
@@ -160,6 +163,7 @@ fun ConfirmationDialogActivity(
                 onClick = {
                     isConfirmed.value = false
                     isDismissed.value = true
+                    context.startActivity(Intent(context, MainActivity::class.java))
                 },
                 contentPadding = PaddingValues(0.dp),
                 modifier = Modifier.fillMaxWidth(0.45f),
@@ -264,10 +268,11 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isConfirmed,
                 isDismissed
             )
-            Log.w("WearTAK-SOSActivity", "SOS_Screen Composable Reached.")
+            Log.w(TAG, "SOS_Screen Composable Reached.")
 
             if (isDismissed.value) {
                 exitActivity()
+                context.startActivity(Intent(context, MainActivity::class.java))
             }
 
             //shouldShowDialog = Should successdialog be shown
@@ -282,11 +287,11 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                     }
                 } else {
                     if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
-                        Log.w("WearTAK-SOSActivity", "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
+                        Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
                         successBoolean.value = true
                         SOSButtonEmergencyMessage()
                     } else {
-                        Log.e("WearTAK-SOSActivity", "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
+                        Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
                         successBoolean.value = false
                     }
                 }
@@ -295,6 +300,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                     shouldShowConfirm.value = false // Dismiss the dialog
                     isConfirmed.value = false
                     exitActivity()
+                    context.startActivity(Intent(context, MainActivity::class.java))
                 }
                 SuccessDialogActivity(
                     shouldShowConfirm,

@@ -506,6 +506,8 @@ class DittoService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "DittoService onDestroy called")
+
         if (isRunning.getAndSet(false)) {
             stopForeground(true)
             // Stop syncing when the service is destroyed

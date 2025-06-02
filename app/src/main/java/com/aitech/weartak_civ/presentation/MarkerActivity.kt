@@ -95,7 +95,7 @@ class MarkerActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    NewMarkerCivApp(exitActivity = {finishAndRemoveTask()}, context)
+                    NewMarkerCivApp(exitActivity = {finishAndRemoveTask(); }, context)
                 }
             }
         }
@@ -118,6 +118,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     .background(Color.Transparent),
                 contentAlignment = Alignment.Center
             ) {
+                val context = LocalContext.current
                 DonutArcButton(
                     startAngle = -45f,
                     sweepAngle = 85f,
@@ -171,7 +172,8 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         markerType = ""
                         shouldShowDialog.value = false
                         exitActivity()
-                              },
+                        context.startActivity(Intent(context, MainActivity::class.java))
+                    },
                     modifier = Modifier
                         .size(60.dp)
                         .border(1.dp, color = Color.Black, shape = CircleShape),
@@ -377,6 +379,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                     delay(2000) // Delay for 5 seconds
                     shouldShowConfirm.value = false // Dismiss the dialog
                     exitActivity()
+                    context.startActivity(Intent(context, MainActivity::class.java))
                 }
                 MarkerSuccessDialog(
                     shouldShowConfirm,
