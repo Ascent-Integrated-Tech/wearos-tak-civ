@@ -251,9 +251,17 @@ fun ChatCard(
                         .size(15.dp)
                         .padding(end = 5.dp),
                 )
-                Text(title)
+                Text(
+                    title,
+                    maxLines = 1,
+                    modifier = Modifier.size(width = 100.dp, height = 20.dp),
+                    overflow = TextOverflow.Ellipsis,)
             } else {
-                Text(title)
+                Text(
+                    title,
+                    maxLines = 1,
+                    modifier = Modifier.size(width = 100.dp, height = 20.dp),
+                    overflow = TextOverflow.Ellipsis,)
             }
         },
         time = { Text(text = time, fontSize = 12.sp) },
@@ -269,11 +277,15 @@ fun ChatCard(
         if (newMessagesPresent) {
             Text(
                 text = message,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Bold
             )
         } else {
             Text(
                 text = message,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Normal
             )
         }
