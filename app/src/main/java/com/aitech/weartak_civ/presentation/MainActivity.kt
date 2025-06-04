@@ -99,9 +99,6 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
@@ -115,7 +112,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
@@ -156,6 +152,7 @@ import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.runtime.DisposableEffect
@@ -1811,6 +1808,7 @@ fun MainScreen(
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceLiveData.observeAsState()
+    val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -1852,7 +1850,7 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        SOSButton()
+                        SOSButton(context, isAlerting)
                         Spacer(
                             modifier = Modifier.width(10.dp)
                         )
@@ -2179,7 +2177,7 @@ fun TroubleshootingIcons() {
                     x = (15).dp, // Adjust this value
                     y = (10).dp // Adjust this value
                 )
-                .size(if (cellConnected == true) 25.dp else 25.dp),
+                .size(25.dp),
             tint = if (isConnected == true) Color.White else Color.Unspecified
         )
 
@@ -2259,50 +2257,52 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun SOSButton() {
-    val shouldShowDialog = remember { mutableStateOf(false) }
-    val successBoolean = remember {mutableStateOf(false)}
-    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
-    val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
-    val location = dataRepository.latestLocation.value
-    var locationChecked by remember{ mutableStateOf(enableLocationService)}
+fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
+//    val shouldShowDialog = remember { mutableStateOf(false) }
+//    val successBoolean = remember {mutableStateOf(false)}
+//    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
+//    val isConfirmed = remember { mutableStateOf(false) }
+//    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
+//    val location = dataRepository.latestLocation.value
+//    var locationChecked by remember{ mutableStateOf(enableLocationService)}
     var sosText = stringResource(R.string.sos)
+    var sosLiveText = stringResource(R.string.sos_active)
+    Log.d(TAG, "SOSButtton")
 
-    if (shouldShowConfirmationDialog.value) {
-        ConfirmationDialog(
-            shouldShowConfirmationDialog,
-            rememberSwipeDismissableNavController(),
-            stringResource(R.string.sos_alert_prompt),
-            Icons.Default.Warning,
-            Color.Red,
-            "main_screen",
-            isConfirmed
-        )
-    }
-    if (isConfirmed.value) {
-        shouldShowDialog.value = true
-        if (takServer == true) {
-            if (location != null && locationChecked) {
-                successBoolean.value = true
-                SOSButtonEmergencyMessage()
-            }
-        } else {
-            if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
-                Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
-                successBoolean.value = true
-                SOSButtonEmergencyMessage()
-            } else {
-                Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
-                successBoolean.value = false
-            }
-        }
-        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
-    }
+//    if (shouldShowConfirmationDialog.value) {
+//        ConfirmationDialog(
+//            shouldShowConfirmationDialog,
+//            rememberSwipeDismissableNavController(),
+//            stringResource(R.string.sos_alert_prompt),
+//            Icons.Default.Warning,
+//            Color.Red,
+//            "main_screen",
+//            isConfirmed
+//        )
+//    }
+//    if (isConfirmed.value) {
+//        shouldShowDialog.value = true
+//        if (takServer == true) {
+//            if (location != null && locationChecked) {
+//                successBoolean.value = true
+//                SOSButtonEmergencyMessage()
+//            }
+//        } else {
+//            if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
+//                Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
+//                successBoolean.value = true
+//                SOSButtonEmergencyMessage()
+//            } else {
+//                Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
+//                successBoolean.value = false
+//            }
+//        }
+//        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
+//    }
 
     Button(
         onClick = {
-            shouldShowConfirmationDialog.value = true
+            context.startActivity(Intent(context, SosActivity::class.java))
         },
         modifier = Modifier
             .border(
@@ -2312,22 +2312,31 @@ fun SOSButton() {
             )
             .size(110.dp, 60.dp),
         shape = RoundedCornerShape(40.dp),
+        contentPadding = PaddingValues.Absolute(0.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
-            contentColor = Color.Red
+            containerColor = if (isAlertingLiveData == true) Color.Red else Color.Transparent,
+            contentColor = if (isAlertingLiveData == true) Color.White else Color.Red
         )
     ) {
-        Text (
-            sosText,
-            fontSize = if (sosText!!.length <= 10) 25.sp else 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Red
-        )
+        if (isAlertingLiveData == true) {
+            Text (
+                sosLiveText,
+                fontSize = if (sosLiveText.length <= 15) 17.sp else 15.sp,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                color = Color.White,
+            )
+        } else {
+            Text(
+                sosText,
+                fontSize = if (sosText.length <= 10) 25.sp else 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
     }
-}
-
-fun SOSButtonEmergencyMessage(){
-    EventBus.getDefault().post(CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true))
 }
 
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")

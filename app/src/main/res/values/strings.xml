@@ -59,6 +59,7 @@
     <string name="update_license">Update License</string>
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
+
     <string name="weartak_accessibility_settings_toast">Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings</string>
     <string name="connecting_to_toast">Connecting to %1$s</string>
     <string name="connected_to_toast">Connected to %1$s</string>
@@ -319,4 +320,14 @@
 
     <string name="localization_iBeacon_alt_title" translatable="false">Altitude HAE (m)</string>
     <string name="localization_iBeacon_alt_description" translatable="false">Enter Height Above Ellipsoid of iBeacon in meters.</string>
+    <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
+    <string name="sos_active">SOS Live</string>
+    <string name="sos_alert_sent">SOS Alert SENT</string>
+    <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
+    <string name="sos_color_complication_service" translatable="false">SOS Color Complication Service</string>
+    <string name="sos_inactive">SOS Inactive</string>
+    <string name="sos_text_complication_service" translatable="false">SOS Text Complication Service</string>
+    <string name="sos_active_text_complication_service" translatable="false">SOS Active Text Complication Service</string>
+    <string name="sos_complication_service" />
+
 </resources>
