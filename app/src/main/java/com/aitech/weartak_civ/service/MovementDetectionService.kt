@@ -24,7 +24,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var smoothedAccel = FloatArray(3) { 0f }
     private val smoothingAlpha = 0.1f
     private var lastKalmanPredictionTime = 0L
-    private val MIN_KALMAN_INTERVAL_MS = 100L
+    private val MIN_KALMAN_INTERVAL_MS = 1000L
 
     private val MOVEMENT_THRESHOLD = 8.0f
     private val INTERVAL_MOVING = 5000L
@@ -59,7 +59,16 @@ class MovementDetectionService : Service(), SensorEventListener {
     //GPS THROTTLING
     private var lastGpsRequestTime = 0L
     private val GPS_REQUEST_COOLDOWN_MS = 5000L
-    val KALMAN_UPDATE_INTERVAL_MS = 500L
+    private var lastPredictedLat: Float? = null
+    private var lastPredictedLon: Float? = null
+
+    var lastPredictedAlt: Float = 0f
+    var lastCorrectedAlt: Float? = null
+    var referenceAlt: Double? = null
+
+    private var lastUpdateTimeMs: Long = 0L
+    private var lastUpdateLat: Float = 0f
+    private var lastUpdateLon: Float = 0f
 
     private val TAG = "MovementDetectionService"
 
@@ -79,6 +88,25 @@ class MovementDetectionService : Service(), SensorEventListener {
         kalmanEstimator.onGpsUpdateRequired = {
             val pos = kalmanEstimator.getEstimatedPosition()
             val (estLat, estLon) = metersToLatLon(pos[0], pos[1])
+            val estAlt = (referenceAlt?.toFloat() ?: 0f) + pos[2]
+
+            // ✅ Store the predicted values globally
+            lastPredictedLat = estLat
+            lastPredictedLon = estLon
+            lastPredictedAlt = estAlt
+
+            //Companion object variables
+            predictedAlt = lastPredictedAlt
+            predictedLat = lastPredictedLat!!
+            predictedLon = lastPredictedLon!!
+
+            // ✅ Initialize update history only once
+            if (lastUpdateTimeMs == 0L) {
+                lastUpdateTimeMs = System.currentTimeMillis()
+                lastUpdateLat = lastCorrectedLat ?: 0f
+                lastUpdateLon = lastCorrectedLon ?: 0f
+            }
+
             val latDrift = abs(estLat - (lastCorrectedLat ?: estLat))
             val lonDrift = abs(estLon - (lastCorrectedLon ?: estLon))
             val driftExceeded = latDrift > GPS_DRIFT_THRESHOLD_DEGREES || lonDrift > GPS_DRIFT_THRESHOLD_DEGREES
@@ -89,6 +117,11 @@ class MovementDetectionService : Service(), SensorEventListener {
                 //Log.d(TAG, "📍 Drift > threshold — requesting GPS fix")
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                     requestInitialGpsFix()
+
+                    // ✅ Reset update history here instead if drift triggers fix
+                    lastUpdateTimeMs = System.currentTimeMillis()
+                    lastUpdateLat = lastCorrectedLat ?: 0f
+                    lastUpdateLon = lastCorrectedLon ?: 0f
                 }
             } else {
                 //Log.d(TAG, "🧭 Using predicted lat/lon: $estLat, $estLon")
@@ -125,9 +158,40 @@ class MovementDetectionService : Service(), SensorEventListener {
             if (currentTime - lastKalmanPredictionTime >= MIN_KALMAN_INTERVAL_MS) {
                 kalmanEstimator.predict(smoothedAccel, currentTime)
                 lastKalmanPredictionTime = currentTime
+
+                val predLat = lastPredictedLat ?: -1f
+                val predLon = lastPredictedLon ?: -1f
+                val corrLat = lastCorrectedLat ?: -1f
+                val corrLon = lastCorrectedLon ?: -1f
+
+                //Log.d(TAG, "🧭 Prediction Update -> Predicted: ($predLat, $predLon), Corrected: ($corrLat, $corrLon)")
+                //Log.d(TAG, "🧭 Prediction Update -> Predicted: ($lastPredictedLat, $lastPredictedLon, $predictedAlt), Corrected: (${lastCorrectedLat}, ${lastCorrectedLon}, ${lastCorrectedAlt})")
+                // 🌍 Calculate speed using predicted position delta
+                val timeDeltaSec = (currentTime - lastUpdateTimeMs) / 1000f
+                if (lastUpdateTimeMs != 0L && timeDeltaSec > 0.1f) {
+                    val distanceMeters = haversineDistance(
+                        lastUpdateLat.toDouble(), lastUpdateLon.toDouble(),
+                        predLat.toDouble(), predLon.toDouble()
+                    )
+                    userSpeedMps = distanceMeters / timeDeltaSec
+                }
+
+                lastUpdateTimeMs = currentTime
+                lastUpdateLat = predLat
+                lastUpdateLon = predLon
+
+                // 🧠 Updated activity classification logic
+                val activity = when {
+                    userSpeedMps < 0.001f -> "Still"
+                    userSpeedMps <= 0.5f -> "Walking"
+                    else -> "Running"
+                }
+
+                Log.d(TAG, "🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predictedAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
+                Log.d(TAG, "🚶 Speed: %.4f m/s, Activity: %s".format(userSpeedMps, activity))
             }
 
-            if (accelMag > MOVEMENT_THRESHOLD) {
+            /*if (accelMag > MOVEMENT_THRESHOLD) {
                 highCount++
                 lowCount = 0
                 transitionHandler.removeCallbacks(confirmStillRunnable)
@@ -142,7 +206,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                 if (isUserMoving && lowCount >= REQUIRED_CONSECUTIVE_LOWS) {
                     transitionHandler.postDelayed(confirmStillRunnable, stillConfirmDelay)
                 }
-            }
+            }*/
         }
     }
 
@@ -176,12 +240,14 @@ class MovementDetectionService : Service(), SensorEventListener {
 
                 referenceLat = location.latitude
                 referenceLon = location.longitude
+                referenceAlt = location.altitude
 
                 lastCorrectedLat = referenceLat!!.toFloat()
                 lastCorrectedLon = referenceLon!!.toFloat()
+                lastCorrectedAlt = referenceAlt!!.toFloat()
 
                 kalmanEstimator.reset(
-                    floatArrayOf(0f, 0f, location.altitude.toFloat()),
+                    floatArrayOf(0f, 0f, 0f),
                     floatArrayOf(0f, 0f, 0f),
                     System.currentTimeMillis()
                 )
@@ -196,9 +262,22 @@ class MovementDetectionService : Service(), SensorEventListener {
     private fun metersToLatLon(x: Float, y: Float): Pair<Float, Float> {
         val lat0 = referenceLat ?: 0.0
         val lon0 = referenceLon ?: 0.0
-        val dLat = x / 111320.0
-        val dLon = y / (111320.0 * cos(Math.toRadians(lat0)))
+        val latRad = Math.toRadians(lat0)
+        val metersPerLat = 111132.92 - 559.82 * cos(2 * latRad) + 1.175 * cos(4 * latRad) - 0.0023 * cos(6 * latRad)
+        val metersPerLon = 111412.84 * cos(latRad) - 93.5 * cos(3 * latRad) + 0.118 * cos(5 * latRad)
+        val dLat = x / metersPerLat
+        val dLon = y / metersPerLon
         return Pair((lat0 + dLat).toFloat(), (lon0 + dLon).toFloat())
+    }
+
+    private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val R = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) *
+                cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return (R * c).toFloat()
     }
 
     private fun createNotification(): Notification {
@@ -229,5 +308,10 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     companion object {
         val isRunning = AtomicBoolean(false)
+        // Shared predicted coordinates
+        @Volatile var predictedLat: Float = 0f
+        @Volatile var predictedLon: Float = 0f
+        @Volatile var predictedAlt: Float = 0f
+        @Volatile var userSpeedMps: Float = 0f
     }
 }
