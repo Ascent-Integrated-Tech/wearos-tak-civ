@@ -2179,7 +2179,7 @@ fun TroubleshootingIcons() {
                     x = (15).dp, // Adjust this value
                     y = (10).dp // Adjust this value
                 )
-                .size(if (cellConnected == true) 25.dp else 25.dp),
+                .size(25.dp),
             tint = if (isConnected == true) Color.White else Color.Unspecified
         )
 
