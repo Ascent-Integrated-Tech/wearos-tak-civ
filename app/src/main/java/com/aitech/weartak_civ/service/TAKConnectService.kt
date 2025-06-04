@@ -90,6 +90,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.events.TakChatEvent
+import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
@@ -1039,7 +1040,7 @@ class TAKConnectService: Service() {
                 }
             }
         }
-
+        
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             val takServer = takServerDetail.address
             val port = takServerDetail.port
@@ -1056,22 +1057,18 @@ class TAKConnectService: Service() {
                     }
 
                     // Initialize SSL Context with TrustManager
-                    val sslContext = SSLContext.getInstance("TLS")
-                    sslContext.init(
-                        keyManagerFactory.keyManagers, arrayOf<TrustManager>(object :
-                            X509TrustManager {
-                                override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) {
-                                }
+                    val sslContext = SSLContext.getInstance("TLSv1.3")
+                    val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                    trustManagerFactory.init(takServerDetail.keyStore)
+                    val trustManagers = trustManagerFactory.trustManagers
+                    val trustManager = trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
+                    if (null != trustManager) {
+                        sslContext.init(keyManagerFactory.keyManagers, arrayOf(trustManager), null)
+                    } else {
+                        Log.e(TAG, "trustManager is null")
+                        throw Exception("X509TrustManager is NULL. Cannot connect to ${takServerDetail.name}.")
+                    }
 
-                                override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) {
-                                }
-
-                                override fun getAcceptedIssuers(): Array<X509Certificate> {
-                                    return emptyArray()
-                                }
-                            }),
-                            null
-                    )
                     Log.d(TAG, "Going to createSocket and startHandshake")
                     // Create the socket and connect
                     val socketFactory = sslContext.socketFactory
