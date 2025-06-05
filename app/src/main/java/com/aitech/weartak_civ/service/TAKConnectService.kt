@@ -51,7 +51,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.*
@@ -84,7 +83,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
@@ -518,7 +516,7 @@ class TAKConnectService: Service() {
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
-        const private val TAK_CERT_PASSWORD = "atakatak"
+        const private val KEYSTORE_PASS = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
         var isNetworkConnected = false
         var isWifiConnected = false
@@ -824,7 +822,7 @@ class TAKConnectService: Service() {
                 takServerDetail.keyStore.setCertificateEntry("ca1", ca1Cert)
 
                 // Keystore password to protect the .p12
-                val keystorePassword = TAK_CERT_PASSWORD.toCharArray()
+                val keystorePassword = KEYSTORE_PASS.toCharArray()
                 takServerDetail.keyStore.setKeyEntry(KEY_ALIAS, takServerDetail.privateKey, keystorePassword, chain)
                 runBlocking {
                     try {
@@ -971,7 +969,7 @@ class TAKConnectService: Service() {
                             }
                         }
                     } else {
-                        if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", TAK_CERT_PASSWORD)) {
+                        if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", KEYSTORE_PASS)) {
                             Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
                             takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
@@ -1053,7 +1051,7 @@ class TAKConnectService: Service() {
                     if (takServerDetail.isP12Cert) {
                         keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
                     } else {
-                        keyManagerFactory.init(takServerDetail.keyStore, TAK_CERT_PASSWORD.toCharArray())
+                        keyManagerFactory.init(takServerDetail.keyStore, KEYSTORE_PASS.toCharArray())
                     }
 
                     // Initialize SSL Context with TrustManager
