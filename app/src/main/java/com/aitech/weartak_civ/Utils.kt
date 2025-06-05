@@ -15,17 +15,20 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sqrt
-import kotlin.random.Random
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
+import java.security.SecureRandom
+
+
 
 object Utils {
     private const val TAG = "WearTAK-Utils"
     private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
     const val EARTH_RADIUS = 6378137.0  // in meters
+    val secureRandom: SecureRandom = SecureRandom()
 
     fun isValidJson(jsonString: String) : Boolean {
         if (jsonString.isNullOrEmpty()) return false
@@ -76,8 +79,8 @@ object Utils {
     fun jitteredLatLon(lat: Double, lon: Double, maxJitterM: Double): Pair<Double, Double> {
         val maxJitterUnsignedM = abs(maxJitterM)
         // Generate random offsets in [-maxJitterUnsignedM, maxJitterUnsignedM] meters
-        val dx = (Math.random() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // East-West
-        val dy = (Math.random() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // North-South
+        val dx = (secureRandom.nextDouble() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // East-West
+        val dy = (secureRandom.nextDouble() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // North-South
         Log.d(TAG, "jitteredLatLon: dlatM($dy), dLonM($dx): dist(${(sqrt(dx*dx + dy*dy))})")
 
         // Convert to angular distance in radians
@@ -89,16 +92,6 @@ object Utils {
         val newLon = lon + Math.toDegrees(dLon)
 
         return Pair(newLat, newLon)
-    }
-
-    fun jitteredLatLon1(lat: Double, lon: Double, minJitterM: Double, maxJitterM: Double): Pair<Double, Double> {
-        val jitterDist = Random.nextDouble(minJitterM, maxJitterM)
-
-        val latitudeJitter = jitterDist * DECIMAL_DEGREES_PER_METER
-        val longitudeJitter = jitterDist * DECIMAL_DEGREES_PER_METER
-
-        return Pair(lat + latitudeJitter, lon + longitudeJitter)
-
     }
 
     /* Ditto Track Document uses this legacy cot field. It is
