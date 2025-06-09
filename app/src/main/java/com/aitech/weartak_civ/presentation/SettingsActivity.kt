@@ -145,6 +145,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSmsForAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
@@ -161,6 +162,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersListString
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersListStringSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
@@ -537,7 +541,9 @@ fun TakServerSetting(navController: NavController) {
                             fontSize = if (text.length!! < 20) 15.sp else 13.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 20.dp).align(Alignment.CenterHorizontally)
+                            modifier = Modifier
+                                .padding(vertical = 10.dp, horizontal = 20.dp)
+                                .align(Alignment.CenterHorizontally)
                         )
                     }
                     itemsIndexed(takServerSettingList){ index, takServerItem ->
@@ -2226,6 +2232,8 @@ fun SettingsScreen(
             var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
             var chatChecked by remember{ mutableStateOf(enableChatService)}
+            var enableSmsChecked by remember{ mutableStateOf(enableSmsForAlerts)}
+            var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
 
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
             val text = stringResource(R.string.callsign_settings)
@@ -2373,6 +2381,52 @@ fun SettingsScreen(
                     description = stringResource(R.string.service_on_off),
                 )
 
+                SettingSwitchToggle(
+                    checked = enableSmsChecked, onCheckedChange = { enableSmsChecked = it },
+                    title = "SMS Alerts",
+                    description = stringResource(R.string.on_off),
+                )
+                val focusManager = LocalFocusManager.current
+
+                if (enableSmsChecked) {
+                    OutlinedTextField(
+                        value = smsListTextFieldValue,
+                        onValueChange = {
+                            smsListTextFieldValue = it
+                            smsNumbersListStringSettingsState.postValue(smsListTextFieldValue.text)
+                        },
+                        modifier = Modifier.padding(5.dp),
+                        maxLines = 3,
+                        label = {
+                            Text(
+                                text = stringResource(R.string.sms_recipients),
+                                color = colors.primary,
+                                fontSize = 12.sp
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                text = stringResource(R.string.sms_recipients),
+                                color = colors.primary
+                            )
+                        },
+                        textStyle = TextStyle(color = colors.primary),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (smsListTextFieldValue.text.contains("[A-Za-z!\"#$%&'()*./:;\\\\<=>?@^_`{|}~]".toRegex())) {
+                                    Toast.makeText(
+                                        mainActivity,
+                                        context.getString(R.string.invalid_characters),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    focusManager.clearFocus()
+                                }
+                            }
+                        )
+                    )
+                }
+
                 Text(
                     modifier = Modifier.padding(top = 7.dp),
                     text = stringResource(R.string.version, versionNumber),
@@ -2406,6 +2460,8 @@ fun SettingsScreen(
                         var biometricsCheckedChanged: Boolean = false
                         var dittoCheckedChanged: Boolean = false
                         var chatCheckedChanged: Boolean = false
+                        var smsAlertsCheckedChanged: Boolean = false
+                        var smsNumbersChanged: Boolean = false
                         var saveBattOnWifiChanged = false
                         var takServerListChanged = false
 
@@ -2530,6 +2586,24 @@ fun SettingsScreen(
                             requestChatComplicationUpdate(context)
                         }
 
+                        if (enableSmsForAlerts != enableSmsChecked) {
+                            settingsChanged = true; smsAlertsCheckedChanged = true
+                            enableSmsForAlerts = enableSmsChecked
+                            if (enableSmsForAlerts) {
+                                Log.d(TAG, "Trying enable start sms alerts")
+                            } else {
+                                Log.d(TAG, "Trying disable start sms alerts")
+                            }
+
+                        }
+
+                        if (smsNumbersListString != smsNumbersListStringSettingsState.value) {
+                            settingsChanged = true; smsNumbersChanged = true
+                            smsNumbersListString =
+                                smsNumbersListStringSettingsState.value ?: smsNumbersListString
+//
+                        }
+
                         if (settingsChanged) {
                             CoroutineScope(Dispatchers.Main).launch {
                                 if (callsignChanged) {
@@ -2548,6 +2622,7 @@ fun SettingsScreen(
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
+
                                 if (saveBattOnWifiChanged) {
                                     Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
                                     runBlocking {
@@ -2586,6 +2661,21 @@ fun SettingsScreen(
                                     Log.d(TAG, "Storing enableChatService $enableChatService")
                                     dataRepository.storeEnableChatService(enableChatService)
                                 }
+                                if (smsAlertsCheckedChanged) {
+                                    Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
+                                    dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
+                                }
+                                if (smsNumbersChanged){
+                                    val smsNumbersListConversion: List<DataRepository.SmsNumber> =
+                                        smsNumbersListString.split(",")
+                                            .map { it.trim() } // Trim whitespace from each SSID
+                                            .filter { it.isNotEmpty() } // Remove any empty values
+                                            .map { DataRepository.SmsNumber(it) }
+                                    Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
+
+                                    dataRepository.storeSmsNumbersList(smsNumbersListConversion)
+                                    smsNumbersList = smsNumbersListConversion
+                                }
 
                                 Log.d(TAG, "Finished saving settings")
                             }
@@ -2604,6 +2694,20 @@ fun SettingsScreen(
 
         }
     }
+}
+
+fun convertSmsNumbersListToStringWithSeparator(smsNumbersList: List<DataRepository.SmsNumber>, separatorStr: String): String {
+    var result = ""
+    if (smsNumbersList.isNotEmpty()) {
+        for (smsNumber in smsNumbersList) {
+            result = if ("" == result) {
+                smsNumber.telephoneNumber
+            } else {
+                "$result$separatorStr${smsNumber.telephoneNumber}"
+            }
+        }
+    }
+    return result
 }
 
 @Composable
@@ -2674,7 +2778,7 @@ fun requestHeartRateComplicationUpdate(context: Context) {
     requester.requestUpdateAll()
 }
 
-@Preview(widthDp = 192, heightDp = 900, showBackground = true)
+@Preview(widthDp = 192, heightDp = 1000, showBackground = true)
 @Composable
 fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
@@ -2682,3 +2786,4 @@ fun SettingsPreview() {
 
     SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
 }
+

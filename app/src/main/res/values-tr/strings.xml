@@ -94,5 +94,8 @@
     <string name="sos_complication_service" />
     <string name="sos_inactive">SOS Inactive</string>
     <string name="sos_text_complication_service">sos text complication service</string>
+    <string name="on_off">ON/OFF</string>
+    <string name="sms_recipients">SMS Recipients</string>
+    <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
 
 </resources>
