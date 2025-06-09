@@ -329,5 +329,7 @@
     <string name="sos_text_complication_service" translatable="false">SOS Text Complication Service</string>
     <string name="sos_active_text_complication_service" translatable="false">SOS Active Text Complication Service</string>
     <string name="sos_complication_service" />
-
+    <string name="on_off">ON/OFF</string>
+    <string name="sms_recipients">SMS Recipients</string>
+    <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
 </resources>

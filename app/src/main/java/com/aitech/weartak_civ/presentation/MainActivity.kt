@@ -268,7 +268,10 @@ class MainActivity : ComponentActivity() {
 
         var enableDynamicReportingStrategy = false
         var enableSmsForAlerts = false
+        var enableSmsForAlertsLiveData = MutableLiveData<Boolean>(false)
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
+        var smsNumbersListString : String = ""
+        val smsNumbersListStringSettingsState = MutableLiveData<String>("")
         var enablePhysiologicalAlerts = false
         var hrHighAlertBpmThreshold : Int = 140
         var hrHighAlertNumSecsThreshold : Int = 30
@@ -962,6 +965,7 @@ class MainActivity : ComponentActivity() {
 
             enableSmsForAlerts = dataRepository.getEnableSmsForAlerts.first()
             smsNumbersList = dataRepository.getSmsNumbersList.first()
+            smsNumbersListString = convertSmsNumbersListToStringWithSeparator(dataRepository.getSmsNumbersList.first(), ",")
 
             enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
             hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
@@ -1221,6 +1225,9 @@ class MainActivity : ComponentActivity() {
         enableLocationServiceLiveData.postValue(enableLocationService)
         enableBiometricsServiceLiveData.postValue(enableBiometricsService)
         enableChatServiceLiveData.postValue(enableChatService)
+        enableSmsForAlertsLiveData.postValue(enableSmsForAlerts)
+        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+
 
         requestCallsignComplicationUpdate(context)
         requestLocationComplicationUpdate(context)
