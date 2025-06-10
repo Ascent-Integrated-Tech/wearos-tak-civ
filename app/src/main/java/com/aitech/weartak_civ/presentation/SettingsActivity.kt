@@ -132,6 +132,7 @@ import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
@@ -167,7 +168,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocation
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSmsForAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
@@ -179,6 +180,12 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetValu
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertBpmThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertBpmThresholdSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertBpmThresholdState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertNumSecsThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertNumSecsThresholdSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertNumSecsThresholdState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -221,6 +228,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSt
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsActivity
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -273,6 +281,10 @@ class SettingsActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList)
         takServerListState.postValue(takServerList)
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+        enablePhysiologicalAlertsSettingState = enablePhysiologicalAlerts
+        hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
+        hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
         ageState.postValue(ageValue)
         heightFeetState.postValue(heightFeetValue)
         heightInchesState.postValue(heightInchesValue)
@@ -281,7 +293,7 @@ class SettingsActivity : ComponentActivity() {
         bloodTypeState.postValue(bloodTypeValue)
         allergyListState.postValue(allergyList)
         userTypeState.postValue(userTypeValue)
-        Log.d(TAG, "SettingsActivity onCreate called. Setting userTypeState to $userTypeValue")
+        Log.d(TAG, "SettingsActivity onCreate called with enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState and enablePhysiologicalAlerts=$enablePhysiologicalAlerts")
 
         enableEdgeToEdge()
         setContent {
@@ -374,6 +386,18 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             "invalid_license_screen") {
             InvalidLicenseScreen(navController)
         }
+        composable(
+            "physiological_alerts_setting_screen") {
+            PhysiologicalAlertsSetting(navController)
+        }
+        composable(
+            "physiological_alerts_bpm_screen") {
+            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertBpmThresholdSettingsState, stringResource(R.string.threshold_high_heart_rate), "140")
+        }
+        composable(
+            "physiological_alerts_bpm_length_screen") {
+            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertNumSecsThresholdSettingsState, (stringResource(R.string.threshold_high_heart_rate_length)), "60" + "seconds")
+        }
         //Physio Metrics
         composable(
             "physiological_metrics_setting_screen") {
@@ -412,6 +436,75 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
 }
 
 @Composable
+fun GenericOutlinedTextField(
+    liveDataState: MutableLiveData<String>,
+    label: String,
+    placeholder: String
+): TextFieldValue {
+    var textFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                liveDataState.value ?: "null"
+            )
+        )
+    }
+    OutlinedTextField(
+        value = textFieldValue,
+        onValueChange = {
+            textFieldValue = it
+        },
+        maxLines = 1,
+        label = { Text(text = label, color = colors.primary) },
+        placeholder = { Text(text = placeholder, color = colors.primary) },
+        textStyle = TextStyle(color = colors.primary)
+    )
+    return textFieldValue
+}
+
+@Composable
+fun WearTakCivScreenDimensions(
+    columnContent: @Composable () -> Unit,
+    rowContent: @Composable () -> Unit,
+    text: String
+) {
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp)
+                .verticalScroll(rememberScrollState()),
+
+            horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = text,
+                    fontSize = if (text.length!! < 20) 15.sp else 13.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(vertical = 10.dp, horizontal = 20.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+                columnContent()
+            }
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                rowContent()
+            }
+        }
+    }
+}
+
+@Composable
 fun CallsignRoleTeamChip(
     route: String,
     title: String,
@@ -447,25 +540,26 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        var callsignTextFieldValue by remember {
-            mutableStateOf(
-                TextFieldValue(
-                    callsignLiveDataState.value ?: "null"
-                )
-            )
-        }
-//        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+//        var callsignTextFieldValue by remember {
+//            mutableStateOf(
+//                TextFieldValue(
+//                    callsignLiveDataState.value ?: "null"
+//                )
+//            )
+//        }
+        var textField = GenericOutlinedTextField(callsignLiveDataState, stringResource(R.string.callsign), stringResource(R.string.callsign))
 
-        OutlinedTextField(
-            value = callsignTextFieldValue,
-            onValueChange = {
-                callsignTextFieldValue = it
-            },
-            maxLines = 1,
-            label = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
-            placeholder = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
+//        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
+//        OutlinedTextField(
+//            value = callsignTextFieldValue,
+//            onValueChange = {
+//                callsignTextFieldValue = it
+//            },
+//            maxLines = 1,
+//            label = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
+//            placeholder = { Text(text = stringResource(R.string.callsign), color = colors.primary) },
+//            textStyle = TextStyle(color = colors.primary)
+//        )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
@@ -477,7 +571,7 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
                     }
                 },
                 onClickConfirm = {
-                    callsignLiveDataState.postValue(callsignTextFieldValue.text)
+                    callsignLiveDataState.postValue(textField.text)
                     Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
@@ -618,141 +712,124 @@ fun TakServerSetting(navController: NavController) {
     //val selectedIndexState = MutableLiveData<Int?>(null)
     //val selectedIndex by selectedIndexState.observeAsState(initial = null)
     Log.d(TAG, "TakServerSetting called")
-    val text = stringResource(R.string.tak_server_connections)
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .align(Alignment.TopCenter)
-                .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                LazyColumn {
-                    item {
-                        Text(
-                            text = text,
-                            fontSize = if (text.length!! < 20) 15.sp else 13.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .padding(vertical = 10.dp, horizontal = 20.dp)
-                                .align(Alignment.CenterHorizontally)
-                        )
-                    }
-                    itemsIndexed(takServerSettingList){ index, takServerItem ->
-                        var takServerChecked by remember{ mutableStateOf(takServerItem.isEnabled)}
-                        Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
-                        SwipeableTakServerChip(
-                            index,
-                            takServerItem.name,
-                            takServerItem.address,
-                            checked = takServerChecked,
-                            onCheckedChange =  {
-                                Log.d(TAG, "onCheckedChange index($index): $it")
-                                takServerChecked = it
-                                Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
-                                takServerSettingList[index].isEnabled = it
-                                val mutableTakServerList = takServerSettingList.toMutableList()
-                                mutableTakServerList.get(index).isEnabled = it
-                                takServerList = mutableTakServerList.toList()
-                                takServerListState.postValue(takServerList)
-                                //selectedIndexState.postValue(null)
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    dataRepository.updateTakServerItem(index, takServerItem)
-                                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(
-                                        MessageEvent(SERVER_TOGGLED, index)
-                                    ) }, EVENT_SEND_DELAY_MS)
-                                    val minReportingInterval = getMinReportingInterval(takServerList)
-                                    var prevReportingInterval = 1
-                                    runBlocking {
-                                        prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
-                                    }
-                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                    if (prevReportingInterval != minReportingInterval) {
-                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                        runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(minReportingInterval)
-                                        }
-                                        CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                        EventBus.getDefault().post(
-                                            MessageEvent(
-                                                UPDATE_INTERVAL_CHANGED, minReportingInterval)
-                                        )
-                                    }
-                                } },
-                            onPrimaryActionClick = {
-                                Log.d(TAG, "Remove takServerItem ($takServerItem)")
-                                val mutableTakServerList = takServerSettingList.toMutableList()
-                                mutableTakServerList.removeAt(index)
-                                takServerList = mutableTakServerList.toList()
-                                takServerListState.postValue(takServerList)
-                                //selectedIndexState.postValue(null)
-                                Log.d(TAG, "onPrimaryActionClick index($index): REMOVE")
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    dataRepository.removeTakServerItem(takServerItem)
-                                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(
-                                        MessageEvent(SERVER_REMOVED, index)
-                                    ) }, EVENT_SEND_DELAY_MS)
+    WearTakCivScreenDimensions(
+        columnContent = {
+            LazyColumn(modifier = Modifier
+                    .height(200.dp)){
+                itemsIndexed(takServerSettingList){ index, takServerItem ->
+                    var takServerChecked by remember{ mutableStateOf(takServerItem.isEnabled)}
+                    Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
+                    SwipeableTakServerChip(
+                        index,
+                        takServerItem.name,
+                        takServerItem.address,
+                        checked = takServerChecked,
+                        onCheckedChange =  {
+                            Log.d(TAG, "onCheckedChange index($index): $it")
+                            takServerChecked = it
+                            Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
+                            takServerSettingList[index].isEnabled = it
+                            val mutableTakServerList = takServerSettingList.toMutableList()
+                            mutableTakServerList.get(index).isEnabled = it
+                            takServerList = mutableTakServerList.toList()
+                            takServerListState.postValue(takServerList)
+                            //selectedIndexState.postValue(null)
+                            CoroutineScope(Dispatchers.Main).launch {
+                                dataRepository.updateTakServerItem(index, takServerItem)
+                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(
+                                    MessageEvent(SERVER_TOGGLED, index)
+                                ) }, EVENT_SEND_DELAY_MS)
+                                val minReportingInterval = getMinReportingInterval(takServerList)
+                                var prevReportingInterval = 1
+                                runBlocking {
+                                    prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
                                 }
-                            },
-                            onSecondaryActionClick = {
-                                //selectedIndexState.postValue(index)
-                                navController.navigate("edit_server_screen/$index")
-                            }
-                        )
-                    }
-
-                    item {
-                        Chip(
-                            onClick = { navController.navigate("new_server_screen") {
-                                popUpTo(("new_server_screen")) {
-                                    inclusive = true
+                                Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
+                                if (prevReportingInterval != minReportingInterval) {
+                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
+                                    runBlocking {
+                                        dataRepository.storeReportingUpdateInterval(minReportingInterval)
+                                    }
+                                    CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
+                                    EventBus.getDefault().post(
+                                        MessageEvent(
+                                            UPDATE_INTERVAL_CHANGED, minReportingInterval)
+                                    )
                                 }
                             } },
-                            enabled = true,
-                            label = { Text(text = stringResource(R.string.add_network)) },
-                            colors = ChipDefaults.chipColors(
-                                backgroundColor = Color.DarkGray,
-                                contentColor = Color.White,
-                                secondaryContentColor = Color.LightGray
-                            ),
-                            icon = {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = "Add TAK Server"
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
-                    onClick = {
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
+                        onPrimaryActionClick = {
+                            Log.d(TAG, "Remove takServerItem ($takServerItem)")
+                            val mutableTakServerList = takServerSettingList.toMutableList()
+                            mutableTakServerList.removeAt(index)
+                            takServerList = mutableTakServerList.toList()
+                            takServerListState.postValue(takServerList)
+                            //selectedIndexState.postValue(null)
+                            Log.d(TAG, "onPrimaryActionClick index($index): REMOVE")
+                            CoroutineScope(Dispatchers.Main).launch {
+                                dataRepository.removeTakServerItem(takServerItem)
+                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(
+                                    MessageEvent(SERVER_REMOVED, index)
+                                ) }, EVENT_SEND_DELAY_MS)
                             }
-                        } },
-                )
+                        },
+                        onSecondaryActionClick = {
+                            //selectedIndexState.postValue(index)
+                            navController.navigate("edit_server_screen/$index")
+                        }
+                    )
+                }
+
+                item {
+                    addItemChip(navController, "new_server_screen", stringResource(R.string.add_network), "Add TAK Server")
+                }
             }
-        }
-    }
+            Spacer(modifier = Modifier.height(10.dp))
+        },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    } },
+            )
+        },
+        stringResource(R.string.tak_server_connections)
+    )
     Log.d(TAG, "Tak Server List: $takServerSettingList")
+}
+
+@Composable
+fun addItemChip (
+    navController: NavController,
+    route: String,
+    label: String,
+    contentDescription: String
+){
+    Chip(
+        onClick = { navController.navigate(route) {
+            popUpTo((route)) {
+                inclusive = true
+            }
+        } },
+        enabled = true,
+        label = { Text(text = label) },
+        colors = ChipDefaults.chipColors(
+            backgroundColor = Color.DarkGray,
+            contentColor = Color.White,
+            secondaryContentColor = Color.LightGray
+        ),
+        icon = {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = contentDescription
+            )
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+    )
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -795,6 +872,7 @@ fun SwipeableTakServerChip(
             SwipeToRevealPrimaryAction(
                 revealState = revealState,
                 icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
+                //TODO: DUPLICATE CODE - Same swipe to reveal chip for TAK server and WIFI name vvv
                 label = { Text(stringResource(R.string.delete)) },
                 onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
@@ -822,6 +900,7 @@ fun SwipeableTakServerChip(
             )
         },
         onFullSwipe = {onPrimaryActionClick() }
+        //TODO: DUPLICATE CODE - Same swipe to reveal chip for TAK server and WIFI name^^^
     ) {
         SplitToggleChip(
             label = {
@@ -956,6 +1035,7 @@ fun NewServerPage(navController: NavController) {
                             } else if (reportingUpdateInterval == "0") {
                                 Toast.makeText(
                                     mainActivity,
+                                    //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server pagevvv
                                     context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
                             } else {
                                 // If there is valid input, we can clear focus
@@ -987,7 +1067,7 @@ fun NewServerPage(navController: NavController) {
                     },
                     textStyle = TextStyle(color = colors.primary),
                 )
-
+                //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server page^^^
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
@@ -1212,6 +1292,7 @@ fun EditServerPage(
                                 Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
                             } else if (reportingUpdateInterval == "0") {
                                 Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
+                            //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server pagevvv
                             } else {
                                 // If there is valid input, we can clear focus
                                 // (which typically dismisses the keyboard)
@@ -1242,6 +1323,7 @@ fun EditServerPage(
                     },
                     textStyle = TextStyle(color = colors.primary),
                 )
+                //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server page^^^
                 if (isP12Cert == true) {
                     Text(
                         text = "Using client certificate",
@@ -1432,6 +1514,7 @@ fun ServerSettingText (
 }
 
 @Composable
+//TODO: Edit Selected Options no longer jumps to bottom of screen, need to fix
 fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
     val enableWifiOpt = enableWifiBatteryOptimizationSettingsState.value ?: true
     val enableAllWifiOpt = enableAllWifiBatteryOptimizationSettingsState.value ?: true
@@ -1451,244 +1534,167 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
 
     //Log.d(TAG, "OptimizeBatteryonWifiSelectScreen called")
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
+    WearTakCivScreenDimensions(
+        columnContent = {
+            Text(
+                text = stringResource(R.string.slows_update_rate_on_enabled_wifi_networks),
+                textAlign = TextAlign.Center,
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp, top = 15.dp)
-                    .verticalScroll(scrollState),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.save_battery_on_wifi),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
+                    .padding(bottom = 16.dp)
+                    .padding(horizontal = 10.dp)
+            )
+
+            Text(
+                text = stringResource(R.string.optimize_on),
+                textAlign = TextAlign.Left,
+                modifier = Modifier
+                    .padding(bottom = 3.dp)
+                    .padding(horizontal = 10.dp)
+//                    .align(Alignment.Start)
+            )
+            Log.d(TAG, "initial  value = $initialValue, selected value: ${selectedValue.value}")
+            radioOptions.forEach { text ->
+                SelectableChip(
                     modifier = Modifier
-                        .padding(3.dp)
-                        .padding(horizontal = 10.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.slows_update_rate_on_enabled_wifi_networks),
-                    textAlign = TextAlign.Center,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp,
-                    modifier = Modifier
-                        .padding(bottom = 16.dp)
-                        .padding(horizontal = 10.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.optimize_on),
-                    textAlign = TextAlign.Left,
-                    modifier = Modifier
-                        .padding(bottom = 3.dp)
-                        .padding(horizontal = 10.dp)
-                        .align(Alignment.Start)
-                )
-                Log.d(TAG, "initial  value = $initialValue, selected value: ${selectedValue.value}")
-                radioOptions.forEach { text ->
-                    SelectableChip(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 5.dp),
-                        selected = isSelectedItem(text),
-                        onClick = { onChangeState(text)
-                            if (text == SOME_WIFI_CONNECTIONS) {
-                                enableWifiBatteryOptimizationSettingsState.postValue(true)
-                                enableAllWifiBatteryOptimizationSettingsState.postValue(false)
-                                scope.launch { scrollState.animateScrollTo(scrollState.maxValue + 150) }
-                            } else if (text == ALL_WIFI_CONNECTIONS) {
-                                enableWifiBatteryOptimizationSettingsState.postValue(true)
-                                enableAllWifiBatteryOptimizationSettingsState.postValue(true)
-                            } else {
-                                enableWifiBatteryOptimizationSettingsState.postValue(false)
-                                enableAllWifiBatteryOptimizationSettingsState.postValue(false)
-                            }
-                        },
-                        label = {
-                            // The primary label should have a maximum 3 lines of text
-                            Text(text, maxLines = 3, fontSize = 14.sp, overflow = TextOverflow.Ellipsis)
-                        },
-                        enabled = true,
-                    )
-
-                }
-                if (selectedValue.value == SOME_WIFI_CONNECTIONS) {
-                    Chip(
-                        onClick = {
-                            navController.navigate("wifi_ssid_screen") {
-                                popUpTo(("wifi_ssid_screen")) {
-                                    inclusive = true
-                                }
-                            }
-                            Log.d(TAG, "Some WiFi Connections selected: initial value = $initialValue, selected value: ${selectedValue.value}, isWifiOpt = $enableWifiOpt, isAllWifiOpt = $enableAllWifiOpt, wifiSsidList = ${wifiSsidListSettingsState.value}")
-                        },
-                        enabled = true,
-                        label = {
-                            Text(
-                                text = stringResource(R.string.edit_optimized_wifi_connections),
-                                fontWeight = FontWeight.Normal,
-                                color = colors.primary
-                            )
-                        },
-                        colors = ChipDefaults.chipColors(
-                            backgroundColor = Color.DarkGray,
-                            contentColor = Color.White,
-                            secondaryContentColor = Color.LightGray
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 20.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "OptimizeBatteryonWifiSelectScreen Settings NOT saved")
-
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
+                        .fillMaxWidth()
+                        .padding(bottom = 5.dp),
+                    selected = isSelectedItem(text),
+                    onClick = { onChangeState(text)
+                        if (text == SOME_WIFI_CONNECTIONS) {
+                            enableWifiBatteryOptimizationSettingsState.postValue(true)
+                            enableAllWifiBatteryOptimizationSettingsState.postValue(false)
+                            scope.launch { scrollState.animateScrollTo(scrollState.maxValue + 150) }
+                        } else if (text == ALL_WIFI_CONNECTIONS) {
+                            enableWifiBatteryOptimizationSettingsState.postValue(true)
+                            enableAllWifiBatteryOptimizationSettingsState.postValue(true)
+                        } else {
+                            enableWifiBatteryOptimizationSettingsState.postValue(false)
+                            enableAllWifiBatteryOptimizationSettingsState.postValue(false)
                         }
                     },
-                    onClickConfirm = {
-                        // TODO: check why enableWifiBatteryOptimizationState.value is Boolean?
-                        val prevWifiOpt: Boolean = enableWifiBatteryOptimizationState.value ?: true
-                        val prevAllOpt: Boolean = enableAllWifiBatteryOptimizationState.value ?: true
-                        val currWifiOpt = enableWifiBatteryOptimizationSettingsState.value ?: true
-                        val currAllOpt = enableAllWifiBatteryOptimizationSettingsState.value ?: true
+                    label = {
+                        // The primary label should have a maximum 3 lines of text
+                        Text(text, maxLines = 3, fontSize = 14.sp, overflow = TextOverflow.Ellipsis)
+                    },
+                    enabled = true,
+                )
 
-                        if ((prevWifiOpt != currWifiOpt) || (prevAllOpt != currAllOpt) || (wifiSsidListState.value != wifiSsidListSettingsState.value)) {
-                            Log.d(TAG, "Changed sthg: enableWifiOpt(old=$prevWifiOpt, new=$currWifiOpt), enableOptimAllWifi(old=$prevAllOpt, new=$currAllOpt), wifiSsidList(old=${wifiSsidListState.value}, new=${wifiSsidListSettingsState.value})")
-                            saveBattOnWifiStringState.postValue(generateSaveBattOnWifiString(currWifiOpt ?: true, currAllOpt ?: true))
-                            enableWifiBatteryOptimizationState.postValue(currWifiOpt)
-                            enableAllWifiBatteryOptimizationState.postValue(currAllOpt)
-                            wifiSsidListState.postValue(wifiSsidListSettingsState.value)
-                        } else {
-                            Log.d(TAG, "Settings NOT changed, NOT saved")
-                        }
-
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
+            }
+            if (selectedValue.value == SOME_WIFI_CONNECTIONS) {
+                Chip(
+                    onClick = {
+                        navController.navigate("wifi_ssid_screen") {
+                            popUpTo(("wifi_ssid_screen")) {
                                 inclusive = true
                             }
                         }
-
-                    })
+                        Log.d(TAG, "Some WiFi Connections selected: initial value = $initialValue, selected value: ${selectedValue.value}, isWifiOpt = $enableWifiOpt, isAllWifiOpt = $enableAllWifiOpt, wifiSsidList = ${wifiSsidListSettingsState.value}")
+                    },
+                    enabled = true,
+                    label = {
+                        Text(
+                            text = stringResource(R.string.edit_optimized_wifi_connections),
+                            fontWeight = FontWeight.Normal,
+                            color = colors.primary
+                        )
+                    },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 20.dp)
+                )
             }
-        }
-    }
+                Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "OptimizeBatteryonWifiSelectScreen Settings NOT saved")
+
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    // TODO: check why enableWifiBatteryOptimizationState.value is Boolean?
+                    val prevWifiOpt: Boolean = enableWifiBatteryOptimizationState.value ?: true
+                    val prevAllOpt: Boolean = enableAllWifiBatteryOptimizationState.value ?: true
+                    val currWifiOpt = enableWifiBatteryOptimizationSettingsState.value ?: true
+                    val currAllOpt = enableAllWifiBatteryOptimizationSettingsState.value ?: true
+
+                    if ((prevWifiOpt != currWifiOpt) || (prevAllOpt != currAllOpt) || (wifiSsidListState.value != wifiSsidListSettingsState.value)) {
+                        Log.d(TAG, "Changed sthg: enableWifiOpt(old=$prevWifiOpt, new=$currWifiOpt), enableOptimAllWifi(old=$prevAllOpt, new=$currAllOpt), wifiSsidList(old=${wifiSsidListState.value}, new=${wifiSsidListSettingsState.value})")
+                        saveBattOnWifiStringState.postValue(generateSaveBattOnWifiString(currWifiOpt ?: true, currAllOpt ?: true))
+                        enableWifiBatteryOptimizationState.postValue(currWifiOpt)
+                        enableAllWifiBatteryOptimizationState.postValue(currAllOpt)
+                        wifiSsidListState.postValue(wifiSsidListSettingsState.value)
+                    } else {
+                        Log.d(TAG, "Settings NOT changed, NOT saved")
+                    }
+
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+
+                })
+        },
+        text = stringResource(R.string.save_battery_on_wifi)
+    )
 }
 
 @Composable
 fun WifiSsidSelectScreen(navController: NavController) {
     //Log.d(TAG, "WifiSsidSelectScreen called")
     val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
-    val text = stringResource(R.string.enabled_wifi_connections)
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                LazyColumn {
-                    item {
-                        Text(
-                            text = text,
-                            fontSize = if(text.length!!<20) 15.sp else 13.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal =20.dp, vertical = 10.dp)
-                        )
-                    }
-                    Log.d(TAG, "SSID List = $wifiSsidList")
-                    itemsIndexed(wifiSsidList){ index, wifiSsidItem ->
-                        WifiSsidItemChip(
-                            wifiSsidItem.name,
-                            onPrimaryActionClick = {
-                                Log.d(TAG, "Remove wifiSsidItem ($wifiSsidItem)")
-                                val mutableWifiSsidList = wifiSsidList.toMutableList()
-                                mutableWifiSsidList.removeAt(index)
-                                wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
-                            },
-                            onSecondaryActionClick = {
-                                // Navigate to "edit_wifi_ssid_setting_screen/<index>"
-                                //Log.d(TAG, "onSecondaryActionClick called")
-                                navController.navigate("edit_wifi_ssid_setting_screen/$index")
-                            }
-                        )
-                    }
-
-                    item {
-                        Chip(
-                            onClick = { navController.navigate("wifi_ssid_setting_screen") {
-                                popUpTo(("wifi_ssid_setting_screen")) {
-                                    inclusive = true
-                                }
-                            } },
-                            enabled = true,
-                            label = { Text(text = stringResource(R.string.add_network)) },
-                            colors = ChipDefaults.chipColors(
-                                backgroundColor = Color.DarkGray,
-                                contentColor = Color.White,
-                                secondaryContentColor = Color.LightGray
-                            ),
-                            icon = {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = "Localized description"
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
-                        )
-                    }
-
+    WearTakCivScreenDimensions(
+        columnContent = {
+            LazyColumn ( modifier = Modifier
+                .height(100.dp)){
+                Log.d(TAG, "SSID List = $wifiSsidList")
+                itemsIndexed(wifiSsidList){ index, wifiSsidItem ->
+                    WifiSsidItemChip(
+                        wifiSsidItem.name,
+                        onPrimaryActionClick = {
+                            Log.d(TAG, "Remove wifiSsidItem ($wifiSsidItem)")
+                            val mutableWifiSsidList = wifiSsidList.toMutableList()
+                            mutableWifiSsidList.removeAt(index)
+                            wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
+                        },
+                        onSecondaryActionClick = {
+                            // Navigate to "edit_wifi_ssid_setting_screen/<index>"
+                            //Log.d(TAG, "onSecondaryActionClick called")
+                            navController.navigate("edit_wifi_ssid_setting_screen/$index")
+                        }
+                    )
                 }
+
+                item {
+                    addItemChip(navController, "wifi_ssid_setting_screen", stringResource(R.string.add_network), "Add Wifi")
+                }
+
             }
             Spacer(modifier = Modifier.height(10.dp))
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
-                    onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
+        },
+        rowContent = {
+            BackButton(
+                onClick = { navController.navigate("optimize_battery_on_wifi_screen") {
                     popUpTo(("optimize_battery_on_wifi_screen")) {
                         inclusive = true
                     }
                 } })
-            }
-
-        }
-
-    }
+        },
+        text = stringResource(R.string.enabled_wifi_connections)
+    )
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -1724,6 +1730,7 @@ fun WifiSsidItemChip(
             SwipeToRevealPrimaryAction(
                 revealState = revealState,
                 icon = { Icon(SwipeToRevealDefaults.Delete, "Delete") },
+                //TODO: DUPLICATE CODE - Same swipe to reveal chip for TAK server and WIFI namevvv
                 label = { Text(stringResource(R.string.delete)) },
                 onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
@@ -1752,6 +1759,7 @@ fun WifiSsidItemChip(
         },
         onFullSwipe = {onPrimaryActionClick() }
     ) {
+        //TODO: DUPLICATE CODE - Same swipe to reveal chip for TAK server and WIFI name^^^
         Chip(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1787,6 +1795,7 @@ fun NewWiFiSSIDSetting(
             onValueChange = {text ->
                 name = text
             },
+            //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chivvv
             maxLines = 1,
             label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
             placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
@@ -1803,6 +1812,7 @@ fun NewWiFiSSIDSetting(
                     }
                 },
                 onClickConfirm = {
+                    //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chi^^^
                     if (name.isNotBlank()) {
                         val mutableWifiSsidList = wifiSsidListSettingsState.value?.toMutableList() ?: emptyList<DataRepository.WifiSsidItem>().toMutableList()
                         mutableWifiSsidList.add(DataRepository.WifiSsidItem(name))
@@ -1842,6 +1852,7 @@ fun EditedWiFiSSIDSetting(
         OutlinedTextField(
             value = name,
             onValueChange = { text -> name = text },
+            //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chivvv
             maxLines = 1,
             label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
             placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
@@ -1857,6 +1868,7 @@ fun EditedWiFiSSIDSetting(
                         }
                     }
                 },
+                //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chi^^^
                 onClickConfirm = {
                     val mutableWifiSsidList = wifiSsidList.toMutableList()
                     mutableWifiSsidList.set(index, DataRepository.WifiSsidItem(name))
@@ -2081,24 +2093,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-
-        var licenseTextFieldValue by remember {
-            mutableStateOf(
-                TextFieldValue(
-                    licenseLiveDataState.value ?: "null"
-                )
-            )
-        }
-
-        OutlinedTextField(
-            value = licenseTextFieldValue,
-            onValueChange = {
-                licenseTextFieldValue = it
-            },
-            maxLines = 1,
-            label = { Text(text = stringResource(R.string.license_key), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
+        var textField = GenericOutlinedTextField(licenseLiveDataState, stringResource(R.string.license_key), stringResource(R.string.license_key))
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             var settingsChanged: Boolean = false
             var licenseChanged: Boolean = false
@@ -2117,7 +2112,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                     }
                 },
                 onClickConfirm = {
-                    val enteredLicense = licenseTextFieldValue.text
+                    val enteredLicense = textField.text
                     val currentLicense = licenseSettingsState.value
                     Log.d(
                         TAG, """
@@ -2129,7 +2124,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
 
                     if (enteredLicense != currentLicense) {
                         settingsChanged = true; licenseChanged = true
-                        license = licenseTextFieldValue.text ?: license
+                        license = textField.text ?: license
                         Log.d(TAG, "License Changed. Updating DataRepository.")
                         CoroutineScope(Dispatchers.Main).launch {
                             licenseSettingsState.postValue(license)
@@ -2229,7 +2224,7 @@ fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : Muta
                 shouldShowDialog.value = false // Dismiss the dialog
                 isConfirmed.value = false
             }
-
+//TODO: DUPLICATE CODE - Same successdialog as SOS Activity vvv
             Card(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2270,6 +2265,111 @@ fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : Muta
                     }
                 }
             }
+        }
+    }
+}
+//TODO: DUPLICATE CODE - Same successdialog as SOS Activity ^^^
+
+@Composable
+fun PhysiologicalAlertsSetting(navController: NavController) {
+    Log.d(TAG, "PhysioAlertSetting called")
+    var physiologicalAlertsChecked by remember{ mutableStateOf(enablePhysiologicalAlertsSettingState)}
+    Log.d(TAG, "physiologicalAlertsChecked =$physiologicalAlertsChecked; enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
+
+    WearTakCivScreenDimensions(
+    columnContent = {
+        SettingSwitchToggle(
+            checked = physiologicalAlertsChecked, onCheckedChange = { physiologicalAlertsChecked = it },
+            title = stringResource(R.string.physiological_alerts),
+            description = stringResource(R.string.on_off),
+        )
+
+        DataMetricsChip("physiological_alerts_bpm_screen", stringResource(R.string.threshold_high_heart_rate), hrHighAlertBpmThresholdSettingsState.value.toString(), navController)
+        DataMetricsChip("physiological_alerts_bpm_length_screen", stringResource(R.string.threshold_high_heart_rate_length), hrHighAlertNumSecsThresholdSettingsState.value.toString() + " seconds", navController)
+
+        Spacer(modifier = Modifier.height(16.dp))
+    },
+    rowContent = {
+        ConfirmCancelButtons(
+            onClickCancel = {
+                Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
+                physiologicalAlertsChecked = enablePhysiologicalAlertsSettingState
+                navController.navigate("settings_screen") {
+                    popUpTo(("settings_screen")) {
+                        inclusive = true
+                    }
+                }
+            },
+            onClickConfirm = {
+                enablePhysiologicalAlertsSettingState = physiologicalAlertsChecked
+                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThresholdSettingsState.value)
+                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThresholdSettingsState.value)
+
+                navController.navigate("settings_screen") {
+                    popUpTo(("settings_screen")) {
+                        inclusive = true
+                    }
+                }
+            })
+    },
+    text = stringResource(R.string.physiological_alerts)
+)
+}
+
+@Composable
+fun PhysioAlertsBpmThresholdSetting(
+    navController: NavController,
+    physioAlertSettingState: MutableLiveData<Int>,
+    label: String,
+    placeholder: String
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var physioAlertSettingTextFieldValue by remember {
+            mutableStateOf(
+                TextFieldValue(
+                    physioAlertSettingState.value.toString() ?: "null"
+                )
+            )
+        }
+
+        OutlinedTextField(
+            value = physioAlertSettingTextFieldValue,
+            onValueChange = {
+                physioAlertSettingTextFieldValue = it
+            },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number),
+            maxLines = 1,
+            label = { Text(text = label, color = colors.primary, fontSize =  11.sp) },
+            placeholder = { Text(text = placeholder, color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("physiological_alerts_setting_screen") {
+                        popUpTo(("physiological_alerts_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    physioAlertSettingState.postValue(physioAlertSettingTextFieldValue.text.toInt())
+                    Log.d(TAG, "Settings saved with bpm threshold: ${physioAlertSettingState.value}")
+                    navController.navigate("physiological_alerts_setting_screen") {
+                        popUpTo(("physiological_alerts_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
         }
     }
 }
@@ -2386,32 +2486,8 @@ fun HeightPickerSetting(navController: NavController){
     val inchesContentDescription by remember {
         derivedStateOf { "${inchesState.selectedOption} inches" }
     }
-
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.height),
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
+    WearTakCivScreenDimensions(
+        columnContent = {
             @Composable
             fun Option(column: Int, text: String) =
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -2457,30 +2533,30 @@ fun HeightPickerSetting(navController: NavController){
                 )
                 Text(text = "''", style = textStyle, color = MaterialTheme.colors.onBackground)
             }
-                }
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                val feetIndex = feetInchesIndex(heightFeetSettingsState.value, feetState)
-                val inchesIndex = feetInchesIndex(heightInchesSettingsState.value, inchesState)
+        },
+        rowContent = {
+            val feetIndex = feetInchesIndex(heightFeetSettingsState.value, feetState)
+            val inchesIndex = feetInchesIndex(heightInchesSettingsState.value, inchesState)
 
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "HeightPickerSetting Settings NOT saved")
-                        navController.navigate("physiological_metrics_setting_screen") {
-                            popUpTo(("physiological_metrics_setting_screen")) {
-                                inclusive = true
-                            }
-                        } },
-                    onClickConfirm = {
-                        heightFeetSettingsState.postValue(feetIndex+1)
-                        heightInchesSettingsState.postValue(inchesIndex)
-                        navController.navigate("physiological_metrics_setting_screen") {
-                            popUpTo(("physiological_metrics_setting_screen")) {
-                                inclusive = true
-                            }
-                        } })
-            }
-        }
-    }
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "HeightPickerSetting Settings NOT saved")
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    } },
+                onClickConfirm = {
+                    heightFeetSettingsState.postValue(feetIndex+1)
+                    heightInchesSettingsState.postValue(inchesIndex)
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    } })
+        },
+        text = stringResource(R.string.height)
+    )
 }
 
 fun feetInchesIndex(dataName: Int?, picker: PickerState) : Int {
@@ -2511,7 +2587,7 @@ fun SexBloodtypeUsertypeSetting (
     ) {
         val index = findSexBloodtypeUsertypeIndex(metricSettingState.value, dataList)
         var selectedRadioIndex by remember { mutableStateOf(index) }
-
+//TODO: DUPLICATE CODE - Same column and title credentials vvv
         //TODO: Convert to a lazyColumn
         Column(
             modifier = Modifier
@@ -2531,6 +2607,7 @@ fun SexBloodtypeUsertypeSetting (
                     .padding(vertical = 10.dp, horizontal = 20.dp)
                     .align(Alignment.CenterHorizontally)
             )
+            //TODO: DUPLICATE CODE - Same column and title credentials ^^^
 
             dataList.forEachIndexed { index, dataItem ->
                 run {
@@ -2619,7 +2696,7 @@ fun AllergySetting (
             selectedIndices.clear()
             selectedIndices.addAll(initialIndices)
         }
-
+//TODO: DUPLICATE CODE - Same column and title credentials vvv
         //TODO: Convert to a lazyColumn
         Column(
             modifier = Modifier
@@ -2639,6 +2716,7 @@ fun AllergySetting (
                     .padding(vertical = 10.dp, horizontal = 20.dp)
                     .align(Alignment.CenterHorizontally)
             )
+            //TODO: DUPLICATE CODE - Same column and title credentials ^^^
 
             allergiesOptionsList.forEachIndexed { index, dataItem ->
                 run {
@@ -2693,57 +2771,30 @@ fun AllergySetting (
 @Composable
 fun PhysiologicalMetricsSetting(navController: NavController) {
     Log.d(TAG, "PhysioMetricsSetting called")
-    val text = stringResource(R.string.physiological_user_metrics)
 
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp)
-                    .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = text,
-                    fontSize = if (text.length!! < 20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .padding(vertical = 10.dp, horizontal = 20.dp)
-                        .align(Alignment.CenterHorizontally)
-                )
-                DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
-                DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
-                DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
-                DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
-                DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
-                DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
-                DataMetricsChip("physiological_metrics_usertype_screen", stringResource(R.string.user_type), userTypeSettingsState.value.toString(), navController)
+WearTakCivScreenDimensions(
+    columnContent = {
+        DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
+        DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
+        DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
+        DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
+        DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
+        DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
+        DataMetricsChip("physiological_metrics_usertype_screen", stringResource(R.string.user_type), userTypeSettingsState.value.toString(), navController)
 
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "Physiological Settings NOT saved")
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    },
-                    onClickConfirm = {
+        Spacer(modifier = Modifier.height(16.dp))
+    },
+    rowContent = {
+        ConfirmCancelButtons(
+            onClickCancel = {
+                Log.d(TAG, "Physiological Settings NOT saved")
+                navController.navigate("settings_screen") {
+                    popUpTo(("settings_screen")) {
+                        inclusive = true
+                    }
+                }
+            },
+            onClickConfirm = {
                         ageState.postValue(ageSettingsState.value)
                         heightFeetState.postValue(heightFeetSettingsState.value)
                         heightInchesState.postValue(heightInchesSettingsState.value)
@@ -2755,15 +2806,15 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
 
                         Log.d(TAG, "Finished saving physio state settings")
 
-                        navController.navigate("settings_screen") {
-                            popUpTo(("settings_screen")) {
-                                inclusive = true
-                            }
-                        }
-                    })
-            }
-        }
-    }
+                navController.navigate("settings_screen") {
+                    popUpTo(("settings_screen")) {
+                        inclusive = true
+                    }
+                }
+            })
+    },
+    text = stringResource(R.string.physiological_user_metrics)
+)
 }
 
 @Composable
@@ -2812,166 +2863,134 @@ fun SettingsScreen(
     licenseLiveDataState: MutableLiveData<String>,
     context: Context
 ) {
+    var locationChecked by remember{ mutableStateOf(enableLocationService)}
+    var dittoChecked by remember{ mutableStateOf(enableDittoService)}
+    var chatChecked by remember{ mutableStateOf(enableChatService)}
+    var enableSmsChecked by remember{ mutableStateOf(enableSmsForAlerts)}
+    var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
+
+    var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+    var physiologicalAlertsChecked by remember{ mutableStateOf(enablePhysiologicalAlerts)}
+
+    val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            var locationChecked by remember{ mutableStateOf(enableLocationService)}
-            var dittoChecked by remember{ mutableStateOf(enableDittoService)}
-            var chatChecked by remember{ mutableStateOf(enableChatService)}
-            var enableSmsChecked by remember{ mutableStateOf(enableSmsForAlerts)}
-            var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
+    WearTakCivScreenDimensions(
+        columnContent = {
+            CallsignRoleTeamChip(
+                "callsign_screen",
+                stringResource(R.string.callsign),
+                callsignSettingsState,
+                navController
+            )
+            CallsignRoleTeamChip("team_screen",
+                stringResource(R.string.team), teamSettingsState, navController)
+            CallsignRoleTeamChip("role_screen",
+                stringResource(R.string.role), roleSettingsState, navController)
 
-            var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
-            var physiologicalAlertsChecked by remember { mutableStateOf(enablePhysiologicalAlerts) }
+            Spacer(modifier = Modifier.height(10.dp))
 
-            val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
-            val text = stringResource(R.string.callsign_settings)
+            Text(
+                text = stringResource(R.string.connection_settings),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                modifier = Modifier.padding(7.dp)
+            )
 
-//            when (displayedSecondaryText) {
-//                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
-//                SOME_WIFI_NETWORKS -> { SOME_WIFI_NETWORKS = stringResource(R.string.some_wifi_connections) }
-//                else -> { NO_WIFI_NETWORKS = stringResource(R.string.no_wifi_connections) }
-//            }
-
-            Column(
+            Chip(
+                onClick = {
+                    takServerListState.postValue(takServerList)
+                    navController.navigate("tak_server_screen") },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.tak_servers)) },
+                secondaryLabel = {
+//                        Text(text = name)
+                },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = text,
-                    fontSize = if(text.length!!<20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
+                    .padding(bottom = 3.dp)
+            )
 
-                CallsignRoleTeamChip(
-                    "callsign_screen",
-                    stringResource(R.string.callsign),
-                    callsignSettingsState,
-                    navController
-                )
-                CallsignRoleTeamChip("team_screen",
-                    stringResource(R.string.team), teamSettingsState, navController)
-                CallsignRoleTeamChip("role_screen",
-                    stringResource(R.string.role), roleSettingsState, navController)
+            Chip(
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = stringResource(R.string.connection_settings),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    modifier = Modifier.padding(7.dp)
-                )
-
-                Chip(
-                    onClick = {
-                        takServerListState.postValue(takServerList)
-                        navController.navigate("tak_server_screen") },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.tak_servers)) },
-                    secondaryLabel = {
-//                        Text(text = name)
-                    },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
-                )
-
-                Chip(
-
-                    onClick = {
-                        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimizationState.value)
-                        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimizationState.value)
-                        wifiSsidListSettingsState.postValue(wifiSsidListState.value)
-                        navController.navigate("optimize_battery_on_wifi_screen") {
-                            popUpTo("optimize_battery_on_wifi_screen") { inclusive = true }
-                        } },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.save_battery_on_wifi)) },
-                    secondaryLabel = {Text(
-                        text = if (displayedSecondaryText == ALL_WIFI_NETWORKS) stringResource(R.string.all_wifi_connections)
-                        else if (displayedSecondaryText == SOME_WIFI_NETWORKS) stringResource(R.string.some_wifi_connections)
-                        else stringResource(R.string.no_wifi_connections)
-                    )
-                    },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
-                )
-
-                val licenseText: String? by licenseSettingsState.observeAsState()
-
-                Chip(
-                    onClick = { navController.navigate("license_setting_screen") {
-                        popUpTo("license_setting_screen") { inclusive = true }
+                onClick = {
+                    enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimizationState.value)
+                    enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimizationState.value)
+                    wifiSsidListSettingsState.postValue(wifiSsidListState.value)
+                    navController.navigate("optimize_battery_on_wifi_screen") {
+                        popUpTo("optimize_battery_on_wifi_screen") { inclusive = true }
                     } },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.license_key)) },
-                    secondaryLabel = {
-                        Text(text = licenseText.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
-                    },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 3.dp)
+                enabled = true,
+                label = { Text(text = stringResource(R.string.save_battery_on_wifi)) },
+                secondaryLabel = {Text(
+                    text = if (displayedSecondaryText == ALL_WIFI_NETWORKS) stringResource(R.string.all_wifi_connections)
+                    else if (displayedSecondaryText == SOME_WIFI_NETWORKS) stringResource(R.string.some_wifi_connections)
+                    else stringResource(R.string.no_wifi_connections)
                 )
+                },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
 
-                Spacer(modifier = Modifier.height(10.dp))
+            val licenseText: String? by licenseSettingsState.observeAsState()
 
-                Text(
-                    text = stringResource(R.string.general_settings),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
+            Chip(
+                onClick = { navController.navigate("license_setting_screen") {
+                    popUpTo("license_setting_screen") { inclusive = true }
+                } },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.license_key)) },
+                secondaryLabel = {
+                    Text(text = licenseText.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
+                },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
 
-                SettingSwitchToggle(
-                    checked = locationChecked, onCheckedChange = { locationChecked = it },
-                    title = stringResource(R.string.location_service), description = stringResource(R.string.service_on_off)
-                )
+            Spacer(modifier = Modifier.height(10.dp))
 
-                SettingSwitchToggle(
-                    checked = dittoChecked, onCheckedChange = { dittoChecked = it },
-                    title = stringResource(R.string.ditto),
-                    description = stringResource(R.string.service_on_off),
-                )
+            Text(
+                text = stringResource(R.string.general_settings),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(7.dp)
+            )
 
-                SettingSwitchToggle(
-                    checked = chatChecked, onCheckedChange = { chatChecked = it },
-                    title = stringResource(R.string.chat),
-                    description = stringResource(R.string.service_on_off),
-                )
+            SettingSwitchToggle(
+                checked = locationChecked, onCheckedChange = { locationChecked = it },
+                title = stringResource(R.string.location_service), description = stringResource(R.string.service_on_off)
+            )
 
-                SettingSwitchToggle(
+            SettingSwitchToggle(
+                checked = dittoChecked, onCheckedChange = { dittoChecked = it },
+                title = stringResource(R.string.ditto),
+                description = stringResource(R.string.service_on_off),
+            )
+
+            SettingSwitchToggle(
+                checked = chatChecked, onCheckedChange = { chatChecked = it },
+                title = stringResource(R.string.chat),
+                description = stringResource(R.string.service_on_off),
+            )
+
+            SettingSwitchToggle(
                     checked = enableSmsChecked, onCheckedChange = { enableSmsChecked = it },
                     title = "SMS Alerts",
                     description = stringResource(R.string.on_off),
@@ -3018,24 +3037,37 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Text(
-                    text = stringResource(R.string.physiological_settings),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-                SettingSwitchToggle(
-                    checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
-                    title = stringResource(R.string.physiological_monitoring),
-                    description = stringResource(R.string.service_on_off),
-                )
-                SettingSwitchToggle(
-                    checked = physiologicalAlertsChecked, onCheckedChange = { physiologicalAlertsChecked = it },
-                    title = stringResource(R.string.physiological_alerts),
-                    description = stringResource(R.string.on_off),
-                )
+            Text(
+                text = stringResource(R.string.physiological_settings),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(7.dp)
+            )
+            SettingSwitchToggle(
+                checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
+                title = stringResource(R.string.physiological_monitoring),
+                description = stringResource(R.string.service_on_off),
+            )
+            Chip(
+                onClick = {
+                    hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThresholdState.value)
+                    hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThresholdState.value)
+                    navController.navigate("physiological_alerts_setting_screen") {
+                    popUpTo("physiological_alerts_setting_screen") { inclusive = true }
+                } },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.physiological_alerts)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 3.dp)
+            )
 
-                Chip(
+            Chip(
                     onClick = {
                         ageSettingsState.postValue(ageState.value)
                         heightFeetSettingsState.postValue(heightFeetState.value)
@@ -3061,386 +3093,405 @@ fun SettingsScreen(
                         .padding(top = 3.dp)
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-                Text(
-                    modifier = Modifier.padding(top = 7.dp),
-                    text = stringResource(R.string.version, versionNumber),
-                    fontSize = 11.sp,
-                    color = colors.primary,
-                )
+            Text(
+                modifier = Modifier.padding(top = 7.dp),
+                text = stringResource(R.string.version, versionNumber),
+                fontSize = 11.sp,
+                color = colors.primary,
+            )
 
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "SettingsScreen Settings NOT saved")
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "SettingsScreen Settings NOT saved")
 //                        navController.navigate("main_screen") {
 //                            popUpTo(("main_screen")) {
 //                                inclusive = true
 //                            }
 //                        }
-                        locationChecked = enableLocationService
-                        dittoChecked = enableDittoService
-                        chatChecked = enableChatService
-                        biometricsChecked = enableBiometricsService
-                        physiologicalAlertsChecked = enablePhysiologicalAlerts
-                        callsignSettingsState.postValue(callsign)
-                        teamSettingsState.postValue(team)
-                        roleSettingsState.postValue(role)
-                        enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
-                        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
-                        enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
-                        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
-                        wifiSsidListState.postValue(wifiSsidList)
-                        wifiSsidListSettingsState.postValue(wifiSsidList)
-                        takServerListState.postValue(takServerList)
-                        saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+                    locationChecked = enableLocationService
+                    dittoChecked = enableDittoService
+                    chatChecked = enableChatService
+                    biometricsChecked = enableBiometricsService
+                    physiologicalAlertsChecked = enablePhysiologicalAlerts
+                    callsignSettingsState.postValue(callsign)
+                    teamSettingsState.postValue(team)
+                    roleSettingsState.postValue(role)
+                    enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
+                    enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
+                    enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
+                    enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+                    wifiSsidListState.postValue(wifiSsidList)
+                    wifiSsidListSettingsState.postValue(wifiSsidList)
+                    takServerListState.postValue(takServerList)
+                    saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+                    smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
 
-                        ageState.postValue(ageValue)
-                        heightFeetState.postValue(heightFeetValue)
-                        heightInchesState.postValue(heightInchesValue)
-                        weightState.postValue(weightValue)
-                        sexState.postValue(sexValue)
-                        bloodTypeState.postValue(bloodTypeValue)
-                        allergyListState.postValue(allergyList)
-                        userTypeState.postValue(userTypeValue)
+                    enablePhysiologicalAlertsSettingState = enablePhysiologicalAlerts
+                    hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
+                    hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
+                    ageState.postValue(ageValue)
+                    heightFeetState.postValue(heightFeetValue)
+                    heightInchesState.postValue(heightInchesValue)
+                    weightState.postValue(weightValue)
+                    sexState.postValue(sexValue)
+                    bloodTypeState.postValue(bloodTypeValue)
+                    allergyListState.postValue(allergyList)
+                    userTypeState.postValue(userTypeValue)
 
-                        context.startActivity(Intent(context, MainActivity::class.java))
-                    },
-                    onClickConfirm = {
-                        var settingsChanged: Boolean = false
-                        var callsignChanged: Boolean = false
-                        var teamChanged = false
-                        var roleChanged = false
-                        var licenseChanged: Boolean = false
-                        val maxReportRate: Int = 100000000
-                        val minReportRate: Int = 1
-                        var locationCheckedChanged: Boolean = false
-                        var biometricsCheckedChanged: Boolean = false
-                        var dittoCheckedChanged: Boolean = false
-                        var chatCheckedChanged: Boolean = false
-                        var smsAlertsCheckedChanged: Boolean = false
-                        var smsNumbersChanged: Boolean = false
-                        var physiologicalAlertsCheckedChanged: Boolean = false
-                        var saveBattOnWifiChanged = false
-                        var takServerListChanged = false
-                        var ageChanged: Boolean = false
-                        var heightFeetChanged: Boolean = false
-                        var heightInchesChanged: Boolean = false
-                        var weightChanged: Boolean = false
-                        var sexChanged: Boolean = false
-                        var bloodTypeChanged: Boolean = false
-                        var allergiesChanged: Boolean = false
-                        var userTypeChanged: Boolean = false
+                    settingsActivity.finish()
+                    context.startActivity(Intent(context, MainActivity::class.java))
+                                },
+                onClickConfirm = {
+                    var settingsChanged: Boolean = false
+                    var callsignChanged: Boolean = false
+                    var teamChanged = false
+                    var roleChanged = false
+                    var licenseChanged: Boolean = false
+                    val maxReportRate: Int = 100000000
+                    val minReportRate: Int = 1
+                    var locationCheckedChanged: Boolean = false
+                    var biometricsCheckedChanged: Boolean = false
+                    var dittoCheckedChanged: Boolean = false
+                    var chatCheckedChanged: Boolean = false
+                    var smsAlertsCheckedChanged: Boolean = false
+                    var smsNumbersChanged: Boolean = false
+                    var physiologicalAlertsCheckedChanged: Boolean = false
+                    var physiologicalAlertsBpmThresholdCheckedChanged: Boolean = false
+                    var physiologicalAlertsBpmThresholdTimeCheckedChanged: Boolean = false
+                    var saveBattOnWifiChanged = false
+                    var takServerListChanged = false
+                    var ageChanged: Boolean = false
+                    var heightFeetChanged: Boolean = false
+                    var heightInchesChanged: Boolean = false
+                    var weightChanged: Boolean = false
+                    var sexChanged: Boolean = false
+                    var bloodTypeChanged: Boolean = false
+                    var allergiesChanged: Boolean = false
+                    var userTypeChanged: Boolean = false
 
-                        if (ageValue != ageState.value) {
-                            settingsChanged = true; ageChanged = true
-                            ageValue = ageState.value ?: ageValue
-                        }
-                        if (heightFeetValue != heightFeetState.value) {
-                            settingsChanged = true; heightFeetChanged = true
-                            heightFeetValue = heightFeetState.value ?: heightFeetValue
-                        }
-                        if (heightInchesValue != heightInchesState.value) {
-                            settingsChanged = true; heightInchesChanged = true
-                            heightInchesValue = heightInchesState.value ?: heightInchesValue
-                        }
-                        if (weightValue != weightState.value) {
-                            settingsChanged = true; weightChanged = true
-                            weightValue = weightState.value ?: weightValue
-                        }
-                        if (sexValue != sexState.value) {
-                            settingsChanged = true; sexChanged = true
-                            sexValue = sexState.value ?: sexValue
-                        }
-                        if (bloodTypeValue != bloodTypeState.value) {
-                            settingsChanged = true; bloodTypeChanged = true
-                            bloodTypeValue = bloodTypeState.value ?: bloodTypeValue
-                        }
-                        if (allergyList != allergyListState.value) {
-                            settingsChanged = true; allergiesChanged = true
-                            allergyList = allergyListState.value ?: allergyList
-                        }
-                        if (userTypeValue != userTypeState.value) {
-                            settingsChanged = true; userTypeChanged = true
-                            userTypeValue = userTypeState.value ?: userTypeValue
-                        }
+                    if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdSettingsState.value) {
+                        settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
+                        hrHighAlertBpmThreshold = hrHighAlertBpmThresholdState.value ?: hrHighAlertBpmThreshold
+                    }
+                    if (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdSettingsState.value) {
+                        settingsChanged = true; physiologicalAlertsBpmThresholdTimeCheckedChanged = true
+                        hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdState.value ?: hrHighAlertNumSecsThreshold
+                    }
 
-                        if (!callsign.equals(callsignSettingsState.value)) {
-                            settingsChanged = true; callsignChanged = true
-                            callsign = callsignSettingsState.value ?: callsign
-                            requestCallsignComplicationUpdate(context)
+                    if (ageValue != ageState.value) {
+                        settingsChanged = true; ageChanged = true
+                        ageValue = ageState.value ?: ageValue
+                    }
+                    if (heightFeetValue != heightFeetState.value) {
+                        settingsChanged = true; heightFeetChanged = true
+                        heightFeetValue = heightFeetState.value ?: heightFeetValue
+                    }
+                    if (heightInchesValue != heightInchesState.value) {
+                        settingsChanged = true; heightInchesChanged = true
+                        heightInchesValue = heightInchesState.value ?: heightInchesValue
+                    }
+                    if (weightValue != weightState.value) {
+                        settingsChanged = true; weightChanged = true
+                        weightValue = weightState.value ?: weightValue
+                    }
+                    if (sexValue != sexState.value) {
+                        settingsChanged = true; sexChanged = true
+                        sexValue = sexState.value ?: sexValue
+                    }
+                    if (bloodTypeValue != bloodTypeState.value) {
+                        settingsChanged = true; bloodTypeChanged = true
+                        bloodTypeValue = bloodTypeState.value ?: bloodTypeValue
+                    }
+                    if (allergyList != allergyListState.value) {
+                        settingsChanged = true; allergiesChanged = true
+                        allergyList = allergyListState.value ?: allergyList
+                    }
+                    if (userTypeValue != userTypeState.value) {
+                        settingsChanged = true; userTypeChanged = true
+                        userTypeValue = userTypeState.value ?: userTypeValue
+                    }
 
-                            runBlocking {
-                                callsignLiveDataState.postValue(callsign)
-                            }
-                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
-                        }
-                        if (!team.equals(teamSettingsState.value)) {
-                            settingsChanged = true; teamChanged = true
-                            team = teamSettingsState.value ?: team
-                            var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
-                            // This cannot happen, but still...
-                            if (teamIndex == -1) {
-                                Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
-                                teamIndex = 0
-                                team = teamEntriesValuesList.ltEntries[0]
-                                teamSettingsState.postValue(team)
-                            }
-                            teamValue = teamEntriesValuesList.ltValues[teamIndex]
-                            runBlocking {
-                                teamState.postValue(team)
-                            }
-                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
-                        }
-                        if (!role.equals(roleSettingsState.value)) {
-                            settingsChanged = true; roleChanged = true
-                            role = roleSettingsState.value ?: role
-                            var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-                            // This cannot happen, but still...
-                            if (roleIndex == -1) {
-                                Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
-                                roleIndex = 0
-                                role = roleEntriesValuesList.lrEntries[0]
-                                roleSettingsState.postValue(role)
-                            }
-                            roleValue = roleEntriesValuesList.lrValues[roleIndex]
-                            runBlocking {
-                                roleState.postValue(role)
-                            }
-                            EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
-                        }
+                    if (!callsign.equals(callsignSettingsState.value)) {
+                        settingsChanged = true; callsignChanged = true
+                        callsign = callsignSettingsState.value ?: callsign
+                        requestCallsignComplicationUpdate(context)
 
-                        if ((saveBattOnWifiString != saveBattOnWifiStringState.value) || (wifiSsidList != wifiSsidListState.value)) {
-                            settingsChanged = true; saveBattOnWifiChanged = true
-                            wifiSsidList = wifiSsidListState.value ?: wifiSsidList
-                            saveBattOnWifiString = saveBattOnWifiStringState.value ?: saveBattOnWifiString
-                            enableWifiBatteryOptimization = enableWifiBatteryOptimizationState.value ?: enableWifiBatteryOptimization
-                            enableAllWifiBatteryOptimization = enableAllWifiBatteryOptimizationState.value ?: enableAllWifiBatteryOptimization
+                        runBlocking {
+                            callsignLiveDataState.postValue(callsign)
                         }
+                        EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                    }
+                    if (!team.equals(teamSettingsState.value)) {
+                        settingsChanged = true; teamChanged = true
+                        team = teamSettingsState.value ?: team
+                        var teamIndex = teamEntriesValuesList.ltEntries.indexOf(team)
+                        // This cannot happen, but still...
+                        if (teamIndex == -1) {
+                            Log.e(TAG, "ERROR SettingsScreen: teamIndex is -1. Setting team entry and value to that of index 0")
+                            teamIndex = 0
+                            team = teamEntriesValuesList.ltEntries[0]
+                            teamSettingsState.postValue(team)
+                        }
+                        teamValue = teamEntriesValuesList.ltValues[teamIndex]
+                        runBlocking {
+                            teamState.postValue(team)
+                        }
+                        EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                    }
+                    if (!role.equals(roleSettingsState.value)) {
+                        settingsChanged = true; roleChanged = true
+                        role = roleSettingsState.value ?: role
+                        var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+                        // This cannot happen, but still...
+                        if (roleIndex == -1) {
+                            Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
+                            roleIndex = 0
+                            role = roleEntriesValuesList.lrEntries[0]
+                            roleSettingsState.postValue(role)
+                        }
+                        roleValue = roleEntriesValuesList.lrValues[roleIndex]
+                        runBlocking {
+                            roleState.postValue(role)
+                        }
+                        EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                    }
+
+                    if ((saveBattOnWifiString != saveBattOnWifiStringState.value) || (wifiSsidList != wifiSsidListState.value)) {
+                        settingsChanged = true; saveBattOnWifiChanged = true
+                        wifiSsidList = wifiSsidListState.value ?: wifiSsidList
+                        saveBattOnWifiString = saveBattOnWifiStringState.value ?: saveBattOnWifiString
+                        enableWifiBatteryOptimization = enableWifiBatteryOptimizationState.value ?: enableWifiBatteryOptimization
+                        enableAllWifiBatteryOptimization = enableAllWifiBatteryOptimizationState.value ?: enableAllWifiBatteryOptimization
+                    }
 //                            if (!license.equals(licenseSettingsState.value)) {
 //                                settingsChanged = true; licenseChanged = true
 //                                license = licenseSettingsState.value ?: license
 //                                licenseLiveDataState.postValue(license)
 //                            }
 
-                        if (takServerList != takServerListState.value) {
-                            settingsChanged = true; takServerListChanged = true
-                            takServerList = takServerListState.value ?: takServerList
+                    if (takServerList != takServerListState.value) {
+                        settingsChanged = true; takServerListChanged = true
+                        takServerList = takServerListState.value ?: takServerList
+                    }
+                    Log.d(TAG, "takServerList: $takServerList")
+                    Log.d(TAG, "takServerListState: " + takServerListState.value)
+                    Log.d(TAG, "takServerListChanged: $takServerListChanged")
+
+
+                    if (enableLocationService != locationChecked) {
+                        settingsChanged = true; locationCheckedChanged = true
+                        enableLocationService = locationChecked
+                        requestLocationComplicationUpdate(context)
+                        if (enableLocationService) {
+                            Log.d(TAG, "Trying to start location service")
+                            startLocationService()
+                        } else {
+                            Log.d(TAG, "Trying to stop location service")
+                            mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
                         }
-                        Log.d(TAG, "takServerList: $takServerList")
-                        Log.d(TAG, "takServerListState: " + takServerListState.value)
-                        Log.d(TAG, "takServerListChanged: $takServerListChanged")
+                        enableLocationServiceLiveData.postValue(enableLocationService)
+                    }
 
-
-                        if (enableLocationService != locationChecked) {
-                            settingsChanged = true; locationCheckedChanged = true
-                            enableLocationService = locationChecked
-                            requestLocationComplicationUpdate(context)
-                            if (enableLocationService) {
-                                Log.d(TAG, "Trying to start location service")
-                                startLocationService()
-                            } else {
-                                Log.d(TAG, "Trying to stop location service")
-                                mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                            }
-                            enableLocationServiceLiveData.postValue(enableLocationService)
+                    if (enableDittoService != dittoChecked) {
+                        settingsChanged = true; dittoCheckedChanged = true
+                        enableDittoService = dittoChecked
+                        if (enableDittoService) {
+                            Log.d(TAG, "Trying to start ditto service")
+                            startDittoService()
+                        } else {
+                            Log.d(TAG, "Trying to stop ditto service")
+                            mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
                         }
-
-                        if (enableDittoService != dittoChecked) {
-                            settingsChanged = true; dittoCheckedChanged = true
-                            enableDittoService = dittoChecked
-                            if (enableDittoService) {
-                                Log.d(TAG, "Trying to start ditto service")
-                                startDittoService()
-                            } else {
-                                Log.d(TAG, "Trying to stop ditto service")
-                                mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                            }
+                    }
+                    if (enableChatService != chatChecked) {
+                        settingsChanged = true; chatCheckedChanged = true
+                        enableChatService = chatChecked
+                        if (enableChatService) {
+                            Log.d(TAG, "Trying to start chat service")
+                            startChatService()
+                        } else {
+                            Log.d(TAG, "Trying to stop chat service")
+                            mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                         }
-                        if (enableChatService != chatChecked) {
-                            settingsChanged = true; chatCheckedChanged = true
-                            enableChatService = chatChecked
-                            if (enableChatService) {
-                                Log.d(TAG, "Trying to start chat service")
-                                startChatService()
-                            } else {
-                                Log.d(TAG, "Trying to stop chat service")
-                                mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-                            }
-                            enableChatServiceLiveData.postValue(enableChatService)
-                            restartTAKConnectService()
-                            requestChatComplicationUpdate(context)
+                        enableChatServiceLiveData.postValue(enableChatService)
+                        restartTAKConnectService()
+                        requestChatComplicationUpdate(context)
+                    }
+
+                    if (enableSmsForAlerts != enableSmsChecked) {
+                        settingsChanged = true; smsAlertsCheckedChanged = true
+                        enableSmsForAlerts = enableSmsChecked
+                        if (enableSmsForAlerts) {
+                            Log.d(TAG, "Trying enable start sms alerts")
+                        } else {
+                            Log.d(TAG, "Trying disable start sms alerts")
                         }
+                    }
 
-                        if (enableSmsForAlerts != enableSmsChecked) {
-                            settingsChanged = true; smsAlertsCheckedChanged = true
-                            enableSmsForAlerts = enableSmsChecked
-                            if (enableSmsForAlerts) {
-                                Log.d(TAG, "Trying enable start sms alerts")
-                            } else {
-                                Log.d(TAG, "Trying disable start sms alerts")
-                            }
+                    if (smsNumbersListString != smsNumbersListStringSettingsState.value) {
+                        settingsChanged = true; smsNumbersChanged = true
+                        smsNumbersListString =
+                            smsNumbersListStringSettingsState.value ?: smsNumbersListString
+                    }
 
+                    if (enableBiometricsService != biometricsChecked) {
+                        settingsChanged = true; biometricsCheckedChanged = true
+                        enableBiometricsService = biometricsChecked
+                        if (enableBiometricsService) {
+                            Log.d(TAG, "Trying to start biometric service")
+                            startBiometricService()
+                        } else {
+                            Log.d(TAG, "Trying to stop biometric service")
+                            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
                         }
+                        enableBiometricsServiceLiveData.postValue(enableBiometricsService)
+                        requestHeartRateComplicationUpdate(context)
+                    }
 
-                        if (smsNumbersListString != smsNumbersListStringSettingsState.value) {
-                            settingsChanged = true; smsNumbersChanged = true
-                            smsNumbersListString =
-                                smsNumbersListStringSettingsState.value ?: smsNumbersListString
-						}
-
-                        if (enableBiometricsService != biometricsChecked) {
-                            settingsChanged = true; biometricsCheckedChanged = true
-                            enableBiometricsService = biometricsChecked
-                            if (enableBiometricsService) {
-                                Log.d(TAG, "Trying to start biometric service")
-                                startBiometricService()
-                            } else {
-                                Log.d(TAG, "Trying to stop biometric service")
-                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                            }
-                            enableBiometricsServiceLiveData.postValue(enableBiometricsService)
-                            requestHeartRateComplicationUpdate(context)
-                        }
-
-                        if (enablePhysiologicalAlerts != physiologicalAlertsChecked) {
-                            settingsChanged = true; physiologicalAlertsCheckedChanged = true
-                            enablePhysiologicalAlerts = physiologicalAlertsChecked
-                            enablePhysiologicalAlertsLiveData.postValue(enablePhysiologicalAlerts)
-                        }
-
-                        if (settingsChanged) {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                if (callsignChanged) {
-                                    Log.d(TAG, "Storing Callsign ($callsign)")
-                                    dataRepository.storeCallsign(callsign)
-                                }
-                                if (teamChanged) {
-                                    Log.d(TAG, "Storing Team ($team)")
-                                    dataRepository.storeTeam(team)
-                                }
-                                if (roleChanged) {
-                                    Log.d(TAG, "Storing Role ($role)")
-                                    dataRepository.storeRole(role)
-                                }
+                    if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState) {
+                        settingsChanged = true; physiologicalAlertsCheckedChanged = true
+                        enablePhysiologicalAlerts = enablePhysiologicalAlertsSettingState
+                    }
+                     if (settingsChanged) {
+                         CoroutineScope(Dispatchers.Main).launch {
+                             if (callsignChanged) {
+                                 Log.d(TAG, "Storing Callsign ($callsign)")
+                                 dataRepository.storeCallsign(callsign)
+                             }
+                             if (teamChanged) {
+                                 Log.d(TAG, "Storing Team ($team)")
+                                 dataRepository.storeTeam(team)
+                             }
+                             if (roleChanged) {
+                                 Log.d(TAG, "Storing Role ($role)")
+                                 dataRepository.storeRole(role)
+                             }
 //                                    if(licenseChanged) {
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
-                                if (ageChanged) {
-                                    Log.d(TAG, "Storing Age ($ageValue)")
-                                    dataRepository.storePhysiologicalMetricAge(ageValue)
-                                }
-                                if (heightFeetChanged) {
-                                    Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
-                                    dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
-                                }
-                                if (heightInchesChanged) {
-                                    Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
-                                    dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
-                                }
-                                if (weightChanged) {
-                                    Log.d(TAG, "Storing Weight ($weightValue)")
-                                    dataRepository.storePhysiologicalMetricWeight(weightValue)
-                                }
-                                if (sexChanged) {
-                                    Log.d(TAG, "Storing Sex ($sexValue)")
-                                    dataRepository.storePhysiologicalMetricSex(sexValue)
-                                }
-                                if (bloodTypeChanged) {
-                                    Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
-                                    dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
-                                }
-                                if (allergiesChanged) {
-                                    Log.d(TAG, "Storing Allergy List ($allergyList)")
-                                    dataRepository.storePhysiologicalMetricAllergyList(allergyList)
-                                }
-                                if (userTypeChanged) {
-                                    Log.d(TAG, "Storing User Type ($userTypeValue)")
-                                    dataRepository.storePhysiologicalMetricUserType(userTypeValue)
-                                }
+                             if (ageChanged) {
+                                 Log.d(TAG, "Storing Age ($ageValue)")
+                                 dataRepository.storePhysiologicalMetricAge(ageValue)
+                             }
+                             if (heightFeetChanged) {
+                                 Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
+                                 dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
+                             }
+                             if (heightInchesChanged) {
+                                 Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
+                                 dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
+                             }
+                             if (weightChanged) {
+                                 Log.d(TAG, "Storing Weight ($weightValue)")
+                                 dataRepository.storePhysiologicalMetricWeight(weightValue)
+                             }
+                             if (sexChanged) {
+                                 Log.d(TAG, "Storing Sex ($sexValue)")
+                                 dataRepository.storePhysiologicalMetricSex(sexValue)
+                             }
+                             if (bloodTypeChanged) {
+                                 Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
+                                 dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
+                             }
+                             if (allergiesChanged) {
+                                 Log.d(TAG, "Storing Allergy List ($allergyList)")
+                                 dataRepository.storePhysiologicalMetricAllergyList(allergyList)
+                             }
+                             if (userTypeChanged) {
+                                 Log.d(TAG, "Storing User Type ($userTypeValue)")
+                                 dataRepository.storePhysiologicalMetricUserType(userTypeValue)
+                             }
+                             if (saveBattOnWifiChanged) {
+                                  Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
+                                  runBlocking {
+                                      dataRepository.storeEnableWifiBatteryOptimization(
+                                          enableWifiBatteryOptimization
+                                      )
+                                      dataRepository.storeEnableAllWifiBatteryOptimization(
+                                          enableAllWifiBatteryOptimization
+                                      )
+                                      dataRepository.storeWifiSsidList(wifiSsidList)
+                                  }
+                                  EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+                             }
+                             if (takServerListChanged) {
+                                 Log.d(TAG, "Storing updated TAK Server List: $takServerList")
+                                 dataRepository.storeTakServerList(takServerList)
+                             }
 
-                                if (saveBattOnWifiChanged) {
-                                    Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
-                                    runBlocking {
-                                        dataRepository.storeEnableWifiBatteryOptimization(
-                                            enableWifiBatteryOptimization
-                                        )
-                                        dataRepository.storeEnableAllWifiBatteryOptimization(
-                                            enableAllWifiBatteryOptimization
-                                        )
-                                        dataRepository.storeWifiSsidList(wifiSsidList)
-                                    }
-                                    EventBus.getDefault().post(MessageEvent(
-                                        OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
-                                }
-                                if (takServerListChanged) {
-                                    Log.d(TAG, "Storing updated TAK Server List: $takServerList")
-                                    dataRepository.storeTakServerList(takServerList)
-                                }
+                             if (locationCheckedChanged) {
+                                 Log.d(TAG, "Storing enableLocationService $enableLocationService")
+                                 dataRepository.storeEnableLocationService(enableLocationService)
+                             }
+                             if (dittoCheckedChanged) {
+                                 Log.d(TAG, "Storing enableDittoService $enableDittoService")
+                                 dataRepository.storeEnableDittoService(enableDittoService)
+                             }
 
-                                if (locationCheckedChanged) {
-                                    Log.d(TAG, "Storing enableLocationService $enableLocationService")
-                                    dataRepository.storeEnableLocationService(enableLocationService)
-                                }
-                                if (dittoCheckedChanged) {
-                                    Log.d(TAG, "Storing enableDittoService $enableDittoService")
-                                    dataRepository.storeEnableDittoService(enableDittoService)
-                                }
-
-                                if (chatCheckedChanged) {
-                                    Log.d(TAG, "Storing enableChatService $enableChatService")
-                                    dataRepository.storeEnableChatService(enableChatService)
-                                }
-                                if (smsAlertsCheckedChanged) {
-                                    Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
-                                    dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
-                                }
-                                if (smsNumbersChanged){
-                                    val smsNumbersListConversion: List<DataRepository.SmsNumber> =
+                             if (chatCheckedChanged) {
+                                 Log.d(TAG, "Storing enableChatService $enableChatService")
+                                 dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (smsAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
+                                 dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
+                             }
+                             if (smsNumbersChanged){
+                                 val smsNumbersListConversion: List<DataRepository.SmsNumber> =
                                         smsNumbersListString.split(",")
                                             .map { it.trim() } // Trim whitespace from each SSID
                                             .filter { it.isNotEmpty() } // Remove any empty values
                                             .map { DataRepository.SmsNumber(it) }
-                                    Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
+                                 Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
 
-                                    dataRepository.storeSmsNumbersList(smsNumbersListConversion)
-                                    smsNumbersList = smsNumbersListConversion
-                                }
+                                 dataRepository.storeSmsNumbersList(smsNumbersListConversion)
+                                 smsNumbersList = smsNumbersListConversion
+                             }
 
-                                if (biometricsCheckedChanged) {
-                                    Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
-                                    dataRepository.storeEnableBiometricsService(enableBiometricsService)
-                                }
+                             if (biometricsCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
+                                 dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                             }
 
-                                if (physiologicalAlertsCheckedChanged) {
-                                    Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
-                                    dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
-                                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
-
-                                }
-
-                                Log.d(TAG, "Finished saving settings")
-                            }
-                        } else {
-                            Log.v(TAG, "Settings not changed and hence NOT saved")
+                             if (physiologicalAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
+                                 dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
+                                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                             }
+                             if (physiologicalAlertsBpmThresholdCheckedChanged) {
+                                 Log.d(TAG, "Storing hrHighAlertBpmThreshold $hrHighAlertBpmThreshold")
+                                 dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold)
+                             }
+                             if (physiologicalAlertsBpmThresholdTimeCheckedChanged) {
+                                 Log.d(TAG, "Storing hrHighAlertNumSecsThreshold $hrHighAlertNumSecsThreshold")
+                                 dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold)
+                             }
+                             if (physiologicalAlertsBpmThresholdCheckedChanged || physiologicalAlertsBpmThresholdTimeCheckedChanged) {
+                                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                             }
+                            Log.d(TAG, "Finished saving settings")
                         }
+                    } else {
+                        Log.v(TAG, "Settings not changed and hence NOT saved")
+                    }
 //                        navController.navigate("main_screen") {
 //                            popUpTo(("main_screen")) {
 //                                inclusive = true
 //                            }
 //                        }
-                          context.startActivity(Intent(context, MainActivity::class.java))
+                    settingsActivity.finish()
+                    context.startActivity(Intent(context, MainActivity::class.java))
 
-                    })
-            }
-
-        }
-    }
+                })
+        },
+        text = stringResource(R.string.callsign_settings)
+    )
 }
 
 fun convertSmsNumbersListToStringWithSeparator(smsNumbersList: List<DataRepository.SmsNumber>, separatorStr: String): String {
@@ -3559,4 +3610,11 @@ fun HeightPickerPreview() {
 fun AllergyMetricPreview() {
 
     AllergySetting(rememberSwipeDismissableNavController(),"Allergies")
+}
+
+@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+@Composable
+fun PhysioAlertsPreview() {
+
+    PhysiologicalAlertsSetting(rememberSwipeDismissableNavController())
 }
