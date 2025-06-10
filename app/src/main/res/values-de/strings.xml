@@ -110,4 +110,6 @@
     <string name="height">Height</string>
     <string name="allergies">Allergies</string>
     <string name="value_exceeds_maximum_please_re_enter">Value exceeds maximum, please re-enter</string>
+    <string name="threshold_high_heart_rate">Threshold - High Heart Rate</string>
+    <string name="threshold_high_heart_rate_length">Threshold - High Heart Rate Length</string>
 </resources>

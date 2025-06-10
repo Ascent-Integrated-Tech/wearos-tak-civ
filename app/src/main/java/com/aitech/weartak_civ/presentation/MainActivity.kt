@@ -280,10 +280,14 @@ class MainActivity : ComponentActivity() {
         var smsNumbersListString : String = ""
         val smsNumbersListStringSettingsState = MutableLiveData<String>("")
         var enablePhysiologicalAlerts = false
-        var enablePhysiologicalAlertsLiveData = MutableLiveData<Boolean>(false)
+        var enablePhysiologicalAlertsSettingState = false
 
         var hrHighAlertBpmThreshold : Int = 140
+        val hrHighAlertBpmThresholdState = MutableLiveData<Int>(140)
+        val hrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(140)
         var hrHighAlertNumSecsThreshold : Int = 30
+        val hrHighAlertNumSecsThresholdState = MutableLiveData<Int>(30)
+        val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null
@@ -1259,7 +1263,11 @@ class MainActivity : ComponentActivity() {
         enableChatServiceLiveData.postValue(enableChatService)
         enableSmsForAlertsLiveData.postValue(enableSmsForAlerts)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
-        enablePhysiologicalAlertsLiveData.postValue(enablePhysiologicalAlerts)
+        enablePhysiologicalAlertsSettingState = enablePhysiologicalAlerts
+        hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
+        hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
+        hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
+        hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThreshold)
 
         ageState.postValue(ageValue)
         ageSettingsState.postValue(ageValue)
@@ -1497,7 +1505,6 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsBloodTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_blood_type", bloodTypeValue)
         val physiologicalMetricsAllergiesServiceConfigUpdate = appRestrictions.getStringArray("physiological_metrics_allergies")
         val physiologicalMetricsUserTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_user_type", userTypeValue)
-
 
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
