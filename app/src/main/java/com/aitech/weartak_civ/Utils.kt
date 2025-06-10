@@ -30,6 +30,10 @@ object Utils {
     const val EARTH_RADIUS = 6378137.0  // in meters
     val secureRandom: SecureRandom = SecureRandom()
 
+    fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {
+        return list1.size == list2.size && list1.toSet() == list2.toSet()
+    }
+
     fun isValidJson(jsonString: String) : Boolean {
         if (jsonString.isNullOrEmpty()) return false
         return try {

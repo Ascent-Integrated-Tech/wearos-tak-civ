@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -49,6 +51,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -58,16 +61,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -84,6 +91,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,6 +110,8 @@ import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
+import androidx.wear.compose.material.Picker
+import androidx.wear.compose.material.PickerState
 import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.SplitToggleChip
 import androidx.wear.compose.material.SwipeToRevealChip
@@ -112,6 +122,7 @@ import androidx.wear.compose.material.SwipeToRevealUndoAction
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
+import androidx.wear.compose.material.rememberPickerState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -122,6 +133,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
@@ -131,7 +143,15 @@ import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyListSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyListState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodTypeSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodTypeState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodTypeValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
@@ -146,11 +166,19 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoSer
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSmsForAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.generateSaveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -165,6 +193,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersListString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersListStringSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
@@ -177,10 +208,21 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesVal
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.userTypeSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.userTypeState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.userTypeValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.weightSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.weightState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.weightValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
@@ -206,14 +248,41 @@ import org.greenrobot.eventbus.EventBus
 
 class SettingsActivity : ComponentActivity() {
     companion object Constants {
+        val TAG = "WearTAK-" + SettingsActivity::class.java.simpleName
         lateinit var settingsActivity: SettingsActivity
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
+        val sexOptionsList : List<String> = listOf("N/A", "Male", "Female")
+        val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
+        val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Aspirin", "Sulfa Drugs", "Insulin", "Antiseizure", "Muscle Relaxers")
+        val userTypeOptionsList : List<String> = listOf("N/A", "Coalition Military", "Coalition Civilian", "NonCoalition Force", "NonCoalition Citizen", "Opposing Force Detainee", "Child")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settingsActivity = this
+
+        callsignSettingsState.postValue(callsign)
+        teamSettingsState.postValue(team)
+        roleSettingsState.postValue(role)
+        enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
+        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
+        enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
+        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+        wifiSsidListState.postValue(wifiSsidList)
+        wifiSsidListSettingsState.postValue(wifiSsidList)
+        takServerListState.postValue(takServerList)
+        saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+        ageState.postValue(ageValue)
+        heightFeetState.postValue(heightFeetValue)
+        heightInchesState.postValue(heightInchesValue)
+        weightState.postValue(weightValue)
+        sexState.postValue(sexValue)
+        bloodTypeState.postValue(bloodTypeValue)
+        allergyListState.postValue(allergyList)
+        userTypeState.postValue(userTypeValue)
+        Log.d(TAG, "SettingsActivity onCreate called. Setting userTypeState to $userTypeValue")
+
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
@@ -305,6 +374,39 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             "invalid_license_screen") {
             InvalidLicenseScreen(navController)
         }
+        //Physio Metrics
+        composable(
+            "physiological_metrics_setting_screen") {
+            PhysiologicalMetricsSetting(navController)
+        }
+        composable(
+            "physiological_metrics_age_screen") {
+            AgeWeightSetting(navController, ageSettingsState, 150, stringResource(R.string.age), context)
+        }
+        composable(
+            "physiological_metrics_height_screen") {
+            HeightPickerSetting(navController)
+        }
+        composable(
+            "physiological_metrics_weight_screen") {
+            AgeWeightSetting(navController, weightSettingsState, 1000, stringResource(R.string.weight), context)
+        }
+        composable(
+            "physiological_metrics_sex_screen") {
+            SexBloodtypeUsertypeSetting(navController, sexSettingsState, sexOptionsList, stringResource(R.string.sex))
+        }
+        composable(
+            "physiological_metrics_bloodtype_screen") {
+            SexBloodtypeUsertypeSetting(navController, bloodTypeSettingsState, bloodTypeOptionsList, stringResource(R.string.blood_type))
+        }
+        composable(
+            "physiological_metrics_allergies_screen") {
+            AllergySetting(navController, stringResource(R.string.allergies))
+        }
+        composable(
+            "physiological_metrics_usertype_screen") {
+            SexBloodtypeUsertypeSetting(navController, userTypeSettingsState, userTypeOptionsList, stringResource(R.string.user_type))
+        }
     }
 
 }
@@ -367,7 +469,7 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
+                    Log.d(TAG, "Callsign Settings NOT saved")
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
                             inclusive = true
@@ -428,7 +530,7 @@ fun TeamSetting(navController: NavController) {
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
+                    Log.d(TAG, "Team Settings NOT saved")
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
                             inclusive = true
@@ -491,7 +593,7 @@ fun RoleSetting (navController: NavController) {
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
+                    Log.d(TAG, "Role Settings NOT saved")
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
                             inclusive = true
@@ -509,7 +611,7 @@ fun RoleSetting (navController: NavController) {
     }
 }
 
-@SuppressLint("CoroutineCreationDuringComposition", "UnrememberedMutableState")
+@SuppressLint("CoroutineCreationDuringComposition")
 @Composable
 fun TakServerSetting(navController: NavController) {
     val takServerSettingList by takServerListState.observeAsState(initial = emptyList())
@@ -896,7 +998,7 @@ fun NewServerPage(navController: NavController) {
 
                 ConfirmCancelButtons(
                     onClickCancel = {
-                        Log.d(TAG, "Settings NOT saved")
+                        Log.d(TAG, "NewServerPage Settings NOT saved")
                         navController.navigate("tak_server_screen") {
                             popUpTo(("tak_server_screen")) {
                                 inclusive = true
@@ -1160,7 +1262,7 @@ fun EditServerPage(
 
                 ConfirmCancelButtons(
                     onClickCancel = {
-                        Log.d(TAG, "Settings NOT saved")
+                        Log.d(TAG, "EditServerPage Settings NOT saved")
                         navController.navigate("tak_server_screen") {
                             popUpTo(("tak_server_screen")) {
                                 inclusive = true
@@ -1693,7 +1795,7 @@ fun NewWiFiSSIDSetting(
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
+                    Log.d(TAG, "NewWiFiSSIDSetting Settings NOT saved")
                     navController.navigate("wifi_ssid_screen") {
                         popUpTo(("wifi_ssid_screen")) {
                             inclusive = true
@@ -1748,7 +1850,7 @@ fun EditedWiFiSSIDSetting(
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
+                    Log.d(TAG, "EditedWiFiSSIDSetting Settings NOT saved")
                     navController.navigate("wifi_ssid_screen") {
                         popUpTo(("wifi_ssid_screen")) {
                             inclusive = true
@@ -2002,7 +2104,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
             var licenseChanged: Boolean = false
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
+                    Log.d(TAG, "LicenseKeyScreen Settings NOT saved")
                     settingsChanged = false; licenseChanged = false
                     if (isLicenseValid()) {
                         navController.navigate("settings_screen") {
@@ -2173,6 +2275,498 @@ fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : Muta
 }
 
 @Composable
+fun DataMetricsChip(
+    route: String,
+    title: String,
+    nameSecondary: String,
+    navController: NavController
+) {
+    Chip(
+        onClick = { navController.navigate(route) },
+        enabled = true,
+        label = { Text(text = title) },
+        secondaryLabel = {
+            Text(text = nameSecondary, maxLines =1, overflow = TextOverflow.Ellipsis)
+        },
+        colors = ChipDefaults.chipColors(
+            backgroundColor = Color.DarkGray,
+            contentColor = Color.White,
+            secondaryContentColor = Color.LightGray
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+fun AgeWeightSetting(
+    navController: NavController,
+    metricSettingState: MutableLiveData<Int>,
+    maximum: Int,
+    label: String,
+    context: Context
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var metricTextFieldValue by remember { mutableStateOf(TextFieldValue(metricSettingState.value.toString())) }
+        //Log.d(TAG, "metricTextFieldValue=" + metricTextFieldValue.text)
+        val focusManager = LocalFocusManager.current
+
+        OutlinedTextField(
+            value = metricTextFieldValue,
+            onValueChange = {
+                metricTextFieldValue = it
+            },
+            maxLines = 1,
+            label = { Text(text = label, color = colors.primary) },
+            placeholder = { Text(text = label, color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    if (metricTextFieldValue.text.toInt() > maximum) {
+                        Toast.makeText(
+                            mainActivity,
+                            context.getString(R.string.value_exceeds_maximum_please_re_enter), Toast.LENGTH_LONG).show()
+                    } else {
+                        focusManager.clearFocus()
+                    }
+                }
+            ),
+
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "AgeWeightSetting Settings NOT saved")
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    metricSettingState.postValue(metricTextFieldValue.text.toInt())
+                    Log.d(TAG, "Settings saved with age or weight: ${metricSettingState.value}")
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun HeightPickerSetting(navController: NavController){
+    var selectedColumn by remember { mutableStateOf(0) }
+    val textStyle = MaterialTheme.typography.display1
+    val feetSettingsState by heightFeetSettingsState.observeAsState()
+    val inchesSettingsState by heightInchesSettingsState.observeAsState()
+
+    val feetState =
+        rememberPickerState(initialNumberOfOptions = 8, initiallySelectedOption = feetSettingsState!!.toInt()-1)
+    val feetContentDescription by remember {
+        derivedStateOf { "${feetState.selectedOption + 1} feet" }
+    }
+    val inchesState =
+        rememberPickerState(initialNumberOfOptions = 12, initiallySelectedOption = inchesSettingsState!!.toInt())
+    val inchesContentDescription by remember {
+        derivedStateOf { "${inchesState.selectedOption} inches" }
+    }
+
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = stringResource(R.string.height),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+            @Composable
+            fun Option(column: Int, text: String) =
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Text(
+                        text = text,
+                        style = textStyle,
+                        color =
+                            if (selectedColumn == column) MaterialTheme.colors.secondary
+                            else MaterialTheme.colors.onBackground,
+                        modifier =
+                            Modifier
+                                .align(Alignment.Center)
+                                .wrapContentSize()
+                                .pointerInteropFilter {
+                                    if (it.action == MotionEvent.ACTION_DOWN) selectedColumn =
+                                        column
+                                    true
+                                },
+                    )
+                }
+
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Picker(
+                    readOnly = selectedColumn != 0,
+                    state = feetState,
+                    modifier = Modifier.size(64.dp, 100.dp),
+                    contentDescription = feetContentDescription,
+                    option = { foot: Int -> Option(0, "%2d".format(foot + 1)) },
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(text = "'", style = textStyle, color = MaterialTheme.colors.onBackground)
+                Spacer(Modifier.width(8.dp))
+                Picker(
+                    readOnly = selectedColumn != 1,
+                    state = inchesState,
+                    modifier = Modifier.size(64.dp, 100.dp),
+                    contentDescription = inchesContentDescription,
+                    option = { inch: Int -> Option(1, "%02d".format(inch)) },
+                )
+                Text(text = "''", style = textStyle, color = MaterialTheme.colors.onBackground)
+            }
+                }
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                val feetIndex = feetInchesIndex(heightFeetSettingsState.value, feetState)
+                val inchesIndex = feetInchesIndex(heightInchesSettingsState.value, inchesState)
+
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "HeightPickerSetting Settings NOT saved")
+                        navController.navigate("physiological_metrics_setting_screen") {
+                            popUpTo(("physiological_metrics_setting_screen")) {
+                                inclusive = true
+                            }
+                        } },
+                    onClickConfirm = {
+                        heightFeetSettingsState.postValue(feetIndex+1)
+                        heightInchesSettingsState.postValue(inchesIndex)
+                        navController.navigate("physiological_metrics_setting_screen") {
+                            popUpTo(("physiological_metrics_setting_screen")) {
+                                inclusive = true
+                            }
+                        } })
+            }
+        }
+    }
+}
+
+fun feetInchesIndex(dataName: Int?, picker: PickerState) : Int {
+    if (null == dataName) {
+        return 0
+    }
+    val index = picker.selectedOption
+    if (index == -1) {
+        return 0
+    }
+    return index
+}
+
+@Composable
+fun SexBloodtypeUsertypeSetting (
+    navController: NavController,
+    metricSettingState: MutableLiveData<String>,
+    dataList: List<String>,
+    title: String
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(top = 20.dp, bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val index = findSexBloodtypeUsertypeIndex(metricSettingState.value, dataList)
+        var selectedRadioIndex by remember { mutableStateOf(index) }
+
+        //TODO: Convert to a lazyColumn
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = title,
+                fontSize = if (title.length < 20) 15.sp else 13.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(vertical = 10.dp, horizontal = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            dataList.forEachIndexed { index, dataItem ->
+                run {
+                    SelectableChip(
+                        modifier = Modifier.fillMaxWidth(),
+                        selected = index == selectedRadioIndex,
+                        onClick = { selectedRadioIndex = index},
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(dataItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                        shape =
+                            if (dataItem == dataList.first())
+                                RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                            else if (dataItem == dataList.last())
+                                RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                            else
+                                RoundedCornerShape(0.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+        }
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "SexBloodtypeUsertypeSetting Settings NOT saved")
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }                },
+                onClickConfirm = {
+                    metricSettingState.setValue(dataList[selectedRadioIndex])
+                    Log.d(TAG, "Settings saved with Sex, Blood Type or User Type: ${metricSettingState.value}")
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        }
+    }
+}
+
+fun findSexBloodtypeUsertypeIndex(dataName: String?, dataList: List<String>) : Int {
+    if (null == dataName) {
+        return 0
+    }
+    val index = dataList.indexOf(dataName)
+    if (index == -1) {
+        return 0
+    }
+    return index
+}
+
+@Composable
+fun AllergySetting (
+    navController: NavController,
+    title: String
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(top = 20.dp, bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val storedAllergies by allergyListSettingsState.observeAsState(initial = emptyList())
+
+        val initialIndices = remember(storedAllergies) {
+            storedAllergies.mapNotNull { item ->
+                allergiesOptionsList.indexOf(item.name)
+                    .takeIf { it >= 0 }
+            }
+        }
+
+        val selectedIndices = remember {
+            // start with whatever LiveData says
+            mutableStateListOf<Int>().apply { addAll(initialIndices) }
+        }
+
+        LaunchedEffect(storedAllergies) {
+            selectedIndices.clear()
+            selectedIndices.addAll(initialIndices)
+        }
+
+        //TODO: Convert to a lazyColumn
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = title,
+                fontSize = if (title.length < 20) 15.sp else 13.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(vertical = 10.dp, horizontal = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            allergiesOptionsList.forEachIndexed { index, dataItem ->
+                run {
+                    var checked = index in selectedIndices
+                    ToggleChip(
+                        modifier = Modifier.fillMaxWidth(),
+                        checked = checked,
+                        onCheckedChange = { checked ->
+                            if (checked) selectedIndices += index
+                            else selectedIndices -= index
+                        },
+                        toggleControl = { Checkbox(checked = checked, enabled = true,  onCheckedChange = null) },
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(dataItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                        shape =
+                            if (dataItem == allergiesOptionsList.first())
+                                RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                            else if (dataItem == allergiesOptionsList.last())
+                                RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                            else
+                                RoundedCornerShape(0.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+        }
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Allergy Settings NOT saved")
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }                },
+                onClickConfirm = {
+                    val toSave = selectedIndices
+                        .map { idx -> DataRepository.AllergyItem(allergiesOptionsList[idx]) }
+                    allergyListSettingsState.postValue(toSave)
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }                })
+        }
+    }
+}
+
+@Composable
+fun PhysiologicalMetricsSetting(navController: NavController) {
+    Log.d(TAG, "PhysioMetricsSetting called")
+    val text = stringResource(R.string.physiological_user_metrics)
+
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp)
+                    .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = text,
+                    fontSize = if (text.length!! < 20) 15.sp else 13.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(vertical = 10.dp, horizontal = 20.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+                DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
+                DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
+                DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
+                DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
+                DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
+                DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
+                DataMetricsChip("physiological_metrics_usertype_screen", stringResource(R.string.user_type), userTypeSettingsState.value.toString(), navController)
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "Physiological Settings NOT saved")
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onClickConfirm = {
+                        ageState.postValue(ageSettingsState.value)
+                        heightFeetState.postValue(heightFeetSettingsState.value)
+                        heightInchesState.postValue(heightInchesSettingsState.value)
+                        weightState.postValue(weightSettingsState.value)
+                        sexState.postValue(sexSettingsState.value)
+                        bloodTypeState.postValue(bloodTypeSettingsState.value)
+                        allergyListState.postValue(allergyListSettingsState.value)
+                        userTypeState.postValue(userTypeSettingsState.value)
+
+                        Log.d(TAG, "Finished saving physio state settings")
+
+                        navController.navigate("settings_screen") {
+                            popUpTo(("settings_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    })
+            }
+        }
+    }
+}
+
+@Composable
 fun SettingSwitchToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -2229,11 +2823,13 @@ fun SettingsScreen(
             contentAlignment = Alignment.Center
         ) {
             var locationChecked by remember{ mutableStateOf(enableLocationService)}
-            var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
             var dittoChecked by remember{ mutableStateOf(enableDittoService)}
             var chatChecked by remember{ mutableStateOf(enableChatService)}
             var enableSmsChecked by remember{ mutableStateOf(enableSmsForAlerts)}
             var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
+
+            var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
+            var physiologicalAlertsChecked by remember { mutableStateOf(enablePhysiologicalAlerts) }
 
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
             val text = stringResource(R.string.callsign_settings)
@@ -2364,12 +2960,6 @@ fun SettingsScreen(
                 )
 
                 SettingSwitchToggle(
-                    checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
-                    title = stringResource(R.string.biometrics),
-                    description = stringResource(R.string.service_on_off),
-                )
-
-                SettingSwitchToggle(
                     checked = dittoChecked, onCheckedChange = { dittoChecked = it },
                     title = stringResource(R.string.ditto),
                     description = stringResource(R.string.service_on_off),
@@ -2377,7 +2967,7 @@ fun SettingsScreen(
 
                 SettingSwitchToggle(
                     checked = chatChecked, onCheckedChange = { chatChecked = it },
-                    title = "Chat",
+                    title = stringResource(R.string.chat),
                     description = stringResource(R.string.service_on_off),
                 )
 
@@ -2426,6 +3016,52 @@ fun SettingsScreen(
                         )
                     )
                 }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = stringResource(R.string.physiological_settings),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+                SettingSwitchToggle(
+                    checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
+                    title = stringResource(R.string.physiological_monitoring),
+                    description = stringResource(R.string.service_on_off),
+                )
+                SettingSwitchToggle(
+                    checked = physiologicalAlertsChecked, onCheckedChange = { physiologicalAlertsChecked = it },
+                    title = stringResource(R.string.physiological_alerts),
+                    description = stringResource(R.string.on_off),
+                )
+
+                Chip(
+                    onClick = {
+                        ageSettingsState.postValue(ageState.value)
+                        heightFeetSettingsState.postValue(heightFeetState.value)
+                        heightInchesSettingsState.postValue(heightInchesState.value)
+                        weightSettingsState.postValue(weightState.value)
+                        sexSettingsState.postValue(sexState.value)
+                        bloodTypeSettingsState.postValue(bloodTypeState.value)
+                        allergyListSettingsState.postValue(allergyListState.value)
+                        userTypeSettingsState.postValue(userTypeState.value)
+
+                        navController.navigate("physiological_metrics_setting_screen") {
+                            popUpTo("physiological_metrics_setting_screen") { inclusive = true }
+                        } },
+                    enabled = true,
+                    label = { Text(text = stringResource(R.string.physiological_user_metrics)) },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 3.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     modifier = Modifier.padding(top = 7.dp),
@@ -2446,6 +3082,32 @@ fun SettingsScreen(
 //                                inclusive = true
 //                            }
 //                        }
+                        locationChecked = enableLocationService
+                        dittoChecked = enableDittoService
+                        chatChecked = enableChatService
+                        biometricsChecked = enableBiometricsService
+                        physiologicalAlertsChecked = enablePhysiologicalAlerts
+                        callsignSettingsState.postValue(callsign)
+                        teamSettingsState.postValue(team)
+                        roleSettingsState.postValue(role)
+                        enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
+                        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
+                        enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
+                        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+                        wifiSsidListState.postValue(wifiSsidList)
+                        wifiSsidListSettingsState.postValue(wifiSsidList)
+                        takServerListState.postValue(takServerList)
+                        saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+
+                        ageState.postValue(ageValue)
+                        heightFeetState.postValue(heightFeetValue)
+                        heightInchesState.postValue(heightInchesValue)
+                        weightState.postValue(weightValue)
+                        sexState.postValue(sexValue)
+                        bloodTypeState.postValue(bloodTypeValue)
+                        allergyListState.postValue(allergyList)
+                        userTypeState.postValue(userTypeValue)
+
                         context.startActivity(Intent(context, MainActivity::class.java))
                     },
                     onClickConfirm = {
@@ -2462,8 +3124,50 @@ fun SettingsScreen(
                         var chatCheckedChanged: Boolean = false
                         var smsAlertsCheckedChanged: Boolean = false
                         var smsNumbersChanged: Boolean = false
+                        var physiologicalAlertsCheckedChanged: Boolean = false
                         var saveBattOnWifiChanged = false
                         var takServerListChanged = false
+                        var ageChanged: Boolean = false
+                        var heightFeetChanged: Boolean = false
+                        var heightInchesChanged: Boolean = false
+                        var weightChanged: Boolean = false
+                        var sexChanged: Boolean = false
+                        var bloodTypeChanged: Boolean = false
+                        var allergiesChanged: Boolean = false
+                        var userTypeChanged: Boolean = false
+
+                        if (ageValue != ageState.value) {
+                            settingsChanged = true; ageChanged = true
+                            ageValue = ageState.value ?: ageValue
+                        }
+                        if (heightFeetValue != heightFeetState.value) {
+                            settingsChanged = true; heightFeetChanged = true
+                            heightFeetValue = heightFeetState.value ?: heightFeetValue
+                        }
+                        if (heightInchesValue != heightInchesState.value) {
+                            settingsChanged = true; heightInchesChanged = true
+                            heightInchesValue = heightInchesState.value ?: heightInchesValue
+                        }
+                        if (weightValue != weightState.value) {
+                            settingsChanged = true; weightChanged = true
+                            weightValue = weightState.value ?: weightValue
+                        }
+                        if (sexValue != sexState.value) {
+                            settingsChanged = true; sexChanged = true
+                            sexValue = sexState.value ?: sexValue
+                        }
+                        if (bloodTypeValue != bloodTypeState.value) {
+                            settingsChanged = true; bloodTypeChanged = true
+                            bloodTypeValue = bloodTypeState.value ?: bloodTypeValue
+                        }
+                        if (allergyList != allergyListState.value) {
+                            settingsChanged = true; allergiesChanged = true
+                            allergyList = allergyListState.value ?: allergyList
+                        }
+                        if (userTypeValue != userTypeState.value) {
+                            settingsChanged = true; userTypeChanged = true
+                            userTypeValue = userTypeState.value ?: userTypeValue
+                        }
 
                         if (!callsign.equals(callsignSettingsState.value)) {
                             settingsChanged = true; callsignChanged = true
@@ -2546,20 +3250,6 @@ fun SettingsScreen(
                             enableLocationServiceLiveData.postValue(enableLocationService)
                         }
 
-                        if (enableBiometricsService != biometricsChecked) {
-                            settingsChanged = true; biometricsCheckedChanged = true
-                            enableBiometricsService = biometricsChecked
-                            if (enableBiometricsService) {
-                                Log.d(TAG, "Trying to start biometric service")
-                                startBiometricService()
-                            } else {
-                                Log.d(TAG, "Trying to stop biometric service")
-                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                            }
-                            enableBiometricsServiceLiveData.postValue(enableBiometricsService)
-                            requestHeartRateComplicationUpdate(context)
-                        }
-
                         if (enableDittoService != dittoChecked) {
                             settingsChanged = true; dittoCheckedChanged = true
                             enableDittoService = dittoChecked
@@ -2601,7 +3291,26 @@ fun SettingsScreen(
                             settingsChanged = true; smsNumbersChanged = true
                             smsNumbersListString =
                                 smsNumbersListStringSettingsState.value ?: smsNumbersListString
-//
+						}
+
+                        if (enableBiometricsService != biometricsChecked) {
+                            settingsChanged = true; biometricsCheckedChanged = true
+                            enableBiometricsService = biometricsChecked
+                            if (enableBiometricsService) {
+                                Log.d(TAG, "Trying to start biometric service")
+                                startBiometricService()
+                            } else {
+                                Log.d(TAG, "Trying to stop biometric service")
+                                mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                            }
+                            enableBiometricsServiceLiveData.postValue(enableBiometricsService)
+                            requestHeartRateComplicationUpdate(context)
+                        }
+
+                        if (enablePhysiologicalAlerts != physiologicalAlertsChecked) {
+                            settingsChanged = true; physiologicalAlertsCheckedChanged = true
+                            enablePhysiologicalAlerts = physiologicalAlertsChecked
+                            enablePhysiologicalAlertsLiveData.postValue(enablePhysiologicalAlerts)
                         }
 
                         if (settingsChanged) {
@@ -2622,6 +3331,38 @@ fun SettingsScreen(
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
+                                if (ageChanged) {
+                                    Log.d(TAG, "Storing Age ($ageValue)")
+                                    dataRepository.storePhysiologicalMetricAge(ageValue)
+                                }
+                                if (heightFeetChanged) {
+                                    Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
+                                    dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
+                                }
+                                if (heightInchesChanged) {
+                                    Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
+                                    dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
+                                }
+                                if (weightChanged) {
+                                    Log.d(TAG, "Storing Weight ($weightValue)")
+                                    dataRepository.storePhysiologicalMetricWeight(weightValue)
+                                }
+                                if (sexChanged) {
+                                    Log.d(TAG, "Storing Sex ($sexValue)")
+                                    dataRepository.storePhysiologicalMetricSex(sexValue)
+                                }
+                                if (bloodTypeChanged) {
+                                    Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
+                                    dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
+                                }
+                                if (allergiesChanged) {
+                                    Log.d(TAG, "Storing Allergy List ($allergyList)")
+                                    dataRepository.storePhysiologicalMetricAllergyList(allergyList)
+                                }
+                                if (userTypeChanged) {
+                                    Log.d(TAG, "Storing User Type ($userTypeValue)")
+                                    dataRepository.storePhysiologicalMetricUserType(userTypeValue)
+                                }
 
                                 if (saveBattOnWifiChanged) {
                                     Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
@@ -2646,12 +3387,6 @@ fun SettingsScreen(
                                     Log.d(TAG, "Storing enableLocationService $enableLocationService")
                                     dataRepository.storeEnableLocationService(enableLocationService)
                                 }
-                                if (biometricsCheckedChanged) {
-                                    Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
-                                    dataRepository.storeEnableBiometricsService(
-                                        enableBiometricsService
-                                    )
-                                }
                                 if (dittoCheckedChanged) {
                                     Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                     dataRepository.storeEnableDittoService(enableDittoService)
@@ -2675,6 +3410,18 @@ fun SettingsScreen(
 
                                     dataRepository.storeSmsNumbersList(smsNumbersListConversion)
                                     smsNumbersList = smsNumbersListConversion
+                                }
+
+                                if (biometricsCheckedChanged) {
+                                    Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
+                                    dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                                }
+
+                                if (physiologicalAlertsCheckedChanged) {
+                                    Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
+                                    dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
+                                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+
                                 }
 
                                 Log.d(TAG, "Finished saving settings")
@@ -2778,7 +3525,7 @@ fun requestHeartRateComplicationUpdate(context: Context) {
     requester.requestUpdateAll()
 }
 
-@Preview(widthDp = 192, heightDp = 1000, showBackground = true)
+@Preview(widthDp = 192, heightDp = 1200, showBackground = true)
 @Composable
 fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
@@ -2787,3 +3534,29 @@ fun SettingsPreview() {
     SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
 }
 
+@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+@Composable
+fun PhysioSettingsPreview() {
+
+    PhysiologicalMetricsSetting(rememberSwipeDismissableNavController())
+}
+@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+@Composable
+fun SexMetricPreview() {
+    var licenseState = MutableLiveData<String>("")
+
+    SexBloodtypeUsertypeSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type")
+}
+@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+@Composable
+fun HeightPickerPreview() {
+
+    HeightPickerSetting(rememberSwipeDismissableNavController())
+}
+
+@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+@Composable
+fun AllergyMetricPreview() {
+
+    AllergySetting(rememberSwipeDismissableNavController(),"Allergies")
+}

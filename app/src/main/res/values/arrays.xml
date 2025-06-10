@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sex-->
+    <string-array name="sex_entries">
+        <item>@string/sex_entry_na</item>
+        <item>@string/sex_entry_male</item>
+        <item>@string/sex_entry_female</item>
+    </string-array>
+    <string-array name="sex_entry_values">
+        <item>@string/sex_entry_na</item>
+        <item>@string/sex_entry_male</item>
+        <item>@string/sex_entry_female</item>
+    </string-array>
+
+<!-- Blood Type-->
+    <string-array name="blood_type_entries">
+        <item>@string/blood_type_entry_na</item>
+        <item>@string/blood_type_entry_a_positive</item>
+        <item>@string/blood_type_entry_a_negative</item>
+        <item>@string/blood_type_entry_b_positive</item>
+        <item>@string/blood_type_entry_b_negative</item>
+        <item>@string/blood_type_entry_ab_positive</item>
+        <item>@string/blood_type_entry_ab_negative</item>
+        <item>@string/blood_type_entry_o_positive</item>
+        <item>@string/blood_type_entry_o_negative</item>
+    </string-array>
+    <string-array name="blood_type_entry_values">
+        <item>@string/blood_type_entry_na</item>
+        <item>@string/blood_type_entry_a_positive</item>
+        <item>@string/blood_type_entry_a_negative</item>
+        <item>@string/blood_type_entry_b_positive</item>
+        <item>@string/blood_type_entry_b_negative</item>
+        <item>@string/blood_type_entry_ab_positive</item>
+        <item>@string/blood_type_entry_ab_negative</item>
+        <item>@string/blood_type_entry_o_positive</item>
+        <item>@string/blood_type_entry_o_negative</item>
+    </string-array>
+
+    <!-- Allergies-->
+    <string-array name="allergy_entries">
+        <item>@string/allergy_entry_na</item>
+        <item>@string/allergy_entry_antibiotics</item>
+        <item>@string/allergy_entry_anti_inflammatory</item>
+        <item>@string/allergy_entry_aspirin</item>
+        <item>@string/allergy_entry_sulfa_drugs</item>
+        <item>@string/allergy_entry_insulin</item>
+        <item>@string/allergy_entry_antiseizure</item>
+        <item>@string/allergy_entry_muscle_relaxers</item>
+    </string-array>
+    <string-array name="allergy_entry_values">
+        <item>@string/allergy_entry_na</item>
+        <item>@string/allergy_entry_antibiotics</item>
+        <item>@string/allergy_entry_anti_inflammatory</item>
+        <item>@string/allergy_entry_aspirin</item>
+        <item>@string/allergy_entry_sulfa_drugs</item>
+        <item>@string/allergy_entry_insulin</item>
+        <item>@string/allergy_entry_antiseizure</item>
+        <item>@string/allergy_entry_muscle_relaxers</item>
+    </string-array>
+    <string-array name="physiological_metrics_allergies_default">
+        <item>@string/allergy_entry_na</item>
+    </string-array>
+
+    <!-- User Type-->
+    <string-array name="user_type_entries">
+        <item>@string/user_type_entry_na</item>
+        <item>@string/user_type_entry_coalition_military</item>
+        <item>@string/user_type_entry_coalition_civilian</item>
+        <item>@string/user_type_entry_nonCoalition_force</item>
+        <item>@string/user_type_entry_nonCoalition_citizen</item>
+        <item>@string/user_type_entry_opposing_force_detainee</item>
+        <item>@string/user_type_entry_child</item>
+    </string-array>
+    <string-array name="user_type_entry_values">
+        <item>@string/user_type_entry_na</item>
+        <item>@string/user_type_entry_coalition_military</item>
+        <item>@string/user_type_entry_coalition_civilian</item>
+        <item>@string/user_type_entry_nonCoalition_force</item>
+        <item>@string/user_type_entry_nonCoalition_citizen</item>
+        <item>@string/user_type_entry_opposing_force_detainee</item>
+        <item>@string/user_type_entry_child</item>
+    </string-array>
+</resources>
