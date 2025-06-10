@@ -129,6 +129,62 @@
         android:title="@string/enable_physiological_alerts_title"
         android:description="@string/enable_physiological_alerts_description"
         android:defaultValue="@string/enable_physiological_alerts_default"/>
+    <restriction
+        android:key="physiological_metrics_age"
+        android:restrictionType="integer"
+        android:title="@string/physiological_metrics_age_title"
+        android:description="@string/physiological_metrics_age_description"
+        android:defaultValue="@string/physiological_metrics_age_default"/>
+    <restriction
+        android:key="physiological_metrics_height_feet"
+        android:restrictionType="integer"
+        android:title="@string/physiological_metrics_height_feet_title"
+        android:description="@string/physiological_metrics_height_feet_description"
+        android:defaultValue="@string/physiological_metrics_height_feet_default"/>
+    <restriction
+        android:key="physiological_metrics_height_inches"
+        android:restrictionType="integer"
+        android:title="@string/physiological_metrics_height_inches_title"
+        android:description="@string/physiological_metrics_height_inches_description"
+        android:defaultValue="@string/physiological_metrics_height_inches_default"/>
+    <restriction
+        android:key="physiological_metrics_weight"
+        android:restrictionType="integer"
+        android:title="@string/physiological_metrics_weight_title"
+        android:description="@string/physiological_metrics_weight_description"
+        android:defaultValue="@string/physiological_metrics_weight_default"/>
+    <restriction
+        android:key="physiological_metrics_sex"
+        android:restrictionType="choice"
+        android:title="@string/physiological_metrics_sex_title"
+        android:description="@string/physiological_metrics_sex_description"
+        android:entries="@array/sex_entries"
+        android:entryValues="@array/sex_entry_values"
+        android:defaultValue="@string/physiological_metrics_sex_default" />
+    <restriction
+        android:key="physiological_metrics_blood_type"
+        android:restrictionType="choice"
+        android:title="@string/physiological_metrics_blood_type_title"
+        android:description="@string/physiological_metrics_blood_type_description"
+        android:entries="@array/blood_type_entries"
+        android:entryValues="@array/blood_type_entry_values"
+        android:defaultValue="@string/physiological_metrics_blood_type_default" />
+    <restriction
+        android:key="physiological_metrics_allergies"
+        android:restrictionType="multi-select"
+        android:title="@string/physiological_metrics_allergies_title"
+        android:description="@string/physiological_metrics_allergies_description"
+        android:entries="@array/allergy_entries"
+        android:entryValues="@array/allergy_entry_values"
+        android:defaultValue="@array/physiological_metrics_allergies_default" />
+    <restriction
+        android:key="physiological_metrics_user_type"
+        android:restrictionType="choice"
+        android:title="@string/physiological_metrics_user_type_title"
+        android:description="@string/physiological_metrics_user_type_description"
+        android:entries="@array/user_type_entries"
+        android:entryValues="@array/user_type_entry_values"
+        android:defaultValue="@string/physiological_metrics_user_type_default" />
 
     <restriction
         android:key="hr_high_alert_bpm_threshold"

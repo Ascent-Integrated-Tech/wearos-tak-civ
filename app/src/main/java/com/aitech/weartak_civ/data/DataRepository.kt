@@ -638,6 +638,99 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getPhysiologicalMetricAge: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[AGE] ?: 24
+    }
+
+    suspend fun storePhysiologicalMetricAge(age: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[AGE] = age
+        }
+    }
+
+    val getPhysiologicalMetricHeightFeet: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HEIGHT_FEET] ?: 6
+    }
+
+    suspend fun storePhysiologicalMetricHeightFeet(heightfeet: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HEIGHT_FEET] = heightfeet
+        }
+    }
+
+    val getPhysiologicalMetricHeightInches: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HEIGHT_INCHES] ?: 0
+    }
+
+    suspend fun storePhysiologicalMetricHeightInches(heightinches: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HEIGHT_INCHES] = heightinches
+        }
+    }
+
+    val getPhysiologicalMetricWeight: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[WEIGHT] ?: 180
+    }
+
+    suspend fun storePhysiologicalMetricWeight(weight: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[WEIGHT] = weight
+        }
+    }
+
+    val getPhysiologicalMetricSex: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[SEX] ?: "N/A"
+    }
+
+    suspend fun storePhysiologicalMetricSex(sex: String) {
+        context.dataStore.edit { prefs ->
+            prefs[SEX] = sex
+        }
+    }
+
+    val getPhysiologicalMetricBloodType: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[BLOOD_TYPE] ?: "N/A"
+    }
+
+    suspend fun storePhysiologicalMetricBloodType(bloodtype: String) {
+        context.dataStore.edit { prefs ->
+            prefs[BLOOD_TYPE] = bloodtype
+        }
+    }
+
+    data class AllergyItem(val name: String)
+    val getPhysiologicalMetricAllergyList: Flow<List<AllergyItem>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[ALLERGIES_KEY]
+            if (jsonString.isNullOrEmpty()) {
+                listOf(AllergyItem(name="N/A"))
+            } else {
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<List<AllergyItem>>() {}
+                val type = typeToken.type
+                gson.fromJson<List<AllergyItem>>(jsonString, type)
+            }
+        }
+
+    suspend fun storePhysiologicalMetricAllergyList(newList: List<AllergyItem>) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(newList)
+            // Store in DataStore
+            preferences[ALLERGIES_KEY] = jsonString
+        }
+    }
+
+    val getPhysiologicalMetricUserType: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[USER_TYPE] ?: "N/A"
+    }
+
+    suspend fun storePhysiologicalMetricUserType(usertype: String) {
+        context.dataStore.edit { prefs ->
+            prefs[USER_TYPE] = usertype
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -670,5 +763,13 @@ class DataRepository(private val context: Context) {
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
+        private val AGE = intPreferencesKey("age")
+        private val HEIGHT_FEET = intPreferencesKey("height_feet")
+        private val HEIGHT_INCHES = intPreferencesKey("height_inches")
+        private val WEIGHT = intPreferencesKey("weight")
+        private val SEX = stringPreferencesKey("sex")
+        private val BLOOD_TYPE = stringPreferencesKey("blood_type")
+        private val ALLERGIES_KEY = stringPreferencesKey("allergies")
+        private val USER_TYPE = stringPreferencesKey("user_type")
     }
 }

@@ -270,6 +270,69 @@
     <string name="enable_physiological_alerts_description" translatable="false">Boolean that determines if physiological alerts will be enabled.</string>
     <string name="enable_physiological_alerts_default" translatable="false">false</string>
 
+    <string name="physiological_metrics_age_title" translatable="false">Physiological Metrics: Age</string>
+    <string name="physiological_metrics_age_description" translatable="false">Enter Age in Years</string>
+    <string name="physiological_metrics_age_default" translatable="false"></string>
+    <string name="physiological_metrics_height_feet_title" translatable="false">Physiological Metrics: Height(ft)</string>
+    <string name="physiological_metrics_height_feet_description" translatable="false">Enter Height(ft)</string>
+    <string name="physiological_metrics_height_feet_default" translatable="false"></string>
+    <string name="physiological_metrics_height_inches_title" translatable="false">Physiological Metrics: Height(inch)</string>
+    <string name="physiological_metrics_height_inches_description" translatable="false">Enter Height(inch)</string>
+    <string name="physiological_metrics_height_inches_default" translatable="false"></string>
+    <string name="physiological_metrics_weight_title" translatable="false">Physiological Metrics: Weight(lbs)</string>
+    <string name="physiological_metrics_weight_description" translatable="false">Enter Weight(lbs)</string>
+    <string name="physiological_metrics_weight_default" translatable="false"></string>
+    <string name="physiological_metrics_sex_title" translatable="false">Physiological Metrics: Sex</string>
+    <string name="physiological_metrics_sex_description" translatable="false">Enter Sex</string>
+    <string name="physiological_metrics_blood_type_title" translatable="false">Physiological Metrics: Blood Type</string>
+    <string name="physiological_metrics_blood_type_description" translatable="false">Enter Blood Type</string>
+    <string name="physiological_metrics_allergies_title" translatable="false">Physiological Metrics: Allergies</string>
+    <string name="physiological_metrics_allergies_description" translatable="false">Enter Allergies</string>
+
+    <!-- Sex entries -->
+    <string name="physiological_metrics_sex_default" translatable="false">N/A</string>
+    <string name="sex_entry_na" translatable="false">N/A</string>
+    <string name="sex_entry_male" translatable="false">Male</string>
+    <string name="sex_entry_female" translatable="false">Female</string>
+
+    <!-- Blood Type entries -->
+    <string name="physiological_metrics_blood_type_default" translatable="false">N/A</string>
+    <string name="blood_type_entry_na" translatable="false">N/A</string>
+    <string name="blood_type_entry_a_positive" translatable="false">A+</string>
+    <string name="blood_type_entry_a_negative" translatable="false">A-</string>
+    <string name="blood_type_entry_b_positive" translatable="false">B+</string>
+    <string name="blood_type_entry_b_negative" translatable="false">B-</string>
+    <string name="blood_type_entry_ab_positive" translatable="false">AB+</string>
+    <string name="blood_type_entry_ab_negative" translatable="false">AB-</string>
+    <string name="blood_type_entry_o_positive" translatable="false">O+</string>
+    <string name="blood_type_entry_o_negative" translatable="false">O-</string>
+
+    <!-- Allergy entries -->
+    <string name="physiological_metrics_allergies_default" translatable="false">N/A</string>
+    <string name="allergy_entry_na" translatable="false">N/A</string>
+    <string name="allergy_entry_antibiotics" translatable="false">Antibiotics</string>
+    <string name="allergy_entry_anti_inflammatory" translatable="false">Anti-Inflammatory (Ibuprofen)</string>
+    <string name="allergy_entry_aspirin" translatable="false">Aspirin</string>
+    <string name="allergy_entry_sulfa_drugs" translatable="false">Sulfa Drugs</string>
+    <string name="allergy_entry_insulin" translatable="false">Insulin</string>
+    <string name="allergy_entry_antiseizure" translatable="false">Antiseizure</string>
+    <string name="allergy_entry_muscle_relaxers" translatable="false">Muscle Relaxers</string>
+
+    <!-- User Type entries -->
+    <string name="physiological_metrics_user_type_default" translatable="false">N/A</string>
+    <string name="user_type_entry_na" translatable="false">N/A</string>
+    <string name="user_type_entry_coalition_military" translatable="false">Coalition Military</string>
+    <string name="user_type_entry_coalition_civilian" translatable="false">Coalition Civilian</string>
+    <string name="user_type_entry_nonCoalition_force" translatable="false">NonCoalition Force</string>
+    <string name="user_type_entry_nonCoalition_citizen" translatable="false">NonCoalition Citizen</string>
+    <string name="user_type_entry_opposing_force_detainee" translatable="false">Opposing Force Detainee</string>
+    <string name="user_type_entry_child" translatable="false">Child</string>
+
+    <!--  -->
+    <string name="physiological_metrics_user_type_title" translatable="false">Physiological Metrics: User Type</string>
+    <string name="physiological_metrics_user_type_description" translatable="false">Enter User Type</string>
+
+
     <string name="hr_high_alert_bpm_threshold_title" translatable="false">High Heartrate Alert BPM Threshold</string>
     <string name="hr_high_alert_bpm_threshold_description" translatable="false">Threshold in beats per minute beyond which high heartrate alert is sent if the heart rate says high for some number of seconds.</string>
     <string name="hr_high_alert_bpm_threshold_default" translatable="false">140</string>
@@ -332,4 +395,17 @@
     <string name="on_off">ON/OFF</string>
     <string name="sms_recipients">SMS Recipients</string>
     <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
+    <string name="physiological_settings">Physiological Settings</string>
+    <string name="physiological_monitoring">Physiological Monitoring</string>
+    <string name="chat">Chat</string>
+    <string name="physiological_alerts">Physiological Alerts</string>
+    <string name="physiological_user_metrics">Physiological User Metrics</string>
+    <string name="age">Age</string>
+    <string name="weight">Weight</string>
+    <string name="sex">Sex</string>
+    <string name="blood_type">Blood Type</string>
+    <string name="user_type">User Type</string>
+    <string name="height">Height</string>
+    <string name="allergies">Allergies</string>
+    <string name="value_exceeds_maximum_please_re_enter">Value exceeds maximum, please re-enter</string>
 </resources>

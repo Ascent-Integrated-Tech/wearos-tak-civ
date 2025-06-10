@@ -106,29 +106,10 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
@@ -177,6 +158,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
+import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
 import com.aitech.weartak_civ.Utils.secureRandom
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService
@@ -248,6 +230,31 @@ class MainActivity : ComponentActivity() {
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
 
+        var ageValue = 24
+        val ageState = MutableLiveData<Int>(24)
+        val ageSettingsState = MutableLiveData<Int>(24)
+        var heightFeetValue = 6
+        val heightFeetState = MutableLiveData<Int>(6)
+        val heightFeetSettingsState = MutableLiveData<Int>(6)
+        var heightInchesValue = 0
+        val heightInchesState = MutableLiveData<Int>(0)
+        val heightInchesSettingsState = MutableLiveData<Int>(0)
+        var weightValue = 180
+        val weightState = MutableLiveData<Int>(180)
+        val weightSettingsState = MutableLiveData<Int>(180)
+        var sexValue = "N/A"
+        val sexState = MutableLiveData<String>("N/A")
+        val sexSettingsState = MutableLiveData<String>("N/A")
+        var bloodTypeValue = "N/A"
+        val bloodTypeState = MutableLiveData<String>("N/A")
+        val bloodTypeSettingsState = MutableLiveData<String>("N/A")
+        var allergyList : List<DataRepository.AllergyItem> = listOf(DataRepository.AllergyItem(name="N/A"))
+        val allergyListState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
+        val allergyListSettingsState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
+        var userTypeValue = "N/A"
+        val userTypeState = MutableLiveData<String>("N/A")
+        val userTypeSettingsState = MutableLiveData<String>("N/A")
+
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
 
@@ -273,6 +280,8 @@ class MainActivity : ComponentActivity() {
         var smsNumbersListString : String = ""
         val smsNumbersListStringSettingsState = MutableLiveData<String>("")
         var enablePhysiologicalAlerts = false
+        var enablePhysiologicalAlertsLiveData = MutableLiveData<Boolean>(false)
+
         var hrHighAlertBpmThreshold : Int = 140
         var hrHighAlertNumSecsThreshold : Int = 30
 
@@ -977,6 +986,16 @@ class MainActivity : ComponentActivity() {
             dittoAppId = dataRepository.getDittoAppId.first()
             dittoAuthToken = dataRepository.getDittoAuthToken.first()
 
+            ageValue = dataRepository.getPhysiologicalMetricAge.first()
+            heightFeetValue = dataRepository.getPhysiologicalMetricHeightFeet.first()
+            heightInchesValue = dataRepository.getPhysiologicalMetricHeightInches.first()
+            weightValue = dataRepository.getPhysiologicalMetricWeight.first()
+            sexValue = dataRepository.getPhysiologicalMetricSex.first()
+            bloodTypeValue = dataRepository.getPhysiologicalMetricBloodType.first()
+            allergyList = dataRepository.getPhysiologicalMetricAllergyList.first()
+            userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
+
+
             Log.d(TAG, "============= Done Initializing Settings ===============")
         }
     }
@@ -1051,6 +1070,19 @@ class MainActivity : ComponentActivity() {
                     
                     """.trimIndent()
         }
+        Log.v(TAG, logOutput)
+
+        logOutput += """
+                    === === Physiological User Metrics === ===
+                    ${String.format("%-25s %-30s", "Age:", ageValue)}
+                    ${String.format("%-25s %-30s", "Height:", "$heightFeetValue ft $heightInchesValue inches")}
+                    ${String.format("%-25s %-30s", "Weight:", weightValue)}
+                    ${String.format("%-25s %-30s", "Sex:", sexValue)}
+                    ${String.format("%-25s %-30s", "BloodType:", bloodTypeValue)}
+                    ${String.format("%-25s %-30s", "Allergies:", allergyList)}
+                    ${String.format("%-25s %-30s", "UserType:", userTypeValue)}
+                    
+                    """.trimIndent()
         Log.v(TAG, logOutput)
     }
 
@@ -1227,7 +1259,24 @@ class MainActivity : ComponentActivity() {
         enableChatServiceLiveData.postValue(enableChatService)
         enableSmsForAlertsLiveData.postValue(enableSmsForAlerts)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+        enablePhysiologicalAlertsLiveData.postValue(enablePhysiologicalAlerts)
 
+        ageState.postValue(ageValue)
+        ageSettingsState.postValue(ageValue)
+        heightFeetState.postValue(heightFeetValue)
+        heightFeetSettingsState.postValue(heightFeetValue)
+        heightInchesState.postValue(heightInchesValue)
+        heightInchesSettingsState.postValue(heightInchesValue)
+        weightState.postValue(weightValue)
+        weightSettingsState.postValue(weightValue)
+        sexState.postValue(sexValue)
+        sexSettingsState.postValue(sexValue)
+        bloodTypeState.postValue(bloodTypeValue)
+        bloodTypeSettingsState.postValue(bloodTypeValue)
+        allergyListState.postValue(allergyList)
+        allergyListSettingsState.postValue(allergyList)
+        userTypeState.postValue(userTypeValue)
+        userTypeSettingsState.postValue(userTypeValue)
 
         requestCallsignComplicationUpdate(context)
         requestLocationComplicationUpdate(context)
@@ -1439,6 +1488,17 @@ class MainActivity : ComponentActivity() {
             .map { DataRepository.SmsNumber(it) } // Map each SSID to a WifiSsidItem
 
         val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
+
+        val physiologicalMetricsAgeServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_age", ageValue)
+        val physiologicalMetricsHeightFeetServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_feet", heightFeetValue)
+        val physiologicalMetricsHeightInchesServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_inches", heightInchesValue)
+        val physiologicalMetricsWeightServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_weight", weightValue)
+        val physiologicalMetricsSexServiceConfigUpdate = appRestrictions.getString("physiological_metrics_sex", sexValue)
+        val physiologicalMetricsBloodTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_blood_type", bloodTypeValue)
+        val physiologicalMetricsAllergiesServiceConfigUpdate = appRestrictions.getStringArray("physiological_metrics_allergies")
+        val physiologicalMetricsUserTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_user_type", userTypeValue)
+
+
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
@@ -1637,6 +1697,20 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
+            dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricHeightFeet(physiologicalMetricsHeightFeetServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricHeightInches(physiologicalMetricsHeightInchesServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricWeight(physiologicalMetricsWeightServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricSex(physiologicalMetricsSexServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricBloodType(physiologicalMetricsBloodTypeServiceConfigUpdate)
+            if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
+                dataRepository.storePhysiologicalMetricAllergyList(
+                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
+                        DataRepository.AllergyItem(name = str)
+                    } ?: listOf(DataRepository.AllergyItem("N/A")))
+            }
+            dataRepository.storePhysiologicalMetricUserType(physiologicalMetricsUserTypeServiceConfigUpdate)
+
             dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
             dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
 
@@ -1687,6 +1761,43 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
             }
+            if (ageValue != physiologicalMetricsAgeServiceConfigUpdate) {
+                Log.d(TAG, "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)")
+                ageValue = physiologicalMetricsAgeServiceConfigUpdate
+            }
+            if (heightFeetValue != physiologicalMetricsHeightFeetServiceConfigUpdate) {
+                Log.d(TAG, "Change detected heightFeetValue(prev=$heightFeetValue, curr=$physiologicalMetricsHeightFeetServiceConfigUpdate)")
+                heightFeetValue = physiologicalMetricsHeightFeetServiceConfigUpdate
+            }
+            if (heightInchesValue != physiologicalMetricsHeightInchesServiceConfigUpdate) {
+                Log.d(TAG, "Change detected heightInchesValue(prev=$heightInchesValue, curr=$physiologicalMetricsHeightInchesServiceConfigUpdate)")
+                heightInchesValue = physiologicalMetricsHeightInchesServiceConfigUpdate
+            }
+            if (weightValue != physiologicalMetricsWeightServiceConfigUpdate) {
+                Log.d(TAG, "Change detected weightValue(prev=$weightValue, curr=$physiologicalMetricsWeightServiceConfigUpdate)")
+                weightValue = physiologicalMetricsWeightServiceConfigUpdate
+            }
+            if (sexValue != physiologicalMetricsSexServiceConfigUpdate) {
+                Log.d(TAG, "Change detected sexValue(prev=$sexValue, curr=$physiologicalMetricsSexServiceConfigUpdate)")
+                sexValue = physiologicalMetricsSexServiceConfigUpdate
+            }
+            if (bloodTypeValue != physiologicalMetricsBloodTypeServiceConfigUpdate) {
+                Log.d(TAG, "Change detected bloodTypeValue(prev=$bloodTypeValue, curr=$physiologicalMetricsBloodTypeServiceConfigUpdate)")
+                bloodTypeValue = physiologicalMetricsBloodTypeServiceConfigUpdate
+            }
+            if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
+                val allergyListConfigUpdate = physiologicalMetricsAllergiesServiceConfigUpdate.map { str -> DataRepository.AllergyItem(name = str) } ?: listOf(DataRepository.AllergyItem("N/A"))
+                if (!listEqualsIgnoreOrder(allergyList, allergyListConfigUpdate)) {
+                    Log.d(TAG, "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)")
+                    allergyList = allergyListConfigUpdate
+                }
+
+            }
+            if (userTypeValue != physiologicalMetricsUserTypeServiceConfigUpdate) {
+                Log.d(TAG, "Change detected userTypeValue(prev=$userTypeValue, curr=$physiologicalMetricsUserTypeServiceConfigUpdate)")
+                userTypeValue = physiologicalMetricsUserTypeServiceConfigUpdate
+            }
+
             if ((hrHighAlertBpmThreshold != hrHighAlertBpmThresholdConfigUpdate) || (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdConfigUpdate)) {
                 Log.d(TAG, "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)")
                 hrHighAlertBpmThreshold = hrHighAlertBpmThresholdConfigUpdate
@@ -2236,17 +2347,6 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
     val maxChar = 10
     AssistChip(
         onClick = {
-            callsignSettingsState.postValue(callsign)
-            teamSettingsState.postValue(team)
-            roleSettingsState.postValue(role)
-            enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
-            enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
-            enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
-            enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
-            wifiSsidListState.postValue(wifiSsidList)
-            wifiSsidListSettingsState.postValue(wifiSsidList)
-            takServerListState.postValue(takServerList)
-            saveBattOnWifiStringState.postValue(saveBattOnWifiString)
             context.startActivity(Intent(context, SettingsActivity::class.java))
 //            navController.navigate("settings_screen")
                   },
