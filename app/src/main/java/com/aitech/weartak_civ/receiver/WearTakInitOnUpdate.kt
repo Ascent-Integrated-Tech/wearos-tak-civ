@@ -1,4 +1,4 @@
-package com.aitech.weartak_civ
+package com.aitech.weartak_civ.receiver
 
 import android.app.ActivityManager
 import android.content.BroadcastReceiver

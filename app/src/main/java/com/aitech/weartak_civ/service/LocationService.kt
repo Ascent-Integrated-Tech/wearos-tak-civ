@@ -10,10 +10,13 @@
 package com.aitech.weartak_civ.service
 
 import android.Manifest
+import android.app.AlarmManager
+import android.app.AlarmManager.AlarmClockInfo
 import android.app.Notification
 import android.app.Notification.PRIORITY_MAX
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -35,6 +38,8 @@ import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.receiver.AlarmReceiver
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -79,6 +84,7 @@ class LocationService : Service() {
         startForegroundService()
         //Initialize a new handler thread to start the location updates
         startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+        runTimerJob()
     }
 
     private fun startForegroundService() {
@@ -250,6 +256,34 @@ class LocationService : Service() {
         fusedLocationProviderClient = null
     }
 
+    private fun runTimerJob() {
+        object : Thread() {
+            override fun run() {
+                super.run()
+                Log.d(TAG, "runTimeJob called")
+                startGlobalTimer()
+            }
+        }.start()
+    }
+
+
+    fun startGlobalTimer() {
+        Log.d(TAG, "startGlobalTimer called")
+        val alarmIntent = Intent(mainActivity, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(mainActivity,
+            234324243,
+            alarmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
+
+        // 60 Seconds
+        val ac = AlarmClockInfo(System.currentTimeMillis() + 90000, pendingIntent)
+        alarmManager.setAlarmClock(ac, pendingIntent)
+
+        Log.d(TAG, "Current time in milliseconds: ${System.currentTimeMillis()}")
+    }
+
     companion object {
         private val TAG = "WearTAK-" + LocationService::class.java.simpleName
         private val LOCATION_SERVICE_NOTIFICATION_ID = 1234
@@ -262,5 +296,9 @@ class LocationService : Service() {
         //var locationUpdateIntervalSecs = 2
         //var locationUpdateFastestIntervalSecs = 1
         val isRunning : AtomicBoolean = AtomicBoolean(false)
+        private val LOCATION_SERVICE = LocationService()
+        public fun getInstance() : LocationService {
+            return LOCATION_SERVICE
+        }
     }
 }
