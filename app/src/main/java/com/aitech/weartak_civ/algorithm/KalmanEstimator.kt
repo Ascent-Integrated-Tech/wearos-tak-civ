@@ -61,4 +61,10 @@ class KalmanEstimator {
     fun getEstimatedPosition(): FloatArray = state.copyOfRange(0, 3)
     fun getEstimatedVelocity(): FloatArray = state.copyOfRange(3, 6)
     fun getState(): FloatArray = state.copyOf()
+
+    fun resetVelocity() {
+        state[3] = 0f  // vx
+        state[4] = 0f  // vy
+        state[5] = 0f  // vz
+    }
 }
