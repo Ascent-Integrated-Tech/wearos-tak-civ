@@ -27,6 +27,8 @@ import androidx.core.app.ActivityCompat
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.LocationService
 import android.location.LocationListener
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import java.text.SimpleDateFormat
 import java.util.Locale.getDefault
 
@@ -34,6 +36,7 @@ import java.util.Locale.getDefault
 class AlarmReceiver : BroadcastReceiver() {
     companion object {
         private val TAG = "WearTAK-AlarmReceiver"
+        private var prevLocationUpdateTime: Long = 0L
     }
 
     private val mLocationListener : LocationListener = MyLocationListener()
@@ -124,7 +127,11 @@ class AlarmReceiver : BroadcastReceiver() {
             val longitude: Double = location.longitude
 
             //addDataToDB(latitude.toString(), longitude.toString())
-            Log.d(TAG, "onLocationChanged: Lat: " + latitude + " Long: " + longitude)
+            val currTime = System.currentTimeMillis()
+            val logStr = "onLocationChanged (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+            prevLocationUpdateTime = currTime
+            Log.d(TAG, logStr)
+            writeToLogFileLocation(logFile, logStr)
         }
 
         fun addDataToDB(entryLatitude: String?, entryLongitude: String?) {

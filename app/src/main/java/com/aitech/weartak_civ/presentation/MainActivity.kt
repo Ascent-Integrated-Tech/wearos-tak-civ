@@ -198,6 +198,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
+import java.io.File
 
 
 class MainActivity : ComponentActivity() {
@@ -1135,8 +1136,8 @@ class MainActivity : ComponentActivity() {
         }
 
          */
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
+        val file: File? = null
+        logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
         networkManager = NetworkManager.getInstance()
         networkManager?.init()

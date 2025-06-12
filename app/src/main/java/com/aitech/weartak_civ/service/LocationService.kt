@@ -33,11 +33,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.receiver.AlarmReceiver
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -84,7 +86,7 @@ class LocationService : Service() {
         startForegroundService()
         //Initialize a new handler thread to start the location updates
         startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
-        runTimerJob()
+        //runTimerJob()
     }
 
     private fun startForegroundService() {
@@ -121,6 +123,7 @@ class LocationService : Service() {
     }
 
     private fun startLocationUpdates(priority: Int, interval: Long, fastestInterval: Long) {
+
         locationThread = HandlerThread("Location Thread")
         try {
             locationThread?.start()
@@ -134,11 +137,12 @@ class LocationService : Service() {
             Log.e(TAG, "Not able to Start the Location Update thread ", e)
         }
 
+
     }
 
     private fun createLocationRequest(priority: Int, interval: Long, fastestInterval: Long) {
         val locationRequest = LocationRequest.create()
-        locationRequest.interval = interval
+        locationRequest.interval = 90000L
         locationRequest.fastestInterval = fastestInterval
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
@@ -181,12 +185,17 @@ class LocationService : Service() {
     }
 
     private inner class MyLocationCallback : LocationCallback() {
+        var prevLocationUpdateTime : Long = 0L
+
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
-                //Log.d(TAG, "Received location update: $location")
-                //writeToLogFileLocation(logFile, "Received location update: $location")
+                val currTime = System.currentTimeMillis()
+                val logStr = "Received location update (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                prevLocationUpdateTime = currTime
                 EventBus.getDefault().post(LocationRcvd())
             }
         }
@@ -277,7 +286,6 @@ class LocationService : Service() {
         )
         val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
 
-        // 60 Seconds
         val ac = AlarmClockInfo(System.currentTimeMillis() + 90000, pendingIntent)
         alarmManager.setAlarmClock(ac, pendingIntent)
 
