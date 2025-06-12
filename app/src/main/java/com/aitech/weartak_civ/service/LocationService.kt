@@ -85,8 +85,8 @@ class LocationService : Service() {
         //Start Foreground Service
         startForegroundService()
         //Initialize a new handler thread to start the location updates
-        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
-        //runTimerJob()
+        //startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+        runTimerJob()
     }
 
     private fun startForegroundService() {
@@ -123,7 +123,7 @@ class LocationService : Service() {
     }
 
     private fun startLocationUpdates(priority: Int, interval: Long, fastestInterval: Long) {
-
+/*
         locationThread = HandlerThread("Location Thread")
         try {
             locationThread?.start()
@@ -136,7 +136,7 @@ class LocationService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Not able to Start the Location Update thread ", e)
         }
-
+*/
 
     }
 

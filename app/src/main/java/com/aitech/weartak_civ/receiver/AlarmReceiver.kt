@@ -28,7 +28,13 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.LocationService
 import android.location.LocationListener
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
+import com.aitech.weartak_civ.events.LocationRcvd
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
 import java.util.Locale.getDefault
 
@@ -126,12 +132,25 @@ class AlarmReceiver : BroadcastReceiver() {
             val latitude: Double = location.latitude
             val longitude: Double = location.longitude
 
+            /*
             //addDataToDB(latitude.toString(), longitude.toString())
             val currTime = System.currentTimeMillis()
             val logStr = "onLocationChanged (prev: ${(currTime-prevLocationUpdateTime)}): $location"
             prevLocationUpdateTime = currTime
             Log.d(TAG, logStr)
             writeToLogFileLocation(logFile, logStr)
+
+             */
+
+            CoroutineScope(Dispatchers.IO).launch {
+                val currTime = System.currentTimeMillis()
+                dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
+                val logStr = "onLocationChanged (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                prevLocationUpdateTime = currTime
+                EventBus.getDefault().post(LocationRcvd())
+            }
         }
 
         fun addDataToDB(entryLatitude: String?, entryLongitude: String?) {
