@@ -198,6 +198,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
+import com.aitech.weartak_civ.service.PhysioMonitoringService
+import com.aitech.weartak_civ.service.ServicesManager
+import com.aitech.weartak_civ.service.SkinTempService
 
 
 class MainActivity : ComponentActivity() {
@@ -217,7 +220,9 @@ class MainActivity : ComponentActivity() {
         var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
         var enableBiometricsServiceLiveData = MutableLiveData<Boolean>(false)
-        var biometricServiceRunning : Boolean = false
+        var enableSkinTempService: Boolean = true
+        var enableSkinTempServiceLiveData = MutableLiveData<Boolean>(false)
+        var PhysioMonitoringServiceRunning : Boolean = false
         var enableDittoService : Boolean = false
         var dittoServiceRunning : Boolean = false
         var enableChatService : Boolean =  false
@@ -313,19 +318,19 @@ class MainActivity : ComponentActivity() {
             return mainActivity
         }
 
-        fun startStopBiometricService() {
+        fun startStopPhysioMonitoringService() {
             if (isLicenseValid()) {
                 if (enableBiometricsService) {
-                    startBiometricService()
+                    startPhysioMonitoringService()
                 } else {
-                    if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                    if (PhysioMonitoringService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, PhysioMonitoringService::class.java))
                 }
             } else {
-                if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                if (PhysioMonitoringService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, PhysioMonitoringService::class.java))
             }
         }
 
-        fun startBiometricService() {
+        fun startPhysioMonitoringService() {
             if (enableBiometricsService) {
                 if ((ActivityCompat.checkSelfPermission(
                         mainActivity.applicationContext,
@@ -336,9 +341,9 @@ class MainActivity : ComponentActivity() {
                         Manifest.permission.BODY_SENSORS_BACKGROUND
                     ) != PackageManager.PERMISSION_GRANTED)
                 ) {
-                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking HeartRateService")
+                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking PhysioMonitoringService")
                 } else {
-                    if (!HeartrateService.isRunning.get()) {
+                    if (!PhysioMonitoringService.isRunning.get()) {
                         Log.d(TAG, "Starting HeartRateService")
                         mainActivity.startService(
                             Intent(
@@ -351,9 +356,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }  else {
-                Log.d(TAG, "BiometricServices are disabled. Not starting HeartRateService")
+                Log.d(TAG, "PhysioMonitoringServices are disabled. Not starting HeartRateService")
             }
         }
+
         private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
 
         fun startStopTAKConnectService() {
@@ -608,10 +614,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }  else {
-                Log.d(TAG, "BiometricServices are disabled. Not starting OffBodyDetectService")
+                Log.d(TAG, "PhysioMonitoringServices are disabled. Not starting OffBodyDetectService")
             }
         }
 
+        fun startServicesManager() {
+            Log.i(TAG, "Starting Services Manager")
+            mainActivity.startService(Intent(mainActivity, ServicesManager::class.java))
+        }
+
+        fun stopServicesManager() {
+            Log.i(TAG, "Stopping services manager")
+        }
 
         fun startStopServicesLicense(context: Context) {
             if (isLicenseValid()) {
@@ -619,9 +633,9 @@ class MainActivity : ComponentActivity() {
                         ===   Application Services Info   ===
                         =====================================
                         """.trimIndent())
+                startServicesManager()
                 startTAKConnectService()
                 startOffBodyDetectService()
-                startBiometricService()
                 startBatteryService()
                 startMovementDetectionService()
                 startLocationService()
@@ -755,7 +769,7 @@ class MainActivity : ComponentActivity() {
 //
 //        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED) {
 //            if (isLicenseValid()) {
-//                Log.d(TAG, "Refreshing BiometricService...")
+//                Log.d(TAG, "Refreshing PhysioMonitoringService...")
 //                startBiometericService()
 //            }
 //        }
@@ -808,7 +822,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         Log.d(TAG, "MainActivity onResume called")
 
-        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startBiometricService() }, 1500L)
+        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startPhysioMonitoringService() }, 1500L)
     }
 
     override fun onDestroy() {
@@ -1416,6 +1430,7 @@ class MainActivity : ComponentActivity() {
 
         val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
         val enableBiometricsServiceConfigUpdate = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
+        val enableSkinTempConfigUpdate = appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
 
@@ -1626,6 +1641,7 @@ class MainActivity : ComponentActivity() {
             }
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
+            dataRepository.storeEnableSkinTempService(enableSkinTempConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
@@ -1651,7 +1667,7 @@ class MainActivity : ComponentActivity() {
             if (enableBiometricsServiceConfigUpdate != enableBiometricsService) {
                 enableBiometricsService = enableBiometricsServiceConfigUpdate
                 Log.d(TAG, "enableBiometricsService=$enableBiometricsService")
-                if (!calledOnCreate) startStopBiometricService()
+                if (!calledOnCreate) startStopPhysioMonitoringService()
             }
             if (enableDittoServiceConfigUpdate != enableDittoService) {
                 enableDittoService = enableDittoServiceConfigUpdate

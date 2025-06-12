@@ -28,11 +28,25 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.shareIn
+import org.greenrobot.eventbus.EventBus
+import javax.inject.Inject
+import javax.inject.Singleton
+import com.aitech.weartak_civ.R.string
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 
-class DataRepository(private val context: Context) {
+@Singleton
+class DataRepository @Inject constructor(
+    @ApplicationContext private val context: Context) {
     private val TAG = "WearTAK-" + DataRepository::class.java.simpleName
 
     val passiveDataEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -54,6 +68,13 @@ class DataRepository(private val context: Context) {
 //            prefs[LATEST_HEART_RATE] = heartRate
 //        }
 //    }
+
+    private val _latestSkinTemp = MutableStateFlow<Int?>(null)
+    val latestSkinTemp: StateFlow<Int?> = _latestSkinTemp
+
+    suspend fun storeLatestSkinTemp(skinTemp: Int) {
+        _latestSkinTemp.emit(skinTemp)
+    }
 
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
@@ -159,9 +180,101 @@ class DataRepository(private val context: Context) {
         prefs[LICENSE] ?: "License"
     }
 
+
+    suspend fun storeEnableHeartRate(enableHeartRate: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_HEART_RATE] = enableHeartRate
+        }
+    }
+
+    val isHeartRateEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_HEART_RATE] ?: true
+    }
+
     suspend fun storeLicense(license: String) {
         context.dataStore.edit { prefs ->
             prefs[LICENSE] = license
+        }
+    }
+
+    // 3) Whitelist of valid license keys
+    private val validKeys = setOf(
+        "AscentFreeLicense",
+        "1F9A-3F43-E661",
+        "AE62-FFED-98A6",
+        "2A2C-3788-CC46",
+        "A2AB-4954-5277",
+        "4BB4-1949-287B",
+        "732A-CB7D-329C",
+        "2374-6A83-B49E",
+        "ADEB-4AE5-8F8C",
+        "BCB8-5D53-5381"
+    )
+
+
+    /* | ------- Emitters for Enabling/Disabling Features in WearTAK ------- |
+     *      replay = 1 --> hot "sticky" start. collectors started
+     *      after a state change will get actual current state without
+     *
+     *      isLicenseValid will kill ~most~ services, whatever features we
+     *      will charge $$$ for, still TBD.
+     */
+
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default) // unified scope for sharing flows with backend + ui
+
+    val isLicenseValid: SharedFlow<Boolean> = getLicense
+        .map { key -> validKeys.contains(key) }
+        .distinctUntilChanged()
+        .shareIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            replay =1
+        )
+
+    val enableServicesManager: SharedFlow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[ENABLE_SERVICES_MANAGER] ?: true }
+        .distinctUntilChanged()
+        .shareIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            replay = 1
+        )
+
+    val enablePhysioServices: SharedFlow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[ENABLE_PHYSIO_SERVICES] ?: true }
+        .distinctUntilChanged()
+        .shareIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            replay = 1
+        )
+
+    val enableHeartRateService: SharedFlow<Boolean> = isHeartRateEnabled
+        .distinctUntilChanged()
+        .shareIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            replay = 1
+        )
+
+    val enableSkinTempService: SharedFlow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[ENABLE_SKIN_TEMP_SERVICE] ?: true }
+        .distinctUntilChanged()
+        .shareIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            replay = 1
+        )
+
+    // getter tool for other functions, may be unnecessary with the "actual" emitter
+    val getEnableSkinTempService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SKIN_TEMP_SERVICE] ?: true
+    }
+
+    // allows settings & remote managed configs handler to alter the state of services
+    suspend fun storeEnableSkinTempService(enableSkinTempService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_SKIN_TEMP_SERVICE] = enableSkinTempService
         }
     }
 
@@ -378,6 +491,7 @@ class DataRepository(private val context: Context) {
 //    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
 //    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
 //    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+
     var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
 
     private val _chatRoomsFlow = MutableStateFlow<List<Utils.ChatRoom>>(emptyList())
@@ -417,7 +531,6 @@ class DataRepository(private val context: Context) {
      */
     suspend fun getUnreadMsgsCount(): Int =
         ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
-
 
     data class TakServerItem(
         var isEnabled: Boolean,
@@ -648,10 +761,14 @@ class DataRepository(private val context: Context) {
         private val ROLE = stringPreferencesKey("role")
         private val ROLES_LIST = stringPreferencesKey("roles_list")
         private val LICENSE = stringPreferencesKey("license")
+        private val ENABLE_HEART_RATE = booleanPreferencesKey("enable_heart_rate")
         private val DITTO_APP_ID = stringPreferencesKey("ditto_app_id")
         private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")
+        private val ENABLE_SERVICES_MANAGER = booleanPreferencesKey("enable_services_manager")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
+        private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
+        private val ENABLE_PHYSIO_SERVICES = booleanPreferencesKey("enable_physio_services")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

@@ -59,6 +59,7 @@ class ChatService : Service() {
         fun markRoomReadStatic(id: String) { _instance?.markRoomRead(id) }
     }
 
+
     override fun onCreate() {
         super.onCreate()
         _instance = this
@@ -66,7 +67,6 @@ class ChatService : Service() {
         EventBus.getDefault().register(this)
         dataRepository = MainActivity.dataRepository
     }
-
     override fun onDestroy() {
         _instance = null
         super.onDestroy()

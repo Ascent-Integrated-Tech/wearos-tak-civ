@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    id 'kotlin-kapt'
+    id 'dagger.hilt.android.plugin'
     //id 'com.android.application'
     //id 'org.jetbrains.kotlin.android'
 }
@@ -8,6 +10,7 @@ plugins {
 android {
     namespace 'com.aitech.weartak_civ'
     compileSdk 35
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
 
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
@@ -97,6 +100,9 @@ dependencies {
         implementation 'com.google.code.gson:gson:2.10.1'
         // or whichever version you prefer
     }
+
+    implementation libs.hilt.android
+    kapt libs.hilt.android.compiler
     implementation "live.ditto:ditto:4.10.2"
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)

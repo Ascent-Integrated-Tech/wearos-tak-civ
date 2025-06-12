@@ -18,17 +18,18 @@ package com.aitech.weartak_civ
 
 import android.app.Application
 import android.util.Log
+import dagger.hilt.android.HiltAndroidApp
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
 import live.ditto.android.DefaultAndroidDittoDependencies
 
+@HiltAndroidApp
 class WearTakApplication : Application() {
 
     companion object {
         val TAG = "WearTAK-Applicaton"
     }
-
 
     override fun onCreate() {
         super.onCreate()

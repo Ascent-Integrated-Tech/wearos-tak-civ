@@ -68,6 +68,13 @@
         android:defaultValue="@string/biometric_service_enabled_default" />
 
     <restriction
+        android:key="skin_temp_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/skin_temp_service_title"
+        android:description="@string/skin_temp_service_description"
+        android:defaultValue="@string/skin_temp_service_enabled_default" />
+
+    <restriction
         android:key="ditto_service_enabled"
         android:restrictionType="bool"
         android:title="@string/ditto_service_title"
