@@ -28,6 +28,7 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -58,6 +59,9 @@ class DataRepository(private val context: Context) {
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
+    private val _latestSkinTemp = MutableStateFlow<Float?>(null)
+    val latestSkinTemp: StateFlow<Float?> = _latestSkinTemp
+
     private val _latestLocation = MutableStateFlow<Location?>(null)
     val latestLocation: StateFlow<Location?> = _latestLocation
 
@@ -82,6 +86,10 @@ class DataRepository(private val context: Context) {
     // Functions to update the data
     suspend fun storeLatestHeartRate(heartRate: Int) {
         _latestHeartRate.emit(heartRate)
+    }
+
+    suspend fun storeLatestSkinTemp(skinTemp: Float) {
+        _latestSkinTemp.emit(skinTemp)
     }
 
     suspend fun storeLatestLocation(location: Location) {
@@ -209,6 +217,16 @@ class DataRepository(private val context: Context) {
         prefs[ENABLE_BIOMETRICS_SERVICE] ?: true
     }
 
+    val getEnableSkinTempService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SKIN_TEMP_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableSkinTempService(enableSkinTempService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_SKIN_TEMP_SERVICE] = enableSkinTempService
+        }
+    }
+
     suspend fun storeEnableBiometricsService(enableBiometricsService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_BIOMETRICS_SERVICE] = enableBiometricsService
@@ -234,6 +252,11 @@ class DataRepository(private val context: Context) {
             prefs[ENABLE_CHAT_SERVICE] = enableChatService
         }
     }
+
+    val reportingUpdateIntervalSecs: Flow<Int> =
+        context.dataStore.data
+            .map { it[REPORTING_UPDATE_INTERVAL] ?: 60 }  // default 60 s
+            .distinctUntilChanged()
 
     val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[REPORTING_UPDATE_INTERVAL] ?: 10
@@ -745,6 +768,7 @@ class DataRepository(private val context: Context) {
         private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
+        private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

@@ -177,7 +177,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
-
+import com.aitech.weartak_civ.service.SkinTempService
+import com.samsung.android.service.health.tracking.HealthTrackingService
 
 class MainActivity : ComponentActivity() {
 
@@ -195,6 +196,7 @@ class MainActivity : ComponentActivity() {
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
+        var enableSkinTempService: Boolean = true
         var enableBiometricsServiceLiveData = MutableLiveData<Boolean>(false)
         var biometricServiceRunning : Boolean = false
         var enableDittoService : Boolean = false
@@ -292,6 +294,8 @@ class MainActivity : ComponentActivity() {
         var versionNumber : String = ""
         var logFile: java.io.File? = null
 
+        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
+
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
                 enableWifiOpt && enableAllWifiOpt -> ALL_WIFI_NETWORKS  // "All"
@@ -326,10 +330,61 @@ class MainActivity : ComponentActivity() {
             return mainActivity
         }
 
-        fun startStopBiometricService() {
+        fun startStopEnableSkinTempService() {
+            if (isLicenseValid()) {
+                if (enableSkinTempService) {
+                    startSkinTempService()
+                } else {
+                    if (SkinTempService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
+                }
+            } else {
+                if (SkinTempService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
+            }
+        }
+
+        fun startSkinTempService() {
+            if (!enableBiometricsService) {
+                Log.i(TAG, "Biometric service is disabled, not invoking skin temp service")
+                if (SkinTempService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
+                return
+            }
+            if (enableSkinTempService) {
+                if ((ActivityCompat.checkSelfPermission(
+                        mainActivity.applicationContext,
+                        Manifest.permission.BODY_SENSORS
+                    ) != PackageManager.PERMISSION_GRANTED) &&
+                    (ActivityCompat.checkSelfPermission(
+                        mainActivity.applicationContext,
+                        Manifest.permission.BODY_SENSORS_BACKGROUND
+                    ) != PackageManager.PERMISSION_GRANTED) &&
+                    (ActivityCompat.checkSelfPermission(
+                        mainActivity.applicationContext,
+                        Manifest.permission.ACTIVITY_RECOGNITION
+                    ) != PackageManager.PERMISSION_GRANTED)
+                ) {
+                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking SkinTempService")
+                } else {
+                    if (!SkinTempService.isRunning.get()) {
+                        Log.d(TAG, "Starting SkinTempService")
+                        mainActivity.startService(
+                            Intent(
+                                mainActivity,
+                                SkinTempService::class.java
+                            )
+                        )
+                    } else {
+                        Log.d(TAG, "SkinTempService is already running." )
+                    }
+                }
+            }  else {
+                Log.d(TAG, "BiometricServices are disabled. Not starting HeartRateService")
+            }
+        }
+
+        fun startStopHeartrateService() {
             if (isLicenseValid()) {
                 if (enableBiometricsService) {
-                    startBiometricService()
+                    startHeartrateService()
                 } else {
                     if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
                 }
@@ -338,7 +393,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        fun startBiometricService() {
+        fun startHeartrateService() {
             if (enableBiometricsService) {
                 if ((ActivityCompat.checkSelfPermission(
                         mainActivity.applicationContext,
@@ -634,7 +689,8 @@ class MainActivity : ComponentActivity() {
                         """.trimIndent())
                 startTAKConnectService()
                 startOffBodyDetectService()
-                startBiometricService()
+                startHeartrateService()
+                startSkinTempService()
                 startBatteryService()
                 startMovementDetectionService()
                 startLocationService()
@@ -821,7 +877,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         Log.d(TAG, "MainActivity onResume called")
 
-        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startBiometricService() }, 1500L)
+        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startHeartrateService();startSkinTempService() }, 1500L)
     }
 
     override fun onDestroy() {
@@ -839,6 +895,7 @@ class MainActivity : ComponentActivity() {
         mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
         if (enableBiometricsService) {
             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+            mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
         }
         mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
         if (enableLocationService) {
@@ -955,6 +1012,7 @@ class MainActivity : ComponentActivity() {
 
             enableLocationService = dataRepository.getEnableLocationService.first()
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
+            enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             enableChatService = dataRepository.getEnableChatService.first()
 
@@ -1048,6 +1106,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable Dynamic Reporting:", enableDynamicReportingStrategy.toString())}
                     ${String.format("%-25s %-30s", "Enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "Enable Bio:", enableBiometricsService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Skin Temp:", enableSkinTempService.toString())}
                     ${String.format("%-25s %-30s", "Enable Ditto:", enableDittoService.toString())}
                     ${String.format("%-25s %-30s", "Enable wifi opt:", enableWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Enable all wifi:", enableAllWifiBatteryOptimization.toString())}
@@ -1100,6 +1159,7 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.BLUETOOTH_ADVERTISE,
             Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            Manifest.permission.ACTIVITY_RECOGNITION,
             Manifest.permission.SEND_SMS)
 
         val missingPermissions = requiredPermissions.filter {
@@ -1477,6 +1537,7 @@ class MainActivity : ComponentActivity() {
 
         val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
         val enableBiometricsServiceConfigUpdate = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
+        val enableSkinTempServiceConfigUpdate = appRestrictions.getBoolean("skin_temp_service_enabled", true)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
 
@@ -1697,6 +1758,7 @@ class MainActivity : ComponentActivity() {
             }
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnableBiometricsService(enableBiometricsServiceConfigUpdate)
+            dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
@@ -1736,7 +1798,17 @@ class MainActivity : ComponentActivity() {
             if (enableBiometricsServiceConfigUpdate != enableBiometricsService) {
                 enableBiometricsService = enableBiometricsServiceConfigUpdate
                 Log.d(TAG, "enableBiometricsService=$enableBiometricsService")
-                if (!calledOnCreate) startStopBiometricService()
+                if (!calledOnCreate) {
+                    startStopHeartrateService()
+                    if (enableSkinTempServiceConfigUpdate == enableSkinTempService) {
+                        startStopEnableSkinTempService()
+                    }
+                }
+            }
+            if (enableSkinTempServiceConfigUpdate != enableSkinTempService) {
+                enableSkinTempService = enableSkinTempServiceConfigUpdate
+                Log.d(TAG, "enableSkinTempService=$enableSkinTempService")
+                if (!calledOnCreate) startStopEnableSkinTempService()
             }
             if (enableDittoServiceConfigUpdate != enableDittoService) {
                 enableDittoService = enableDittoServiceConfigUpdate
