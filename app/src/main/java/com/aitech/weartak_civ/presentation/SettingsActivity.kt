@@ -203,10 +203,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startBiometricService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startHeartrateService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startSkinTempService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
@@ -239,6 +240,7 @@ import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
+import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
@@ -3343,11 +3345,13 @@ fun SettingsScreen(
                         settingsChanged = true; biometricsCheckedChanged = true
                         enableBiometricsService = biometricsChecked
                         if (enableBiometricsService) {
-                            Log.d(TAG, "Trying to start biometric service")
-                            startBiometricService()
+                            Log.d(TAG, "Trying to start biometric services")
+                            startHeartrateService()
+                            startSkinTempService()
                         } else {
-                            Log.d(TAG, "Trying to stop biometric service")
+                            Log.d(TAG, "Trying to stop biometric services")
                             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                            mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
                         }
                         enableBiometricsServiceLiveData.postValue(enableBiometricsService)
                         requestHeartRateComplicationUpdate(context)

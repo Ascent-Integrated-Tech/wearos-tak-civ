@@ -25,6 +25,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
     <!--
 <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
@@ -79,6 +81,10 @@
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
+
+    <queries>
+        <package android:name="com.samsung.android.service.health" />
+    </queries>
 
     <application
         android:name=".WearTakApplication"
@@ -288,6 +294,12 @@
             android:foregroundServiceType="specialUse" />
         <service
             android:name=".service.HeartrateService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
+        <service
+            android:name=".service.SkinTempService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="health"
