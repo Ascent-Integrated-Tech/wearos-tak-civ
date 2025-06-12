@@ -1,7 +1,16 @@
 package com.aitech.weartak_civ
 
+import android.annotation.SuppressLint
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.graphics.Color
 import android.os.Build
 import android.util.Log
+import androidx.annotation.DrawableRes
+import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -29,6 +38,55 @@ object Utils {
     private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
     const val EARTH_RADIUS = 6378137.0  // in meters
     val secureRandom: SecureRandom = SecureRandom()
+
+    /**
+     * Starts this Service in the foreground, creating a notification channel
+     * named after the service class. Defaults can be overridden.
+     *
+     * @param notificationId  the ID for startForeground(...)
+     * @param iconRes         small icon resource (default = R.drawable.splash_icon)
+     * @param contentText     text shown under the icon (default = "<ServiceName> running")
+     * @param channelId       ID for the channel (default = "<ServiceName>_channel")
+     * @param channelName     human-readable channel name (default = "<ServiceName> Background Channel")
+     * @param importance      channel importance (default = IMPORTANCE_LOW)
+     */
+    @SuppressLint("ObsoleteSdkInt", "ServiceCast")
+    fun Service.startForegroundServiceCompat(
+        notificationId: Int,
+        @DrawableRes iconRes: Int = R.drawable.splash_icon,
+        contentText: String = "${this.javaClass.simpleName} running",
+        channelId: String = "${this.javaClass.simpleName}_channel",
+        channelName: String = "${this.javaClass.simpleName} Background Channel",
+        importance: Int
+    ) {
+        val tag = this.javaClass.simpleName
+        Log.d(tag, "Starting $tag as ForegroundService")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val chan = NotificationChannel(channelId, channelName, importance).apply {
+                lightColor = Color.GRAY
+                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+            }
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(chan)
+        }
+
+        // Build the notification
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setOngoing(true)
+            .setSmallIcon(iconRes)
+            .setContentText(contentText)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .build()
+
+        // Finally, start as foreground
+        try {
+            startForeground(notificationId, notification)
+        } catch (e: NullPointerException) {
+            Log.e(tag, "Failed to set $tag as ForegroundService", e)
+        }
+    }
 
     fun isValidJson(jsonString: String) : Boolean {
         if (jsonString.isNullOrEmpty()) return false
