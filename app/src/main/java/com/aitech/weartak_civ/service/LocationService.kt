@@ -142,7 +142,7 @@ class LocationService : Service() {
 
     private fun createLocationRequest(priority: Int, interval: Long, fastestInterval: Long) {
         val locationRequest = LocationRequest.create()
-        locationRequest.interval = 90000L
+        locationRequest.interval = 10000L
         locationRequest.fastestInterval = fastestInterval
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
@@ -286,7 +286,7 @@ class LocationService : Service() {
         )
         val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
 
-        val ac = AlarmClockInfo(System.currentTimeMillis() + 90000, pendingIntent)
+        val ac = AlarmClockInfo(System.currentTimeMillis() + 10000, pendingIntent)
         alarmManager.setAlarmClock(ac, pendingIntent)
 
         Log.d(TAG, "Current time in milliseconds: ${System.currentTimeMillis()}")

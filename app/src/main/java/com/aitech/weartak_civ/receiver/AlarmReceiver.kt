@@ -27,10 +27,18 @@ import androidx.core.app.ActivityCompat
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.LocationService
 import android.location.LocationListener
+import android.os.Looper
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,6 +57,7 @@ class AlarmReceiver : BroadcastReceiver() {
     private var mPowerManager: PowerManager? = null
     private var mWakeLock: PowerManager.WakeLock? = null
     private var mContext: Context? = null
+    private lateinit var fusedLocationClient : FusedLocationProviderClient
 
     public override fun onReceive(context: Context, intent: Intent?) {
         if (null == mContext) {
@@ -75,6 +84,7 @@ class AlarmReceiver : BroadcastReceiver() {
         Log.d(TAG, "Acquired wakelock")
 
 
+        /*
         // START GPS Code
         val criteria: Criteria = Criteria()
         criteria.setAccuracy(Criteria.ACCURACY_FINE)
@@ -86,6 +96,15 @@ class AlarmReceiver : BroadcastReceiver() {
             .getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         val provider: String = locationManager.getBestProvider(criteria, true) ?: FUSED_PROVIDER
+
+         */
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(mainActivity)
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 0).apply {
+            setMaxUpdates(1)
+            setMinUpdateIntervalMillis(0)
+            setWaitForAccurateLocation(true)
+        }.build()
 
         if (ActivityCompat.checkSelfPermission(
                 MainActivity.mainActivity,
@@ -104,6 +123,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // for ActivityCompat#requestPermissions for more details.
             return
         }
+        /*
         Log.d(TAG, "Going to request location updates with provider=$provider")
         locationManager.requestLocationUpdates(provider, 0L, 0f, mLocationListener)
 
@@ -120,10 +140,30 @@ class AlarmReceiver : BroadcastReceiver() {
                 mWakeLock = null
             }
         }, 6000)
+         */
 
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
         // RESTART THE TIMER (ALARM)
         Log.d(TAG, "Going to call startGlobalTimer")
         LocationService.getInstance().startGlobalTimer()
+    }
+
+    val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            val location = result.lastLocation ?: return
+
+            CoroutineScope(Dispatchers.IO).launch {
+                val currTime = System.currentTimeMillis()
+                dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
+                val logStr = "onLocationChanged (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                prevLocationUpdateTime = currTime
+                EventBus.getDefault().post(LocationRcvd())
+            }
+
+            fusedLocationClient.removeLocationUpdates(this)
+        }
     }
 
     // GPS Location listener
