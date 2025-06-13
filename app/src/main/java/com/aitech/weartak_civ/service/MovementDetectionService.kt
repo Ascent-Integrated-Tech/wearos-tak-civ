@@ -13,6 +13,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.algorithm.KalmanEstimator
 import com.google.android.gms.location.*
+import java.io.File
+import java.io.FileWriter
+import java.io.PrintWriter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.*
 
@@ -81,12 +87,27 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val speedWindow = ArrayDeque<Float>()
     private val SPEED_WINDOW_SIZE = 5
 
+    // 🧾 File logging utilities
+    private lateinit var logFile: File
+    private lateinit var logWriter: PrintWriter
+    private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+
+    private fun logToFile(message: String) {
+        val timestamp = timeFormat.format(Date())
+        logWriter.println("[$timestamp] $message")
+        logWriter.flush()
+    }
+
     private val TAG = "MovementDetectionService"
 
     override fun onCreate() {
         super.onCreate()
         isRunning.set(true)
         startForeground(1, createNotification())
+
+        logFile = File(getExternalFilesDir(null), "movement_log.txt")
+        logWriter = PrintWriter(FileWriter(logFile, true))
+        logToFile("🟢 MovementDetectionService started")
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -109,6 +130,8 @@ class MovementDetectionService : Service(), SensorEventListener {
             predictedLat = lastPredictedLat!!
             predictedLon = lastPredictedLon!!
 
+            logToFile("🧮 Estimated GPS: lat=$estLat, lon=$estLon, alt=$estAlt")
+
             if (lastUpdateTimeMs == 0L) {
                 lastUpdateTimeMs = System.currentTimeMillis()
                 lastUpdateLat = lastCorrectedLat ?: 0f
@@ -123,6 +146,7 @@ class MovementDetectionService : Service(), SensorEventListener {
             if (driftExceeded && (now - lastGpsRequestTime > GPS_REQUEST_COOLDOWN_MS)) {
                 lastGpsRequestTime = now
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    logToFile("📡 Requesting new GPS fix due to drift")
                     requestInitialGpsFix()
                     lastUpdateTimeMs = System.currentTimeMillis()
                     lastUpdateLat = lastCorrectedLat ?: 0f
@@ -209,6 +233,9 @@ class MovementDetectionService : Service(), SensorEventListener {
 
                 Log.d(TAG, "🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predictedAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
                 Log.d(TAG, "🚶 Avg Speed: %.2f m/s, Step Rate: %.2f Hz, Activity: %s".format(avgSpeed, stepRateHz, activity))
+
+                logToFile("🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predictedAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
+                logToFile("🚶 Avg Speed: %.2f m/s, Step Rate: %.2f Hz, Activity: %s".format(avgSpeed, stepRateHz, activity))
             }
         }
     }
@@ -248,6 +275,8 @@ class MovementDetectionService : Service(), SensorEventListener {
                 lastCorrectedLat = referenceLat!!.toFloat()
                 lastCorrectedLon = referenceLon!!.toFloat()
                 lastCorrectedAlt = referenceAlt!!.toFloat()
+
+                logToFile("📍 Initial GPS Fix: lat=${referenceLat}, lon=${referenceLon}, alt=${referenceAlt}")
 
                 kalmanEstimator.reset(
                     floatArrayOf(0f, 0f, 0f),
