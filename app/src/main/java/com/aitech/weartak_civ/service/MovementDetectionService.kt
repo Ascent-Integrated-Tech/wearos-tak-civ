@@ -26,8 +26,10 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
+    private var gyroscope: Sensor? = null
     private var gravity = FloatArray(3)
     private var smoothedAccel = FloatArray(3) { 0f }
+    private var gyro = FloatArray(3) { 0f }
     private val smoothingAlpha = 0.1f
     private var lastKalmanPredictionTime = 0L
     private val MIN_KALMAN_INTERVAL_MS = 1000L
@@ -92,6 +94,8 @@ class MovementDetectionService : Service(), SensorEventListener {
     private lateinit var logWriter: PrintWriter
     private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
+    private var filterType = 1
+
     private fun logToFile(message: String) {
         val timestamp = timeFormat.format(Date())
         logWriter.println("[$timestamp] $message")
@@ -113,6 +117,9 @@ class MovementDetectionService : Service(), SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
 
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        gyroscope?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+
         isUserMoving = false
         updateCotInterval(INTERVAL_STILL)
 
@@ -122,9 +129,19 @@ class MovementDetectionService : Service(), SensorEventListener {
             val (estLat, estLon) = metersToLatLon(pos[0], pos[1])
             val estAlt = (referenceAlt?.toFloat() ?: 0f) + pos[2]
 
+            val estLocation = Location("kalman_prediction").apply {
+                latitude = estLat.toDouble()
+                longitude = estLon.toDouble()
+                altitude = estAlt.toDouble()
+                time = System.currentTimeMillis()
+            }
+
+
             lastPredictedLat = estLat
             lastPredictedLon = estLon
             lastPredictedAlt = estAlt
+
+            lastPredictedLocation = estLocation
 
             predictedAlt = lastPredictedAlt
             predictedLat = lastPredictedLat!!
@@ -189,11 +206,19 @@ class MovementDetectionService : Service(), SensorEventListener {
                 stepTimestamps.removeFirst()
             }
 
-            val accelMag = linearAccelMag
+            //val accelMag = linearAccelMag
 
-            smoothedAccel[0] = smoothingAlpha * linearAccel[0] + (1 - smoothingAlpha) * smoothedAccel[0]
+            /*smoothedAccel[0] = smoothingAlpha * linearAccel[0] + (1 - smoothingAlpha) * smoothedAccel[0]
             smoothedAccel[1] = smoothingAlpha * linearAccel[1] + (1 - smoothingAlpha) * smoothedAccel[1]
-            smoothedAccel[2] = smoothingAlpha * linearAccel[2] + (1 - smoothingAlpha) * smoothedAccel[2]
+            smoothedAccel[2] = smoothingAlpha * linearAccel[2] + (1 - smoothingAlpha) * smoothedAccel[2]*/
+
+            smoothedAccel = when (filterType) {
+                0 -> lowpassFilter(linearAccel, smoothedAccel, smoothingAlpha)
+                1 -> complementaryFilter(linearAccel, smoothedAccel, smoothingAlpha)
+                2 -> madgwickFilter(smoothedAccel, gyro, linearAccel)
+                3 -> mahonyFilter(smoothedAccel, gyro, linearAccel)
+                else -> linearAccel
+            }
 
             if (currentTime - lastKalmanPredictionTime >= MIN_KALMAN_INTERVAL_MS) {
                 kalmanEstimator.predict(smoothedAccel, currentTime)
@@ -237,10 +262,31 @@ class MovementDetectionService : Service(), SensorEventListener {
                 logToFile("🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predictedAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
                 logToFile("🚶 Avg Speed: %.2f m/s, Step Rate: %.2f Hz, Activity: %s".format(avgSpeed, stepRateHz, activity))
             }
+        }else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+            gyro[0] = event.values[0]
+            gyro[1] = event.values[1]
+            gyro[2] = event.values[2]
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    private fun lowpassFilter(input: FloatArray, prev: FloatArray, alpha: Float): FloatArray =
+        FloatArray(3) { i -> alpha * input[i] + (1 - alpha) * prev[i] }
+
+    private fun complementaryFilter(accel: FloatArray, prev: FloatArray, alpha: Float): FloatArray =
+        FloatArray(3) { i -> alpha * accel[i] + (1 - alpha) * prev[i] }
+
+    private fun madgwickFilter(prev: FloatArray, gyro: FloatArray, accel: FloatArray): FloatArray {
+        val beta = 0.1f
+        return FloatArray(3) { i -> prev[i] + gyro[i] * 0.01f + beta * (accel[i] - prev[i]) }
+    }
+
+    private fun mahonyFilter(prev: FloatArray, gyro: FloatArray, accel: FloatArray): FloatArray {
+        val kp = 0.5f
+        val ki = 0.01f
+        return FloatArray(3) { i -> prev[i] + kp * (accel[i] - prev[i]) + ki * gyro[i] }
+    }
 
     private fun updateCotInterval(newInterval: Long) {
         if (newInterval != currentInterval) {
@@ -344,5 +390,13 @@ class MovementDetectionService : Service(), SensorEventListener {
         @Volatile var predictedLon: Float = 0f
         @Volatile var predictedAlt: Float = 0f
         @Volatile var userSpeedMps: Float = 0f
+
+        @Volatile
+        var lastPredictedLocation: Location = Location("kalman_prediction").apply {
+            latitude = 0.0
+            longitude = 0.0
+            altitude = 0.0
+            time = System.currentTimeMillis()
+        }
     }
 }

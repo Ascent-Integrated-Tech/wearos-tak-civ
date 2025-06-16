@@ -361,7 +361,11 @@ class CotDispatchService : Service() {
 
     private fun sendMarkerCotMessage() {
         CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
+            //val location = dataRepository.latestLocation.value
+
+            //Using predicted values
+            val location = MovementDetectionService.lastPredictedLocation
+
             if (TAKConnectService.isAnyTakConnected && (location != null)) {
                 markerDropToBeSent.set(false)
                 var heartRate = dataRepository.latestHeartRate.value
@@ -385,7 +389,11 @@ class CotDispatchService : Service() {
 
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String) {
         CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
+            //val location = dataRepository.latestLocation.value
+
+            // Using predicted values
+            val location = MovementDetectionService.lastPredictedLocation
+
             if (TAKConnectService.isAnyTakConnected && (location != null)) {
                 manualSosToBeSent.set(false)
                 val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
@@ -403,7 +411,9 @@ class CotDispatchService : Service() {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             CoroutineScope(Dispatchers.IO).launch {
-                val location = dataRepository.latestLocation.value
+                //val location = dataRepository.latestLocation.value
+                val location = MovementDetectionService.lastPredictedLocation
+
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
                 if (location != null && battery != null) {
