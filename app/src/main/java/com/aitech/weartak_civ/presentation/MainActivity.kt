@@ -147,7 +147,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
-import kotlin.random.Random
 import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
@@ -178,6 +177,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
+import com.aitech.weartak_civ.Utils.secureRandom
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
@@ -917,7 +917,7 @@ class MainActivity : ComponentActivity() {
             callsign = dataRepository.getCallsign.first()
             // on the first install, callsign has no value, we need to fill it with a random number
             if (callsign.equals("")) {
-                callsign = "WEAROS-" + Random.nextInt(1, 10000).toString()
+                callsign = "WEAROS-" + (secureRandom.nextInt(9999)+1).toString()
                 dataRepository.storeCallsign(callsign)
                 Log.v(TAG, "First install --> Assigning a random callsign: $callsign")
             }

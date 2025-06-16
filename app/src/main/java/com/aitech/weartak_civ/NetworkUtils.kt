@@ -24,7 +24,7 @@ object NetworkUtils {
         val trustManagers = trustManagerFactory.trustManagers
         val trustManager = trustManagers.first { it is X509TrustManager } as X509TrustManager
 
-        val sslContext = SSLContext.getInstance("TLS")
+        val sslContext = SSLContext.getInstance("TLSv1.3")
         sslContext.init(null, arrayOf<TrustManager>(trustManager), null)
         val sslSocketFactory = sslContext.socketFactory
 
