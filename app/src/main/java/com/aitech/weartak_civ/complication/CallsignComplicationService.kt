@@ -44,7 +44,7 @@ class CallsignComplicationService : SuspendingComplicationDataSourceService() {
         return when (isLicenseValid()) {
             true -> createComplicationData(callsign, getString(R.string.watch_callsign))
             false -> createComplicationData("INVALID LICENSE", getString(R.string.invalid_license_key))
-            else -> throw IllegalArgumentException(getString(R.string.callsign_could_not_be_found))
+            else -> createComplicationData("Loading...", "Callsign Loading")
         }
     }
 

@@ -35,7 +35,7 @@ class HeartRateComplicationService : SuspendingComplicationDataSourceService() {
 //            }
                 true -> createComplicationData(hr.toString(), getString(R.string.heart_rate))
                 false -> createComplicationData("--- ", getString(R.string.heart_rate_disabled))
-                else -> throw IllegalArgumentException(getString(R.string.heart_rate_could_not_be_found))
+                else -> createComplicationData("--- ", getString(R.string.heart_rate_could_not_be_found))
             }
             false -> createComplicationData("--- ", getString(R.string.heart_rate_disabled))
         }
