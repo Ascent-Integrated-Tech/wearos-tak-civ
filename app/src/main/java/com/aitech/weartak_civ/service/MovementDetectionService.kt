@@ -65,7 +65,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val GPS_DRIFT_THRESHOLD_DEGREES = 0.005f
 
     private var lastGpsRequestTime = 0L
-    private val GPS_REQUEST_COOLDOWN_MS = 5000L
+    private val GPS_REQUEST_COOLDOWN_MS = 15000L
     private var lastPredictedLat: Float? = null
     private var lastPredictedLon: Float? = null
 
@@ -94,12 +94,16 @@ class MovementDetectionService : Service(), SensorEventListener {
     private lateinit var logWriter: PrintWriter
     private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
-    private var filterType = 1
+    private var filterType = 2
+
+    private var isLogging = false
 
     private fun logToFile(message: String) {
-        val timestamp = timeFormat.format(Date())
-        logWriter.println("[$timestamp] $message")
-        logWriter.flush()
+        if(isLogging){
+            val timestamp = timeFormat.format(Date())
+            logWriter.println("[$timestamp] $message")
+            logWriter.flush()
+        }
     }
 
     private val TAG = "MovementDetectionService"
@@ -278,13 +282,14 @@ class MovementDetectionService : Service(), SensorEventListener {
         FloatArray(3) { i -> alpha * accel[i] + (1 - alpha) * prev[i] }
 
     private fun madgwickFilter(prev: FloatArray, gyro: FloatArray, accel: FloatArray): FloatArray {
-        val beta = 0.1f
-        return FloatArray(3) { i -> prev[i] + gyro[i] * 0.01f + beta * (accel[i] - prev[i]) }
+        val beta = 0.05f  // smaller correction factor
+        val dt = 0.01f    // assumed constant timestep
+        return FloatArray(3) { i -> prev[i] + gyro[i] * dt + beta * (accel[i] - prev[i]) }
     }
 
     private fun mahonyFilter(prev: FloatArray, gyro: FloatArray, accel: FloatArray): FloatArray {
-        val kp = 0.5f
-        val ki = 0.01f
+        val kp = 0.2f
+        val ki = 0.005f
         return FloatArray(3) { i -> prev[i] + kp * (accel[i] - prev[i]) + ki * gyro[i] }
     }
 
