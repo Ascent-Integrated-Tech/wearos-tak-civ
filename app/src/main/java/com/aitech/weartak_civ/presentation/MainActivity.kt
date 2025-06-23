@@ -451,7 +451,7 @@ class MainActivity : ComponentActivity() {
         fun startStopLocationService() {
             if (isLicenseValid()) {
                 if (enableLocationService) {
-                    startLocationService()
+                    //startLocationService()
                 } else {
                     if (LocationService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
                 }
@@ -587,7 +587,7 @@ class MainActivity : ComponentActivity() {
                 startBiometricService()
                 startBatteryService()
                 startMovementDetectionService()
-                startLocationService()
+                //startLocationService()
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()
@@ -4156,7 +4156,7 @@ fun SettingsScreen(
                             enableLocationService = locationChecked
                             if (enableLocationService) {
                                 Log.d(TAG, "Trying to start location service")
-                                startLocationService()
+                                //startLocationService()
                             } else {
                                 Log.d(TAG, "Trying to stop location service")
                                 mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
