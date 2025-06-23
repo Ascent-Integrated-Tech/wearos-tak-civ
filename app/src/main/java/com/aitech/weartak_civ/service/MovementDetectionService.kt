@@ -62,7 +62,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var lastCorrectedLon: Float? = null
     private var referenceLat: Double? = null
     private var referenceLon: Double? = null
-    private val GPS_DRIFT_THRESHOLD_DEGREES = 0.001f
+    private val GPS_DRIFT_THRESHOLD_DEGREES = 0.005f
 
     private var lastGpsRequestTime = 0L
     private val GPS_REQUEST_COOLDOWN_MS = 15000L
@@ -183,6 +183,7 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     override fun onBind(intent: Intent): IBinder? = null
 
+    //Algorithm with drift suppression
     override fun onSensorChanged(event: SensorEvent?) {
         event ?: return
         val currentTime = System.currentTimeMillis()
@@ -222,8 +223,6 @@ class MovementDetectionService : Service(), SensorEventListener {
                 val stepRateHz = stepTimestamps.size / (STEP_RATE_WINDOW_MS / 1000f)
                 val STEP_STILLNESS_THRESHOLD_HZ = 0.5f
 
-                val predLat = lastPredictedLat ?: -1f
-                val predLon = lastPredictedLon ?: -1f
                 val corrLat = lastCorrectedLat ?: -1f
                 val corrLon = lastCorrectedLon ?: -1f
 
@@ -252,6 +251,28 @@ class MovementDetectionService : Service(), SensorEventListener {
                 kalmanEstimator.predict(smoothedAccel, currentTime)
                 lastKalmanPredictionTime = currentTime
 
+                // 🔄 Fetch updated predicted position from Kalman
+                val predPos = kalmanEstimator.getEstimatedPosition()
+                val (predLat, predLon) = metersToLatLon(predPos[0], predPos[1])
+                val predAlt = (referenceAlt?.toFloat() ?: 0f) + predPos[2]
+
+                // 🔄 Save updated prediction
+                lastPredictedLat = predLat
+                lastPredictedLon = predLon
+                lastPredictedAlt = predAlt
+
+                lastPredictedLocation = Location("kalman_prediction").apply {
+                    latitude = predLat.toDouble()
+                    longitude = predLon.toDouble()
+                    altitude = predAlt.toDouble()
+                    time = currentTime
+                }
+
+                predictedLat = predLat
+                predictedLon = predLon
+                predictedAlt = predAlt
+
+                // 🔄 Use updated prediction for speed
                 val timeDeltaSec = (currentTime - lastUpdateTimeMs) / 1000f
                 if (lastUpdateTimeMs != 0L && timeDeltaSec > 0.1f) {
                     val distanceMeters = haversineDistance(
@@ -273,7 +294,106 @@ class MovementDetectionService : Service(), SensorEventListener {
                     avgSpeed < 0.1f && stepRateHz < 0.5f -> "Still"
                     avgSpeed < 2.0f && stepRateHz in 0.5f..2.0f -> "Walking"
                     avgSpeed >= 2.0f && stepRateHz > 1.5f -> "Running"
-                    avgSpeed > 3.0f /*&& stepRateHz < 0.5f*/ -> "Driving or Cycling"
+                    avgSpeed > 3.0f -> "Driving or Cycling"
+                    else -> "Unknown"
+                }
+
+                //Apply GPS distance cap by activity here 👇
+                // val capped = clampDistance(predLat, predLon, lastUpdateLat, lastUpdateLon, maxMeters = 5f)
+
+                Log.d(TAG, "🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
+                Log.d(TAG, "🚶 Avg Speed: %.2f m/s, Step Rate: %.2f Hz, Activity: %s".format(avgSpeed, stepRateHz, activity))
+
+                logToFile("🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
+                logToFile("🚶 Avg Speed: %.2f m/s, Step Rate: %.2f Hz, Activity: %s".format(avgSpeed, stepRateHz, activity))
+            }
+        } else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+            gyro[0] = event.values[0]
+            gyro[1] = event.values[1]
+            gyro[2] = event.values[2]
+        }
+    }
+
+
+    //Algorithm without drift suppression
+    /*override fun onSensorChanged(event: SensorEvent?) {
+        event ?: return
+        val currentTime = System.currentTimeMillis()
+        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            val alpha = 0.8f
+            gravity[0] = alpha * gravity[0] + (1 - alpha) * event.values[0]
+            gravity[1] = alpha * gravity[1] + (1 - alpha) * event.values[1]
+            gravity[2] = alpha * gravity[2] + (1 - alpha) * event.values[2]
+
+            val linearAccel = FloatArray(3)
+            linearAccel[0] = event.values[0] - gravity[0]
+            linearAccel[1] = event.values[1] - gravity[1]
+            linearAccel[2] = event.values[2] - gravity[2]
+
+            val linearAccelMag = sqrt(linearAccel[0].pow(2) + linearAccel[1].pow(2) + linearAccel[2].pow(2))
+            val now = System.currentTimeMillis()
+
+            if (linearAccelMag > STEP_DETECTION_THRESHOLD && now - lastStepTimestamp > MIN_STEP_INTERVAL_MS) {
+                stepCount++
+                lastStepTimestamp = now
+                stepTimestamps.addLast(now)
+            }
+
+            while (stepTimestamps.isNotEmpty() && now - stepTimestamps.first() > STEP_RATE_WINDOW_MS) {
+                stepTimestamps.removeFirst()
+            }
+
+            //val accelMag = linearAccelMag
+
+            /*smoothedAccel[0] = smoothingAlpha * linearAccel[0] + (1 - smoothingAlpha) * smoothedAccel[0]
+            smoothedAccel[1] = smoothingAlpha * linearAccel[1] + (1 - smoothingAlpha) * smoothedAccel[1]
+            smoothedAccel[2] = smoothingAlpha * linearAccel[2] + (1 - smoothingAlpha) * smoothedAccel[2]*/
+
+            smoothedAccel = when (filterType) {
+                0 -> lowpassFilter(linearAccel, smoothedAccel, smoothingAlpha)
+                1 -> complementaryFilter(linearAccel, smoothedAccel, smoothingAlpha)
+                2 -> madgwickFilter(smoothedAccel, gyro, linearAccel)
+                3 -> mahonyFilter(smoothedAccel, gyro, linearAccel)
+                else -> linearAccel
+            }
+
+            if (currentTime - lastKalmanPredictionTime >= MIN_KALMAN_INTERVAL_MS) {
+                val stepRateHz = stepTimestamps.size / (STEP_RATE_WINDOW_MS / 1000f)
+                val DRIFT_SUPPRESSION_THRESHOLD_METERS = 3.0f
+                val STEP_STILLNESS_THRESHOLD_HZ = 0.5f
+
+                kalmanEstimator.predict(smoothedAccel, currentTime)
+                lastKalmanPredictionTime = currentTime
+
+                val predLat = lastPredictedLat ?: -1f
+                val predLon = lastPredictedLon ?: -1f
+                val corrLat = lastCorrectedLat ?: -1f
+                val corrLon = lastCorrectedLon ?: -1f
+
+                val timeDeltaSec = (currentTime - lastUpdateTimeMs) / 1000f
+                if (lastUpdateTimeMs != 0L && timeDeltaSec > 0.1f) {
+                    val distanceMeters = haversineDistance(
+                        lastUpdateLat.toDouble(), lastUpdateLon.toDouble(),
+                        predLat.toDouble(), predLon.toDouble()
+                    )
+                    userSpeedMps = distanceMeters / timeDeltaSec
+                }
+
+                speedWindow.addLast(userSpeedMps)
+                if (speedWindow.size > SPEED_WINDOW_SIZE) speedWindow.removeFirst()
+                val avgSpeed = speedWindow.average().toFloat()
+
+                lastUpdateTimeMs = currentTime
+                lastUpdateLat = predLat
+                lastUpdateLon = predLon
+
+                //val stepRateHz = stepTimestamps.size / (STEP_RATE_WINDOW_MS / 1000f)
+
+                val activity = when {
+                    avgSpeed < 0.1f && stepRateHz < 0.5f -> "Still"
+                    avgSpeed < 2.0f && stepRateHz in 0.5f..2.0f -> "Walking"
+                    avgSpeed >= 2.0f && stepRateHz > 1.5f -> "Running"
+                    avgSpeed > 3.0f && stepRateHz < 0.5f -> "Driving or Cycling"
                     else -> "Unknown"
                 }
 
@@ -283,12 +403,13 @@ class MovementDetectionService : Service(), SensorEventListener {
                 logToFile("🧭 Prediction Update -> Predicted: ($predLat, $predLon, $predictedAlt), Corrected: ($corrLat, $corrLon, $lastCorrectedAlt)")
                 logToFile("🚶 Avg Speed: %.2f m/s, Step Rate: %.2f Hz, Activity: %s".format(avgSpeed, stepRateHz, activity))
             }
-        } else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+        }else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
             gyro[0] = event.values[0]
             gyro[1] = event.values[1]
             gyro[2] = event.values[2]
         }
-    }
+    }*/
+
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
