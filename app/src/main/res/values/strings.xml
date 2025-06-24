@@ -59,6 +59,7 @@
     <string name="update_license">Update License</string>
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
+
     <string name="weartak_accessibility_settings_toast">Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings</string>
     <string name="connecting_to_toast">Connecting to %1$s</string>
     <string name="connected_to_toast">Connected to %1$s</string>
@@ -106,6 +107,9 @@
     <string name="server_connected" translatable="false">Server Connected</string>
     <string name="server_connecting" translatable="false">Server Connecting</string>
     <string name="server_disconnected" translatable="false">Server Disconnected</string>
+    <string name="chat_disabled" translatable="false">Chat Disabled</string>
+    <string name="chat_enabled_no_new_messages" translatable="false">Chat enabled, no new messages</string>
+    <string name="chat_enabled_new_messages" translatable="false">Chat enabled, new message(s)</string>
     <string name="not_capturing_takserverstatuscomplication" translatable="false">not capturing takServerStatusComplication: %1$s</string>
     <string name="location_on" translatable="false">Location ON</string>
     <string name="location_off" translatable="false">Location OFF</string>
@@ -114,6 +118,7 @@
     <string name="location_services_complication" translatable="false">Location Services Complication</string>
     <string name="connectivity_complication" translatable="false">Connectivity Complication</string>
     <string name="tak_server_complication" translatable="false">Tak Server Complication</string>
+    <string name="chat_complication_service" translatable="false">Chat Complication Service</string>
     <string name="heart_rate_disabled" translatable="false">Heart Rate Disabled</string>
 
     <!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
@@ -233,6 +238,10 @@
     <string name="ditto_service_description" translatable="false">Enable or disable the Ditto service</string>
     <string name="ditto_service_enabled_default" translatable="false">false</string>
 
+    <string name="chat_service_title" translatable="false">Enable Chat Service</string>
+    <string name="chat_service_description" translatable="false">Enable or disable Chat service</string>
+    <string name="chat_service_enabled_default" translatable="false">false</string>
+
     <!-- WiFi Battery optimization-->
     <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
     <string name="wifiOptimization_service_enabled_description" translatable="false">Enable to increase battery life when connected to wifi networks.</string>
@@ -248,6 +257,26 @@
     <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
     <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval is increased when device is detected to be moving slowly or stationary.</string>
     <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
+
+    <string name="enable_sms_title" translatable="false">Enable SMS for Alerts</string>
+    <string name="enable_sms_description" translatable="false">Boolean that determines if SMS will be sent on detection of alerts.</string>
+    <string name="enable_sms_default" translatable="false">false</string>
+
+    <string name="enable_sms_numbers_comma_separated_title" translatable="false">SMS Numbers (Comma Separated)</string>
+    <string name="enable_sms_numbers_comma_separated_description" translatable="false">Comma separated list of SMS numbers that alerts will be sent to.</string>
+    <string name="enable_sms_numbers_comma_separated_default" translatable="false"></string>
+
+    <string name="enable_physiological_alerts_title" translatable="false">Enable Physiological Alerts</string>
+    <string name="enable_physiological_alerts_description" translatable="false">Boolean that determines if physiological alerts will be enabled.</string>
+    <string name="enable_physiological_alerts_default" translatable="false">false</string>
+
+    <string name="hr_high_alert_bpm_threshold_title" translatable="false">High Heartrate Alert BPM Threshold</string>
+    <string name="hr_high_alert_bpm_threshold_description" translatable="false">Threshold in beats per minute beyond which high heartrate alert is sent if the heart rate says high for some number of seconds.</string>
+    <string name="hr_high_alert_bpm_threshold_default" translatable="false">140</string>
+
+    <string name="hr_high_alert_number_secs_threshold_title" translatable="false">High Heartrate Alert Number of Seconds Threshold</string>
+    <string name="hr_high_alert_number_secs_threshold_description" translatable="false">Number of seconds that hearrate has to be above \'High Heartrate Alert BPM Threshold\' for alert to be sent.</string>
+    <string name="hr_high_alert_number_secs_threshold_default" translatable="false">30</string>
 
     <!-- Developer Json -->
     <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
@@ -291,4 +320,16 @@
 
     <string name="localization_iBeacon_alt_title" translatable="false">Altitude HAE (m)</string>
     <string name="localization_iBeacon_alt_description" translatable="false">Enter Height Above Ellipsoid of iBeacon in meters.</string>
+    <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
+    <string name="sos_active">SOS Live</string>
+    <string name="sos_alert_sent">SOS Alert SENT</string>
+    <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
+    <string name="sos_color_complication_service" translatable="false">SOS Color Complication Service</string>
+    <string name="sos_inactive">SOS Inactive</string>
+    <string name="sos_text_complication_service" translatable="false">SOS Text Complication Service</string>
+    <string name="sos_active_text_complication_service" translatable="false">SOS Active Text Complication Service</string>
+    <string name="sos_complication_service" />
+    <string name="on_off">ON/OFF</string>
+    <string name="sms_recipients">SMS Recipients</string>
+    <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
 </resources>

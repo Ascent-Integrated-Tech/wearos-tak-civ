@@ -75,6 +75,13 @@
         android:defaultValue="@string/ditto_service_enabled_default" />
 
     <restriction
+        android:key="chat_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/chat_service_title"
+        android:description="@string/chat_service_description"
+        android:defaultValue="@string/chat_service_enabled_default" />
+
+    <restriction
         android:key="wifiOptimization_service_enabled"
         android:restrictionType="bool"
         android:title="@string/wifiOptimization_service_enabled_title"
@@ -101,6 +108,41 @@
         android:title="@string/enable_dynamic_reporting_strategy_title"
         android:description="@string/enable_dynamic_reporting_strategy_description"
         android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
+
+    <restriction
+        android:key="enable_sms"
+        android:restrictionType="bool"
+        android:title="@string/enable_sms_title"
+        android:description="@string/enable_sms_description"
+        android:defaultValue="@string/enable_sms_default"/>
+
+    <restriction
+        android:key="sms_numbers_comma_separated"
+        android:restrictionType="string"
+        android:title="@string/enable_sms_numbers_comma_separated_title"
+        android:description="@string/enable_sms_numbers_comma_separated_description"
+        android:defaultValue="@string/enable_sms_numbers_comma_separated_default"/>
+
+    <restriction
+        android:key="enable_physiological_alerts"
+        android:restrictionType="bool"
+        android:title="@string/enable_physiological_alerts_title"
+        android:description="@string/enable_physiological_alerts_description"
+        android:defaultValue="@string/enable_physiological_alerts_default"/>
+
+    <restriction
+        android:key="hr_high_alert_bpm_threshold"
+        android:restrictionType="integer"
+        android:title="@string/hr_high_alert_bpm_threshold_title"
+        android:description="@string/hr_high_alert_bpm_threshold_description"
+        android:defaultValue="@string/hr_high_alert_bpm_threshold_default"/>
+
+    <restriction
+        android:key="hr_high_alert_number_secs_threshold"
+        android:restrictionType="integer"
+        android:title="@string/hr_high_alert_number_secs_threshold_title"
+        android:description="@string/hr_high_alert_number_secs_threshold_description"
+        android:defaultValue="@string/hr_high_alert_number_secs_threshold_default"/>
 
     <restriction
         android:key="custom_developer_config_json"

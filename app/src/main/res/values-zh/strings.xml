@@ -87,4 +87,14 @@
     <string name="role_forward_observer">前方观察员</string>
     <string name="role_rto">信号员</string>
     <string name="role_k9">警犬</string>
+    <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
+    <string name="sos_active">SOS Active</string>
+    <string name="sos_alert_sent">SOS Alert SENT</string>
+    <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
+    <string name="sos_complication_service" />
+    <string name="sos_inactive">SOS Inactive</string>
+    <string name="sos_text_complication_service">sos text complication service</string>
+    <string name="on_off">ON/OFF</string>
+    <string name="sms_recipients">SMS Recipients</string>
+    <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
 </resources>

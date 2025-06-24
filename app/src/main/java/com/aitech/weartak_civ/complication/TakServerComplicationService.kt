@@ -20,12 +20,10 @@ import androidx.wear.watchface.complications.data.SmallImageType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.presentation.takServerComplicationString
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import com.aitech.weartak_civ.service.TAKConnectService
 
 class TakServerComplicationService : SuspendingComplicationDataSourceService() {
     companion object {

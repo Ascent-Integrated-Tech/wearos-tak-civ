@@ -21,6 +21,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
@@ -28,6 +29,8 @@ import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
+import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MarkerEvent
@@ -37,10 +40,12 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
@@ -78,8 +83,11 @@ class CotDispatchService : Service() {
     private var manualSosReceivedTime: Long = 0L
     private var manualSosReceivedCategory: String = ""
     private var manualSosReceivedDescription: String  = ""
+    private var manualSosReceivedSendSms: Boolean = false
     private var iconSetPath: String = ""
     private var markerType: String = ""
+    private var alertOrCancel = false
+    private var sosAlertUid: String = ""
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -283,11 +291,14 @@ class CotDispatchService : Service() {
     public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
         manualSosReceivedCategory = event.category
         manualSosReceivedDescription = event.description
+        manualSosReceivedSendSms = event.sendSms
         val currTime = System.currentTimeMillis()
+        alertOrCancel = event.category == ALERT_CANCELLED
+
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
             Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             manualSosReceivedTime = currTime
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, alertOrCancel) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
         } else {
             if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
                 Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
@@ -299,7 +310,7 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String): String {
+    private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -334,12 +345,33 @@ class CotDispatchService : Service() {
             latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
         }
 
-        val uid = UUID.randomUUID().toString()
+//        val uid = UUID.randomUUID().toString()
+        val uid = if (!alertOrCancel) {
+            // Generate and store a new UID
+            val newUid = UUID.randomUUID().toString()
+            sosAlertUid = newUid
+            newUid
+        } else {
+            // Use the previously stored UID
+            sosAlertUid ?: "undefined"
+        }
         val linkUid = MainActivity.device_uid
 
-        return """
+        if (alertOrCancel) {
+            return """
         <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
-        <event version='2.0' uid='$uid' type='b-a-u-a' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
+        <event version='2.0' uid='$uid' type='b-a-o-can' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
+        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+        	<detail>
+        		<emergency cancel='true'>$callsign</emergency>
+        	</detail>
+        </event>
+        """.trimIndent()
+
+        } else {
+            return """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='$uid' type='b-a-o' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
         	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
         	<detail>
         		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
@@ -350,6 +382,7 @@ class CotDispatchService : Service() {
         	</detail>
         </event>
         """.trimIndent()
+        }
     }
 
     private fun buildMarkerCotMessage(location: Location, heartRate: Int, battery: Int): String {
@@ -442,40 +475,84 @@ class CotDispatchService : Service() {
     }
 
     private fun sendMarkerCotMessage() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            if (TAKConnectService.isAnyTakConnected && (location != null)) {
-                markerDropToBeSent.set(false)
-                var heartRate = dataRepository.latestHeartRate.value
-                var battery = dataRepository.latestBatteryPercentage.value
-                if (heartRate == null) {
-                    heartRate = -1
-                }
-                if (battery == null) {
-                    battery = -1
-                }
-                val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
-                sendDataTAKServers(cotMessage, true)
-                Log.v(TAG, "Marker CoT message sent: $cotMessage")
-            } else {
-                Log.w(TAG, "Marker CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
+        ioScope.launch(Dispatchers.IO) {
+            // 1) Grab latest location; if null, take note & bail out
+            val loc = dataRepository.latestLocation.value
+            if (loc == null) {
+                Log.w(TAG, "Marker skipped: no location available")
                 markerDropToBeSent.set(true)
-                //markerDropReceivedTime = System.currentTimeMillis() // NOTE: This is taken care of in the calling function
+                return@launch
+            }
+
+            // 2) Gather telemetry (heartRate, battery) with defaults
+            val heartRate = dataRepository.latestHeartRate.value ?: -1
+            val battery   = dataRepository.latestBatteryPercentage.value ?: -1
+
+            // 3) Build CoT XML (unchanged signature)
+            val cotMessage = buildMarkerCotMessage(loc, heartRate, battery)
+
+            // 5) Only send to TAK servers if connected
+            if (TAKConnectService.isAnyTakConnected) {
+                if (DittoService.isRunning.get()) {
+                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", cotMessage))
+                    Log.v(TAG, "Marker CoT meshed into Ditto: $cotMessage")
+                }
+                markerDropToBeSent.set(false)
+                sendDataTAKServers(cotMessage, true)
+                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
+            } else {
+                Log.w(TAG, "Marker CoT NOT sent to TAK (disconnected)")
+                // 4) Mesh into Ditto if the DittoService is running
+                if (DittoService.isRunning.get()) {
+                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", cotMessage))
+                    markerDropToBeSent.set(false)
+                    Log.v(TAG, "Marker CoT meshed into Ditto: $cotMessage")
+                } else {
+                    markerDropToBeSent.set(true) // we need to try again
+                }
             }
         }
     }
 
-    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val location = dataRepository.latestLocation.value
-            if (TAKConnectService.isAnyTakConnected && (location != null)) {
-                manualSosToBeSent.set(false)
-                val cotMessage = buildEmergencyAlertCotMessage(location, emergencyCategory, emergencyDesc)
-                sendDataTAKServers(cotMessage, true)
-                Log.v(TAG, "EmergencyAlert CoT message sent: $cotMessage")
-            } else {
-                Log.w(TAG, "EmergencyAlert CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
+        ioScope.launch(Dispatchers.IO) {
+            // don’t send an alert if we don’t have a location
+            val loc = dataRepository.latestLocation.value
+            if ((MainActivity.enableSmsForAlerts) && sendSms) {
+                SMSManager.sendSMSMessage(numbers = smsNumbersList, description = emergencyDesc)
+            }
+            if (loc == null) {
+                Log.w(TAG, "Skipping emergency alert: no GPS fix")
                 manualSosToBeSent.set(true)
+                return@launch
+            }
+
+            // build the CoT XML for this alert
+            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
+
+            // only forward to TAK if we’re connected
+            if (TAKConnectService.isAnyTakConnected) {
+                if (DittoService.isRunning.get()) {
+                    EventBus.getDefault()
+                        .post(DittoDocumentEvent("alert", cotMessage))
+                    manualSosToBeSent.set(false) // we sent it over ditto
+                    Log.v(TAG, "Posted emergency alert to Ditto")
+                }
+                manualSosToBeSent.set(false)
+                sendDataTAKServers(cotMessage, true)
+                Log.v(TAG, "Sent emergency alert to TAK server")
+            } else {
+                // push into Ditto if the service is up
+                if (DittoService.isRunning.get()) {
+                    EventBus.getDefault()
+                        .post(DittoDocumentEvent("alert", cotMessage))
+                    manualSosToBeSent.set(false) // we sent it over ditto
+                    Log.v(TAG, "Posted emergency alert to Ditto")
+                } else {
+                    Log.w(TAG, "TAk Server is not connected & there is no Ditto Mesh.")
+                    manualSosToBeSent.set(true)
+                    // TODO: Create an in memory (or persistent store) array of markers / SOS to be sent for when the device reconnects to the server.
+                }
             }
         }
     }
@@ -515,7 +592,7 @@ class CotDispatchService : Service() {
         }
         if (manualSosToBeSent.get() == true) {
             Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription)
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, alertOrCancel)
         }
         lastLocationUpdateRcvd = System.currentTimeMillis()
         buildAndSendLocationBiometricCotMessage()
@@ -587,6 +664,8 @@ class CotDispatchService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "CotDispatchService onDestroy called")
+
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }

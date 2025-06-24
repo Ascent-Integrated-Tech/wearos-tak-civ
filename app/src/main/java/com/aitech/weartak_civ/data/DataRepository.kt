@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
+import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -169,7 +172,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getDittoAppId: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[DITTO_APP_ID] ?: "Default Ditto App Id"
+        prefs[DITTO_APP_ID] ?: "d0a0ed19-be6f-43ed-bb70-ff95653c98b7"
     }
 
     suspend fun storeDittoAuthToken(token: String) {
@@ -179,7 +182,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getDittoAuthToken: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[DITTO_AUTH_TOKEN] ?: "Default Ditto Auth Token"
+        prefs[DITTO_AUTH_TOKEN] ?: "8b7efdee-5a96-409e-842c-1ed48045de24"
     }
 
     suspend fun storeCustomDeveloperConfigJson(jsonString: String) {
@@ -219,6 +222,16 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableDittoService(enableDittoService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_DITTO_SERVICE] = enableDittoService
+        }
+    }
+
+    val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_CHAT_SERVICE] ?: false
+    }
+
+    suspend fun storeEnableChatService(enableChatService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_CHAT_SERVICE] = enableChatService
         }
     }
 
@@ -341,8 +354,70 @@ class DataRepository(private val context: Context) {
             preferences[WIFI_SSID_LIST_KEY] = gson.toJson(currentList)
         }
     }
-
      */
+
+//    data class ChatMessage(
+//        var message: String,
+//        val uid: String,
+//        var callsign: String,
+//        var timeReceived: Long
+//    )
+//
+//    data class ChatRoom(
+//        val uid: String,
+//        var title: String,
+//        var chatMessage: List<ChatMessage>, //Messages that device has sent you
+//        var newMessagesPresent: Boolean, //Are there unread messages, determined by timeLastOpened and timeLastClosed
+//        var timeLastOpened: Long, //When the chat log has been opened, any messages received while its open are automatically marked as read
+//        var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
+//    )
+
+    //val messageList1 = listOf(ChatMessage("A", "11111", "ALPHA-01", 1747932042L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L),ChatMessage("D", "11111", "ALPHA-01", 1747932109L),ChatMessage("E", "11111", "BRAVO-05", 1748018316L),ChatMessage("F", "11111", "BRAVO-05", 1748018317L))
+    //val messageList2 = listOf(ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
+
+//    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
+//    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
+//    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+    var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
+
+    private val _chatRoomsFlow = MutableStateFlow<List<Utils.ChatRoom>>(emptyList())
+    val chatRoomsFlow: StateFlow<List<Utils.ChatRoom>> = _chatRoomsFlow
+
+    /* ─── unread indicator ──────────────────────────────────────────────────── */
+    private val _unreadCount      = MutableStateFlow(0)
+    private val _hasUnread        = MutableStateFlow(false)
+
+    val unreadCount : StateFlow<Int>  = _unreadCount        // if you need the exact number
+    val hasUnread   : StateFlow<Boolean> = _hasUnread        // true/false for the badge
+
+    suspend fun refreshUnreadCount() {
+        val n = ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
+        _unreadCount.emit(n)
+        _hasUnread.emit(n > 0)
+    }
+
+    fun setChatRooms(rooms: List<Utils.ChatRoom>) {
+        _chatRoomsFlow.value = rooms
+        val anyUnread = rooms.any { it.newMessagesPresent }
+        newMessagesPresentPublicBoolean.postValue(anyUnread)
+    }
+
+    suspend fun markRoomRead(roomId: String) {
+        ChatService.markRoomReadStatic(roomId)
+        val fresh = ChatService.getInstance()?.getInbox() ?: emptyList()
+        _chatRoomsFlow.emit(fresh)
+
+        // update indicator
+        _unreadCount.emit(fresh.count { it.newMessagesPresent })
+        _hasUnread.emit(fresh.any  { it.newMessagesPresent })
+    }
+
+    /**
+     *  Returns the current unread-message total, 0 if the service isn’t running.
+     */
+    suspend fun getUnreadMsgsCount(): Int =
+        ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
+
 
     data class TakServerItem(
         var isEnabled: Boolean,
@@ -500,6 +575,69 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableSmsForAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SMS_FOR_ALERTS] ?: false
+    }
+
+    suspend fun storeEnableSmsForAlerts(enableSmsForAlerts: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_SMS_FOR_ALERTS] = enableSmsForAlerts
+        }
+    }
+
+    data class SmsNumber(val telephoneNumber: String)
+    val getSmsNumbersList: Flow<List<SmsNumber>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[SMS_NUMBERS_LIST]
+            if (jsonString.isNullOrEmpty()) {
+                emptyList()
+            } else {
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<List<SmsNumber>>() {}
+                val type = typeToken.type
+                gson.fromJson<List<SmsNumber>>(jsonString, type)
+            }
+        }
+
+    suspend fun storeSmsNumbersList(newList: List<SmsNumber>) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(newList)
+            // Store in DataStore
+            preferences[SMS_NUMBERS_LIST] = jsonString
+        }
+    }
+
+    val getEnablePhysiologicalAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_PHYSIOLOGICAL_ALERTS] ?: false
+    }
+
+    suspend fun storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_PHYSIOLOGICAL_ALERTS] = enablePhysiologicalAlerts
+        }
+    }
+
+    val getHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HR_HIGH_ALERT_BPM_THRESHOLD] ?: 140
+    }
+
+    suspend fun storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HR_HIGH_ALERT_BPM_THRESHOLD] = hrHighAlertBpmThreshold
+        }
+    }
+
+    val getHrHighAlertNumSecsThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HR_HIGH_ALERT_NUM_SECS_THRESHOLD] ?: 30
+    }
+
+    suspend fun storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HR_HIGH_ALERT_NUM_SECS_THRESHOLD] = hrHighAlertNumSecsThreshold
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -515,6 +653,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
+        private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
@@ -526,5 +665,10 @@ class DataRepository(private val context: Context) {
         private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
         private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
+        private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
+        private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
+        private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
+        private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
+        private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
     }
 }

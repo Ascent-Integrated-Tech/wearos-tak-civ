@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -76,7 +77,9 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.FRIENDLY
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
+import com.aitech.weartak_civ.service.DittoService
 import kotlin.math.min
 
 class MarkerActivity : ComponentActivity() {
@@ -92,7 +95,7 @@ class MarkerActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    NewMarkerCivApp(exitActivity = {finishAndRemoveTask()}, context)
+                    NewMarkerCivApp(exitActivity = {finishAndRemoveTask(); }, context)
                 }
             }
         }
@@ -105,16 +108,17 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
     val dismissState = rememberSwipeToDismissBoxState()
 
     WearTAKCIVTheme {
-        SwipeToDismissBox(
-            state = dismissState,
-            modifier = Modifier.unswipeable(),
-        ) {
+//        SwipeToDismissBox(
+//            state = dismissState,
+////            modifier = Modifier.unswipeable(),
+//        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Transparent),
                 contentAlignment = Alignment.Center
             ) {
+                val context = LocalContext.current
                 DonutArcButton(
                     startAngle = -45f,
                     sweepAngle = 85f,
@@ -168,7 +172,8 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         markerType = ""
                         shouldShowDialog.value = false
                         exitActivity()
-                              },
+                        context.startActivity(Intent(context, MainActivity::class.java))
+                    },
                     modifier = Modifier
                         .size(60.dp)
                         .border(1.dp, color = Color.Black, shape = CircleShape),
@@ -186,7 +191,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                 }
             }
         }
-    }
+//    }
 }
 
 @Composable
@@ -310,6 +315,7 @@ fun MarkerSuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean 
                         tint = Color.Red
                     )
                     Spacer(modifier = Modifier.height(10.dp))
+                    // TODO: Add more context to the error, for example "not connected to server & mesh/ditto is disabled. Enable meshing to fix"
                     androidx.wear.compose.material.Text(
                         text = stringResource(R.string.error),
                         textAlign = TextAlign.Center,
@@ -332,20 +338,22 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
     val successBoolean = remember { mutableStateOf(false) }
 // react to changes in the license.
     LaunchedEffect(licenseKey) {
-        if (isLicenseValid()) {
-            navController.navigate("marker_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+        val currentDestination = navController.currentBackStackEntry?.destination?.route
+        val isValid = isLicenseValid()
+
+        when {
+            !isValid && currentDestination != "invalid_license_screen" -> {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+                exitActivity()
             }
-        } else {
-            navController.navigate("invalid_license_screen") {
-//                popUpTo("invalid_license_screen") {
-//                    inclusive = true
-//                }
+            isValid == true && currentDestination != "marker_screen" -> {
+                navController.navigate("marker_screen") {
+                    popUpTo(0) { inclusive = true } // clears the back stack
+                }
             }
         }
     }
+
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = if (isLicenseValid()) "marker_screen" else "invalid_license_screen"
@@ -359,13 +367,19 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         successBoolean.value = true
                     }
                 } else {
-                    successBoolean.value = false
+                    if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
+                        Log.w("WearTAK-MarkerActivity", "Not connected to tak server, but Ditto is enabled and running. Marker will be sent through here.")
+                        successBoolean.value = true
+                    } else {
+                        successBoolean.value = false
+                    }
                 }
 
                 LaunchedEffect(Unit) {
                     delay(2000) // Delay for 5 seconds
                     shouldShowConfirm.value = false // Dismiss the dialog
                     exitActivity()
+                    context.startActivity(Intent(context, MainActivity::class.java))
                 }
                 MarkerSuccessDialog(
                     shouldShowConfirm,

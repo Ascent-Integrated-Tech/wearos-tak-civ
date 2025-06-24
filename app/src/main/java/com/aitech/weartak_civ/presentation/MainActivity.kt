@@ -20,7 +20,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.RestrictionEntry
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -100,9 +99,6 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
@@ -116,7 +112,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
@@ -146,16 +141,19 @@ import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
 import com.aitech.weartak_civ.service.TAKConnectService
+import com.aitech.weartak_civ.service.ChatService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
-import kotlin.random.Random
 import android.content.RestrictionsManager
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonColors
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
@@ -168,32 +166,32 @@ import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.foundation.padding
 import androidx.wear.compose.material.curvedText
 import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.service.BleBeaconService
 import com.aitech.weartak_civ.service.MovementDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
-import java.io.File
-import java.io.FileWriter
-import java.io.IOException
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
+import com.aitech.weartak_civ.Utils.secureRandom
 import com.aitech.weartak_civ.complication.CallsignComplicationService
+import com.aitech.weartak_civ.complication.ChatComplicationService
+import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
+import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NEW_MESSAGE
+import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
+import com.aitech.weartak_civ.manager.NetworkManager
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
@@ -219,9 +217,12 @@ class MainActivity : ComponentActivity() {
         var biometricServiceRunning : Boolean = false
         var enableDittoService : Boolean = false
         var dittoServiceRunning : Boolean = false
+        var enableChatService : Boolean =  false
+        var enableChatServiceLiveData = MutableLiveData<Boolean>(false)
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
+        var chatComplication : String = ""
 
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
@@ -266,6 +267,15 @@ class MainActivity : ComponentActivity() {
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
 
         var enableDynamicReportingStrategy = false
+        var enableSmsForAlerts = false
+        var enableSmsForAlertsLiveData = MutableLiveData<Boolean>(false)
+        var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
+        var smsNumbersListString : String = ""
+        val smsNumbersListStringSettingsState = MutableLiveData<String>("")
+        var enablePhysiologicalAlerts = false
+        var hrHighAlertBpmThreshold : Int = 140
+        var hrHighAlertNumSecsThreshold : Int = 30
+
         var versionNumber : String = ""
         var logFile: java.io.File? = null
 
@@ -354,12 +364,41 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun restartTAKConnectService() {
+            Log.d(TAG, "Restarting TAK Connect Service")
+            mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
+        }
+
         fun startTAKConnectService() {
             if (!TAKConnectService.isRunning.get()) {
                 Log.d(TAG, "Starting TAKConnectService")
                 mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
             } else {
                 Log.d(TAG, "TAKConnectService is already running.")
+            }
+        }
+
+        fun startStopChatService() {
+            if (isLicenseValid()) {
+                if (enableChatService) {
+                    startChatService()
+                } else {
+                    if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
+                }
+            } else {
+                if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
+            }
+        }
+
+        fun startChatService() {
+            if (enableChatService) {
+                if (!ChatService.isRunning.get()) {
+                    Log.d(TAG, "Starting ChatService")
+                    mainActivity.startForegroundService(Intent(mainActivity, ChatService::class.java))
+                } else {
+                    Log.w(TAG, "ChatService is already running.")
+                }
             }
         }
 
@@ -541,24 +580,19 @@ class MainActivity : ComponentActivity() {
                 if (enableBiometricsService) {
                     startOffBodyDetectService()
                 } else {
+                    Log.d(TAG, "startStopoffBodyDetectService OffBodyDetectService stop called")
                     if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
                 }
             } else {
+                Log.d(TAG, "startStopoffBodyDetectService OffBodyDetectService stop called")
                 if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
             }
         }
 
         fun startOffBodyDetectService() {
             if (enableBiometricsService) {
-                if ((ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS_BACKGROUND
-                    ) != PackageManager.PERMISSION_GRANTED)
-                ) {
+                if ((ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BODY_SENSORS) != PackageManager.PERMISSION_GRANTED) &&
+                    (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BODY_SENSORS_BACKGROUND) != PackageManager.PERMISSION_GRANTED)) {
                     Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking OffBodyDetectService")
                 } else {
                     if (!OffBodyDetectService.isRunning.get()) {
@@ -595,6 +629,7 @@ class MainActivity : ComponentActivity() {
                 startDittoService()
                 startPowerManagerService()
                 startBleBeaconService()
+                startChatService()
             } else {
                 Log.d(TAG, """
                             ===   Application Services Info   ===                                
@@ -628,6 +663,9 @@ class MainActivity : ComponentActivity() {
 				}
                 if (MovementDetectionService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
+                }
+                if (enableChatService && ChatService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                 }
             }
         }
@@ -735,8 +773,47 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action})")
     }
 
+    override fun onPause() {
+        super.onPause()
+        Log.d(TAG, "MainActivity onPause called")
+        /*
+        if (OffBodyDetectService.isRunning.get()) {
+            Log.d(TAG, "Stopping OffBodyDetectService onPause")
+            mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
+        }
+        if (HeartrateService.isRunning.get()) {
+            Log.d(TAG, "Stopping HeartrateService onPause")
+            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+        }
+
+         */
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        Log.d(TAG, "MainActivity onRestart called")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.d(TAG, "MainActivity onStart called")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d(TAG, "MainActivity onStop called")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "MainActivity onResume called")
+
+        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startBiometricService() }, 1500L)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "MainActivity onDestroy called")
         /*
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -843,7 +920,7 @@ class MainActivity : ComponentActivity() {
             callsign = dataRepository.getCallsign.first()
             // on the first install, callsign has no value, we need to fill it with a random number
             if (callsign.equals("")) {
-                callsign = "WEAROS-" + Random.nextInt(1, 10000).toString()
+                callsign = "WEAROS-" + (secureRandom.nextInt(9999)+1).toString()
                 dataRepository.storeCallsign(callsign)
                 Log.v(TAG, "First install --> Assigning a random callsign: $callsign")
             }
@@ -866,6 +943,8 @@ class MainActivity : ComponentActivity() {
             enableLocationService = dataRepository.getEnableLocationService.first()
             enableBiometricsService = dataRepository.getEnableBiometricsService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
+            enableChatService = dataRepository.getEnableChatService.first()
+
 
             val minReportingInterval = getMinReportingInterval(takServerList)
 
@@ -883,6 +962,14 @@ class MainActivity : ComponentActivity() {
             saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
 
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
+
+            enableSmsForAlerts = dataRepository.getEnableSmsForAlerts.first()
+            smsNumbersList = dataRepository.getSmsNumbersList.first()
+            smsNumbersListString = convertSmsNumbersListToStringWithSeparator(dataRepository.getSmsNumbersList.first(), ",")
+
+            enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
+            hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
+            hrHighAlertNumSecsThreshold = dataRepository.getHrHighAlertNumSecsThreshold.first()
 
             enableBleBeaconService = dataRepository.getEnableBleBeaconService.first()
             localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
@@ -942,6 +1029,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable wifi opt:", enableWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Enable all wifi:", enableAllWifiBatteryOptimization.toString())}
                     ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
+                    ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
+                    ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
+                    ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
+                    ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
+                    ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
                     ${String.format("%-25s %-30s", "Enable BleBeacon:", enableBleBeaconService.toString())}
                     
                     === === Ble Beacons === ===
@@ -971,7 +1063,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.BLUETOOTH_ADVERTISE,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            Manifest.permission.SEND_SMS)
 
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -1131,6 +1224,10 @@ class MainActivity : ComponentActivity() {
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceLiveData.postValue(enableLocationService)
         enableBiometricsServiceLiveData.postValue(enableBiometricsService)
+        enableChatServiceLiveData.postValue(enableChatService)
+        enableSmsForAlertsLiveData.postValue(enableSmsForAlerts)
+        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+
 
         requestCallsignComplicationUpdate(context)
         requestLocationComplicationUpdate(context)
@@ -1194,6 +1291,20 @@ class MainActivity : ComponentActivity() {
                     result = wifiSsid.name
                 } else {
                     result = "$result$separatorStr${wifiSsid.name}"
+                }
+            }
+        }
+        return result
+    }
+
+    fun convertSmsNumbersListToStringWithSeparator(smsNumbersList: List<DataRepository.SmsNumber>, separatorStr: String): String {
+        var result = ""
+        if (!smsNumbersList.isEmpty()) {
+            for (smsNumber in smsNumbersList) {
+                if ("".equals(result)) {
+                    result = smsNumber.telephoneNumber
+                } else {
+                    result = "$result$separatorStr${smsNumber.telephoneNumber}"
                 }
             }
         }
@@ -1310,6 +1421,8 @@ class MainActivity : ComponentActivity() {
         val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
         val enableBiometricsServiceConfigUpdate = appRestrictions.getBoolean("biometric_service_enabled", enableBiometricsService)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+        val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
@@ -1317,6 +1430,17 @@ class MainActivity : ComponentActivity() {
         Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
+
+        val enableSmsForAlertsConfigUpdate = appRestrictions.getBoolean("enable_sms", enableSmsForAlerts)
+        val smsNumbersString = appRestrictions.getString("sms_numbers_comma_separated", convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+        val smsNumbersListConfigUpdate: List<DataRepository.SmsNumber> = smsNumbersString.split(",")
+            .map { it.trim() } // Trim whitespace from each SSID
+            .filter { it.isNotEmpty() } // Remove any empty values
+            .map { DataRepository.SmsNumber(it) } // Map each SSID to a WifiSsidItem
+
+        val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
+        val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
+        val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
         val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
@@ -1350,8 +1474,9 @@ class MainActivity : ComponentActivity() {
                     lat = bleBeaconBundle.getString("localization_iBeacon_lat", null)
                     lon = bleBeaconBundle.getString("localization_iBeacon_lon", null)
                     alt = bleBeaconBundle.getString("localization_iBeacon_alt", null)
+                    //Log.d(TAG, "Beacon: $uuid $major $minor lat($lat) lon($lon) alt($alt)")
 
-                    if ((null != uuid) && (major >= 0) && (minor >= 0) && (null != lat) && (null != lon) && (null != alt)) {
+                    if ((null != uuid) && (major >= 0) && (minor >= 0) && (!lat.isNullOrBlank()) && (null != lat.toDoubleOrNull()) && (!lon.isNullOrBlank()) && (null != lon.toDoubleOrNull()) && (!alt.isNullOrBlank()) && (null != alt.toDoubleOrNull())) {
                         bleBeaconMutableList.add(DataRepository.LocalizationBleBeaconItem(uuid, major, minor,
                             lat.toDouble(), lon.toDouble(), alt.toDouble()))
                     } else {
@@ -1508,6 +1633,12 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
+            dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
+            dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
+            dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
+            dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
+            dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
+            dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
 
             if (!isStringEmptyJson(configJson)) {
                 // Currently don't check for any changes but just post to dataRepository
@@ -1540,7 +1671,29 @@ class MainActivity : ComponentActivity() {
                 enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
                 Log.d(TAG, "enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
                 if (!calledOnCreate) startStopMovementDetectionService()
+			}
+            if (enableChatServiceConfigUpdate != enableChatService) {
+                enableChatService = enableChatServiceConfigUpdate
+                Log.d(TAG, "enableChatService=$enableChatService")
+                if (!calledOnCreate) {
+                    startStopChatService()
+                    restartTAKConnectService()
+                }
             }
+            enableSmsForAlerts = enableSmsForAlertsConfigUpdate
+            smsNumbersList = smsNumbersListConfigUpdate
+            if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
+                enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
+                Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
+                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+            }
+            if ((hrHighAlertBpmThreshold != hrHighAlertBpmThresholdConfigUpdate) || (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdConfigUpdate)) {
+                Log.d(TAG, "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)")
+                hrHighAlertBpmThreshold = hrHighAlertBpmThresholdConfigUpdate
+                hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdConfigUpdate
+                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+            }
+
             if (!calledOnCreate) {
                 if (prevLicenseIsValid != isLicenseValid()) {
                     Log.d(TAG, "isLicenseValid=${isLicenseValid()}: Going to startStopServicesLicense")
@@ -1585,6 +1738,14 @@ fun requestCallsignComplicationUpdate(context: Context) {
 
 fun requestLocationComplicationUpdate(context: Context) {
     val componentName = ComponentName(context, LocationComplicationService::class.java)
+
+    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
+    requester.requestUpdateAll()
+}
+
+//TODO: Possibly move to chat service wherever it goes
+fun requestChatComplicationUpdate(context: Context) {
+    val componentName = ComponentName(context, ChatComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
@@ -1652,6 +1813,13 @@ fun MainScreen(
 ) {
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
+    val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
+    val chatCheckedLive by enableChatServiceLiveData.observeAsState()
+    val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
+
+    LaunchedEffect(Unit) {
+        dataRepository.refreshUnreadCount()
+    }
 
     WearTAKCIVTheme {
         SwipeToDismissBox(
@@ -1675,9 +1843,9 @@ fun MainScreen(
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(top = 35.dp)
+                            .padding(top = 30.dp)
                             .fillMaxWidth()
-                            .weight(1f)
+                            .weight(0.8f)
                     ) {
                         HeartRate()
                     }
@@ -1686,10 +1854,10 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
+//                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        SOSButton()
+                        SOSButton(context, isAlerting)
                         Spacer(
                             modifier = Modifier.width(10.dp)
                         )
@@ -1700,9 +1868,53 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(top = 10.dp),
+                            .padding(top = 0.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
+                        requestChatComplicationUpdate(context)
+                        FilledIconButton(
+                            onClick = { context.startActivity(Intent(context, ChatActivity::class.java))
+                            },
+                            modifier = Modifier.size(45.dp),
+                            colors = IconButtonColors(
+                                containerColor = Color.DarkGray,
+                                contentColor = Color.Unspecified,
+                                disabledContentColor = Color.Gray,
+                                disabledContainerColor = Color.Black
+                            ),
+                            enabled = if (chatCheckedLive == true) true else false
+                        ) {
+                            if (chatCheckedLive == true) {
+                                if (hasUnreadMessages) {
+                                    requestChatComplicationUpdate(context)
+                                    Icon(
+                                        painter = painterResource(R.drawable.chat_newmessage),
+                                        contentDescription = "Favorite icon",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(25.dp),
+                                    )
+                                } else {
+                                    requestChatComplicationUpdate(context)
+                                    Icon(
+                                        painter = painterResource(R.drawable.chat_nomessage),
+                                        contentDescription = "Favorite icon",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(25.dp),
+                                    )
+                                }
+                        } else {
+                                requestChatComplicationUpdate(context)
+                                Icon(
+                                    painter = painterResource(R.drawable.chat_nomessage),
+                                    contentDescription = "Favorite icon",
+                                    tint = Color.DarkGray,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            }
+                        }
+                        Spacer(
+                            modifier = Modifier.width(10.dp)
+                        )
                         Callsign(context, callsignState)
                     }
 
@@ -1837,13 +2049,14 @@ fun HeartRate () {
                 Text(
                     text = " $heartRateText",
                     textAlign = TextAlign.Start,
-                    fontSize = 20.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
                 Text(
                     text = stringResource(R.string.bpm),
-                    color = Color.White
+                    color = Color.White,
+                    fontSize = 13.sp
                 )
             } else {
                 Text(
@@ -1900,6 +2113,22 @@ fun takServerComplicationString() {
     }
 }
 
+fun chatComplicationString() {
+    if (enableChatServiceLiveData.value == true) {
+        var hasUnreadMessages = false
+        runBlocking {
+            hasUnreadMessages = dataRepository.hasUnread.first()
+        }
+        if (hasUnreadMessages == true) {
+            chatComplication = CHAT_ENABLED_NEW_MESSAGE
+        } else {
+            chatComplication = CHAT_ENABLED_NO_NEW_MESSAGE
+        }
+    } else {
+        chatComplication = CHAT_DISABLED
+    }
+}
+
 @Composable
 fun TroubleshootingIcons() {
     val iconSizeSmall= 20.dp
@@ -1953,9 +2182,9 @@ fun TroubleshootingIcons() {
                 .align(Alignment.CenterStart)
                 .offset(
                     x = (15).dp, // Adjust this value
-                    y = (15).dp // Adjust this value
+                    y = (10).dp // Adjust this value
                 )
-                .size(if (cellConnected == true) 25.dp else 25.dp),
+                .size(25.dp),
             tint = if (isConnected == true) Color.White else Color.Unspecified
         )
 
@@ -1991,7 +2220,7 @@ fun TroubleshootingIcons() {
                 .align(Alignment.CenterEnd)
                 .offset(
                     x = (-15).dp, // Adjust this value
-                    y = (15).dp // Adjust this value
+                    y = (10).dp // Adjust this value
                 )
                 .size(iconSizeSmall)
 
@@ -2025,8 +2254,8 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
             "${greetingName}",
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            fontSize = if (greetingName!!.length <= maxChar) 17.sp else 13.sp,
-            modifier = Modifier.padding(10.dp),
+            fontSize = if (greetingName!!.length <= maxChar) 15.sp else 13.sp,
+            modifier = Modifier.padding(8.dp),
 
         )},
         shape = RoundedCornerShape(40.dp),
@@ -2035,42 +2264,52 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun SOSButton() {
-    val shouldShowDialog = remember { mutableStateOf(false) }
-    val successBoolean = remember {mutableStateOf(false)}
-    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
-    val isConfirmed = remember { mutableStateOf(false) }
-    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
-    val location = dataRepository.latestLocation.value
-    var locationChecked by remember{ mutableStateOf(enableLocationService)}
+fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
+//    val shouldShowDialog = remember { mutableStateOf(false) }
+//    val successBoolean = remember {mutableStateOf(false)}
+//    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
+//    val isConfirmed = remember { mutableStateOf(false) }
+//    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
+//    val location = dataRepository.latestLocation.value
+//    var locationChecked by remember{ mutableStateOf(enableLocationService)}
     var sosText = stringResource(R.string.sos)
+    var sosLiveText = stringResource(R.string.sos_active)
+    Log.d(TAG, "SOSButtton")
 
-    if (shouldShowConfirmationDialog.value) {
-        ConfirmationDialog(
-            shouldShowConfirmationDialog,
-            rememberSwipeDismissableNavController(),
-            stringResource(R.string.sos_alert_prompt),
-            Icons.Default.Warning,
-            Color.Red,
-            "main_screen",
-            isConfirmed
-        )
-    }
-    if (isConfirmed.value) {
-        shouldShowDialog.value = true
-        if (takServer == true) {
-            if (location != null && locationChecked) {
-                successBoolean.value = true
-                SOSButtonEmergencyMessage()            }
-        } else {
-            successBoolean.value = false
-        }
-        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
-    }
+//    if (shouldShowConfirmationDialog.value) {
+//        ConfirmationDialog(
+//            shouldShowConfirmationDialog,
+//            rememberSwipeDismissableNavController(),
+//            stringResource(R.string.sos_alert_prompt),
+//            Icons.Default.Warning,
+//            Color.Red,
+//            "main_screen",
+//            isConfirmed
+//        )
+//    }
+//    if (isConfirmed.value) {
+//        shouldShowDialog.value = true
+//        if (takServer == true) {
+//            if (location != null && locationChecked) {
+//                successBoolean.value = true
+//                SOSButtonEmergencyMessage()
+//            }
+//        } else {
+//            if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
+//                Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
+//                successBoolean.value = true
+//                SOSButtonEmergencyMessage()
+//            } else {
+//                Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
+//                successBoolean.value = false
+//            }
+//        }
+//        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
+//    }
 
     Button(
         onClick = {
-            shouldShowConfirmationDialog.value = true
+            context.startActivity(Intent(context, SosActivity::class.java))
         },
         modifier = Modifier
             .border(
@@ -2078,24 +2317,33 @@ fun SOSButton() {
                 color = Color.Red,
                 shape = RoundedCornerShape(40.dp),
             )
-            .size(110.dp),
+            .size(110.dp, 60.dp),
         shape = RoundedCornerShape(40.dp),
+        contentPadding = PaddingValues.Absolute(0.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
-            contentColor = Color.Red
+            containerColor = if (isAlertingLiveData == true) Color.Red else Color.Transparent,
+            contentColor = if (isAlertingLiveData == true) Color.White else Color.Red
         )
     ) {
-        Text (
-            sosText,
-            fontSize = if (sosText!!.length <= 10) 25.sp else 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Red
-        )
+        if (isAlertingLiveData == true) {
+            Text (
+                sosLiveText,
+                fontSize = if (sosLiveText.length <= 15) 17.sp else 15.sp,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                color = Color.White,
+            )
+        } else {
+            Text(
+                sosText,
+                fontSize = if (sosText.length <= 10) 25.sp else 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
     }
-}
-
-fun SOSButtonEmergencyMessage(){
-    EventBus.getDefault().post(CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true))
 }
 
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")
@@ -2116,7 +2364,7 @@ fun MarkerDropButton(
                 color = Color.White,
                 shape = CircleShape
             )
-            .size(100.dp),
+            .size(100.dp, 60.dp),
     ) {
         Icon(
             painterResource(R.drawable.markerdrop),
@@ -2210,14 +2458,7 @@ fun CallsignSettingsPreview() {
     CallsignSetting(rememberSwipeDismissableNavController(), callsignState)
 }
 
-@Preview(widthDp = 192, heightDp = 800)
-@Composable
-fun SettingsPreview() {
-    var callsignState = MutableLiveData<String>("WEAROS-0")
-    var licenseState = MutableLiveData<String>("AscentLicense")
 
-    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
-}
 
 @Preview(widthDp = 192, heightDp = 500)
 @Composable

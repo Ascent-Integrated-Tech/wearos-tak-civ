@@ -25,13 +25,11 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
-import com.aitech.weartak_civ.complication.LocationComplicationService
 import com.aitech.weartak_civ.complication.TakServerComplicationService
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
@@ -46,7 +44,7 @@ import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.NetworkManager
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -66,9 +64,11 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.w3c.dom.Document
 import org.xml.sax.InputSource
+import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.StringReader
 import java.security.*
 import java.security.cert.Certificate
@@ -83,10 +83,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
+import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.events.TakChatEvent
+import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
@@ -207,6 +209,7 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "TAKConnectService onDestroy called")
         isRunning.set(false)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -513,7 +516,7 @@ class TAKConnectService: Service() {
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
-        const private val TAK_CERT_PASSWORD = "atakatak"
+        const private val KEYSTORE_PASS = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
         var isNetworkConnected = false
         var isWifiConnected = false
@@ -533,6 +536,7 @@ class TAKConnectService: Service() {
         public fun getInstance() : TAKConnectService {
             return TAK_CONNECT_SERVICE
         }
+
         private fun setIsAnyNetworkConnecting() {
             var anyTakConnecting = false
             for (takServerDetail in takServerDetails) {
@@ -600,7 +604,7 @@ class TAKConnectService: Service() {
             return base64CSR
         }
 
-        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry> {
+        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry>? {
             val takServer = takServerDetail.address
             val username = takServerDetail.username
             val password = takServerDetail.password
@@ -612,14 +616,14 @@ class TAKConnectService: Service() {
             // Basic Authentication
             val credential = Credentials.basic(username, password)
 
-            val request = Request.Builder()
-                .url(url)
-                .header("Authorization", credential)
-                .get()
-                .build()
-
-            Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
             try {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", credential)
+                    .get()
+                    .build()
+
+                Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
@@ -651,6 +655,10 @@ class TAKConnectService: Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
             }
             return nameValueList
         }
@@ -814,7 +822,7 @@ class TAKConnectService: Service() {
                 takServerDetail.keyStore.setCertificateEntry("ca1", ca1Cert)
 
                 // Keystore password to protect the .p12
-                val keystorePassword = TAK_CERT_PASSWORD.toCharArray()
+                val keystorePassword = KEYSTORE_PASS.toCharArray()
                 takServerDetail.keyStore.setKeyEntry(KEY_ALIAS, takServerDetail.privateKey, keystorePassword, chain)
                 runBlocking {
                     try {
@@ -961,7 +969,7 @@ class TAKConnectService: Service() {
                             }
                         }
                     } else {
-                        if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", TAK_CERT_PASSWORD)) {
+                        if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", KEYSTORE_PASS)) {
                             Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
                             takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
@@ -970,8 +978,11 @@ class TAKConnectService: Service() {
                             deleteFile("${takServerDetail.address}.jks")
                             Log.d(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
                             val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
-                            val base64CSR = generateBase64CSR(nameValueList, takServerDetail)
                             var signClientResponse: SignClientResponse? = null
+                            var base64CSR: String? = null
+                            if (null != nameValueList) {
+                               base64CSR = generateBase64CSR(nameValueList, takServerDetail)
+                            }
                             if (null != base64CSR) {
                                 //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
                                 signClientResponse = postCsrAndParse(takServerDetail, base64CSR)
@@ -1006,7 +1017,7 @@ class TAKConnectService: Service() {
                                     }
                                 }
                             } else {
-                                Log.e(TAG, "ERROR generateBase64CSR returned NULL. Cannot connect to TAK Server")
+                                Log.e(TAG, "ERROR fetchAndParseCertificateConfig or generateBase64CSR returned NULL. Cannot connect to TAK Server")
                                 takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
                                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
                                 setIsAnyNetworkConnected()
@@ -1027,7 +1038,7 @@ class TAKConnectService: Service() {
                 }
             }
         }
-
+        
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             val takServer = takServerDetail.address
             val port = takServerDetail.port
@@ -1040,26 +1051,22 @@ class TAKConnectService: Service() {
                     if (takServerDetail.isP12Cert) {
                         keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
                     } else {
-                        keyManagerFactory.init(takServerDetail.keyStore, TAK_CERT_PASSWORD.toCharArray())
+                        keyManagerFactory.init(takServerDetail.keyStore, KEYSTORE_PASS.toCharArray())
                     }
 
                     // Initialize SSL Context with TrustManager
-                    val sslContext = SSLContext.getInstance("TLS")
-                    sslContext.init(
-                        keyManagerFactory.keyManagers, arrayOf<TrustManager>(object :
-                            X509TrustManager {
-                                override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) {
-                                }
+                    val sslContext = SSLContext.getInstance("TLSv1.3")
+                    val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                    trustManagerFactory.init(takServerDetail.keyStore)
+                    val trustManagers = trustManagerFactory.trustManagers
+                    val trustManager = trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
+                    if (null != trustManager) {
+                        sslContext.init(keyManagerFactory.keyManagers, arrayOf(trustManager), null)
+                    } else {
+                        Log.e(TAG, "trustManager is null")
+                        throw Exception("X509TrustManager is NULL. Cannot connect to ${takServerDetail.name}.")
+                    }
 
-                                override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) {
-                                }
-
-                                override fun getAcceptedIssuers(): Array<X509Certificate> {
-                                    return emptyArray()
-                                }
-                            }),
-                            null
-                    )
                     Log.d(TAG, "Going to createSocket and startHandshake")
                     // Create the socket and connect
                     val socketFactory = sslContext.socketFactory
@@ -1079,6 +1086,46 @@ class TAKConnectService: Service() {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
+
+                    // start a background COT‐reader on the same socket
+                    CoroutineScope(Dispatchers.IO).launch {
+                        var openTakReceiveReader = false
+                        runBlocking {
+                            openTakReceiveReader = dataRepository.getEnableChatService.first()
+                        }
+                        if (!openTakReceiveReader) {
+                            return@launch
+                        }
+                        try {
+                            Log.v(TAG, "Trying to read cot messages in.")
+                            val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
+                            val buffer = StringBuilder()
+                            while (true) {
+                                val line = reader.readLine() ?: break
+                                buffer.append(line)
+
+                                // work against the String version so we can substring easily
+                                val bufStr = buffer.toString()
+                                val endIdx = bufStr.indexOf("</event>")
+                                if (endIdx >= 0) {
+                                    // extract one complete <event>…</event>
+                                    val rawXml = bufStr.substring(0, endIdx + "</event>".length)
+                                    // remove it from the buffer
+                                    buffer.delete(0, endIdx + "</event>".length)
+
+                                    // only forward chat messages addressed to us or “All Chat Rooms”
+                                    if (CotUtils.isChatMessage(rawXml)
+                                        && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
+                                        Log.v(TAG, "Posting a tak chat message Event.")
+                                        EventBus.getDefault().post(TakChatEvent(rawXml))
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "COT listener loop failed", e)
+                        }
+                    }
+
                 } catch (e: Exception) {
                     //sendTakConnectionStatusEvent(CONNECTION_FAILURE)
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
