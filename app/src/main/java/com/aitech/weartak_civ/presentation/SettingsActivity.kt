@@ -221,6 +221,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSt
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsActivity
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -273,6 +274,7 @@ class SettingsActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList)
         takServerListState.postValue(takServerList)
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
         ageState.postValue(ageValue)
         heightFeetState.postValue(heightFeetValue)
         heightInchesState.postValue(heightInchesValue)
@@ -281,7 +283,7 @@ class SettingsActivity : ComponentActivity() {
         bloodTypeState.postValue(bloodTypeValue)
         allergyListState.postValue(allergyList)
         userTypeState.postValue(userTypeValue)
-        Log.d(TAG, "SettingsActivity onCreate called. Setting userTypeState to $userTypeValue")
+        Log.d(TAG, "SettingsActivity onCreate called")
 
         enableEdgeToEdge()
         setContent {
@@ -2833,7 +2835,7 @@ fun SettingsScreen(
 
             val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
             val text = stringResource(R.string.callsign_settings)
-
+            
 //            when (displayedSecondaryText) {
 //                ALL_WIFI_NETWORKS -> { ALL_WIFI_NETWORKS = stringResource(R.string.all_wifi_connections) }
 //                SOME_WIFI_NETWORKS -> { SOME_WIFI_NETWORKS = stringResource(R.string.some_wifi_connections) }
@@ -3098,6 +3100,7 @@ fun SettingsScreen(
                         wifiSsidListSettingsState.postValue(wifiSsidList)
                         takServerListState.postValue(takServerList)
                         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+                        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
 
                         ageState.postValue(ageValue)
                         heightFeetState.postValue(heightFeetValue)
@@ -3108,6 +3111,7 @@ fun SettingsScreen(
                         allergyListState.postValue(allergyList)
                         userTypeState.postValue(userTypeValue)
 
+                        settingsActivity.finish()
                         context.startActivity(Intent(context, MainActivity::class.java))
                     },
                     onClickConfirm = {
@@ -3434,8 +3438,8 @@ fun SettingsScreen(
 //                                inclusive = true
 //                            }
 //                        }
-                          context.startActivity(Intent(context, MainActivity::class.java))
-
+                        settingsActivity.finish()
+                        context.startActivity(Intent(context, MainActivity::class.java))
                     })
             }
 
