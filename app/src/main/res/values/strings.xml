@@ -204,8 +204,8 @@
 
     <!-- Roles Configuration -->
     <string name="custom_roles_title" translatable="false">Custom Roles</string>
-    <string name="custom_roles_description" translatable="false">List of custom roles</string>
-    <string name="custom_roles_default" translatable="false">Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9</string>
+    <string name="custom_roles_description" translatable="false">List of JSON formatted category and its roles</string>
+    <string name="custom_roles_default" translatable="false">[{\"category\":\"MIL\",\"roles\":[\"Forward Observer\",\"HQ\",\"K9\",\"Medic\",\"RTO\",\"Sniper\",\"Team Lead\",\"Team Member\"]},{\"category\":\"LEO\",\"roles\":[\"Armed Surveillance\",\"Assistant Team Leader\",\"Aviation\",\"Bomb Tech\",\"Command Post\",\"Critical Response\",\"Hazards\",\"Negotiator\",\"Surveillance\",\"Tactical Communicator\",\"TOC\"]},{\"category\":\"FES\",\"roles\":[\"Assistant Chief\",\"Battalion Chief\",\"Capt\",\"Deputy Chief\",\"District Chief\",\"Engineer\",\"Fire Chief\",\"Firefighter\",\"LT\",\"Safety Officer\"]}]</string>
 
     <!-- License Key -->
     <string name="license_key_title" translatable="false">License Key</string>

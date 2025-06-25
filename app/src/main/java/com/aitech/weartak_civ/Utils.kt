@@ -26,6 +26,7 @@ import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -385,6 +386,46 @@ object Utils {
                         buffer.average()
                     } else null
                 }
+            }
+        }
+    }
+
+    object SettingsUtils {
+        private const val TAG = "WearTAK-SettingsUtils"
+
+        data class CategoryRolesEntry(
+            val category: String, val roles: List<String>
+        )
+
+        /**
+         * Reads the default roles/categories from res/raw/roles_json_config.json.
+         * On any error, logs it and returns an empty list.
+         */
+        fun Context.defaultRoleCategoryEntriesFromRaw(): List<CategoryRolesEntry> {
+            return try {
+                Log.i(TAG, "Loading default categories from raw JSON")
+                val jsonStr = resources.openRawResource(R.raw.roles_json_config)
+                    .bufferedReader()
+                    .use { it.readText() }
+
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<List<CategoryRolesEntry>>() {}
+                val type = typeToken.type
+                Gson().fromJson<List<CategoryRolesEntry>>(jsonStr, type).also {
+                    Log.i(TAG, "Parsed ${it.size} default categories")
+                }
+            } catch (io: IOException) {
+                Log.e(TAG, "I/O error reading roles_json_config.json", io)
+                emptyList()
+            } catch (js: JsonSyntaxException) {
+                Log.e(TAG, "Malformed JSON in roles_json_config.json", js)
+                emptyList()
+            } catch (jp: JsonParseException) {
+                Log.e(TAG, "Gson failed to parse JSON", jp)
+                emptyList()
+            } catch (ex: Exception) {
+                Log.e(TAG, "Unexpected error loading default categories", ex)
+                emptyList()
             }
         }
     }
