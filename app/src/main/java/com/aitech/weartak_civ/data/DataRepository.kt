@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
+import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -175,15 +176,51 @@ class DataRepository(private val context: Context) {
         prefs[TEAM_COLORS] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown"
     }
 
-    suspend fun storeRolesList(rolesList: String) {
+    private val listType = object : TypeToken<List<CategoryRolesEntry>>() {}.type
+
+    suspend fun storeCategoryRolesList(entries: List<CategoryRolesEntry>) {
         context.dataStore.edit { prefs ->
-            prefs[ROLES_LIST] = rolesList
+            prefs[CATEGORY_ROLES_ENTRIES_JSON] = gson.toJson(entries, listType)
         }
     }
 
-    val getRolesList: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[ROLES_LIST] ?: "Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9"
-    }
+    val getCategoryRolesList: Flow<List<CategoryRolesEntry>> =
+        context.dataStore.data.map { prefs ->
+            val jsonString = prefs[CATEGORY_ROLES_ENTRIES_JSON]
+            if (jsonString.isNullOrEmpty()) {
+                emptyList()
+            } else {
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<List<CategoryRolesEntry>>() {}
+                val type = typeToken.type
+                gson.fromJson<List<CategoryRolesEntry>>(jsonString, type)
+            }
+        }
+
+    suspend fun storeRoleCategory(category: String) =
+        context.dataStore.edit { prefs ->
+            prefs[SELECTED_CATEGORY] = category
+        }
+
+    val getRoleCategory: Flow<String> =
+        context.dataStore.data.map {prefs ->
+            prefs[SELECTED_CATEGORY] ?: "MIL"
+        }
+
+    fun getRolesForCategory(cat: String): Flow<List<String>> =
+        getCategoryRolesList.map { list ->
+            list.firstOrNull { it.category == cat }?.roles ?: emptyList()
+        }
+
+//    suspend fun storeRolesList(rolesList: String) {
+//        context.dataStore.edit { prefs ->
+//            prefs[ROLES_LIST] = rolesList
+//        }
+//    }
+//
+//    val getRolesList: Flow<String> = context.dataStore.data.map { prefs ->
+//        prefs[ROLES_LIST] ?: "Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9"
+//    }
 
     val getTeam: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[TEAM] ?: "Orange"
@@ -194,13 +231,14 @@ class DataRepository(private val context: Context) {
             prefs[TEAM] = team
         }
     }
+
     val getRole: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[ROLE] ?: "Team Member"
+        prefs[SELECTED_ROLE] ?: "Team Member"
     }
 
     suspend fun storeRole(role: String) {
         context.dataStore.edit { prefs ->
-            prefs[ROLE] = role
+            prefs[SELECTED_ROLE] = role
         }
     }
 
@@ -861,8 +899,9 @@ class DataRepository(private val context: Context) {
         private val TEAM = stringPreferencesKey("team")
         private val TEAM_NAMES = stringPreferencesKey("team_names")
         private val TEAM_COLORS = stringPreferencesKey("team_colors")
-        private val ROLE = stringPreferencesKey("role")
-        private val ROLES_LIST = stringPreferencesKey("roles_list")
+        private val CATEGORY_ROLES_ENTRIES_JSON = stringPreferencesKey("category_roles_entries_json")
+        private val SELECTED_CATEGORY     = stringPreferencesKey("selected_category")
+        private val SELECTED_ROLE         = stringPreferencesKey("role")
         private val LICENSE = stringPreferencesKey("license")
         private val DITTO_APP_ID = stringPreferencesKey("ditto_app_id")
         private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")

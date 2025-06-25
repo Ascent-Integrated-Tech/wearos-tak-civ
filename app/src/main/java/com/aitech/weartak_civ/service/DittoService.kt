@@ -32,7 +32,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -428,7 +428,7 @@ class DittoService : Service() {
                 heartRate     = heartRate,
                 battery       = battery,
                 callsign      = callsign,
-                roleValue     = roleValue,
+                roleValue     = role,
                 teamValue     = teamValue,
                 uid           = uuid,
                 bearingActual = bearingActual,

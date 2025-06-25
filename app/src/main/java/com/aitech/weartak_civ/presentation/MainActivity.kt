@@ -108,7 +108,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHAN
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.BatteryService
@@ -159,6 +158,8 @@ import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils.DEFAULT_AGE
 import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
+import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
 import com.aitech.weartak_civ.Utils.secureRandom
@@ -181,6 +182,10 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.SkinTempService
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.categoryRolesEntryLists
+import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
+import com.google.gson.reflect.TypeToken
 
 class MainActivity : ComponentActivity() {
 
@@ -218,14 +223,14 @@ class MainActivity : ComponentActivity() {
         private val klaxon = Klaxon()
 
         var team = ""
+        // Unlike team and teamValue, role does not have a roleValue. So removing roleValue. Please use role wherever roleValue was previously used.
         var role = ""
+        var category = ""
         var license = "License"
         var teamValue = ""
-        var roleValue = ""
         var dittoAppId = ""
         var dittoAuthToken = ""
         lateinit var teamEntriesValuesList : TeamsJson
-        lateinit var roleEntriesValuesList : RolesJson
         var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
         val teamState = MutableLiveData<String>("")
         val teamSettingsState = MutableLiveData<String>("")
@@ -1003,16 +1008,58 @@ class MainActivity : ComponentActivity() {
         teamValue = teamEntriesValuesList.ltValues[teamIndex]
     }
 
-    private suspend fun initRoleAndRoleValue() {
-        // what role am I?
+    private suspend fun initCategoryAndRole() {
+        // what role and in which category am I?
         role = dataRepository.getRole.first()
-        var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+        category = dataRepository.getRoleCategory.first()
+
+        val catIdx = categoryRolesEntryLists.indexOfFirst { it.category == category}
+        val roleIdx = categoryRolesEntryLists.getOrNull(catIdx)?.roles?.indexOf(role) ?: -1
+
         // needed in the event my current role doesn't exist in the list of available roles.
-        if (roleIndex == -1) {
-            role = roleEntriesValuesList.lrEntries[0]
-            roleIndex = 0
+        if (catIdx == -1 || roleIdx == -1) {
+            category = categoryRolesEntryLists.first().category
+            role = categoryRolesEntryLists.first().roles.first()
+            dataRepository.storeRoleCategory(category)
+            dataRepository.storeRole(role)
         }
-        roleValue = roleEntriesValuesList.lrValues[roleIndex]
+        Log.i(TAG, "Exited initCategoryAndRole() w/ category ($category) and role ($role)")
+    }
+
+    private suspend fun initCategoryAndRoleAndCatogoryRolesList(dataRepoCategoryRolesList: List<CategoryRolesEntry> ) {
+        try {
+            Log.i(TAG, "Just before loading category entries from DataStore")
+            categoryRolesEntryLists = dataRepoCategoryRolesList
+
+            if (categoryRolesEntryLists.isEmpty()) {
+                Log.i(TAG, "DataStore empty → loading defaults from raw JSON")
+                val defaults = applicationContext.defaultRoleCategoryEntriesFromRaw()
+
+                if (defaults.isNotEmpty()) {
+                    categoryRolesEntryLists = defaults
+                    Log.i(TAG, "Caching ${defaults.size} defaults back to DataStore")
+                    try {
+                        // **Use the correct method name** from DataRepository:
+                        dataRepository.storeCategoryRolesList(defaults)
+                    } catch (storeEx: Exception) {
+                        Log.e(TAG, "Failed to store default categories", storeEx)
+                    }
+                } else {
+                    Log.w(TAG, "No defaults found in raw resource; UI will be empty")
+                }
+            }
+
+            Log.i(TAG, "About to init category and role")
+            initCategoryAndRole()
+
+            // … rest of your initSettings()
+        } catch (e: Exception) {
+            Log.e(TAG, "Uncaught error in initCategoryAndRoleAndCatogoryRolesList(): ${e.message}", e)
+            // At this point you can either rethrow or fall back to a minimal safe state:
+            categoryRolesEntryLists = emptyList()
+            role = ""             // or some safe default
+            category = ""
+        }
     }
 
     fun initSettings() {
@@ -1034,10 +1081,7 @@ class MainActivity : ComponentActivity() {
             initTeamEntriesValuesList(teamNames, teamColors)
             initTeamAndTeamValue()
 
-            // what roles can I be?
-            val rolesList = dataRepository.getRolesList.first().split(',')
-            roleEntriesValuesList = RolesJson(rolesList, rolesList)
-            initRoleAndRoleValue()
+            initCategoryAndRoleAndCatogoryRolesList(dataRepository.getCategoryRolesList.first())
 
             license = dataRepository.getLicense.first()
 
@@ -1103,10 +1147,12 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Device ID:", device_uid)}
                     ${String.format("%-25s %-30s", "Callsign:", callsign)}
                     ${String.format("%-25s %-30s", "Team:", team)}
+                    ${String.format("%-25s %-30s", "Role Category:", category)}
                     ${String.format("%-25s %-30s", "Role:", role)}
                     ${String.format("%-25s %-30s", "Teams:", teamEntriesValuesList.ltEntries)}
                     ${String.format("%-25s %-30s", "Colors:", teamEntriesValuesList.ltValues)}
-                    ${String.format("%-25s %-30s", "Roles:", roleEntriesValuesList.lrEntries)}
+                    ${String.format("%-25s %-30s", "Category Roles List:", categoryRolesEntryLists.toString())}
+
                     
                     === === Server Settings === ===
                     ${String.format("%-25s %-30s", "Number of Servers:", takServerList.size)}
@@ -1509,7 +1555,7 @@ class MainActivity : ComponentActivity() {
 
         val teamsNames = appRestrictions.getString("custom_teams_names", null)
         val teamsColors = appRestrictions.getString("custom_teams_colors", null)
-        val rolesEntries = appRestrictions.getString("custom_roles", null)
+        val categoryRolesJsonStr = appRestrictions.getString("custom_roles", null)
 
         var serverEnableTAKConnectService: Boolean = true
         var serverName: String? = null
@@ -1686,13 +1732,35 @@ class MainActivity : ComponentActivity() {
                 EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
             }
 
-            if (null != rolesEntries) {
-                Log.v(TAG, "rolesEntries: $rolesEntries")
-                dataRepository.storeRolesList(rolesEntries)
-                val rolesList = rolesEntries.split(",")
-                roleEntriesValuesList = RolesJson(rolesList, rolesList)
-                initRoleAndRoleValue()
+            if (categoryRolesJsonStr != null) {
+                // 1. Prepare a Gson instance and the List<RoleCategoryEntry> type token
+                val gson = Gson()
+                val listType = object : TypeToken<List<CategoryRolesEntry>>() {}.type
+                lateinit var entries : List<CategoryRolesEntry>
+
+                try {
+                    // 2. Parse the managed‐config JSON into your model class
+                    entries = gson.fromJson(categoryRolesJsonStr, listType)
+                    Log.i(TAG, "Attempting to parse the managed configs JSON String:  $entries")
+
+                    // 3. Cache it into DataRepository (which now uses Gson under the hood)
+                    dataRepository.storeCategoryRolesList(entries)
+
+                } catch (e: JsonSyntaxException) {
+                    Log.w(TAG, "Failed to parse managed‐config JSON, falling back", e)
+
+                    // 4. Fallback to last‐stored in DataStore or to raw‐resource defaults
+                        val fallback = dataRepository.getCategoryRolesList.first()
+                        entries = if (fallback.isNotEmpty()) {
+                            fallback
+                        } else {
+                            applicationContext.defaultRoleCategoryEntriesFromRaw()
+                        }
+                        dataRepository.storeCategoryRolesList(entries)
+                }
+                initCategoryAndRoleAndCatogoryRolesList(entries)
             }
+
             if ((null != teamsNames) && (null != teamsColors)) {
                 Log.v(TAG, "teamsNames: $teamsNames")
                 Log.v(TAG, "teamsColors: $teamsColors")
@@ -1701,7 +1769,7 @@ class MainActivity : ComponentActivity() {
                 initTeamEntriesValuesList(teamsNames.split(","), teamsColors.split(","))
                 initTeamAndTeamValue()
             }
-            if ((null != rolesEntries) || ((null != teamsNames) && (null != teamsColors))) {
+            if ((null != categoryRolesJsonStr) || ((null != teamsNames) && (null != teamsColors))) {
                 // Send out EventBus message even if there is no actual change
                 EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
             }
@@ -2218,17 +2286,6 @@ fun findTeamIndex(teamName: String?) : Int {
     return index
 }
 
-fun findRoleIndex(roleName: String?) : Int {
-    if (null == roleName) {
-        return 0
-    }
-    val index = roleEntriesValuesList.lrEntries.indexOf(roleName)
-    if (index == -1) {
-        return 0
-    }
-    return index
-}
-
 fun displayServerDialogs(
     isNetworkConnected: Boolean,
     loadingDialog: String?,
@@ -2590,9 +2647,7 @@ fun MarkerDropButton(
         },
         modifier = Modifier
             .border(
-                width = 2.dp,
-                color = Color.White,
-                shape = CircleShape
+                width = 2.dp, color = Color.White, shape = CircleShape
             )
             .size(100.dp, 60.dp),
     ) {

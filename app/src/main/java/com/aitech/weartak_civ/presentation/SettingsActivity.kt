@@ -107,6 +107,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -202,10 +203,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSetting
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restartTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleEntriesValuesList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiString
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.saveBattOnWifiStringState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
@@ -241,6 +240,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSt
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.categoryRolesEntryLists
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsActivity
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
@@ -259,6 +259,10 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServerComplicationUpdate
+import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.category
+import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.categorySettingsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -279,6 +283,8 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
+        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
+        val categorySettingsState = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -291,6 +297,15 @@ class SettingsActivity : ComponentActivity() {
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         callsignSettingsState.postValue(callsign)
         teamSettingsState.postValue(team)
+
+        lifecycleScope.launch {
+            categoryRolesEntryLists = dataRepository.getCategoryRolesList.first()
+            if (categoryRolesEntryLists.isEmpty())
+                categoryRolesEntryLists = applicationContext.defaultRoleCategoryEntriesFromRaw()
+
+            categorySettingsState.postValue(dataRepository.getRoleCategory.first())
+        }
+
         roleSettingsState.postValue(role)
         enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
         enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
@@ -329,7 +344,10 @@ class SettingsActivity : ComponentActivity() {
 fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
-
+//    var selectedCategoryAndRoleIndex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var selectedCategoryAndRoleIndex by remember {
+        mutableStateOf(findRoleSelectionFromString(roleSettingsState.value))
+    }
     // collect license from data repo so we can see if it changes.
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
 
@@ -357,6 +375,19 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "role_screen") {
             RoleSetting(navController)
+        }
+        composable(
+            "role_category_screen/{index}",
+                    arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.d(TAG, "role_category_screen index: $index")
+            RoleCategorySetting(
+                navController = navController,
+                categoryIndex = index,
+                selectedCategoryAndRoleIndex = selectedCategoryAndRoleIndex,
+                onRoleSelected = { selectedCategoryAndRoleIndex = it }
+            )
         }
         composable(
             "team_screen") {
@@ -604,25 +635,10 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
 
 @Composable
 fun TeamSetting(navController: NavController) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(top = 20.dp, bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        val index : Int = findTeamIndex(teamSettingsState.value)
-        var selectedRadioIndex by remember { mutableStateOf(index) }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 5.dp)
-                .padding(bottom = 40.dp)
-                .verticalScroll(state = rememberScrollState()),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+    val index : Int = findTeamIndex(teamSettingsState.value)
+    var selectedRadioIndex by remember { mutableStateOf(index) }
+    WearTakCivScreenDimensions(
+        columnContent = {
             teamEntriesValuesList.ltEntries.forEachIndexed { index, ltItem ->
                 run {
                     SelectableChip(
@@ -634,13 +650,19 @@ fun TeamSetting(navController: NavController) {
                             Text(ltItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         },
                         enabled = true,
-                        shape = RoundedCornerShape(0.dp)
+                        shape =
+                            if (ltItem == teamEntriesValuesList.ltEntries.first())
+                                RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                            else if (ltItem == teamEntriesValuesList.ltEntries.last())
+                                RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                            else
+                                RoundedCornerShape(0.dp)
                     )
                 }
             }
             Spacer(modifier = Modifier.height(15.dp))
-        }
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+        },
+        rowContent = {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Team Settings NOT saved")
@@ -660,68 +682,151 @@ fun TeamSetting(navController: NavController) {
                     }
                 }
             )
-        }
-    }
+        },
+        text = stringResource(R.string.team)
+    )
 }
 
 @Composable
 fun RoleSetting (navController: NavController) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(top = 20.dp, bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        val index = findRoleIndex(roleSettingsState.value)
-        var selectedRadioIndex by remember { mutableStateOf(index) }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 5.dp)
-                .padding(bottom = 40.dp)
-                .verticalScroll(state = rememberScrollState()),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            roleEntriesValuesList.lrEntries.forEachIndexed { index, lrItem ->
+//    val index = findRoleIndex(roleSettingsState.value)
+//    var selectedRadioIndex by remember { mutableStateOf(index) }
+    WearTakCivScreenDimensions(
+        columnContent = {
+            categoryRolesEntryLists.forEachIndexed { index, lrCategory ->
                 run {
-                    SelectableChip(
-                        modifier = Modifier.fillMaxWidth(),
-                        selected = index == selectedRadioIndex,
-                        onClick = { selectedRadioIndex = index},
-                        label = {
-                            // The primary label should have a maximum 3 lines of text
-                            Text(lrItem, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        },
+                    Chip(
+                        onClick = {navController.navigate("role_category_screen/$index") },
                         enabled = true,
-                        shape = RoundedCornerShape(0.dp)
+                        label = { Text(text = lrCategory.category) },
+                        colors = ChipDefaults.chipColors(
+                            backgroundColor = Color.DarkGray,
+                            contentColor = Color.White,
+                            secondaryContentColor = Color.LightGray
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 3.dp)
                     )
                 }
             }
             Spacer(modifier = Modifier.height(15.dp))
-        }
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+        },
+    rowContent = {
+        BackButton(
+            onClick = {
+                //                roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
+//                Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
+                navController.navigate("settings_screen") {
+                    popUpTo(("settings_screen")) {
+                        inclusive = true
+                    }
+                } },
+        )
+    },
+    text = stringResource(R.string.role)
+    )
+}
+
+@Composable
+fun RoleCategorySetting (
+    navController: NavController,
+    categoryIndex: Int,
+    selectedCategoryAndRoleIndex: Pair<Int, Int>?,
+    onRoleSelected: (Pair<Int, Int>) -> Unit
+) {
+    var localSelection by remember { mutableStateOf(selectedCategoryAndRoleIndex)}   // whatever the user's current pick is, e.g. (2,5)
+//    val index = findRoleIndex(roleSettingsState.value)
+    val categoryRoleListSetting = categoryRolesEntryLists.getOrNull(categoryIndex)
+    val roleList = categoryRoleListSetting?.roles.orEmpty()
+    WearTakCivScreenDimensions(
+        columnContent = {
+            LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
+                itemsIndexed(roleList) { roleIndex, role ->
+                    val isSelected = selectedCategoryAndRoleIndex?.let {
+                        it.first == categoryIndex && it.second == roleIndex
+                    } ?: false
+
+                    SelectableChip(
+                            modifier = Modifier.fillMaxWidth(),
+                            selected = isSelected,
+                            onClick = {
+                                localSelection = categoryIndex to roleIndex
+                                onRoleSelected(categoryIndex to roleIndex)},
+                            label = {
+                                // The primary label should have a maximum 3 lines of text
+                                Text(role, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            },
+                            enabled = true,
+                            shape =
+                                if (role == roleList.first())
+                                    RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                                else if (role == roleList.last())
+                                    RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                                else
+                                    RoundedCornerShape(0.dp)
+                        )
+                    }
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+        },
+        rowContent = {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Role Settings NOT saved")
-                    navController.navigate("settings_screen") {
-                        popUpTo(("settings_screen")) {
+                    navController.navigate("role_screen") {
+                        popUpTo(("role_screen")) {
                             inclusive = true
                         }
                     }                },
                 onClickConfirm = {
-                    roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
-                    Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
-                    navController.navigate("settings_screen") {
-                        popUpTo(("settings_screen")) {
-                            inclusive = true
-                        }
-                    }                })
-        }
+//                    val selectedRole = selectedCategoryAndRoleIndex?.let { (categoryIndex, roleIndex) ->
+//                        roleCategoryEntryLists.getOrNull(categoryIndex)?.roles?.getOrNull(roleIndex)
+//                    }
+//                    if (selectedRole != null) {
+//                        Log.d(TAG, "Selected role to save: $selectedRole")
+//                        roleSettingsState.postValue(selectedRole)
+//
+//                    } else {
+//                        Log.d(TAG, "No role selected.")
+//                    }
+//                    Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
+
+                    localSelection?.let{ (categoryIndex, roleIndex) ->
+                        val entry = categoryRolesEntryLists[categoryIndex]
+                        val selectedRole = entry.roles[roleIndex]
+
+                        Log.d(TAG, "Saving category=${entry.category}, role=$selectedRole")
+                        categorySettingsState.postValue(entry.category)
+                        roleSettingsState.postValue(selectedRole)
+                    } ?: Log.d(TAG, "No role selected")
+                    navController.navigate("role_screen") {
+                        popUpTo(("role_screen")) { inclusive = true }
+                    }
+                })
+        },
+        text = "Role - " + categoryRoleListSetting?.category
+    )
+}
+
+fun findRoleSelectionFromString(roleString: String?): Pair<Int, Int>? {
+    if (roleString == null) return null
+    for ((categoryIndex, categoryRole) in categoryRolesEntryLists.withIndex()) {
+        val roleIndex = categoryRole.roles.indexOf(roleString)
+        if (roleIndex != -1) return Pair(categoryIndex, roleIndex)
     }
+    return null
+}
+
+fun findRoleCategoryIndex(dataName: String?, dataList: List<String>) : Int {
+    if (null == dataName) {
+        return 0
+    }
+    val index = dataList.indexOf(dataName)
+    if (index == -1) {
+        return 0
+    }
+    return index
 }
 
 @SuppressLint("CoroutineCreationDuringComposition")
@@ -3186,6 +3291,7 @@ fun SettingsScreen(
                     callsignSettingsState.postValue(callsign)
                     teamSettingsState.postValue(team)
                     roleSettingsState.postValue(role)
+                    categorySettingsState.postValue(category)
                     enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
                     enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
                     enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
@@ -3216,6 +3322,7 @@ fun SettingsScreen(
                     var callsignChanged: Boolean = false
                     var teamChanged = false
                     var roleChanged = false
+                    var categoryChanged = false
                     var licenseChanged: Boolean = false
                     val maxReportRate: Int = 100000000
                     val minReportRate: Int = 1
@@ -3311,15 +3418,25 @@ fun SettingsScreen(
                     if (!role.equals(roleSettingsState.value)) {
                         settingsChanged = true; roleChanged = true
                         role = roleSettingsState.value ?: role
-                        var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
-                        // This cannot happen, but still...
-                        if (roleIndex == -1) {
-                            Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
-                            roleIndex = 0
-                            role = roleEntriesValuesList.lrEntries[0]
-                            roleSettingsState.postValue(role)
+//                        var roleIndex = roleEntriesValuesList.lrEntries.indexOf(role)
+//                        // This cannot happen, but still...
+//                        if (roleIndex == -1) {
+//                            Log.e(TAG, "ERROR SettingsScreen: roleIndex is -1. Setting role entry and value to that of index 0")
+//                            roleIndex = 0
+//                            role = roleEntriesValuesList.lrEntries[0]
+//                            roleSettingsState.postValue(role)
+//                        }
+//                        roleValue = roleEntriesValuesList.lrValues[roleIndex]
+                        runBlocking {
+                            roleState.postValue(role)
                         }
-                        roleValue = roleEntriesValuesList.lrValues[roleIndex]
+                        EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
+                    }
+                    if (!category.equals(categorySettingsState.value)) {
+                        settingsChanged = true; categoryChanged = true; roleChanged = true
+                        role = roleSettingsState.value ?: role
+                        category = categorySettingsState.value ?: category
+
                         runBlocking {
                             roleState.postValue(role)
                         }
@@ -3457,6 +3574,12 @@ fun SettingsScreen(
                              if (roleChanged) {
                                  Log.d(TAG, "Storing Role ($role)")
                                  dataRepository.storeRole(role)
+                                 dataRepository.storeRoleCategory(category)
+                             }
+                             if (categoryChanged) {
+                                 Log.d(TAG, "Category Changed. Storing Category & Role ($role)")
+                                 dataRepository.storeRole(role)
+                                 dataRepository.storeRoleCategory(category)
                              }
 //                                    if(licenseChanged) {
 //                                        dataRepository.storeLicense(license)
@@ -3687,9 +3810,8 @@ fun SexMetricPreview() {
 }
 @Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
 @Composable
-fun HeightPickerPreview() {
-
-    HeightPickerSetting(rememberSwipeDismissableNavController())
+fun RoleSettingPreview() {
+    RoleSetting(rememberSwipeDismissableNavController())
 }
 
 @Preview(widthDp = 192, heightDp = 500, showBackground = true)
