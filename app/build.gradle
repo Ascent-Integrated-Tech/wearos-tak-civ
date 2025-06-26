@@ -197,18 +197,6 @@ dependencies {
         implementation 'org.tensorflow:tensorflow-lite-gpu-kotlin:2.13.0'
 
         // Testing Bend Detection
-        androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-        androidTestImplementation 'androidx.test:core:1.5.0'
-        androidTestImplementation 'androidx.test:runner:1.5.2'
-        androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
-
-        // LiteRT
-        implementation 'com.google.android.gms:play-services-tflite-java:16.1.0'
-        implementation 'org.tensorflow:tensorflow-lite-support:0.3.1'
-    implementation 'org.tensorflow:tensorflow-lite:2.13.0'
-    implementation 'org.tensorflow:tensorflow-lite-support:0.3.1'
-
-    // Google Play Services TFLite (LiteRT)
-    implementation 'com.google.android.gms:play-services-tflite-java:16.1.0'
-
+        implementation 'org.pytorch:pytorch_android:1.13.1'        // Core
+        implementation 'org.pytorch:pytorch_android_torchvision:1.13.1' // Optional (not needed unless you use image transforms)
 }
