@@ -279,6 +279,12 @@
             android:foregroundServiceType="location"
             android:stopWithTask="false" />
         <service
+            android:name=".service.EKFSensorFusionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.BleBeaconService"
             android:enabled="true"
             android:exported="false"

@@ -181,6 +181,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocation
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.service.ActivityRecognitionService
+import com.aitech.weartak_civ.service.EKFSensorFusionService
 import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -1369,6 +1370,8 @@ class MainActivity : ComponentActivity() {
                 WearTAKCivApp(callsignSettingsState, licenseState)
             }
         }
+
+        mainActivity.startForegroundService(Intent(mainActivity, EKFSensorFusionService::class.java))
 
         /*
         if (Settings.Secure.putString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, "com.aitech.weartak_civ/.service.CustomAccessibilityService")) {
