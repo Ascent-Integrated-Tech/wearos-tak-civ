@@ -35,13 +35,23 @@ class KalmanEstimator {
         val dt = (timestamp - lastTimestamp) / 1000f
         lastTimestamp = timestamp
 
+        val accelSmoothingFactor = 0.4f
         for (i in 0..2) {
             state[i] += state[i + 3] * dt + 0.5f * accel[i] * dt.pow(2)
-            state[i + 3] += accel[i] * dt
+            state[i + 3] += accelSmoothingFactor * accel[i] * dt
         }
 
-        for (i in 0..5) {
+        // Velocity decay
+        val velocityDecay = 0.98f
+        for (i in 3..5) {
+            state[i] *= velocityDecay
+        }
+
+        // Apply differential noise
+        val velocityProcessNoise = processNoise * 0.1f
+        for (i in 0..2) {
             P[i][i] += processNoise
+            P[i + 3][i + 3] += velocityProcessNoise
         }
 
         val drift = sqrt(state[0].pow(2) + state[1].pow(2) + state[2].pow(2))
@@ -49,6 +59,7 @@ class KalmanEstimator {
             onGpsUpdateRequired?.invoke()
         }
     }
+
 
     fun updateWithGps(position: FloatArray, accuracy: FloatArray) {
         for (i in 0..2) {
