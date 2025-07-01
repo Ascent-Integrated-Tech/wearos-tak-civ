@@ -1202,7 +1202,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "MainActivity onCreate called")
         mainActivity = this
         mainActivityIsInit = this
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        device_uid = "W_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
         dataRepository = DataRepository(this)

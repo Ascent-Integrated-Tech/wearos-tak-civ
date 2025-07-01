@@ -21,12 +21,10 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.getValueFromJson
-import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
@@ -37,13 +35,11 @@ import com.aitech.weartak_civ.events.MarkerEvent
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.FRIENDLY
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
 import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
-import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
@@ -64,6 +60,7 @@ import org.greenrobot.eventbus.ThreadMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -88,6 +85,7 @@ class CotDispatchService : Service() {
     private var markerType: String = ""
     private var alertOrCancel = false
     private var sosAlertUid: String = ""
+    private var counterInt: Int = 0
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -226,7 +224,77 @@ class CotDispatchService : Service() {
         return BleLocationOutput(latActual, lonActual, haeActual, ceActual)
     }
 
-    private fun buildLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float): String {
+    data class PhysioData(
+        var heartRate: Int,
+        var skinTemp: Float,
+        var battery: Int?
+    )
+
+    private fun buildVerboseLocationPhsyioCot(location: Location?, physioData: PhysioData): String {
+        // — 0) Grab unique device identifier from MainActivity
+        val uid = MainActivity.device_uid
+
+        // — 1) Use a formatter with no milliseconds (drops the “.663”)
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val now = Date()
+        val startTime = sdf.format(now)
+        // 3× interval into the future
+        val staleTime = sdf.format(Date(now.time + 3 * currReportingIntervalInSecs * 1_000L))
+
+        // — 2) Raw coords & altitude
+        val lat = location?.latitude  ?: 0.0
+        val lon = location?.longitude ?: 0.0
+        val hae = location?.altitude  ?: 0.0
+
+        // — 3) Strip precision & default to “9999” if NaN
+        val ceTrim    = location?.accuracy?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val leTrim    = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val courseTrim= location?.bearing?.toInt() ?: 0
+        val speedTrim = location?.speed?.toInt()   ?: 0
+
+        // — 4) Pull out physio values
+        val hr  = physioData.heartRate
+        val st  = physioData.skinTemp.toInt()     // drop decimals
+        val bat = physioData.battery
+
+        // — 5) Build the minimal XML
+//        val cotIndented = """
+//        <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
+//        <event version="2.0" uid="$uid" type="a-f-G-U-C" time="$startTime" start="$startTime" stale="$staleTime" how="m-g">
+//          <point lat="${"%.6f".format(lat)}" lon="${"%.6f".format(lon)}" hae="${"%.1f".format(hae)}" ce="$ceTrim" le="$leTrim"/>
+//          <detail>
+//            <contact callsign="$callsign"/>
+//            <remarks>H:$hr;T:$st;B:$bat</remarks>
+//            <__group role="$roleValue" name="$teamValue"/>
+//            <track course="$courseTrim" speed="$speedTrim"/>
+//          </detail>
+//        </event>
+//        """.trimIndent()
+
+        val cotTest = """
+        <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
+        <event version="2.0" uid="$uid" type="a-f-G-U-C"
+               time="$startTime" start="$startTime" stale="$staleTime"
+               how="m-g">
+          <point lat="${"%.6f".format(lat)}" lon="${"%.6f".format(lon)}"
+                 hae="${"%.1f".format(hae)}" ce="$ceTrim" le="$leTrim"/>
+           <detail>
+             <__group role="$roleValue" name="$teamValue"/>
+             <track course="$courseTrim" speed="$speedTrim"/>
+             <contact callsign="$callsign"/>
+           </detail>
+        </event>
+        """.trimIndent()
+
+        Log.i(TAG, cotTest)
+        Log.i(TAG, "Size Cot Indented: ${cotTest.length}")
+
+        return cotTest
+    }
+/*
+    private fun buildVerboseLocationPhsyioCot(location: Location?, physioData: PhysioData): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -259,35 +327,21 @@ class CotDispatchService : Service() {
         }
 
         val uid = MainActivity.device_uid
-        val skinTempStr = String.format("%.2f", skinTemp)
-        //Log.i(TAG, "Skt: $skinTempStr ºF | int: $currReportingIntervalInSecs seconds")
-        // TODO: set phone number to actual phone number
-        return """
-        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: $heartRate bpm; SkinTemp: ${skinTempStr}ºF; Batt: $battery%</remarks><status battery='$battery'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><skt>$skinTempStr</skt><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
-        """.trimIndent()
+        val skinTempStr = String.format("%.2f", physioData.skinTemp)
+
 //        return """
-//        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><ditto ip='0.0.0.0' pks='$localPeerKeyString' deviceName='$callsign' version='AndJ4.8.1_9afa7353b2'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
+//        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: ${skinTempStr}ºF; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
 //        """.trimIndent()
+        val cot = """
+        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: ${skinTempStr}ºF; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
+        """.trimIndent()
 
+        Log.i(TAG, cot)
+        Log.i(TAG, "Size:${cot.length} Bytes")
 
-
-        /*
-                return """
-                    <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
-                    <event version="2.0" uid='${MainActivity.device_uid}' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
-                        <point lat='${location.latitude}' lon='${location.longitude}' hae='${location.altitude}' ce='${location.accuracy}' le='${location.verticalAccuracyMeters}' />
-                        <detail>
-                            <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
-                            <__group role='$roleValue' name='$teamValue'/>
-                            <biometrics hr='$heartRate'/>
-                            <status battery='$battery' model='WEAROS'/>
-                            <track course='${location.bearing}' speed='${location.speed}'/>
-                        </detail>
-                    </event>
-                """.trimIndent()
-         */
+        return cot
     }
-
+*/
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
         manualSosReceivedCategory = event.category
@@ -563,6 +617,7 @@ class CotDispatchService : Service() {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             CoroutineScope(Dispatchers.IO).launch {
+
                 val location = dataRepository.latestLocation.value
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
@@ -573,14 +628,22 @@ class CotDispatchService : Service() {
                 if (skinTemp == null) {
                     skinTemp = (-1).toFloat()
                 }
-                sendLocationBiometricCotMessage(location, heartRate, battery, skinTemp)
+
+                val physioData: PhysioData = PhysioData(
+                    heartRate = heartRate,
+                    skinTemp = skinTemp,
+                    battery = battery
+                )
+
+                sendLocationBiometricCotMessage(location, physioData)
             }
         }
 
     }
 
-    private fun sendLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float) {
-        val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery, skinTemp)
+    private fun sendLocationBiometricCotMessage(location: Location?, physioData: PhysioData) {
+
+        val cotMessage = buildVerboseLocationPhsyioCot(location, physioData)
         sendDataTAKServers(cotMessage, false)
         //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
         //Log.d(TAG, logString)
