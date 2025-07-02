@@ -172,13 +172,12 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.service.SkinTempService
-import com.samsung.android.service.health.tracking.HealthTrackingService
 
 class MainActivity : ComponentActivity() {
 
@@ -191,18 +190,16 @@ class MainActivity : ComponentActivity() {
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         var enableLocationService : Boolean =  true
-        var enableLocationServiceLiveData = MutableLiveData<Boolean>(true)
+        var enableLocationServiceSettingsState = MutableLiveData<Boolean>(true)
         var enableBleBeaconService : Boolean = false
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
-        var locationServiceRunning : Boolean = false
         var enableBiometricsService : Boolean = true
         var enableSkinTempService: Boolean = true
-        var enableBiometricsServiceLiveData = MutableLiveData<Boolean>(false)
-        var biometricServiceRunning : Boolean = false
+        var enableBiometricsServiceSettingsState = MutableLiveData<Boolean>(true)
         var enableDittoService : Boolean = false
-        var dittoServiceRunning : Boolean = false
+        var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
-        var enableChatServiceLiveData = MutableLiveData<Boolean>(false)
+        var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -277,12 +274,12 @@ class MainActivity : ComponentActivity() {
 
         var enableDynamicReportingStrategy = false
         var enableSmsForAlerts = false
-        var enableSmsForAlertsLiveData = MutableLiveData<Boolean>(false)
+        var enableSmsForAlertsSettingsState = MutableLiveData<Boolean>(false)
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
         var smsNumbersListString : String = ""
         val smsNumbersListStringSettingsState = MutableLiveData<String>("")
         var enablePhysiologicalAlerts = false
-        var enablePhysiologicalAlertsSettingState = false
+        var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(false)
 
         var hrHighAlertBpmThreshold : Int = 140
         val hrHighAlertBpmThresholdState = MutableLiveData<Int>(140)
@@ -1317,12 +1314,13 @@ class MainActivity : ComponentActivity() {
         wifiSsidListState.postValue(wifiSsidList) // tell ui
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-        enableLocationServiceLiveData.postValue(enableLocationService)
-        enableBiometricsServiceLiveData.postValue(enableBiometricsService)
-        enableChatServiceLiveData.postValue(enableChatService)
-        enableSmsForAlertsLiveData.postValue(enableSmsForAlerts)
+        enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableDittoServiceSettingsState.postValue(enableDittoService)
+        enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
+        enableChatServiceSettingsState.postValue(enableChatService)
+        enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
-        enablePhysiologicalAlertsSettingState = enablePhysiologicalAlerts
+        enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
         hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
@@ -2003,7 +2001,7 @@ fun MainScreen(
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
-    val chatCheckedLive by enableChatServiceLiveData.observeAsState()
+    val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
 
     LaunchedEffect(Unit) {
@@ -2215,7 +2213,7 @@ fun displayServerDialogs(
 @Composable
 fun HeartRate () {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
-    val biometricsCheckedLive by enableBiometricsServiceLiveData.observeAsState()
+    val biometricsCheckedLive by enableBiometricsServiceSettingsState.observeAsState()
 
     Column(
         modifier = Modifier
@@ -2303,7 +2301,7 @@ fun takServerComplicationString() {
 }
 
 fun chatComplicationString() {
-    if (enableChatServiceLiveData.value == true) {
+    if (enableChatServiceSettingsState.value == true) {
         var hasUnreadMessages = false
         runBlocking {
             hasUnreadMessages = dataRepository.hasUnread.first()
@@ -2329,7 +2327,7 @@ fun TroubleshootingIcons() {
             .height(70.dp),
             contentAlignment = Alignment.TopCenter
     ) {
-        val locationCheckedLive by enableLocationServiceLiveData.observeAsState()
+        val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
         val battery by BatteryService.batteryPercentageLiveData.observeAsState()
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val anyTakServerConnected by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
