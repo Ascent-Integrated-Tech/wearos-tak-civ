@@ -160,15 +160,17 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiB
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSmsForAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSmsForAlertsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
@@ -271,7 +273,11 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settingsActivity = this
-
+        enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableDittoServiceSettingsState.postValue(enableDittoService)
+        enableChatServiceSettingsState.postValue(enableChatService)
+        enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
+        enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
         callsignSettingsState.postValue(callsign)
         teamSettingsState.postValue(team)
         roleSettingsState.postValue(role)
@@ -284,7 +290,7 @@ class SettingsActivity : ComponentActivity() {
         takServerListState.postValue(takServerList)
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
-        enablePhysiologicalAlertsSettingState = enablePhysiologicalAlerts
+        enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
         hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
         ageState.postValue(ageValue)
@@ -484,7 +490,7 @@ fun WearTakCivScreenDimensions(
                     .fillMaxHeight(0.9f)
                     .align(Alignment.TopCenter)
                     .padding(bottom = 30.dp)
-                .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState()),
 
             horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -2275,15 +2281,22 @@ fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : Muta
 @Composable
 fun PhysiologicalAlertsSetting(navController: NavController) {
     Log.d(TAG, "PhysioAlertSetting called")
-    var physiologicalAlertsChecked by remember{ mutableStateOf(enablePhysiologicalAlertsSettingState)}
-    Log.d(TAG, "physiologicalAlertsChecked =$physiologicalAlertsChecked; enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
+    val physiologicalAlertsCheckedLive by enablePhysiologicalAlertsSettingState.observeAsState()
+    Log.d(TAG, "enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
 
     WearTakCivScreenDimensions(
     columnContent = {
-        SettingSwitchToggle(
-            checked = physiologicalAlertsChecked, onCheckedChange = { physiologicalAlertsChecked = it },
-            title = stringResource(R.string.physiological_alerts),
-            description = stringResource(R.string.on_off),
+//        SettingSwitchToggle(
+//            checked = physiologicalAlertsChecked, onCheckedChange = { physiologicalAlertsChecked = it },
+//            title = stringResource(R.string.physiological_alerts),
+//            description = stringResource(R.string.on_off),
+//        )
+
+        SettingSwitchToggleLiveData(
+            physiologicalAlertsCheckedLive,
+            { enablePhysiologicalAlertsSettingState.postValue(it) },
+            stringResource(R.string.physiological_alerts),
+            stringResource(R.string.on_off)
         )
 
         DataMetricsChip("physiological_alerts_bpm_screen", stringResource(R.string.threshold_high_heart_rate), hrHighAlertBpmThresholdSettingsState.value.toString(), navController)
@@ -2295,7 +2308,7 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
         ConfirmCancelButtons(
             onClickCancel = {
                 Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
-                physiologicalAlertsChecked = enablePhysiologicalAlertsSettingState
+                enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -2303,7 +2316,6 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
                 }
             },
             onClickConfirm = {
-                enablePhysiologicalAlertsSettingState = physiologicalAlertsChecked
                 hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThresholdSettingsState.value)
                 hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThresholdSettingsState.value)
 
@@ -2856,6 +2868,42 @@ fun SettingSwitchToggle(
         enabled = true,
     )
 }
+@Composable
+fun SettingSwitchToggleLiveData(
+    checkedLive: Boolean?,
+    onCheckedChange: (Boolean) -> Unit,
+    title: String,
+    description: String,
+) {
+    // The primary label should have a maximum 3 lines of text
+    // and the secondary label should have max 2 lines of text.
+    ToggleChip(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+        secondaryLabel = {
+            Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        },
+        checked = checkedLive == true,
+        // For Switch  toggle controls the Wear Material UX guidance is to set the
+        // unselected toggle control color to ToggleChipDefaults.switchUncheckedIconColor()
+        // rather than the default.
+        colors =
+            ToggleChipDefaults.toggleChipColors(
+                uncheckedToggleControlColor = ToggleChipDefaults.SwitchUncheckedIconColor
+            ),
+        toggleControl = {
+            Switch(
+                checked = checkedLive == true,
+                onCheckedChange = null,
+                enabled = true,
+            )
+        },
+        onCheckedChange = onCheckedChange,
+        enabled = true,
+    )
+}
 
 //Contains functionality for settings screen
 @Composable
@@ -2865,14 +2913,12 @@ fun SettingsScreen(
     licenseLiveDataState: MutableLiveData<String>,
     context: Context
 ) {
-    var locationChecked by remember{ mutableStateOf(enableLocationService)}
-    var dittoChecked by remember{ mutableStateOf(enableDittoService)}
-    var chatChecked by remember{ mutableStateOf(enableChatService)}
-    var enableSmsChecked by remember{ mutableStateOf(enableSmsForAlerts)}
+    val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
+    val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
+    val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
     var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
-
-    var biometricsChecked by remember{ mutableStateOf(enableBiometricsService)}
-    var physiologicalAlertsChecked by remember{ mutableStateOf(enablePhysiologicalAlerts)}
+    val biometricsCheckedLive by enableBiometricsServiceSettingsState.observeAsState()
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
@@ -2975,31 +3021,36 @@ fun SettingsScreen(
                 modifier = Modifier.padding(7.dp)
             )
 
-            SettingSwitchToggle(
-                checked = locationChecked, onCheckedChange = { locationChecked = it },
-                title = stringResource(R.string.location_service), description = stringResource(R.string.service_on_off)
+            SettingSwitchToggleLiveData(
+                locationCheckedLive,
+                { enableLocationServiceSettingsState.postValue(it) },
+                stringResource(R.string.location_service),
+                stringResource(R.string.service_on_off)
             )
 
-            SettingSwitchToggle(
-                checked = dittoChecked, onCheckedChange = { dittoChecked = it },
-                title = stringResource(R.string.ditto),
-                description = stringResource(R.string.service_on_off),
+            SettingSwitchToggleLiveData(
+                dittoCheckedLive,
+                { enableDittoServiceSettingsState.postValue(it) },
+                stringResource(R.string.ditto),
+                stringResource(R.string.service_on_off)
             )
 
-            SettingSwitchToggle(
-                checked = chatChecked, onCheckedChange = { chatChecked = it },
-                title = stringResource(R.string.chat),
-                description = stringResource(R.string.service_on_off),
+            SettingSwitchToggleLiveData(
+                chatCheckedLive,
+                { enableChatServiceSettingsState.postValue(it) },
+                stringResource(R.string.chat),
+                stringResource(R.string.service_on_off)
             )
 
-            SettingSwitchToggle(
-                    checked = enableSmsChecked, onCheckedChange = { enableSmsChecked = it },
-                    title = "SMS Alerts",
-                    description = stringResource(R.string.on_off),
-                )
+            SettingSwitchToggleLiveData(
+                enableSmsCheckedLive,
+                { enableSmsForAlertsSettingsState.postValue(it) },
+                "SMS Alerts",
+                stringResource(R.string.on_off)
+            )
                 val focusManager = LocalFocusManager.current
 
-                if (enableSmsChecked) {
+                if (enableSmsForAlertsSettingsState.value == true) {
                     OutlinedTextField(
                         value = smsListTextFieldValue,
                         onValueChange = {
@@ -3045,10 +3096,11 @@ fun SettingsScreen(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(7.dp)
             )
-            SettingSwitchToggle(
-                checked = biometricsChecked, onCheckedChange = { biometricsChecked = it },
-                title = stringResource(R.string.physiological_monitoring),
-                description = stringResource(R.string.service_on_off),
+            SettingSwitchToggleLiveData(
+                biometricsCheckedLive,
+                { enableBiometricsServiceSettingsState.postValue(it) },
+                stringResource(R.string.physiological_monitoring),
+                stringResource(R.string.service_on_off)
             )
             Chip(
                 onClick = {
@@ -3115,11 +3167,11 @@ fun SettingsScreen(
 //                                inclusive = true
 //                            }
 //                        }
-                    locationChecked = enableLocationService
-                    dittoChecked = enableDittoService
-                    chatChecked = enableChatService
-                    biometricsChecked = enableBiometricsService
-                    physiologicalAlertsChecked = enablePhysiologicalAlerts
+                    enableLocationServiceSettingsState.postValue(enableLocationService)
+                    enableDittoServiceSettingsState.postValue(enableDittoService)
+                    enableChatServiceSettingsState.postValue(enableChatService)
+                    enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
+                    enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
                     callsignSettingsState.postValue(callsign)
                     teamSettingsState.postValue(team)
                     roleSettingsState.postValue(role)
@@ -3133,7 +3185,7 @@ fun SettingsScreen(
                     saveBattOnWifiStringState.postValue(saveBattOnWifiString)
                     smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
 
-                    enablePhysiologicalAlertsSettingState = enablePhysiologicalAlerts
+                    enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
                     hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
                     hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
                     ageState.postValue(ageValue)
@@ -3176,7 +3228,7 @@ fun SettingsScreen(
                     var allergiesChanged: Boolean = false
                     var userTypeChanged: Boolean = false
 
-                    if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdSettingsState.value) {
+                    if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
                         hrHighAlertBpmThreshold = hrHighAlertBpmThresholdState.value ?: hrHighAlertBpmThreshold
                     }
@@ -3284,10 +3336,9 @@ fun SettingsScreen(
                     Log.d(TAG, "takServerListState: " + takServerListState.value)
                     Log.d(TAG, "takServerListChanged: $takServerListChanged")
 
-
-                    if (enableLocationService != locationChecked) {
+                    if (enableLocationService != enableLocationServiceSettingsState.value) {
                         settingsChanged = true; locationCheckedChanged = true
-                        enableLocationService = locationChecked
+                        enableLocationService = enableLocationServiceSettingsState.value ?: enableLocationService
                         requestLocationComplicationUpdate(context)
                         if (enableLocationService) {
                             Log.d(TAG, "Trying to start location service")
@@ -3296,12 +3347,15 @@ fun SettingsScreen(
                             Log.d(TAG, "Trying to stop location service")
                             mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
                         }
-                        enableLocationServiceLiveData.postValue(enableLocationService)
+                        runBlocking {
+                            // This is in case enableLocationService above is NOT set to enableLocationServiceSettingsState.value
+                            enableLocationServiceSettingsState.postValue(enableLocationService)
+                        }
                     }
 
-                    if (enableDittoService != dittoChecked) {
+                    if (enableDittoService != enableDittoServiceSettingsState.value) {
                         settingsChanged = true; dittoCheckedChanged = true
-                        enableDittoService = dittoChecked
+                        enableDittoService = enableDittoServiceSettingsState.value ?: enableDittoService
                         if (enableDittoService) {
                             Log.d(TAG, "Trying to start ditto service")
                             startDittoService()
@@ -3309,10 +3363,14 @@ fun SettingsScreen(
                             Log.d(TAG, "Trying to stop ditto service")
                             mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
                         }
+                        runBlocking {
+                            enableDittoServiceSettingsState.postValue(enableDittoService)
+                        }
                     }
-                    if (enableChatService != chatChecked) {
+
+                    if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
-                        enableChatService = chatChecked
+                        enableChatService = enableChatServiceSettingsState.value ?: enableChatService
                         if (enableChatService) {
                             Log.d(TAG, "Trying to start chat service")
                             startChatService()
@@ -3320,18 +3378,23 @@ fun SettingsScreen(
                             Log.d(TAG, "Trying to stop chat service")
                             mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                         }
-                        enableChatServiceLiveData.postValue(enableChatService)
+                        runBlocking {
+                            enableChatServiceSettingsState.postValue(enableChatService)
+                        }
                         restartTAKConnectService()
                         requestChatComplicationUpdate(context)
                     }
 
-                    if (enableSmsForAlerts != enableSmsChecked) {
+                    if (enableSmsForAlerts != enableSmsForAlertsSettingsState.value) {
                         settingsChanged = true; smsAlertsCheckedChanged = true
-                        enableSmsForAlerts = enableSmsChecked
+                        enableSmsForAlerts = enableSmsForAlertsSettingsState.value ?: enableSmsForAlerts
                         if (enableSmsForAlerts) {
                             Log.d(TAG, "Trying enable start sms alerts")
                         } else {
                             Log.d(TAG, "Trying disable start sms alerts")
+                        }
+                        runBlocking {
+                            enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
                         }
                     }
 
@@ -3341,9 +3404,9 @@ fun SettingsScreen(
                             smsNumbersListStringSettingsState.value ?: smsNumbersListString
                     }
 
-                    if (enableBiometricsService != biometricsChecked) {
+                    if (enableBiometricsService != enableBiometricsServiceSettingsState.value) {
                         settingsChanged = true; biometricsCheckedChanged = true
-                        enableBiometricsService = biometricsChecked
+                        enableBiometricsService = enableBiometricsServiceSettingsState.value ?: enableBiometricsService
                         if (enableBiometricsService) {
                             Log.d(TAG, "Trying to start biometric services")
                             startHeartrateService()
@@ -3353,14 +3416,21 @@ fun SettingsScreen(
                             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
                             mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
                         }
-                        enableBiometricsServiceLiveData.postValue(enableBiometricsService)
+                        runBlocking {
+                            enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
+                        }
                         requestHeartRateComplicationUpdate(context)
                     }
 
-                    if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState) {
+                    if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState.value) {
                         settingsChanged = true; physiologicalAlertsCheckedChanged = true
-                        enablePhysiologicalAlerts = enablePhysiologicalAlertsSettingState
+                        enablePhysiologicalAlerts = enablePhysiologicalAlertsSettingState.value ?: enablePhysiologicalAlerts
+                        runBlocking {
+                            enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
+                        }
                     }
+
+
                      if (settingsChanged) {
                          CoroutineScope(Dispatchers.Main).launch {
                              if (callsignChanged) {
