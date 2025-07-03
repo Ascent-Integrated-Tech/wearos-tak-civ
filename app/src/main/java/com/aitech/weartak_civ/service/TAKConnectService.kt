@@ -532,6 +532,9 @@ class TAKConnectService: Service() {
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
 
+        lateinit var protobufUid: String
+        lateinit var protobufVersion: String
+
         private val TAK_CONNECT_SERVICE = TAKConnectService()
         public fun getInstance() : TAKConnectService {
             return TAK_CONNECT_SERVICE
@@ -1087,7 +1090,59 @@ class TAKConnectService: Service() {
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
 
-                    // start a background COT‐reader on the same socket
+                    /* *** Protobuf Handshake Handler
+                     *
+                     *  If a TAK Server can handle protobuf (not all do), it will
+                     *  send a CoT xml indicating. We read it, send CoT xml ACK,
+                     *  then we can start protobuffing. Save Bytes, Save $$$.
+                     *
+                     */
+                    CoroutineScope(Dispatchers.IO).launch {
+                        var openTakReceiveReader = false
+                        runBlocking {
+                            openTakReceiveReader = true // TODO: Stub for user defined enabling protobuf????
+                        }
+                        if (!openTakReceiveReader) {
+                            return@launch
+                        }
+                        try {
+                            Log.v(TAG, "Looking for Protobuf Handshake.")
+                            val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
+                            val buffer = StringBuilder()
+                            while (true) {
+                                val line = reader.readLine() ?: break
+                                buffer.append(line)
+
+                                // work against the String version so we can substring easily
+                                val bufStr = buffer.toString()
+                                val endIdx = bufStr.indexOf("</event>")
+                                if (endIdx >= 0) {
+                                    // extract one complete <event>…</event>
+                                    val rawXml = bufStr.substring(0, endIdx + "</event>".length)
+                                    // remove it from the buffer
+                                    buffer.delete(0, endIdx + "</event>".length)
+
+                                    // only forward chat messages addressed to us or “All Chat Rooms”
+                                    if (CotUtils.isProtobufHandshake(rawXml)) {
+                                        Log.i(TAG, "PROTOBUF HANDSHAKE FOUND \n $rawXml.")
+                                        protobufUid = CotUtils.extractUid(rawXml)
+                                        protobufVersion = CotUtils.extractProtobufVersion(rawXml)
+                                        // TODO: Actually make the extraction functions work. Handle case with multiple versions
+                                        // TODO: DISPATCH A COT (probably through an event or flow) for handshake.
+                                        // TODO: TRIGGER an EVENT or FLOW for CotDispatcher to begin sending protobuf.
+                                        // TODO: ONCE the EVENT or FLOW is triggered, kill this cot listener.
+                                    } else {
+                                        Log.i(TAG, "COT: $rawXml")
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "COT listener PROTOBUF looper failed", e)
+                        }
+                    }
+
+
+                    // start a background COT‐reader for CHAT on the same socket
                     CoroutineScope(Dispatchers.IO).launch {
                         var openTakReceiveReader = false
                         runBlocking {
@@ -1219,6 +1274,54 @@ class TAKConnectService: Service() {
             }
         }
 
+        /**
+         * Raw-bytes variant of sendData().
+         */
+        private fun sendData(
+            takServerDetail: TakServerDetail,
+            payload: ByteArray,
+            isNotPli: Boolean,
+            currTime: Long
+        ) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val sock = takServerDetail.secureSocket
+                    if (sock != null && sock.isConnected) {
+                        sock.getOutputStream().use { out ->
+                            out.write(payload)      //  ★ no UTF-8 re-encoding
+                            out.flush()
+                        }
+
+                        if (!isNotPli) {
+                            takServerDetail.lastTimeMsgSent =
+                                max(currTime, takServerDetail.lastTimeMsgSent + takServerDetail.currReportingUpdateInterval * 1000L)
+                        }
+
+                        Log.i(TAG, "Sent ${payload.size}-byte protobuf to ${takServerDetail.address}")
+                    } else {
+                        reconnectToTak(takServerDetail, "socket null / not connected")
+                    }
+                } catch (e: IOException) {
+                    reconnectToTak(takServerDetail, e.message ?: "IO error", e)
+                } catch (e: Exception) {
+                    reconnectToTak(takServerDetail, e.message ?: "generic error", e)
+                }
+            }
+        }
+
+        /** Mini helper so both catch blocks stay DRY */
+        private fun reconnectToTak(detail: TakServerDetail, reason: String, ex: Exception? = null) {
+            Log.e(TAG, "Error sending bytes to ${detail.address}: $reason", ex)
+            if (detail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
+                detail.secureSocket?.close()
+                detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
+                detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+                setIsAnyNetworkConnected()
+                setIsAnyNetworkConnecting()
+                getClientCertificateAndConnect(detail)
+            }
+        }
+
         fun replaceQuotedStringAfterSubstring(input: String, substring: String, replacement: String): String {
             val regex = Regex("$substring='(.*?)'")
             return input.replace(regex, "$substring='$replacement'")
@@ -1237,6 +1340,42 @@ class TAKConnectService: Service() {
             }
 
             return text.substring(valueStartIndex, endIndex)
+        }
+
+        /**
+         * Proof-of-concept: identical looping logic but writes a raw ByteArray.
+         *
+         * ⚠️  Does **not** attempt “stale-time manipulation”; if you eventually need
+         *     that for protobuf, do it earlier when you build the message.
+         */
+        fun sendDataTAKServers(bytes: ByteArray, isNotPli: Boolean) {
+            if (isLicenseValid() && isNetworkConnected) {
+                val currTime = System.currentTimeMillis()
+
+                for (takServerDetail in takServerDetails) {
+                    if (takServerDetail.connectionStatus.get() == TAK_SERVER_OBTAINING_CLIENT_CERT) {
+                        Log.i(TAG, "Connecting to TAK server ${takServerDetail.address}. Skipping byte send.")
+                        continue
+                    }
+
+                    if (!takServerDetail.isEnabled) continue
+
+                    if (isNotPli) {
+                        // send immediately
+                        sendData(takServerDetail, bytes, isNotPli, currTime)
+                    } else {
+                        // keep the same interval logic, minus XML-editing
+                        if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
+                            sendData(takServerDetail, bytes, isNotPli, currTime)
+                        } else if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >=
+                            (takServerDetail.currReportingUpdateInterval * 1000.0)) {
+                            sendData(takServerDetail, bytes, isNotPli, currTime)
+                        }
+                    }
+                }
+            } else {
+                Log.d(TAG, "License invalid or network down – not sending protobuf bytes.")
+            }
         }
 
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {

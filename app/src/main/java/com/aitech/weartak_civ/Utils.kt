@@ -11,7 +11,12 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.service.CotDispatchService
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -29,7 +34,10 @@ import org.xml.sax.InputSource
 import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
-
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 
 object Utils {
@@ -328,6 +336,7 @@ object Utils {
     )
 
     object CotUtils {
+
         /** Quick screen for chat‐related COTs. */
         fun isChatMessage(raw: String): Boolean =
             raw.contains("<__chat") && raw.contains("<remarks")
@@ -418,6 +427,96 @@ object Utils {
             }
 
             return rooms
+        }
+
+        fun isProtobufHandshake(raw: String): Boolean =
+            raw.contains("<TakControl>")
+
+        fun extractUid(raw: String): String {
+            raw.contains("uid")
+            return ""
+        }
+
+        fun extractProtobufVersion(raw: String): String {
+            raw.contains("TakProtocolSupport")
+            return ""
+        }
+
+        /**
+         * Builds and serializes a COT Event protobuf directly,
+         * without ever creating or parsing XML.
+         */
+        @Throws(Exception::class)
+        fun buildSerializedProtobuf(
+            location: android.location.Location?,
+            physioData: CotDispatchService.PhysioData
+        ): ByteArray {
+            // 0) Common values
+            val now = Date()
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            val startTime = sdf.format(now)
+            val staleTime = sdf.format(Date(now.time + 3L * currReportingIntervalInSecs * 1_000))
+
+            val uid       = MainActivity.device_uid
+            val lat       = location?.latitude  ?: 0.0
+            val lon       = location?.longitude ?: 0.0
+            val hae       = (location?.altitude ?: 0.0).toFloat()
+            val ceTrim    = location?.accuracy?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+            val leTrim    = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+            val course    = location?.bearing?.toInt() ?: 0
+            val speed     = location?.speed?.toInt()   ?: 0
+
+            val hr        = physioData.heartRate
+            val st        = physioData.skinTemp.toInt()
+            val bat       = physioData.battery
+
+            // 1) Build sub-messages
+            val point = Point.newBuilder()
+                .setLat(lat)
+                .setLon(lon)
+                .setHae(hae)
+                .setCe(ceTrim.toFloat())
+                .setLe(leTrim.toFloat())
+                .build()
+
+            val group = Group.newBuilder()
+                .setRole(roleValue)
+                .setName(teamValue)
+                .build()
+
+            val track = Track.newBuilder()
+                .setCourse(course.toFloat())
+                .setSpeed(speed.toFloat())
+                .build()
+
+            val contact = Contact.newBuilder()
+                .setCallsign(callsign)
+                .build()
+
+            val detail = Detail.newBuilder()
+                .setGroup(group)
+                .setTrack(track)
+                .setContact(contact)
+                .setRemarks("H:$hr;T:$st;B:$bat")
+                .build()
+
+            // 2) Build top-level Event
+            val event = Event.newBuilder()
+                .setVersion("2.0")
+                .setUid(uid)
+                .setType("a-f-G-U-C")
+                .setTime(startTime)
+                .setStart(startTime)
+                .setStale(staleTime)
+                .setHow("m-g")
+                .setPoint(point)
+                .setDetail(detail)
+                .build()
+
+            // 3) Serialize to protobuf bytes
+            return event.toByteArray()
         }
     }
 }

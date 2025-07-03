@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.googleProtobuf)
     //id 'com.android.application'
     //id 'org.jetbrains.kotlin.android'
 }
@@ -96,8 +97,10 @@ dependencies {
     implementation fileTree(dir: 'libs', include: '*.aar')
     dependencies {
         implementation 'com.google.code.gson:gson:2.10.1'
-        // or whichever version you prefer
     }
+    implementation(libs.dataStorePref)
+    implementation(libs.dataStore)
+    implementation(libs.protobuf)
     implementation "live.ditto:ditto:4.10.2"
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
@@ -173,4 +176,17 @@ dependencies {
     androidTestImplementation libs.ui.test.junit4
     debugImplementation libs.ui.tooling
     debugImplementation libs.ui.test.manifest
+}
+
+protobuf {
+    protoc { artifact = "com.google.protobuf:protoc:3.21.1" }
+
+    generateProtoTasks {
+        all().each { task ->                  // or `configureEach { task -> … }`
+            task.builtins {
+                maybeCreate("java")               // get or create the "java" builtin
+                        .option("lite")                 // chain the option directly
+            }
+        }
+    }
 }

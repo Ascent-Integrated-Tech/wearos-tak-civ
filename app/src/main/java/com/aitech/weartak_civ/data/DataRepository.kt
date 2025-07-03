@@ -56,6 +56,9 @@ class DataRepository(private val context: Context) {
 //        }
 //    }
 
+    private val _protobufReady = MutableStateFlow<Boolean>(false)
+    val protobufReady: StateFlow<Boolean> = _protobufReady
+
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 

@@ -24,6 +24,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -143,6 +144,7 @@ class CotDispatchService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+        // TODO: kick off collection of protobufReady for dispatching.
         Log.v(TAG, "CotDispatchService onCreate()")
     }
 
@@ -230,7 +232,7 @@ class CotDispatchService : Service() {
         var battery: Int?
     )
 
-    private fun buildVerboseLocationPhsyioCot(location: Location?, physioData: PhysioData): String {
+    private fun buildConciseLocationPhsyioCot(location: Location?, physioData: PhysioData): String {
         // — 0) Grab unique device identifier from MainActivity
         val uid = MainActivity.device_uid
 
@@ -260,40 +262,12 @@ class CotDispatchService : Service() {
         val bat = physioData.battery
 
         // — 5) Build the minimal XML
-//        val cotIndented = """
-//        <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
-//        <event version="2.0" uid="$uid" type="a-f-G-U-C" time="$startTime" start="$startTime" stale="$staleTime" how="m-g">
-//          <point lat="${"%.6f".format(lat)}" lon="${"%.6f".format(lon)}" hae="${"%.1f".format(hae)}" ce="$ceTrim" le="$leTrim"/>
-//          <detail>
-//            <contact callsign="$callsign"/>
-//            <remarks>H:$hr;T:$st;B:$bat</remarks>
-//            <__group role="$roleValue" name="$teamValue"/>
-//            <track course="$courseTrim" speed="$speedTrim"/>
-//          </detail>
-//        </event>
-//        """.trimIndent()
+        val cot = """<?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid="$uid" type="a-f-G-U-C" time="$startTime" start="$startTime" stale="$staleTime" how="m-g"><point lat="${"%.6f".format(lat)}" lon="${"%.6f".format(lon)}" hae="${"%.1f".format(hae)}" ce="$ceTrim" le="$leTrim"/><detail><__group role="$roleValue" name="$teamValue"/><track course="$courseTrim" speed="$speedTrim"/><contact callsign="$callsign"/><remarks>H:$hr;T:$st;B:$bat</remarks></detail></event>""".trimIndent()
+//        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
 
-        val cotTest = """
-        <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
-        <event version="2.0" uid="$uid" type="a-f-G-U-C"
-               time="$startTime" start="$startTime" stale="$staleTime"
-               how="m-g">
-          <point lat="${"%.6f".format(lat)}" lon="${"%.6f".format(lon)}"
-                 hae="${"%.1f".format(hae)}" ce="$ceTrim" le="$leTrim"/>
-           <detail>
-             <__group role="$roleValue" name="$teamValue"/>
-             <track course="$courseTrim" speed="$speedTrim"/>
-             <contact callsign="$callsign"/>
-           </detail>
-        </event>
-        """.trimIndent()
-
-        Log.i(TAG, cotTest)
-        Log.i(TAG, "Size Cot Indented: ${cotTest.length}")
-
-        return cotTest
+        return cot
     }
-/*
+
     private fun buildVerboseLocationPhsyioCot(location: Location?, physioData: PhysioData): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
@@ -332,16 +306,13 @@ class CotDispatchService : Service() {
 //        return """
 //        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: ${skinTempStr}ºF; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
 //        """.trimIndent()
-        val cot = """
-        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: ${skinTempStr}ºF; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
-        """.trimIndent()
+        val cot = """<?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: ${skinTempStr}ºF; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>""".trimIndent()
 
-        Log.i(TAG, cot)
-        Log.i(TAG, "Size:${cot.length} Bytes")
+        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
 
         return cot
     }
-*/
+
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
         manualSosReceivedCategory = event.category
@@ -643,8 +614,20 @@ class CotDispatchService : Service() {
 
     private fun sendLocationBiometricCotMessage(location: Location?, physioData: PhysioData) {
 
-        val cotMessage = buildVerboseLocationPhsyioCot(location, physioData)
-        sendDataTAKServers(cotMessage, false)
+        val protobofReady: Boolean = false
+
+        if (protobofReady) {
+            // ------ Cot Protobuf ------
+            val protoCotBytes = Utils.CotUtils.buildSerializedProtobuf(location, physioData)
+            sendDataTAKServers(protoCotBytes, isNotPli = false)   // ~210-byte payload
+            Log.i(TAG, "protoCot size: ${protoCotBytes.size} \n ${protoCotBytes}")
+        } else {
+            // ------ Cot XML String ------
+//            val cotMessage = buildVerboseLocationPhsyioCot(location, physioData)   // ~750-byte payload
+            val cotMessage = buildConciseLocationPhsyioCot(location, physioData) // ~430-byte payload
+            sendDataTAKServers(cotMessage, false)
+        }
+
         //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
         //Log.d(TAG, logString)
         //writeToLogFileLocation(logFile, logString)
