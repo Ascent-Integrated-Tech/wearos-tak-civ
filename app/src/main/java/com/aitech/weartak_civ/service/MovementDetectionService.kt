@@ -23,9 +23,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.*
 
 class MovementDetectionService : Service(), SensorEventListener {
+    enum class AltitudeMode { GPS_ONLY, BARO_SENSOR, KALMAN_ESTIMATED }
+    private var altitudeMode: AltitudeMode = AltitudeMode.GPS_ONLY
+
     private lateinit var kalmanEstimator: EnhancedKalmanEstimator
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private val orientation = FloatArray(3) // [roll, pitch, yaw]
+    private val orientation = FloatArray(3)
 
     private var lastKalmanPredictionTime = 0L
     private val MIN_KALMAN_INTERVAL_MS = 1000L
@@ -50,39 +53,71 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var lastGpsRequestTime = 0L
     private val GPS_REQUEST_COOLDOWN_MS = 15000L
 
-    // Logging
     private lateinit var logFile: File
     private lateinit var logWriter: PrintWriter
     private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-
-    private val isLogging = false
+    private val isLogging = true
 
     private fun logToFile(message: String) {
-        if (isLogging) {
+        if (::logWriter.isInitialized && isLogging) {
             val timestamp = timeFormat.format(Date())
             logWriter.println("[$timestamp] $message")
             logWriter.flush()
         }
+        Log.d("MovementDetection", message)
     }
+
+    private var isStationary = false
+    private val STATIONARY_TIMEOUT_MS = 5000L
+    private var lastStepTimestamp = System.currentTimeMillis()
+
+    private val MAX_ALTITUDE_DELTA_STATIONARY = 10f
+    private val MAX_ALTITUDE_DELTA_MOVING = 100f
+
+    private var barometer: Sensor? = null
+    private var basePressure: Float? = null
+    private var currentAltitude: Float = 0f
 
     override fun onCreate() {
         super.onCreate()
 
-        logFile = File(getExternalFilesDir(null), "enhanced_kalman_log.txt")
+        val dir = getExternalFilesDir(null)
+        if (dir == null) {
+            Log.e("MovementDetection", "❌ getExternalFilesDir() returned null. Stopping service.")
+            stopSelf()
+            return
+        }
+
+        logFile = File(dir, "enhanced_kalman_log.txt")
         logWriter = PrintWriter(FileWriter(logFile, true))
         logToFile("🟢 Enhanced MovementDetectionService started")
+        logToFile("🔧 onCreate() called")
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        barometer = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
+
         accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         gyroscope?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        barometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        logToFile("✅ Sensors registered: accel=${accelerometer != null}, gyro=${gyroscope != null}, pressure=${barometer != null}")
 
         kalmanEstimator = EnhancedKalmanEstimator()
         kalmanEstimator.onGpsUpdateRequired = {
             val pos = kalmanEstimator.getEstimatedPosition()
             val (estLat, estLon) = metersToLatLon(pos[0], pos[1])
-            val estAlt = (referenceAlt?.toFloat() ?: 0f) + pos[2]
+            var estAlt = when (altitudeMode) {
+                AltitudeMode.GPS_ONLY -> lastPredictedAlt
+                AltitudeMode.BARO_SENSOR -> currentAltitude.takeIf { it != 0f } ?: lastPredictedAlt
+                AltitudeMode.KALMAN_ESTIMATED -> (referenceAlt?.toFloat() ?: 0f) + pos[2]
+            }
+
+            val deltaAlt = estAlt - lastPredictedAlt
+            val maxAllowedDelta = if (isStationary) MAX_ALTITUDE_DELTA_STATIONARY else MAX_ALTITUDE_DELTA_MOVING
+            if (abs(deltaAlt) > maxAllowedDelta) {
+                estAlt = lastPredictedAlt + maxAllowedDelta * sign(deltaAlt)
+            }
 
             lastPredictedLat = estLat
             lastPredictedLon = estLon
@@ -120,7 +155,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         }
     }
 
-    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION])
     private fun requestInitialGpsFix() {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 0).apply {
             setMaxUpdates(1)
@@ -136,6 +171,19 @@ class MovementDetectionService : Service(), SensorEventListener {
                 lastCorrectedLon = loc.longitude.toFloat()
 
                 kalmanEstimator.reset(floatArrayOf(0f, 0f, 0f), floatArrayOf(0f, 0f, 0f), System.currentTimeMillis())
+
+                lastPredictedLocation = Location("initial_gps_fix").apply {
+                    latitude = loc.latitude
+                    longitude = loc.longitude
+                    altitude = loc.altitude
+                    time = System.currentTimeMillis()
+                }
+                predictedLat = loc.latitude.toFloat()
+                predictedLon = loc.longitude.toFloat()
+                predictedAlt = loc.altitude.toFloat()
+                lastPredictedAlt = loc.altitude.toFloat()
+                currentAltitude = loc.altitude.toFloat()
+
                 logToFile("📡 GPS Fix: lat=${loc.latitude}, lon=${loc.longitude}, alt=${loc.altitude}")
                 fusedLocationClient.removeLocationUpdates(this)
             }
@@ -170,7 +218,6 @@ class MovementDetectionService : Service(), SensorEventListener {
             }
             Sensor.TYPE_GYROSCOPE -> {
                 for (i in 0..2) gyro[i] = event.values[i]
-                // Optionally fuse orientation here to update `orientation`
             }
         }
     }
@@ -213,9 +260,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         logWriter.close()
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
-        TODO("Not yet implemented")
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
         private lateinit var sensorManager: SensorManager

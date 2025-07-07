@@ -11,10 +11,10 @@ class EnhancedKalmanEstimator {
     private var P = Array(6) { FloatArray(6) }
     private var lastTimestamp: Long = -1L
 
-    private val processNoise = 0.005f // ↓ Reduced trust in model dynamics
+    private val processNoise = 0.001f // ↓ Reduced trust in model dynamics
     private val measurementNoise = 8.0f // ↑ Slightly more trust in GPS when updating
 
-    private val velocityCap = 3.0f // m/s cap for damping predictions
+    private val velocityCap = 8.0f // m/s cap for damping predictions
 
     var onGpsUpdateRequired: (() -> Unit)? = null
 
@@ -39,6 +39,10 @@ class EnhancedKalmanEstimator {
             // Apply basic integration with damping
             state[i] += state[i + 3] * dt + 0.5f * accelNav[i] * dt.pow(2)
             state[i + 3] += accelNav[i] * dt
+
+            /*val displacement = state[i + 3] * dt + 0.5f * accelNav[i] * dt.pow(2)
+            state[i] = 0.98f * state[i] + 0.02f * (state[i] + displacement)
+            state[i + 3] += accelNav[i] * dt*/
 
             // Clamp velocity to prevent wild drift
             state[i + 3] = state[i + 3].coerceIn(-velocityCap, velocityCap)
