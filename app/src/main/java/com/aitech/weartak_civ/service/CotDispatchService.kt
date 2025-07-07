@@ -222,6 +222,13 @@ class CotDispatchService : Service() {
         return BleLocationOutput(latActual, lonActual, haeActual, ceActual)
     }
 
+    data class PhysioData(
+        var heartRate: Int,
+        var skinTemp: Float,
+        var sweatLoss: Int,
+        var battery: Int?
+    )
+
     private fun buildLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()

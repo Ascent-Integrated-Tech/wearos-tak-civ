@@ -62,6 +62,9 @@ class DataRepository(private val context: Context) {
     private val _latestSkinTemp = MutableStateFlow<Float?>(null)
     val latestSkinTemp: StateFlow<Float?> = _latestSkinTemp
 
+    private val _latestSweatLoss = MutableStateFlow<Float?>(null)
+    val latestSweatLoss: StateFlow<Float?> = _latestSweatLoss
+
     private val _latestLocation = MutableStateFlow<Location?>(null)
     val latestLocation: StateFlow<Location?> = _latestLocation
 
@@ -90,6 +93,10 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeLatestSkinTemp(skinTemp: Float) {
         _latestSkinTemp.emit(skinTemp)
+    }
+
+    suspend fun storeLatestSweatLoss(sweatLoss: Float) {
+        _latestSweatLoss.emit(sweatLoss)
     }
 
     suspend fun storeLatestLocation(location: Location) {

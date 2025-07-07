@@ -34,6 +34,8 @@ class SkinTempService : Service() {
 
         var tempF: Float = -1f
         val skinTempLiveData = MutableLiveData<String>("N/A")
+        var latestSweatMl: Float = -1f
+        val sweatLossLiveData = MutableLiveData<String>("N/A")
         val isRunning = AtomicBoolean(false)
         var DISPATCH_INTERVAL_MS = 60 * 1_000L
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
@@ -44,10 +46,12 @@ class SkinTempService : Service() {
 
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
+    private lateinit var sweatTracker: HealthTracker
 
     private lateinit var handlerThread: HandlerThread
     private lateinit var backgroundHandler: Handler
-    private var isHandlerRunning = false
+    private var isSkinHdlerRunning = false
+    private var isSweatHdlerRunning = false
     private var deviceWorn: Boolean = false
 
     private var nextFireMs = 0L          // wall-clock target for the next run
@@ -58,15 +62,30 @@ class SkinTempService : Service() {
         if (!deviceWorn) return                     // skip if watch off-wrist
         val target = nowUptime + DISPATCH_INTERVAL_MS        // absolute uptime timestamp
         nextFireMs = target                         // purely for diagnostics
-        backgroundHandler.postAtTime(::startSkinTracker, target)
+        backgroundHandler.postAtTime(::startSkinRunnable, target)
+    }
+
+    private fun scheduleNextSkinRead() {
+        if (!deviceWorn) return
+        val target = nowUptime + DISPATCH_INTERVAL_MS
+        backgroundHandler.removeCallbacks(::startSkinRunnable)
+        backgroundHandler.postAtTime(::startSkinRunnable, target)
+    }
+
+    private fun scheduleNextSweatRead() {
+        if (!deviceWorn) return
+        val target = nowUptime + DISPATCH_INTERVAL_MS
+        backgroundHandler.removeCallbacks(::startSweatRunnable)
+        backgroundHandler.postAtTime(::startSweatRunnable, target)
     }
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
+            sweatTracker = healthService.getHealthTracker(HealthTrackerType.SWEAT_LOSS)
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
-                startSkinTracker()     // only kick off if worn
+                startSkinRunnable()     // only kick off if worn
                 scheduleNextReading()  // looper
             }
         }
@@ -80,15 +99,15 @@ class SkinTempService : Service() {
 
         override fun onConnectionEnded() {
             Log.w(TAG, "HealthPlatform DISCONNECTED")
-            stopSkinTracker(true)
+            stopSkinRunnable(true)
         }
     }
 
-    private val trackerEventListener = object : HealthTracker.TrackerEventListener {
+    private val skinTempListener = object : HealthTracker.TrackerEventListener {
 
         override fun onDataReceived(dataPoints: List<DataPoint>) {
             // 1  Stop sensor immediately (but keep queue)
-            stopSkinTracker(false)
+            stopSkinRunnable(false)
 
             // 2  Collect temp data point
             dataPoints.firstOrNull()?.let { dp ->
@@ -123,6 +142,32 @@ class SkinTempService : Service() {
         }
     }
 
+    private val sweatLossListener = object : HealthTracker.TrackerEventListener {
+        override fun onDataReceived(dataPoints: List<DataPoint>) {
+            // stop this tracker so it doesn’t flood
+            stopSweatRunnable(clearQueue = false)
+
+            dataPoints.firstOrNull()?.let { dp ->
+                val sweat = dp.getValue(ValueKey.SweatLossSet.SWEAT_LOSS)
+                latestSweatMl = sweat
+                Log.i(TAG, "Sweat Loss: ${"%.1f".format(sweat)} mL")
+                sweatLossLiveData.postValue("%.1f mL".format(sweat))
+
+                // persist data
+                CoroutineScope(Dispatchers.IO).launch {
+                    sharedRepo.storeLatestSweatLoss(sweat)
+                }
+            }
+            // schedule next run
+            scheduleNextSweatRead()
+        }
+
+        override fun onFlushCompleted() { /* no-op */ }
+        override fun onError(error: HealthTracker.TrackerError) {
+            Log.e(TAG, "Sweat tracker error: $error")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
@@ -136,7 +181,7 @@ class SkinTempService : Service() {
                     if (deviceWorn) {
                         backgroundHandler.removeCallbacksAndMessages(null)
                         scheduleNextReading()
-                        startSkinTracker()
+                        startSkinRunnable()
                     }
                 }
             }
@@ -167,8 +212,12 @@ class SkinTempService : Service() {
         if (!isRunning.getAndSet(true)) {
             deviceWorn = sharedRepo.latestIsDeviceWorn.value ?: false
             if (deviceWorn && ::skinTracker.isInitialized) {
-                startSkinTracker()
-                scheduleNextReading()
+                startSkinRunnable()
+                scheduleNextSkinRead()
+            }
+            if (deviceWorn && ::sweatTracker.isInitialized) {
+                startSweatRunnable()
+                scheduleNextSweatRead()
             }
         }
         return START_NOT_STICKY
@@ -185,7 +234,7 @@ class SkinTempService : Service() {
         }
 
         // Ensure listener is removed and thread stopped
-        stopSkinTracker(true)
+        stopSkinRunnable(true); stopSweatRunnable()
         healthService.disconnectService()
         handlerThread.quitSafely()
     }
@@ -202,25 +251,40 @@ class SkinTempService : Service() {
 
         if (nowWorn) {
             deviceWorn = true
-            startSkinTracker()    // immediate snapshot
-            scheduleNextReading()
+            startSkinRunnable(); startSweatRunnable();   // immediate snapshot
+            scheduleNextSkinRead(); scheduleNextSweatRead();
         } else {
             deviceWorn = false
-            stopSkinTracker(true)     // shut it down
+            stopSkinRunnable(true); stopSweatRunnable(true)     // shut it down
         }
     }
 
-    private fun startSkinTracker() {
-        if (!::skinTracker.isInitialized || isHandlerRunning) return
-        isHandlerRunning = true
-        backgroundHandler.post { skinTracker.setEventListener(trackerEventListener) }
+    private fun startSkinRunnable() {
+        if (!::skinTracker.isInitialized || isSkinHdlerRunning) return
+        isSkinHdlerRunning = true
+        backgroundHandler.post { skinTracker.setEventListener(skinTempListener) }
     }
 
-    private fun stopSkinTracker(clearQueue: Boolean = false) {
-        if (!isHandlerRunning) return
-        isHandlerRunning = false
+    private fun startSweatRunnable() {
+        if (!::sweatTracker.isInitialized || isSweatHdlerRunning) return
+        isSweatHdlerRunning = true
+        backgroundHandler.post { skinTracker.setEventListener(sweatLossListener) }
+    }
+
+    private fun stopSkinRunnable(clearQueue: Boolean = false) {
+        if (!isSkinHdlerRunning) return
+        isSkinHdlerRunning = false
         backgroundHandler.post {
             skinTracker.unsetEventListener()
+            if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
+        }
+    }
+
+    private fun stopSweatRunnable(clearQueue: Boolean = false) {
+        if (!isSweatHdlerRunning) return
+        isSweatHdlerRunning = false
+        backgroundHandler.post {
+            sweatTracker.unsetEventListener()
             if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
         }
     }
