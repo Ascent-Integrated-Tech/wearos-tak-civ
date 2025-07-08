@@ -22,7 +22,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -34,20 +33,23 @@ import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_Biometric
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_HIGH_HEART_RATE_ALERT
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.google.common.collect.EvictingQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
@@ -58,9 +60,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 class HeartrateService: Service() {
     // TODO: Change to https://developer.android.com/reference/android/hardware/Sensor
     private lateinit var sensorManager: SensorManager
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var heartRateSensor: Sensor? = null
     var permission: Boolean = false
-    var deviceWorn = false
+    private var deviceWorn = false
     var enableHrAlerts : Boolean = false
     var highAlertThreshold : Int = 140
     var highAlertNumSecs : Int = 30
@@ -68,13 +71,30 @@ class HeartrateService: Service() {
     var highAlertSent : Boolean = false
     var lowAlertThreshold : Int = 40
 
-    // Instead of creating a new DataRepository, reference the same one from MainActivity
+    private var userAge: Int? = null
+    private var restingHeartRate: Int? = null
+
     private val sharedRepository: DataRepository // TODO: Use Constructor Injection for a more robust use of a shared DataRepository. Using hilt or dagger, you’d define a single @Singleton repository and annotate each service as @AndroidEntryPoint. Then each service receives the same repository instance automatically.
         get() = MainActivity.dataRepository
+
+    private fun observeMetrics() {
+        sharedRepository.physiologicalMetricAge
+            .combine(sharedRepository.restingHeartRate) { age, resting ->
+                age to resting
+            }
+            .filter { (age, resting) -> age != null && resting != null }
+            .onEach { (age, resting) ->
+                userAge = age!!
+                restingHeartRate = resting!!
+            }
+            .launchIn(scope)
+    }
 
     override fun onCreate() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         super.onCreate()
+        //RestingHrManager.init(sharedRepository)
+        observeMetrics()
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
@@ -102,13 +122,15 @@ class HeartrateService: Service() {
         }
     }
 
-    suspend private fun setDataFromDatastore() {
-        enableHrAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
-        highAlertThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
-        highAlertNumSecs = dataRepository.getHrHighAlertNumSecsThreshold.first()
+    private suspend fun setDataFromDatastore() {
+        enableHrAlerts = sharedRepository.getEnablePhysiologicalAlerts.first()
+        highAlertThreshold = sharedRepository.getHrHighAlertBpmThreshold.first()
+        highAlertNumSecs = sharedRepository.getHrHighAlertNumSecsThreshold.first()
     }
 
     override fun onDestroy() {
+        //RestingHrManager.stop()
+        scope.cancel()
         super.onDestroy()
         isRunning.set(false)
         deviceWorn = false
@@ -131,11 +153,7 @@ class HeartrateService: Service() {
 
     private fun startForegroundService() {
         Log.d(TAG, "Starting heartrate foreground service")
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "Heartrate Service"
-        }
+        val channelId = createNotificationChannel()
 
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
@@ -174,14 +192,22 @@ class HeartrateService: Service() {
                 stopSensors()
                 hr = -1
                 runBlocking {
-                    //Log.d(TAG, "Posting hr value to hrStringLiveData")
                     hrStringLiveData.postValue("N/A")
                     requestHeartRateComplicationUpdate(context)
                     sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
-
                 }
             }
             deviceWorn = currDeviceWorn
+        }
+    }
+
+    init {
+        scope.launch {
+            sharedRepository.exertionFlow
+                .collect { exertion ->
+                    val logString = "Exertion updated: $exertion"
+                    Log.d(TAG, logString)
+                }
         }
     }
 
@@ -189,7 +215,7 @@ class HeartrateService: Service() {
     public fun onMessageEvent(msgEvent: MessageEvent) {
         val msg = msgEvent.message
         if (PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED == msg) {
-            enableHrAlerts = if (msgEvent.addlIntInfo == 1)  { true } else { false }
+            enableHrAlerts = (msgEvent.addlIntInfo == 1)
             if (enableHrAlerts) {
                 runBlocking {
                     createEvictingQ()
@@ -218,7 +244,7 @@ class HeartrateService: Service() {
         requester.requestUpdateAll()
     }
 
-    fun startSensors() {
+    private fun startSensors() {
         Log.d(TAG, "HeartrateService startSensors called")
         if (enableHrAlerts) {
             createEvictingQ()
@@ -236,13 +262,12 @@ class HeartrateService: Service() {
         }
     }
 
-    fun stopSensors() {
+    private fun stopSensors() {
         sensorManager.unregisterListener(sensorEventListener)
         hrValuesEvictingQ = null
     }
 
-
-    val sensorEventListener = object : SensorEventListener {
+    private val sensorEventListener = object : SensorEventListener {
         var localHr = 0
         var accuracyVal = -1
         var lastTimeHrSent : Long = 0L
@@ -283,21 +308,17 @@ class HeartrateService: Service() {
                     return
                 }
                 hr = localHr
-                //heartRateTextView.text = "Heart rate: $hr"
                 //Log.d(TAG, "Obtained heartrate: $hr")
                 generateAlerts()
-
 
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.currReportingIntervalInSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     runBlocking {
-                        //Log.d(TAG, "Posting hr value to hrStringLiveData")
                         hrStringLiveData.postValue(hr.toString())
-//                        dataRepository.storeLatestHeartRate(hr)
                         requestHeartRateComplicationUpdate(context)
+//                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
                         sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
-
                     }
 
 //                    if (stickyEvent == null) {
@@ -326,19 +347,15 @@ class HeartrateService: Service() {
     }
 
     private fun checkPermissions(): Boolean {
-        if (ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") != PackageManager.PERMISSION_GRANTED) {
-            return false
-        }
-        return true
+        return ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") == PackageManager.PERMISSION_GRANTED
     }
 
     companion object {
         private val TAG = "WearTAK-" + HeartrateService::class.java.simpleName
-        private val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
-        private val SAMPLING_PERIOD_US = 2_000_000   // Every 2 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
+        private const val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
+        private const val SAMPLING_PERIOD_US = 2_000_000   // Every 2 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
         var hr: Int = -1
-//        var heartrateSendIntervalSecs : Int = 5
-        val hrStringLiveData = MutableLiveData<String>("N/A")
+        val hrStringLiveData = MutableLiveData("N/A")
         val isRunning = AtomicBoolean(false)
         val context: Context = mainActivity.applicationContext
     }

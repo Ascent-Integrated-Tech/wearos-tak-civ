@@ -278,6 +278,9 @@
     <string name="enable_physiological_alerts_description" translatable="false">Boolean that determines if physiological alerts will be enabled.</string>
     <string name="enable_physiological_alerts_default" translatable="false">false</string>
 
+    <string name="physiological_metrics_resting_heart_rate_title" translatable="false">Physiological Metrics: Resting Heart Rate</string>
+    <string name="physiological_metrics_resting_heart_rate_description" translatable="false">Enter Average Resting Heart Rate in BPM</string>
+    <string name="physiological_metrics_resting_heart_rate_default" translatable="false">70</string>
     <string name="physiological_metrics_age_title" translatable="false">Physiological Metrics: Age</string>
     <string name="physiological_metrics_age_description" translatable="false">Enter Age in Years</string>
     <string name="physiological_metrics_age_default" translatable="false"></string>

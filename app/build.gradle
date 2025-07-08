@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+    id 'com.google.devtools.ksp'
     //id 'com.android.application'
     //id 'org.jetbrains.kotlin.android'
 }
@@ -94,6 +96,10 @@ android {
 dependencies {
     //implementation libs.androidx.activity.compose
     implementation fileTree(dir: 'libs', include: '*.aar')
+    def room_version = "2.7.2"
+    implementation "androidx.room:room-runtime:$room_version"
+    ksp "androidx.room:room-compiler:$room_version"
+
     dependencies {
         implementation 'com.google.code.gson:gson:2.10.1'
         // or whichever version you prefer
