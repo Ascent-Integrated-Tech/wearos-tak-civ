@@ -24,14 +24,27 @@ import kotlinx.coroutines.flow.StateFlow
 import android.location.Location
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.DEFAULT_AGE
+import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import java.time.Instant
+import kotlinx.coroutines.flow.stateIn
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
+private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 class DataRepository(private val context: Context) {
     private val TAG = "WearTAK-" + DataRepository::class.java.simpleName
@@ -46,24 +59,35 @@ class DataRepository(private val context: Context) {
         }
     }
 
-//    val latestHeartRate: Flow<Int> = context.dataStore.data.map { prefs ->
-//        prefs[LATEST_HEART_RATE] ?: -1
-//    }
+//    init {
+//        repoScope.launch {
+//            _latestHeartRate
+//                .filterNotNull()
+//                .combine(_latestActivityRecognized.filterNotNull()) { hr, activity ->
+//                    hr to activity
+//                }
+//                .filter { (_, activity) -> activity == "STILL" }
+//                .collect { (hr, _) ->
+//                    restingAggregator.pushSample(hr.toDouble())
 //
-//    suspend fun storeLatestHeartRate(heartRate: Int) {
-//        context.dataStore.edit { prefs ->
-//            prefs[LATEST_HEART_RATE] = heartRate
+//                    restingAggregator.computeAverage()?.let { avg ->
+//                        _restingHeartRate.emit(avg.roundToInt())
+//                    }
+//                }
 //        }
 //    }
 
-    private val _latestActivityConfidence = MutableStateFlow<Int?>(null)
+    private val _latestActivityConfidence = MutableStateFlow<Int>(100)
     val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
 
-    private val _latestActivityRecognized = MutableStateFlow<String?>(null)
+    private val _latestActivityRecognized = MutableStateFlow<String>("UNKNOWN")
     val latestActivityRecognized: StateFlow<String?> = _latestActivityRecognized
 
-    private val _latestHeartRate = MutableStateFlow<Int?>(null)
-    val latestHeartRate: StateFlow<Int?> = _latestHeartRate
+    private val _latestHeartRate = MutableStateFlow<Int>(-1)
+    val latestHeartRate: StateFlow<Int> = _latestHeartRate
+
+    private val _restingHeartRate = MutableStateFlow<Int>(DEFAULT_RESTING_HR)
+    val restingHeartRate: StateFlow<Int> = _restingHeartRate
 
     private val _latestSkinTemp = MutableStateFlow<Float?>(null)
     val latestSkinTemp: StateFlow<Float?> = _latestSkinTemp
@@ -77,19 +101,22 @@ class DataRepository(private val context: Context) {
     private val _latestIsDeviceWorn = MutableStateFlow<Boolean>(false)
     val latestIsDeviceWorn: StateFlow<Boolean> = _latestIsDeviceWorn
 
-    /*
-    private val _markerEventId = MutableStateFlow<Int>(0)
-    val markerEventId: StateFlow<Int> = _markerEventId
-
-    fun dropMarker() {
-        // Increment to represent a new event
-        _markerEventId.value = _markerEventId.value + 1
-        Log.d(TAG, "dropMarker Called")
-    }
-
-     */
+    @Entity(tableName = "daily_health_metrics")
+    data class DailyHealthMetrics(
+        @PrimaryKey val timestampHour: Instant,  // truncated to the top of the hour
+        val steps: Long,
+        val calories: Double,
+        val elevationMeters: Double
+    )
 
     // Functions to update the data
+    suspend fun storeRestingHeartRate(restHr: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[RESTING_HEART_RATE] = restHr
+        }
+        _restingHeartRate.emit(restHr)
+    }
+
     suspend fun storeLatestHeartRate(heartRate: Int) {
         _latestHeartRate.emit(heartRate)
     }
@@ -236,6 +263,7 @@ class DataRepository(private val context: Context) {
             prefs[ENABLE_PHYSIOLOGICAL_SERVICES] = enablePhysiologicalServices
         }
     }
+
 
     val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: false
@@ -686,7 +714,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPhysiologicalMetricAge: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[AGE] ?: 24
+        prefs[AGE] ?: DEFAULT_AGE
     }
 
     suspend fun storePhysiologicalMetricAge(age: Int) {
@@ -694,6 +722,26 @@ class DataRepository(private val context: Context) {
             prefs[AGE] = age
         }
     }
+
+    val physiologicalMetricAge: StateFlow<Int> = getPhysiologicalMetricAge.stateIn(
+        scope = repoScope,
+        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+        initialValue = DEFAULT_AGE
+    )
+
+    val exertionFlow: StateFlow<Double> = combine(
+        latestHeartRate.filterNotNull(),
+        physiologicalMetricAge.filterNotNull(),
+        restingHeartRate.filterNotNull()
+    ) { hr, age, rhr ->
+        Utils.PhysioUtils.calculateExertion(hr, age, rhr)
+    }
+        .stateIn(
+            scope = repoScope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            initialValue = -1.0
+        )
+
 
     val getPhysiologicalMetricHeightFeet: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[HEIGHT_FEET] ?: 6
@@ -778,6 +826,10 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    fun upsertDailyHealthMetrics(timestampHour: Instant?, steps: Long, calories: Double, elevationM: Double) {
+        // TODO: as part of WEAR-121
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -807,6 +859,7 @@ class DataRepository(private val context: Context) {
         private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
         private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
+        private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")

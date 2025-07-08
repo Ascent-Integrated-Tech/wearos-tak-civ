@@ -226,7 +226,7 @@ class CotDispatchService : Service() {
         return BleLocationOutput(latActual, lonActual, haeActual, ceActual)
     }
 
-    private fun buildLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float): String {
+    private fun buildLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float, exertion: Double): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -259,11 +259,13 @@ class CotDispatchService : Service() {
         }
 
         val uid = MainActivity.device_uid
-        val skinTempStr = String.format("%.2f", skinTemp)
+        val skinTempStr = String.format("%.2f", skinTemp).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
+        val exertionStr = String.format("%.2f", exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
+
         //Log.i(TAG, "Skt: $skinTempStr ºF | int: $currReportingIntervalInSecs seconds")
         // TODO: set phone number to actual phone number
         return """
-        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: $heartRate bpm; SkinTemp: ${skinTempStr}ºF; Batt: $battery%</remarks><status battery='$battery'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><skt>$skinTempStr</skt><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
+        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: $heartRate bpm; SkinTemp: $skinTempStr ºF; Exertion: $exertionStr; Batt: $battery%</remarks><status battery='$battery'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><skt>$skinTempStr</skt><exert>$exertionStr</exert><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
         """.trimIndent()
 //        return """
 //        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><ditto ip='0.0.0.0' pks='$localPeerKeyString' deviceName='$callsign' version='AndJ4.8.1_9afa7353b2'/><__group role='$roleValue' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
@@ -575,20 +577,22 @@ class CotDispatchService : Service() {
                 var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
                 var skinTemp = dataRepository.latestSkinTemp.value
+                val exertion = dataRepository.exertionFlow.value
+
                 if (heartRate == null) {
                     heartRate = -1
                 }
                 if (skinTemp == null) {
                     skinTemp = (-1).toFloat()
                 }
-                sendLocationBiometricCotMessage(location, heartRate, battery, skinTemp)
+                sendLocationBiometricCotMessage(location, heartRate, battery, skinTemp, exertion)
             }
         }
 
     }
 
-    private fun sendLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float) {
-        val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery, skinTemp)
+    private fun sendLocationBiometricCotMessage(location: Location?, heartRate: Int, battery: Int?, skinTemp: Float, exertion: Double) {
+        val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery, skinTemp, exertion)
         sendDataTAKServers(cotMessage, false)
         //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
         //Log.d(TAG, logString)

@@ -157,6 +157,8 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.aitech.weartak_civ.Utils.DEFAULT_AGE
+import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
 import com.aitech.weartak_civ.Utils.secureRandom
@@ -231,9 +233,9 @@ class MainActivity : ComponentActivity() {
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
 
-        var ageValue = 24
-        val ageState = MutableLiveData<Int>(24)
-        val ageSettingsState = MutableLiveData<Int>(24)
+        var ageValue = DEFAULT_AGE
+        val ageState = MutableLiveData<Int>(DEFAULT_AGE)
+        val ageSettingsState = MutableLiveData<Int>(DEFAULT_AGE)
         var heightFeetValue = 6
         val heightFeetState = MutableLiveData<Int>(6)
         val heightFeetSettingsState = MutableLiveData<Int>(6)
@@ -252,6 +254,7 @@ class MainActivity : ComponentActivity() {
         var allergyList : List<DataRepository.AllergyItem> = listOf(DataRepository.AllergyItem(name="N/A"))
         val allergyListState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
         val allergyListSettingsState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
+        var restingHeartRate = DEFAULT_RESTING_HR
         var userTypeValue = "N/A"
         val userTypeState = MutableLiveData<String>("N/A")
         val userTypeSettingsState = MutableLiveData<String>("N/A")
@@ -1594,6 +1597,7 @@ class MainActivity : ComponentActivity() {
 
         val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
 
+        val physiologicalMetricsRestingHeartRateConfigUpdate = appRestrictions.getInt("physiological_metrics_resting_heart_rate", restingHeartRate)
         val physiologicalMetricsAgeServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_age", ageValue)
         val physiologicalMetricsHeightFeetServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_feet", heightFeetValue)
         val physiologicalMetricsHeightInchesServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_inches", heightInchesValue)
@@ -1803,6 +1807,7 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
+            dataRepository.storeRestingHeartRate(physiologicalMetricsRestingHeartRateConfigUpdate)
             dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
             dataRepository.storePhysiologicalMetricHeightFeet(physiologicalMetricsHeightFeetServiceConfigUpdate)
             dataRepository.storePhysiologicalMetricHeightInches(physiologicalMetricsHeightInchesServiceConfigUpdate)
@@ -1884,6 +1889,10 @@ class MainActivity : ComponentActivity() {
                 enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+            }
+            if (restingHeartRate != physiologicalMetricsRestingHeartRateConfigUpdate) {
+                Log.d(TAG, "Changed detected restingHeartRate(prev=$restingHeartRate, curr=$physiologicalMetricsRestingHeartRateConfigUpdate")
+                restingHeartRate = physiologicalMetricsRestingHeartRateConfigUpdate
             }
             if (ageValue != physiologicalMetricsAgeServiceConfigUpdate) {
                 Log.d(TAG, "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)")
@@ -2498,7 +2507,7 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
 //    var locationChecked by remember{ mutableStateOf(enableLocationService)}
     var sosText = stringResource(R.string.sos)
     var sosLiveText = stringResource(R.string.sos_active)
-    Log.d(TAG, "SOSButtton")
+    //Log.d(TAG, "SOSButtton")
 
 //    if (shouldShowConfirmationDialog.value) {
 //        ConfirmationDialog(

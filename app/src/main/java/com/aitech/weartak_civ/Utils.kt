@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ
 
 import android.annotation.SuppressLint
@@ -11,11 +20,12 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -23,7 +33,6 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.sqrt
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import java.io.StringReader
@@ -31,12 +40,13 @@ import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
 
 
-
 object Utils {
     private const val TAG = "WearTAK-Utils"
     private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
     const val EARTH_RADIUS = 6378137.0  // in meters
+    const val DEFAULT_RESTING_HR : Int = 70
+    const val DEFAULT_AGE : Int = 24
     val secureRandom: SecureRandom = SecureRandom()
 
     fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {
@@ -143,7 +153,7 @@ object Utils {
         // Generate random offsets in [-maxJitterUnsignedM, maxJitterUnsignedM] meters
         val dx = (secureRandom.nextDouble() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // East-West
         val dy = (secureRandom.nextDouble() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // North-South
-        Log.d(TAG, "jitteredLatLon: dlatM($dy), dLonM($dx): dist(${(sqrt(dx*dx + dy*dy))})")
+        //Log.d(TAG, "jitteredLatLon: dlatM($dy), dLonM($dx): dist(${(sqrt(dx*dx + dy*dy))})")
 
         // Convert to angular distance in radians
         val dLat = dy / EARTH_RADIUS
@@ -326,6 +336,58 @@ object Utils {
         val timeLastOpened: Long,
         var timeLastClosed: Long
     )
+
+    object PhysioUtils {
+        private fun calculateMaxHeartRate(ageYears: Int): Int {
+            return (220 - ageYears)
+        }
+
+        fun calculateHeartRateReserve(maxHr: Int, restingHr: Int): Int {
+            return (maxHr - restingHr)
+        }
+
+        fun calculateExertion(currentHr: Int, ageYears: Int, restingHr: Int): Double {
+            if (currentHr < 0.0) return -1.0
+            val mhr = calculateMaxHeartRate(ageYears)
+            val hrr = mhr - restingHr
+            if (hrr <= 0) return -1.0 // Cannot calculate and hence return invalid value
+            return ((currentHr - restingHr).coerceAtLeast(0)) / hrr.toDouble() // If currentHr <= restingHr, then the user is not at all exerting them selfs, hence exertion = 0
+        }
+
+        fun classifyExertion(exertion: Double): String = when {
+            exertion >= 0.7 -> "VIGOROUS"
+            exertion >= 0.5 -> "MODERATE"
+            exertion < 0.0 -> "UNKNOWN"
+            else            -> "LIGHT"
+        }
+
+        sealed class PhysioEvent {
+            data class Hr(val bpm: Int, val t: Long) : PhysioEvent()
+            data class Motion(val accelRms: Double, val t: Long) : PhysioEvent()
+        }
+
+        class RestingHeartRateAggregator(
+            private val maxSamples: Int = 15 // 15 * 2 hr samples/sec --> 30 second buffer window
+        ) {
+            private val buffer = ArrayDeque<Double>(maxSamples)
+            private val lock = Mutex()
+
+            suspend fun pushSample(bpm: Double) {
+                lock.withLock {
+                    buffer.addLast(bpm)
+                    if (buffer.size > maxSamples) buffer.removeFirst()
+                }
+            }
+
+            suspend fun computeAverage(minSamples: Int = maxSamples / 2): Double? {
+                return lock.withLock {
+                    if (buffer.size >= minSamples) {
+                        buffer.average()
+                    } else null
+                }
+            }
+        }
+    }
 
     object CotUtils {
         /** Quick screen for chat‐related COTs. */

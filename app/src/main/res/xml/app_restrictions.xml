@@ -74,14 +74,12 @@
         android:description="@string/activity_recognition_service_description"
         android:defaultValue="@string/activity_recognition_service_enabled_default" />
 
-
     <restriction
         android:key="skin_temp_service_enabled"
         android:restrictionType="bool"
         android:title="@string/skin_temp_service_title"
         android:description="@string/skin_temp_service_description"
         android:defaultValue="@string/skin_temp_service_enabled_default" />
-
 
     <restriction
         android:key="ditto_service_enabled"
@@ -193,6 +191,12 @@
         android:entries="@array/allergy_entries"
         android:entryValues="@array/allergy_entry_values"
         android:defaultValue="@array/physiological_metrics_allergies_default" />
+    <restriction
+        android:key="physiological_metrics_resting_heart_rate"
+        android:restrictionType="integer"
+        android:title="@string/physiological_metrics_resting_heart_rate_title"
+        android:description="@string/physiological_metrics_resting_heart_rate_description"
+        android:defaultValue="@string/physiological_metrics_resting_heart_rate_default"/>
     <restriction
         android:key="physiological_metrics_user_type"
         android:restrictionType="choice"
