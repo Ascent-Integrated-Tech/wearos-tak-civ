@@ -7,7 +7,7 @@ import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
@@ -26,7 +26,7 @@ class HeartRateComplicationService : SuspendingComplicationDataSourceService() {
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         //Log.d(TAG, "onComplicationRequest called")
         return when (isLicenseValid()) {
-            true -> return when (enableBiometricsServiceSettingsState.value) {
+            true -> return when (enablePhysiologicalServicesSettingsState.value) {
 //            return when (hr) {
 //                hr -> createComplicationData(hr.toString(), getString(R.string.heart_rate))
 //                else -> throw IllegalArgumentException(getString(R.string.heart_rate_could_not_be_found))

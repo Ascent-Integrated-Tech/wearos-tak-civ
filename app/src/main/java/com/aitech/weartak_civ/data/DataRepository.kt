@@ -56,6 +56,12 @@ class DataRepository(private val context: Context) {
 //        }
 //    }
 
+    private val _latestActivityConfidence = MutableStateFlow<Int?>(null)
+    val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
+
+    private val _latestActivityRecognized = MutableStateFlow<String?>(null)
+    val latestActivityRecognized: StateFlow<String?> = _latestActivityRecognized
+
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
@@ -86,6 +92,14 @@ class DataRepository(private val context: Context) {
     // Functions to update the data
     suspend fun storeLatestHeartRate(heartRate: Int) {
         _latestHeartRate.emit(heartRate)
+    }
+
+    suspend fun storeLatestActivityRecognized(activity: String) {
+        _latestActivityRecognized.emit(activity)
+    }
+
+    suspend fun storeLatestActivityConfidence(confidence: Int) {
+        _latestActivityConfidence.emit(confidence)
     }
 
     suspend fun storeLatestSkinTemp(skinTemp: Float) {
@@ -213,8 +227,24 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getEnableBiometricsService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_BIOMETRICS_SERVICE] ?: true
+    val getEnablePhysiologicalServices: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_PHYSIOLOGICAL_SERVICES] ?: true
+    }
+
+    suspend fun storeEnablePhysiologicalServices(enablePhysiologicalServices: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_PHYSIOLOGICAL_SERVICES] = enablePhysiologicalServices
+        }
+    }
+
+    val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: false
+    }
+
+    suspend fun storeEnableActivityRecognitionService(enableActivityRecognitionService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] = enableActivityRecognitionService
+        }
     }
 
     val getEnableSkinTempService: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -224,12 +254,6 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableSkinTempService(enableSkinTempService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_SKIN_TEMP_SERVICE] = enableSkinTempService
-        }
-    }
-
-    suspend fun storeEnableBiometricsService(enableBiometricsService: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_BIOMETRICS_SERVICE] = enableBiometricsService
         }
     }
 
@@ -767,8 +791,9 @@ class DataRepository(private val context: Context) {
         private val DITTO_APP_ID = stringPreferencesKey("ditto_app_id")
         private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
-        private val ENABLE_BIOMETRICS_SERVICE = booleanPreferencesKey("enable_biometrics_service")
+        private val ENABLE_PHYSIOLOGICAL_SERVICES = booleanPreferencesKey("enable_physiological_services")
         private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
+        private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_activity_recognition_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

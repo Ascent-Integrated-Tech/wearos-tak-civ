@@ -61,11 +61,19 @@
         android:defaultValue="@string/location_service_enabled_default" />
 
     <restriction
-        android:key="biometric_service_enabled"
+        android:key="physiological_services_enabled"
         android:restrictionType="bool"
-        android:title="@string/biometric_service_title"
-        android:description="@string/biometric_service_description"
-        android:defaultValue="@string/biometric_service_enabled_default" />
+        android:title="@string/physiological_services_title"
+        android:description="@string/physiological_services_description"
+        android:defaultValue="@string/physiological_services_enabled_default" />
+
+    <restriction
+        android:key="activity_recognition_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/activity_recognition_service_title"
+        android:description="@string/activity_recognition_service_description"
+        android:defaultValue="@string/activity_recognition_service_enabled_default" />
+
 
     <restriction
         android:key="skin_temp_service_enabled"

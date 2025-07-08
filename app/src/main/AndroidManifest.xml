@@ -299,6 +299,12 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
         <service
+            android:name=".service.ActivityRecognitionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.SkinTempService"
             android:enabled="true"
             android:exported="false"
