@@ -33,12 +33,14 @@ import androidx.health.services.client.HealthServices
 import androidx.health.services.client.PassiveListenerCallback
 import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
+import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.health.services.client.getCapabilities
-import com.aitech.weartak_civ.manager.RestingHrManager
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import java.io.File
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class ActivityRecognitionService : Service() {
     companion object {
@@ -59,12 +61,19 @@ class ActivityRecognitionService : Service() {
 
     private val healthClient by lazy { HealthServices.getClient(this) }
     private val passiveMonitoringClient by lazy { healthClient.passiveMonitoringClient }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var cumulativeSteps:     Long?   = null
+    private var cumulativeCalories:  Double? = null
+    private var cumulativeFloors:    Double? = null
+    private var cumulativeElevation: Double? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "ActivityRecognitionService onCreate")
 
+        isRunning.set(true)
+        Log.d(TAG, "ActivityRecognitionService onCreate called")
         activityRecognitionClient = ActivityRecognition.getClient(this)
         startForegroundServiceCompat(
             NOTIF_ID,
@@ -86,41 +95,40 @@ class ActivityRecognitionService : Service() {
 
         scope.launch {
             try {
-                val capabilities = passiveMonitoringClient.getCapabilities()
+                val caps = passiveMonitoringClient.getCapabilities()
 
-                val supportsSteps  =
-                    DataType.STEPS_DAILY in capabilities.supportedDataTypesPassiveMonitoring
-                val supportsCals   =
-                    DataType.CALORIES_DAILY in capabilities.supportedDataTypesPassiveMonitoring
-                val supportsFloors =
-                    DataType.FLOORS_DAILY in capabilities.supportedDataTypesPassiveMonitoring
+                Log.i(TAG, "Passive caps => ${caps.supportedDataTypesPassiveMonitoring}")
 
-                if (supportsSteps && supportsCals && supportsFloors) {
-                    val passiveListenerConfig = PassiveListenerConfig.builder()
-                        .setDataTypes(
-                            setOf(
-                                DataType.CALORIES_DAILY,
-                                DataType.STEPS_DAILY,
-                                DataType.FLOORS_DAILY
-                            )
-                        )
-                        .build()
-
-                    passiveMonitoringClient.setPassiveListenerCallback(
-                        passiveListenerConfig,
-                        passiveDailyListenerCallback
-                    )
-
-                    Log.i(TAG, "Passive daily listener registered")
-                } else {
-                    Log.w(TAG, "Device does not support one or more requested data types")
+                val wanted = buildSet {
+                    if (DataType.STEPS_DAILY   in caps.supportedDataTypesPassiveMonitoring)
+                        add(DataType.STEPS_DAILY)
+                    if (DataType.CALORIES_DAILY in caps.supportedDataTypesPassiveMonitoring)
+                        add(DataType.CALORIES_DAILY)
+                    if (DataType.FLOORS_DAILY  in caps.supportedDataTypesPassiveMonitoring)
+                        add(DataType.FLOORS_DAILY)
+                    if (DataType.ELEVATION_GAIN_DAILY in caps.supportedDataTypesPassiveMonitoring)
+                        add(DataType.ELEVATION_GAIN_DAILY)
                 }
 
+                if (wanted.isEmpty()) {
+                    Log.w(TAG, "No requested passive data types supported"); return@launch
+                }
+
+
+                val cfg = PassiveListenerConfig
+                    .builder()
+                    .setDataTypes(wanted)
+                    .build()
+
+                passiveMonitoringClient.setPassiveListenerCallback(
+                    cfg,
+                    passiveDailyListenerCallback
+                )
+                Log.i(TAG, "Registered passive listener for $wanted")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to register passive listener", t)
             }
         }
-
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -148,7 +156,7 @@ class ActivityRecognitionService : Service() {
             //writeToLogFileLocation(logFile, line)
 
             // Persist in repo (backend-only)
-            scope.launch {
+            ioScope.launch {
                 //RestingHrManager.onActivityRecognized(name)
                 repo.storeLatestActivityRecognized(name)
                 repo.storeLatestActivityConfidence(act?.confidence ?: 100)
@@ -165,6 +173,7 @@ class ActivityRecognitionService : Service() {
         if (!isRunning.getAndSet(false)) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return
         scope.cancel()
+        ioScope.cancel()
         passiveMonitoringClient.clearPassiveListenerCallbackAsync()
         activityRecognitionClient.removeActivityUpdates(callbackIntent).addOnSuccessListener { callbackIntent.cancel() }.addOnFailureListener { Log.e(TAG, "Failed to remove activity updates", it) }
     }
@@ -173,24 +182,27 @@ class ActivityRecognitionService : Service() {
 
     private val passiveDailyListenerCallback = object : PassiveListenerCallback {
         override fun onNewDataPointsReceived(container: DataPointContainer) {
+            // Read the optional points
             // Each call may contain 0-many data points for each requested type
-            val steps    = container.getData(DataType.STEPS_DAILY).firstOrNull()?.value
-            val calories = container.getData(DataType.CALORIES_DAILY).firstOrNull()?.value
-            val floors   = container.getData(DataType.FLOORS_DAILY).firstOrNull()?.value
+            container.getData(DataType.STEPS_DAILY).firstOrNull()?.value?.toLong()?.let { cumulativeSteps = it }
+            container.getData(DataType.CALORIES_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeCalories = it }
+            container.getData(DataType.FLOORS_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeFloors = it }
+            container.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
-            if (steps != null || calories != null || floors != null) {
-                scope.launch {
-                    // Store into your repository; adjust model as needed
-                    val nowHour = java.time.Instant.now()
-                        .truncatedTo(java.time.temporal.ChronoUnit.HOURS)
+            // DEBUG LOG: shows the cached snapshot
+//            writeToLogFileLocation(logFile, "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
 
-                    repo.upsertDailyHealthMetrics(
-                        timestampHour = nowHour,
-                        steps         = steps    ?: 0,
-                        calories      = calories ?: 0.0,
-                        elevationM    = floors?.times(3.048) ?: 0.0 // 1 floor ≈ 3.048 m
-                    )
-                }
+            // Push snapshot to repository
+            scope.launch {
+                val nowHour = Instant.now().truncatedTo(ChronoUnit.HOURS)
+				//Log.d(TAG, "passiveDailyListenerCallback: nowHour: $nowHour; Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
+                repo.updateDailyMetrics(
+                    timestampHour = nowHour,
+                    steps         = cumulativeSteps,
+                    calories      = cumulativeCalories,
+                    floors        = cumulativeFloors,
+                    elevationM    = cumulativeElevation
+                )
             }
         }
     }

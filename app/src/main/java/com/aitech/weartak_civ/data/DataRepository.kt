@@ -826,8 +826,32 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    fun upsertDailyHealthMetrics(timestampHour: Instant?, steps: Long, calories: Double, elevationM: Double) {
-        // TODO: as part of WEAR-121
+    data class DailyMetrics(
+        val timestampHour: Instant,
+        val steps: Long       = 0L,
+        val calories: Double  = 0.0,
+        val floors: Double    = 0.0,
+        val elevationM: Double = 0.0
+    )
+
+    private val _latestDailyMetrics = MutableStateFlow<DailyMetrics?>(null)
+    val latestDailyMetrics: StateFlow<DailyMetrics?> = _latestDailyMetrics
+
+    fun updateDailyMetrics(
+        timestampHour: Instant,
+        steps: Long?,
+        calories: Double?,
+        floors: Double?,
+        elevationM: Double?
+    ) {
+        val prev = _latestDailyMetrics.value
+        _latestDailyMetrics.value = DailyMetrics(
+            timestampHour = timestampHour,
+            steps        = steps       ?: prev?.steps       ?: 0L,
+            calories     = calories    ?: prev?.calories    ?: 0.0,
+            floors       = floors      ?: prev?.floors      ?: 0.0,
+            elevationM   = elevationM  ?: prev?.elevationM  ?: 0.0
+        )
     }
 
     companion object {
