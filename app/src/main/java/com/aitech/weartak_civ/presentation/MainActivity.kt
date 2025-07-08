@@ -1091,9 +1091,6 @@ class MainActivity : ComponentActivity() {
             allergyList = dataRepository.getPhysiologicalMetricAllergyList.first()
             userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
 
-            dataRepository.storeLatestActivityRecognized("UNKNOWN")
-            dataRepository.storeLatestActivityConfidence(100)
-
             Log.d(TAG, "============= Done Initializing Settings ===============")
         }
     }
