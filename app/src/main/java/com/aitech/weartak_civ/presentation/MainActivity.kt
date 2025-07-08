@@ -195,6 +195,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
+import com.aitech.weartak_civ.service.WristInferenceService
 
 
 class MainActivity : ComponentActivity() {
@@ -1163,6 +1164,8 @@ class MainActivity : ComponentActivity() {
         //startHealthCapabilitiesCollection()
         validateLicense(license)
         startStopServicesLicense(context)
+        // TODO: Bend Detection, will add this into above function per License
+        startService(Intent(this, WristInferenceService::class.java))
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)

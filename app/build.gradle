@@ -194,9 +194,8 @@ dependencies {
         implementation 'org.tensorflow:tensorflow-lite:2.13.0'
         implementation 'org.tensorflow:tensorflow-lite-support:0.3.1'
         implementation 'org.tensorflow:tensorflow-lite-gpu:2.13.0'
-        implementation 'org.tensorflow:tensorflow-lite-gpu-kotlin:2.13.0'
 
         // Testing Bend Detection
         implementation 'org.pytorch:pytorch_android:1.13.1'        // Core
-        implementation 'org.pytorch:pytorch_android_torchvision:1.13.1' // Optional (not needed unless you use image transforms)
+        implementation 'org.pytorch:pytorch_android_torchvision:1.13.1' // Optional
 }

@@ -311,6 +311,12 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
         <service
+            android:name=".service.WristInferenceService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.CustomAccessibilityService"
             android:enabled="true"
             android:exported="true"
