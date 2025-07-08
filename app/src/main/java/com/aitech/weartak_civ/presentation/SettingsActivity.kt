@@ -159,8 +159,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimization
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBiometricsServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServices
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
@@ -205,6 +205,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.startActivityRecognitionService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startHeartrateService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
@@ -235,6 +236,7 @@ import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsAc
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.DittoService
@@ -277,7 +279,7 @@ class SettingsActivity : ComponentActivity() {
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enableChatServiceSettingsState.postValue(enableChatService)
         enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
-        enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
+        enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         callsignSettingsState.postValue(callsign)
         teamSettingsState.postValue(team)
         roleSettingsState.postValue(role)
@@ -2918,7 +2920,7 @@ fun SettingsScreen(
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
     var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
-    val biometricsCheckedLive by enableBiometricsServiceSettingsState.observeAsState()
+    val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
@@ -3097,8 +3099,8 @@ fun SettingsScreen(
                 modifier = Modifier.padding(7.dp)
             )
             SettingSwitchToggleLiveData(
-                biometricsCheckedLive,
-                { enableBiometricsServiceSettingsState.postValue(it) },
+                physioCheckedLive,
+                { enablePhysiologicalServicesSettingsState.postValue(it) },
                 stringResource(R.string.physiological_monitoring),
                 stringResource(R.string.service_on_off)
             )
@@ -3171,7 +3173,7 @@ fun SettingsScreen(
                     enableDittoServiceSettingsState.postValue(enableDittoService)
                     enableChatServiceSettingsState.postValue(enableChatService)
                     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
-                    enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
+                    enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
                     callsignSettingsState.postValue(callsign)
                     teamSettingsState.postValue(team)
                     roleSettingsState.postValue(role)
@@ -3209,7 +3211,7 @@ fun SettingsScreen(
                     val maxReportRate: Int = 100000000
                     val minReportRate: Int = 1
                     var locationCheckedChanged: Boolean = false
-                    var biometricsCheckedChanged: Boolean = false
+                    var physioCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var smsAlertsCheckedChanged: Boolean = false
@@ -3404,20 +3406,22 @@ fun SettingsScreen(
                             smsNumbersListStringSettingsState.value ?: smsNumbersListString
                     }
 
-                    if (enableBiometricsService != enableBiometricsServiceSettingsState.value) {
-                        settingsChanged = true; biometricsCheckedChanged = true
-                        enableBiometricsService = enableBiometricsServiceSettingsState.value ?: enableBiometricsService
-                        if (enableBiometricsService) {
-                            Log.d(TAG, "Trying to start biometric services")
+                    if (enablePhysiologicalServices != enablePhysiologicalServicesSettingsState.value) {
+                        settingsChanged = true; physioCheckedChanged = true
+                        enablePhysiologicalServices = enablePhysiologicalServicesSettingsState.value ?: enablePhysiologicalServices
+                        if (enablePhysiologicalServices) {
+                            Log.d(TAG, "Trying to start physiological services")
                             startHeartrateService()
+                            startActivityRecognitionService()
                             startSkinTempService()
                         } else {
-                            Log.d(TAG, "Trying to stop biometric services")
+                            Log.d(TAG, "Trying to stop physiological services")
                             mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
+                            mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
                             mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
                         }
                         runBlocking {
-                            enableBiometricsServiceSettingsState.postValue(enableBiometricsService)
+                            enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
                         }
                         requestHeartRateComplicationUpdate(context)
                     }
@@ -3528,9 +3532,9 @@ fun SettingsScreen(
                                  smsNumbersList = smsNumbersListConversion
                              }
 
-                             if (biometricsCheckedChanged) {
-                                 Log.d(TAG, "Storing enableBiometricsService $enableBiometricsService")
-                                 dataRepository.storeEnableBiometricsService(enableBiometricsService)
+                             if (physioCheckedChanged) {
+                                 Log.d(TAG, "Storing enablePhysiologicalServices $enablePhysiologicalServices")
+                                 dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServices)
                              }
 
                              if (physiologicalAlertsCheckedChanged) {

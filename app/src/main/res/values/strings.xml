@@ -230,14 +230,17 @@
     <string name="location_service_description" translatable="false">Enable or disable the location service</string>
     <string name="location_service_enabled_default" translatable="false">true</string>
 
-    <string name="biometric_service_title" translatable="false">Enable Biometric Service</string>
-    <string name="biometric_service_description" translatable="false">Enable or disable the biometric service</string>
-    <string name="biometric_service_enabled_default" translatable="false">true</string>
+    <string name="physiological_services_title" translatable="false">Enable Physiological Services</string>
+    <string name="physiological_services_description" translatable="false">Enable or disable physiological services</string>
+    <string name="physiological_services_enabled_default" translatable="false">true</string>
+
+    <string name="activity_recognition_service_title" translatable="false">Enable Activity Recognition Service</string>
+    <string name="activity_recognition_service_description" translatable="false">Enable or disable the Activity Recognition service for running, walking, biking, etc.</string>
+    <string name="activity_recognition_service_enabled_default" translatable="false">false</string>
 
     <string name="skin_temp_service_title" translatable="false">Enable Skin Temp Service</string>
     <string name="skin_temp_service_description" translatable="false">Enable or disable the skin temperature service</string>
     <string name="skin_temp_service_enabled_default" translatable="false">true</string>
-
 
     <string name="ditto_service_title" translatable="false">Enable Ditto Service</string>
     <string name="ditto_service_description" translatable="false">Enable or disable the Ditto service</string>

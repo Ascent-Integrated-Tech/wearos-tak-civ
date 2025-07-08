@@ -39,7 +39,7 @@ class SkinTempService : Service() {
         val isRunning = AtomicBoolean(false)
         var DISPATCH_INTERVAL_MS = 60 * 1_000L
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
-        val LOG_FILENAME = "skin_temp.log"
+        val LOG_FILENAME = "/sdcard/Download/skin_temp.log"
     }
 
 
@@ -70,11 +70,7 @@ class SkinTempService : Service() {
 //        )
     }
 
-    private val logFile: File by lazy {
-        File(filesDir, LOG_FILENAME).apply {
-            if (!exists()) parentFile?.mkdirs()
-        }
-    }
+    private val logFile: File by lazy { File(LOG_FILENAME) }
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
@@ -112,14 +108,13 @@ class SkinTempService : Service() {
 
                 if (status >= 0) {
                     val objectTemp = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE)
-                    val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
+                    //val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
                     tempF = objectTemp.toFahrenheit()
-                    Log.i(TAG, "Skin Temp: ${"%.1f".format(tempF)}°F")
+                    //Log.i(TAG, "Skin Temp: ${"%.1f".format(tempF)}°F; Ambient Temp: ${ambientTemp.toFahrenheit()}")
 
-                    val logLine =
-                        "SkinTemp status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
-                                "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
-                    writeToLogFileLocation(logFile, logLine)
+                    //val logLine = "SkinTemp status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
+                    //            "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
+                    //writeToLogFileLocation(logFile, logLine)
                 } else {
                     tempF = -1f
                     skinTempLiveData.postValue("N/A")
@@ -146,7 +141,7 @@ class SkinTempService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Service onCreate")
+        Log.d(TAG, "SkinTempService onCreate")
 
         CoroutineScope(Dispatchers.IO).launch{
             sharedRepo.reportingUpdateIntervalSecs.collect { secs ->
@@ -186,7 +181,7 @@ class SkinTempService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service onStartCommand, isRunning=${isRunning.get()}")
-        writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
+        //writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
         if (!isRunning.getAndSet(true)) {
             deviceWorn = sharedRepo.latestIsDeviceWorn.value ?: false
             if (deviceWorn && ::skinTracker.isInitialized) {
@@ -227,11 +222,11 @@ class SkinTempService : Service() {
             deviceWorn = true
             startSkinTracker()    // immediate snapshot
             scheduleNextReading()
-            writeToLogFileLocation(logFile, "deviceWorn=true.")
+            //writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
             stopSkinTracker(true)     // shut it down
-            writeToLogFileLocation(logFile, "deviceWorn=false.")
+            //writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
 
