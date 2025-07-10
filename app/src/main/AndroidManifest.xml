@@ -277,6 +277,10 @@
             android:foregroundServiceType="location"
             android:stopWithTask="false" />
         <service
+            android:name=".service.CoreTempEstimationService"
+            android:enabled="true"
+            android:exported="false" />
+        <service
             android:name=".service.BleBeaconService"
             android:enabled="true"
             android:exported="false"
