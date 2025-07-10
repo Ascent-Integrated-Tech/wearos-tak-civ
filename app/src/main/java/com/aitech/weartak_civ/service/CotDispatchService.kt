@@ -394,13 +394,21 @@ class CotDispatchService : Service() {
         // Set the current time
         calendar.setTime(Date())
 
-        // Format and set the startTime with the currentTime
         val startTime = dateTimeFormatter.format(calendar.time)
         val startTimeInMs = calendar.timeInMillis
-        val markerCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
-        markerCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
-        val markerCallsignAppendTime = markerCallsignDateTimeFormatter.format(calendar.time)
-        val markerCallsign = "${callsign}_$markerCallsignAppendTime"
+
+        // DateTime Marker - no longer used
+        //val markerCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
+        //markerCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        //val markerCallsignAppendDateTime = markerCallsignDateTimeFormatter.format(calendar.time)
+        //val markerCallsign_Date_Time = "${callsign}_$markerCallsignAppendDateTime"
+
+        // Marker with Time no Date.
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss")
+        markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
+        val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
+        val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
+
 
         // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
         calendar.add(Calendar.YEAR, 1)
@@ -438,7 +446,7 @@ class CotDispatchService : Service() {
                 <color argb="-1"/>
                 <usericon iconsetpath="$iconSetPath"/>
                 <remarks>HeartRate: $heartRate bpm; Battery Level: $battery%</remarks>
-                <contact callsign="$markerCallsign"/>
+                <contact callsign="$markerCallsign_Time"/>
             </detail>
         </event>
         """.trimIndent()

@@ -1057,7 +1057,6 @@ class MainActivity : ComponentActivity() {
             allergyList = dataRepository.getPhysiologicalMetricAllergyList.first()
             userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
 
-
             Log.d(TAG, "============= Done Initializing Settings ===============")
         }
     }

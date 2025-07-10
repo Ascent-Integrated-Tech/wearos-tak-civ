@@ -264,8 +264,8 @@ class SettingsActivity : ComponentActivity() {
         val licenseState = MutableLiveData<String>("")
         val sexOptionsList : List<String> = listOf("N/A", "Male", "Female")
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
-        val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Aspirin", "Sulfa Drugs", "Insulin", "Antiseizure", "Muscle Relaxers")
-        val userTypeOptionsList : List<String> = listOf("N/A", "Coalition Military", "Coalition Civilian", "NonCoalition Force", "NonCoalition Citizen", "Opposing Force Detainee", "Child")
+        val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
+        val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "NonCoalition Citizen", "NonCoalition Force", "Opposing Force Detainee")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
