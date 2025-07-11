@@ -9,6 +9,10 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.IBinder
 import android.util.Log
+import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.service.SkinTempService.Companion
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 class CoreTempEstimationService : Service(), SensorEventListener {
@@ -19,17 +23,33 @@ class CoreTempEstimationService : Service(), SensorEventListener {
     private val estimator = CoreTempEstimator(37.0)
     private var lastTimestamp: Long = 0L
 
+    companion object {
+        private const val TAG = "WearTAK-CoreTempEstimation"
+        private const val NOTIF_ID = 45
+    }
+
     override fun onCreate() {
+        // run as a ForeGround Service
         super.onCreate()
+
+        // Promote to foreground to avoid being killed
+        startForegroundServiceCompat(
+            NOTIF_ID,
+            importance = android.app.NotificationManager.IMPORTANCE_LOW
+        )
+
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
 
         heartRateSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
+
+
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d("CoreTempEstimator", "Service started")
         return START_STICKY
     }
 
@@ -40,25 +60,36 @@ class CoreTempEstimationService : Service(), SensorEventListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private var firstTimestamp: Long = 0L
+
     override fun onSensorChanged(event: SensorEvent?) {
         val hr = event?.values?.firstOrNull() ?: return
+        Log.d("CoreTempEstimator", "Raw HR reading: $hr")
+
         val now = System.currentTimeMillis()
 
-        if (hr > 0 && now - lastTimestamp > 1000) {
+        if (hr > 0) {
+            if (firstTimestamp == 0L) {
+                firstTimestamp = now
+            }
+
             hrBuffer.add(hr)
-            lastTimestamp = now
-        }
 
-        if (hrBuffer.size >= 60) {
-            val avgHR = hrBuffer.average()
-            val ct = estimator.estimate(listOf(avgHR)).last()
+            val elapsed = now - firstTimestamp
+            Log.d("CoreTempEstimator", "HR value: $hr, Buffer size: ${hrBuffer.size}, Elapsed: ${elapsed / 1000}s")
 
-            // Output to Logcat only, for now
-            Log.d("CoreTempEstimator", "Avg HR: ${avgHR.roundToInt()} bpm, Estimated CT: %.2f°C".format(ct))
+            if (elapsed >= 60_000 && hrBuffer.isNotEmpty()) {
+                val avgHR = hrBuffer.average()
+                val ct = estimator.estimate(listOf(avgHR)).last()
 
-            hrBuffer.clear()
+                Log.d("CoreTempEstimator", "Avg HR: ${avgHR.roundToInt()} bpm, Estimated CT: %.2f°C".format(ct))
+
+                hrBuffer.clear()
+                firstTimestamp = 0L
+            }
         }
     }
+
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 }

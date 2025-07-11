@@ -279,7 +279,9 @@
         <service
             android:name=".service.CoreTempEstimationService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false" 
+            android:foregroundServiceType="health"
+            />
         <service
             android:name=".service.BleBeaconService"
             android:enabled="true"

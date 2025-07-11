@@ -177,6 +177,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
+import com.aitech.weartak_civ.service.CoreTempEstimationService
 import com.aitech.weartak_civ.service.SkinTempService
 import com.samsung.android.service.health.tracking.HealthTrackingService
 
@@ -602,6 +603,10 @@ class MainActivity : ComponentActivity() {
             } else {
                 Log.d(TAG, "BatteryService is already running")
             }
+        }
+
+        fun startCoreBodyTempService() {
+            // TODO: Implement for newly added Core Body Temp Estimation Feature
         }
 
         fun startCotDispatchService() {
@@ -1297,6 +1302,12 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "NOT Able to set ACCESSIBILITY_ENABLED to 1")
         }
          */
+        /*mainActivity.startService(
+            Intent(
+                mainActivity,
+                CoreTempEstimationService::class.java
+            )
+        )*/
     }
 
     private fun refreshUI(context: Context) {

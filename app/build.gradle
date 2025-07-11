@@ -24,10 +24,6 @@ android {
         manifestPlaceholders["commit"] = gitCommit()
     }
 
-    lintOptions {
-        checkReleaseBuilds true
-        abortOnError true
-    }
 
     signingConfigs {
         debug {
@@ -89,6 +85,10 @@ android {
     }
     buildToolsVersion '35.0.0'
     ndkVersion '27.0.12077973'
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
 }
 
 dependencies {
