@@ -35,9 +35,11 @@ import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import javax.net.ssl.SSLSocket
 
 
 object Utils {
@@ -429,18 +431,55 @@ object Utils {
             return rooms
         }
 
-        fun isProtobufHandshake(raw: String): Boolean =
-            raw.contains("<TakControl>")
+        /* ----  TAK-Protocol (XML) helpers  ---- */
 
-        fun extractUid(raw: String): String {
-            raw.contains("uid")
-            return ""
+        private val uidRx         = """<event[^>]*\buid=['"]([^'"]+)['"]""".toRegex()
+        private val supportRx     = """<TakProtocolSupport[^>]*\bversion=['"](\d+)['"]""".toRegex()
+        private val requestRx     = """<TakRequest[^>]*\bversion=['"](\d+)['"]""".toRegex()
+        private val responseRx    = """<TakResponse[^>]*\bstatus=['"]([^'"]+)['"]""".toRegex()
+
+        fun isTakProtocolAdvert(raw: String): Boolean =
+            raw.contains("type=\"t-x-takp-v\"") && supportRx.containsMatchIn(raw)
+
+        fun isTakProtocolResponse(raw: String, uid: String): Boolean =
+            raw.contains("type=\"t-x-takp-r\"") && raw.contains("uid=\"$uid\"")
+
+        fun extractUid(raw: String): String =
+            uidRx.find(raw)?.groupValues?.getOrNull(1) ?: ""
+
+        fun extractTakProtocolVersion(raw: String): Int? =
+            supportRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                ?: requestRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+        fun extractTakProtocolStatus(raw: String): Boolean =
+            responseRx.find(raw)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
+
+        /* Build <t-x-takp-q> message for upstream protobuf handshake */
+        fun buildTakpQuery(uid: String, version: Int = 1): String =
+            """
+            <?xml version='1.0' encoding='UTF-8'?>
+            <event version='2.0' uid='$uid' type='t-x-takp-q' how='m-g'
+                   time='${isoNow()}' start='${isoNow()}' stale='${staleIso(30)}'>
+              <point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>
+              <detail>
+                <TakControl>
+                  <TakRequest version='$version'/>
+                </TakControl>
+              </detail>
+            </event>
+            """.trimIndent()
+
+        fun sendCot(xml: String, socket: SSLSocket) {
+            socket.getOutputStream().writer(Charsets.UTF_8).apply {
+                write(xml)
+                flush()
+            }
         }
 
-        fun extractProtobufVersion(raw: String): String {
-            raw.contains("TakProtocolSupport")
-            return ""
-        }
+        /* --- tiny ISO helpers reused elsewhere --- */
+        private fun isoNow() = Instant.now().toString()
+        private fun staleIso(secs: Long) = Instant.now().plusSeconds(secs).toString()
+
 
         /**
          * Builds and serializes a COT Event protobuf directly,

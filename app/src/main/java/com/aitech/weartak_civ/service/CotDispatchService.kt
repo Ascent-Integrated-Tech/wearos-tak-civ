@@ -53,6 +53,8 @@ import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
@@ -69,7 +71,7 @@ import kotlin.math.abs
 
 
 class CotDispatchService : Service() {
-    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
+    private val TAG = "WearTAK-CotDispService"
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private var lastLocationUpdateRcvd: Long = 0L
@@ -86,7 +88,9 @@ class CotDispatchService : Service() {
     private var markerType: String = ""
     private var alertOrCancel = false
     private var sosAlertUid: String = ""
-    private var counterInt: Int = 0
+    private var canSendCotXml = true      // local cache
+    private var useProtobuf = false
+    private val schedCotScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -144,7 +148,17 @@ class CotDispatchService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-        // TODO: kick off collection of protobufReady for dispatching.
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.canSendCotXml
+                .combine(dataRepository.useProtobuf) { xml, proto ->
+                    xml to proto
+                }
+                .collect { (xmlAllowed, proto) ->
+                    canSendCotXml = xmlAllowed
+                    useProtobuf   = proto
+                    Log.i(TAG, "flags → xml=$xmlAllowed  proto=$proto")
+                }
+        }
         Log.v(TAG, "CotDispatchService onCreate()")
     }
 
@@ -502,6 +516,10 @@ class CotDispatchService : Service() {
 
     private fun sendMarkerCotMessage() {
         ioScope.launch(Dispatchers.IO) {
+            if (!canSendCotXml) {
+                Log.v(TAG, "Sending Marker CoT Message Blocked: waiting for protobuf handshake")
+                return@launch
+            }
             // 1) Grab latest location; if null, take note & bail out
             val loc = dataRepository.latestLocation.value
             if (loc == null) {
@@ -542,6 +560,9 @@ class CotDispatchService : Service() {
 
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
         ioScope.launch(Dispatchers.IO) {
+            if (!canSendCotXml) {
+                Log.v(TAG, "Sending Emergency Alert CoT Message Blocked: waiting for protobuf handshake")
+            }
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
             if ((MainActivity.enableSmsForAlerts) && sendSms) {
@@ -587,7 +608,11 @@ class CotDispatchService : Service() {
         if (!TAKConnectService.isAnyTakConnected) {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
-            CoroutineScope(Dispatchers.IO).launch {
+            schedCotScope.launch {
+                if (!canSendCotXml) {
+                    Log.v(TAG, "Sending Scheduled PLI CoT Message Blocked: waiting for protobuf handshake")
+                    return@launch                      // TODO: buffer cots in a Channel<String> so we don't lose data. Need to do this for markers and alerts etc. Really depends on handshake.
+                }
 
                 val location = dataRepository.latestLocation.value
                 var heartRate = dataRepository.latestHeartRate.value
