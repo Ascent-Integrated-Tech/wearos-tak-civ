@@ -13,7 +13,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.location.Location
@@ -33,10 +32,6 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALE
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
-import com.aitech.weartak_civ.events.MarkerEvent
-import com.aitech.weartak_civ.events.MarkerEvent.Companion.FRIENDLY
-import com.aitech.weartak_civ.events.MarkerEvent.Companion.HOSTILE
-import com.aitech.weartak_civ.events.MarkerEvent.Companion.NEUTRAL
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.manager.SMSManager
@@ -77,14 +72,13 @@ import kotlin.math.roundToInt
 
 
 class CotDispatchService : Service() {
-//    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
+    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private var lastLocationUpdateRcvd: Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
-    private val ioScope = CoroutineScope(Dispatchers.IO)
-    private val markerDropToBeSent = AtomicBoolean(false)
-    private var markerDropReceivedTime: Long = 0L
+//    private val markerDropToBeSent = AtomicBoolean(false)
+//    private var markerDropReceivedTime: Long = 0L
     private val manualSosToBeSent = AtomicBoolean(false)
     private var manualSosReceivedTime: Long = 0L
     private var manualSosReceivedCategory: String = ""
@@ -129,13 +123,13 @@ class CotDispatchService : Service() {
         val notification = notificationBuilder.setOngoing(true)
             .setSmallIcon(R.drawable.splash_icon)
             .setContentText("WearTAK-CIV Cot Dispatch service running")
-            .setPriority(Context.BIND_WAIVE_PRIORITY)
+            .setPriority(BIND_WAIVE_PRIORITY)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
         try {
             startForeground(COT_DISPATCH_SERVICE_NOTIFICATION_ID, notification)
         } catch (e: NullPointerException) {
-            Log.e(TAG, "Failed to set CotDispatcher ForegroundService",e)
+            Log.e(TAG, "Failed to set CotDispatcher ForegroundService", e)
         }
     }
 
@@ -146,7 +140,7 @@ class CotDispatchService : Service() {
         chan.lightColor = Color.GRAY
         chan.importance = NotificationManager.IMPORTANCE_NONE
         chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val service = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         service.createNotificationChannel(chan)
         return channelId
     }
@@ -159,6 +153,7 @@ class CotDispatchService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        Log.v(TAG, "CotDispatchService onCreate()")
         dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -244,7 +239,91 @@ class CotDispatchService : Service() {
                     )
                 }
         }
+
+        startMarkerPipelines()
     }
+
+    private fun startMarkerPipelines() {
+        startDropCollector()
+        startClearCollector()
+        startDropListCollector()
+    }
+
+    private fun startDropCollector() {
+        serviceScope.launch(Dispatchers.IO) {
+            dataRepository.dropRequests.collect { req ->
+                Log.i(TAG, "Received drop request...")
+                val loc = dataRepository.latestLocation.value
+                if (sendMarkerReady()) {
+                    sendDropNow(req , loc!!)
+                    sendPendingMarkerDrops()
+                } else {
+                    EventBus.getDefault().post(LocationUpdateRequired())
+                    enqueueDrop(req)
+                }
+            }
+        }
+    }
+
+    // TODO: I think we can only send the marker cot message once we have established connection and sent atleast one PLI message. The queue doesn't seem to flush and send to server on reconnects. Needs more work. MVP works.
+    private fun sendMarkerReady(): Boolean {
+        val loc = dataRepository.latestLocation.value
+        val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL
+        return if (TAKConnectService.isAnyTakConnected && (null != loc) && fresh) {
+            true
+        } else false
+    }
+
+    private fun startDropListCollector() {
+        serviceScope.launch(Dispatchers.IO) {
+            dataRepository.droppedMarkerList.collect { list ->
+                logMarkerDropList(list)
+            }
+        }
+    }
+
+    private fun logMarkerDropList(list: List<DataRepository.DroppedMarker>) {
+        if (list.isEmpty()) {
+            Log.v(TAG, "Dropped Marker List is empty")
+        } else {
+            Log.v(TAG, "Dropped Marker List updated (${list.size} items):")
+            list.forEachIndexed { index, marker ->
+                Log.v(
+                    TAG,
+                    "[$index] uid=${marker.uid}, type=${marker.markerType}, time=${marker.timeDropped}"
+                )
+            }
+        }
+    }
+
+    private fun startClearCollector() {
+        serviceScope.launch(Dispatchers.IO) {
+            dataRepository.clearRequests.collect { req ->
+                when (req) {
+                    is DataRepository.ClearRequest.Specific -> handleClearUid(req.uid)
+                    DataRepository.ClearRequest.Last -> {
+                        val last = dataRepository.droppedMarkerList.value.maxByOrNull { it.timeDropped }
+                        if (last != null) handleClearUid(last.uid)
+                    }
+                    DataRepository.ClearRequest.All -> handleClearAll()
+                }
+            }
+        }
+    }
+
+    // Point used at DROP time, reused on CLEAR
+    data class CotMarkerInfo(
+        val lat: Double,
+        val lon: Double,
+        val hae: Double?,
+        val ce: Float?,
+        val le: Float?,
+        val type: String,
+        val icon: String
+    )
+    private val cotInfoByUid = java.util.concurrent.ConcurrentHashMap<String, CotMarkerInfo>()
+
+    private val pendingDropQueue = ArrayDeque<DataRepository.DropRequest>()
 
     private fun startDispatchScheduler() {
         Log.v(TAG, "Starting the dispatch scheduler")
@@ -544,16 +623,16 @@ class CotDispatchService : Service() {
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
-        var latActual = location?.latitude ?: 0.0
-        var lonActual = location?.longitude ?: 0.0
-        var haeActual = location?.altitude ?: 0.0
-        var ceActual = location?.accuracy ?: 9999999.0F
-        if (ceActual.isNaN() == true) ceActual = 9999999.0F
-        var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
-        if (leActual.isNaN() == true) leActual = 9999999.0F
+        var latActual   = location.latitude
+        var lonActual   = location.longitude
+        var haeActual   = location.altitude
+        var ceActual    = location.accuracy
+        if (ceActual.isNaN()) ceActual = 9999999.0F
+        var leActual : Float = location.verticalAccuracyMeters
+        if (leActual.isNaN()) leActual = 9999999.0F
 
         // Ble Beacon
-        if (MainActivity.enableBleBeaconService == true) {
+        if (MainActivity.enableBleBeaconService) {
             val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
             latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
         }
@@ -566,7 +645,7 @@ class CotDispatchService : Service() {
             newUid
         } else {
             // Use the previously stored UID
-            sosAlertUid ?: "undefined"
+            sosAlertUid
         }
         val linkUid = MainActivity.device_uid
 
@@ -598,22 +677,14 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildMarkerCotMessage(location: Location, heartRate: Int, battery: Int): String {
-
+    private fun buildMarkerCotMessage(uid: String, markerType: String, location: Location, heartRate: Int, battery: Int): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
-
-        // Set the current time
-        calendar.setTime(Date())
-
+        calendar.setTime(Date()) // Set the current time
         val startTime = dateTimeFormatter.format(calendar.time)
         val startTimeInMs = calendar.timeInMillis
-
-        // DateTime Marker - no longer used
-        //val markerCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
-        //markerCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
-        //val markerCallsignAppendDateTime = markerCallsignDateTimeFormatter.format(calendar.time)
-        //val markerCallsign_Date_Time = "${callsign}_$markerCallsignAppendDateTime"
+        calendar.add(Calendar.YEAR, 1) // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
+        val staleTime = dateTimeFormatter.format(calendar.time)
 
         // Marker with Time no Date.
         val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss")
@@ -621,31 +692,22 @@ class CotDispatchService : Service() {
         val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
         val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
 
-
-        // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
-        calendar.add(Calendar.YEAR, 1)
-        val staleTime = dateTimeFormatter.format(calendar.time)
-
         // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
-        var latActual = location?.latitude ?: 0.0
-        var lonActual = location?.longitude ?: 0.0
-        var haeActual = location?.altitude ?: 0.0
-        var ceActual = location?.accuracy ?: 9999999.0F
-        if (ceActual.isNaN() == true) ceActual = 9999999.0F
-        var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
-        if (leActual.isNaN() == true) leActual = 9999999.0F
-        val bearingActual = location?.bearing ?: 0.0F
-        val speedActual = location?.speed ?: 0.0F
+        var latActual   = location.latitude
+        var lonActual   = location.longitude
+        var haeActual   = location.altitude
+        var ceActual    = location.accuracy
+        if (ceActual.isNaN()) ceActual = 9999999.0F
+        var leActual : Float = location.verticalAccuracyMeters
+        if (leActual.isNaN()) leActual = 9999999.0F
 
         // Ble Beacon
-        if (MainActivity.enableBleBeaconService == true) {
+        if (MainActivity.enableBleBeaconService) {
             val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
             latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
         }
 
-        val uid = UUID.randomUUID().toString()
         val linkUid = MainActivity.device_uid
-        val cotType = "b-m-p-s-m"
 
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -695,8 +757,90 @@ class CotDispatchService : Service() {
          */
     }
 
+    private fun buildClearMarkerCotMessage(uid: String, cotInfo: CotMarkerInfo?): String {
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+        calendar.setTime(Date())   // Set the current time
+        calendar.add(Calendar.SECOND, -4)   // to clear the cot, we gotta make it stale.
+        val startTime = dateTimeFormatter.format(calendar.time)
+        calendar.add(Calendar.SECOND, -3)   // to clear the cot, we gotta make it stale.
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // TODO: Figure out how to actually clear it. We may just have to send the same uid and hack the staletime.
+
+        // Marker with Time no Date.
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss")
+        markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
+        val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
+        val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
+
+        val linkUid = MainActivity.device_uid
+        val type = cotInfo?.type
+
+//        val cot = """
+//        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+//        <event version="2.0" uid="$uid" type="$type-can" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
+//            <point lat="${cotInfo?.lat}" lon="${cotInfo?.lon}" hae="${cotInfo?.hae}" ce="${cotInfo?.ce}" le="${cotInfo?.le}"/>
+//            <detail>
+//                <status readiness="true"/>
+//                <precisionlocation altsrc="SRTM1"/>
+//                <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
+//                <color argb="-1"/>
+//                <usericon iconsetpath="${cotInfo?.icon}"/>
+//                <contact callsign="$markerCallsign_Time"/>
+//            </detail>
+//        </event>
+//        """.trimIndent()
+
+        val cot = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <event version="2.0" uid="$uid" type="$type" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
+            <point lat="${cotInfo?.lat}" lon="${cotInfo?.lon}" hae="${cotInfo?.hae}" ce="${cotInfo?.ce}" le="${cotInfo?.le}"/>
+            <detail>
+                <status readiness="true"/>
+                <precisionlocation altsrc="SRTM1"/>
+                <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
+                <color argb="-1"/>
+                <usericon iconsetpath="${cotInfo?.icon}"/>
+                <contact callsign="$markerCallsign_Time"/>
+            </detail>
+        </event>
+        """.trimIndent()
+
+        return cot
+    }
+
+    private suspend fun handleClearUid(uid: String) {
+        val info = cotInfoByUid[uid]  // may be null for very old markers
+        // TODO: Need to check if info is NOT null
+        // TODO: Also check logic of NOT remove it from dataRepository (wait if NOT TAKConnectService.isAnyTakConnected)
+        val clearXml = buildClearMarkerCotMessage(uid, info)
+        Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${info?.type}")
+
+        var sent = false
+        if (DittoService.isRunning.get()) {
+            EventBus.getDefault().post(DittoDocumentEvent("mapitem", clearXml))
+            sent = true
+        }
+        if (TAKConnectService.isAnyTakConnected) {
+            sendDataTAKServers(clearXml, true)
+            sent = true
+        }
+        if (!sent) return
+
+        dataRepository.removeByUid(uid)
+        cotInfoByUid.remove(uid)
+    }
+
+    private suspend fun handleClearAll() {
+        val uids = dataRepository.droppedMarkerList.value.map { it.uid }
+        uids.forEach { handleClearUid(it) }
+    }
+
+/*
+    // Used by the Location Updates EventBus
     private fun sendMarkerCotMessage() {
-        ioScope.launch(Dispatchers.IO) {
+        serviceScope.launch(Dispatchers.IO) {
             // 1) Grab latest location; if null, take note & bail out
             val loc = dataRepository.latestLocation.value
             if (loc == null) {
@@ -710,7 +854,7 @@ class CotDispatchService : Service() {
             val battery   = dataRepository.latestBatteryPercentage.value ?: -1
 
             // 3) Build CoT XML (unchanged signature)
-            val cotMessage = buildMarkerCotMessage(loc, heartRate, battery)
+            val cotMessage = buildLegacyMarkerCotMsg(loc, heartRate, battery)
 
             // 5) Only send to TAK servers if connected
             if (TAKConnectService.isAnyTakConnected) {
@@ -734,9 +878,10 @@ class CotDispatchService : Service() {
             }
         }
     }
+*/
 
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
-        ioScope.launch(Dispatchers.IO) {
+        serviceScope.launch(Dispatchers.IO) {
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
             if ((MainActivity.enableSmsForAlerts) && sendSms) {
@@ -826,52 +971,97 @@ class CotDispatchService : Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
-        //Log.d(TAG, "onLocationRcvdEvent called")
-        // We would like to send the "freshest" location especially if location update is 10s or greater
-        if (markerDropToBeSent.get() == true) {
-            Log.d(TAG, "onLocationRcvdEvent called with markerDropToBeSent true")
-            sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
-        }
         if (manualSosToBeSent.get() == true) {
             Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
             sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, alertOrCancel)
         }
         lastLocationUpdateRcvd = System.currentTimeMillis()
-        buildAndSendLocationBiometricCotMessage()
+        serviceScope.launch {
+            if (pendingDropQueue.isNotEmpty() && sendMarkerReady()) {
+                // TODO: Need to take care of situation if no TAK server is connected
+                sendPendingMarkerDrops()
+            }
+        }
+        buildAndSendLocationBiometricCotMessage() // keep for your tracking path
     }
 
-    @Subscribe(threadMode = ThreadMode.ASYNC)
-    public fun onMarkerEvent(event: MarkerEvent) {
-        val msg = event.message
+    private fun enqueueDrop(req: DataRepository.DropRequest) {
+        Log.i(TAG, "===> adding to the marker drop queue ...")
+        pendingDropQueue.addLast(req)
+    }
 
-        if (HOSTILE == msg) {
-            iconSetPath = "COT_MAPPING_2525C/a-h/a-h-G"
-            markerType = "a-h-G"
-        } else if (FRIENDLY == msg) {
-            iconSetPath = "COT_MAPPING_2525C/a-f/a-f-G"
-            markerType = "a-f-G"
-        } else if (NEUTRAL == msg) {
-            iconSetPath = "COT_MAPPING_2525C/a-n/a-n-G"
-            markerType = "a-n-G"
-        } else { // UNKNOWN or any other
-            iconSetPath = "COT_MAPPING_2525C/a-u/a-u-G"
-            markerType = "a-u-G"
-        }
-        val currTime = System.currentTimeMillis()
-        if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
-            Log.d(TAG, "MarkerEvent with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-            markerDropReceivedTime = currTime
-            sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
-        } else {
-            if (markerDropToBeSent.getAndSet(true) == false) {
-                Log.d(TAG, "MarkerEvent with markerDropToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-                markerDropReceivedTime = currTime
-                EventBus.getDefault().post(LocationUpdateRequired())
-            } else {
-                Log.d(TAG, "MarkerEvent with markerDropToBeSent true & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+    private fun sendPendingMarkerDrops() {
+        serviceScope.launch(Dispatchers.IO) {
+            val loc = dataRepository.latestLocation.value ?: return@launch
+            while (pendingDropQueue.isNotEmpty()) {
+                Log.i(TAG, "===> removing ${pendingDropQueue.first().markerType} from time ${(pendingDropQueue.first().timeMillis)}...")
+                val req = pendingDropQueue.removeFirst()
+                sendDropNow(req, loc)
             }
         }
     }
+
+    private suspend fun sendDropNow(req: DataRepository.DropRequest, loc: Location) {
+        val heartRate = dataRepository.latestHeartRate.value ?: -1
+        val battery   = dataRepository.latestBatteryPercentage.value ?: -1
+
+        val uid = UUID.randomUUID().toString() // backend owns UID
+        val type = req.markerType.type
+        iconSetPath = req.markerType.icon
+        Log.i(TAG, "sendDropNow::markerType:: = [ ${type} ]")
+        val xml = buildMarkerCotMessage(uid, type, loc, heartRate, battery)
+
+        var sent = false
+        if (DittoService.isRunning.get()) {
+            EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
+            sent = true
+        }
+        if (TAKConnectService.isAnyTakConnected) {
+            sendDataTAKServers(xml, true)
+            sent = true
+        }
+        if (!sent) return  // don’t reflect in UI until actually sent/meshed
+
+        cotInfoByUid[uid] = CotMarkerInfo(loc.latitude, loc.longitude, loc.altitude, loc.accuracy, loc.verticalAccuracyMeters, type, iconSetPath)
+        Log.i(TAG, "=== ===> sending marker type ${type} with uid = [ $uid ] ")
+
+        dataRepository.appendDroppedMarker(
+            DataRepository.DroppedMarker(uid = uid, markerType = type, timeDropped = req.timeMillis)
+        )
+    }
+
+//    @Subscribe(threadMode = ThreadMode.ASYNC)
+//    public fun onMarkerEvent(event: MarkerEvent) {
+//        val msg = event.message
+//
+//        if (HOSTILE == msg) {
+//            iconSetPath = "COT_MAPPING_2525C/a-h/a-h-G"
+//            markerType = "a-h-G"
+//        } else if (FRIENDLY == msg) {
+//            iconSetPath = "COT_MAPPING_2525C/a-f/a-f-G"
+//            markerType = "a-f-G"
+//        } else if (NEUTRAL == msg) {
+//            iconSetPath = "COT_MAPPING_2525C/a-n/a-n-G"
+//            markerType = "a-n-G"
+//        } else { // UNKNOWN or any other
+//            iconSetPath = "COT_MAPPING_2525C/a-u/a-u-G"
+//            markerType = "a-u-G"
+//        }
+//        val currTime = System.currentTimeMillis()
+//        if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
+//            Log.d(TAG, "MarkerEvent with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+//            markerDropReceivedTime = currTime
+//            sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
+//        } else {
+//            if (markerDropToBeSent.getAndSet(true) == false) {
+//                Log.d(TAG, "MarkerEvent with markerDropToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+//                markerDropReceivedTime = currTime
+//                EventBus.getDefault().post(LocationUpdateRequired())
+//            } else {
+//                Log.d(TAG, "MarkerEvent with markerDropToBeSent true & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
+//            }
+//        }
+//    }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -940,7 +1130,6 @@ class CotDispatchService : Service() {
     }
 
     companion object {
-        private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         // Time interval within which GPS is considered "fresh"
         // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed
