@@ -228,7 +228,7 @@ class CotDispatchService : Service() {
     data class PhysioData(
         val heartRate: Int,
         val skinTemp: Float,
-		val exertion: Double,
+        val exertion: Double,
         val battery: Int?,
         val steps: Long,
         val calories: Double,
@@ -237,54 +237,73 @@ class CotDispatchService : Service() {
     )
 
     private fun buildConciseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
-        // — 0) Grab unique device identifier from MainActivity
+        // Grab unique device identifier from MainActivity
         val uid = MainActivity.device_uid
 
-        // — 1) Use a formatter with no milliseconds (drops the “.663”)
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+
+        // Set the current time
+        calendar.setTime(Date())
+
+        // Format and set the startTime with the currentTime
+        val startTime = dateTimeFormatter.format(calendar.time)
+        val startTimeInMs = calendar.timeInMillis
+
+        // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
+        calendar.add(Calendar.SECOND, 3*currReportingIntervalInSecs)
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // Raw coords & altitude
+        var lat = location?.latitude  ?: 0.0
+        var lon = location?.longitude ?: 0.0
+        var hae = location?.altitude  ?: 0.0
+
+        // Strip precision & default to “9999” if NaN
+        var ceTrim     = location?.accuracy?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val leTrim     = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val courseTrim = location?.bearing?.toInt() ?: 0
+        val speedTrim  = location?.speed?.toInt()   ?: 0
+
+        // Account for Ble Beacons
+        if (MainActivity.enableBleBeaconService == true) {
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, lat, lon, hae, ceTrim*1.0F)
+            lat = bleLocationOutput.lat; lon = bleLocationOutput.lon; hae = bleLocationOutput.hae; ceTrim = bleLocationOutput.ce.toInt()
         }
-        val now = Date()
-        val startTime = sdf.format(now)
-        // 3× interval into the future
-        val staleTime = sdf.format(Date(now.time + 3 * currReportingIntervalInSecs * 1_000L))
 
-        // — 2) Raw coords & altitude
-        val lat = location?.latitude  ?: 0.0
-        val lon = location?.longitude ?: 0.0
-        val hae = location?.altitude  ?: 0.0
-
-        // — 3) Strip precision & default to “9999” if NaN
-        val ceTrim    = location?.accuracy?.takeIf { !it.isNaN() }?.toInt() ?: 9999
-        val leTrim    = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
-        val courseTrim= location?.bearing?.toInt() ?: 0
-        val speedTrim = location?.speed?.toInt()   ?: 0
-
-        // — 4) Pull out physio values
+        // Pull out physio values
         val hr          = physioData.heartRate
         val skt         = String.format("%.1f", physioData.skinTemp).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
-		val exert       = String.format("%.2f", physioData.exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
+        val exert       = String.format("%.2f", physioData.exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
         val bat         = physioData.battery
         val steps       = physioData.steps
         val calories    = physioData.calories
         val floors      = physioData.floors
         val elevationM  = physioData.elevationM
 
-        // - 5) Inject physio data into remarks
-        val remarks = buildString {
-            append("<remarks>")
-            append("HR:$hr;")
-            append("SknTmp:$skt;")
-            append("Exert:$exert;")
-            append("Bat:${bat ?: -1};")
-            append("Steps:$steps;")
-            append("Cals:${calories.roundToInt()};")
-            append("Floors:${floors.roundToInt()};")
-            append("ElevGain(m):${elevationM?.roundToInt() ?: 0}")
-            append("</remarks>")
+        // Inject physio data into remarks
+
+        val remarks = if (MainActivity.enablePhysiologicalServices && MainActivity.enableActivityRecognitionService) {
+            buildString {
+                append("HR:$hr;")
+                append("SknTmp:$skt;")
+                append("Exert:$exert;")
+                append("Bat:${bat ?: -1};")
+                append("Steps:$steps;")
+                append("Cals:${calories.roundToInt()};")
+                append("Floors:${floors.roundToInt()};")
+                append("ElevGain(m):${elevationM?.roundToInt() ?: 0}")
+            }
+        } else {
+            buildString {
+                append("HR:$hr;")
+                append("SknTmp:$skt;")
+                append("Exert:$exert;")
+                append("Bat:${bat ?: -1}")
+            }
         }
-        // — 6) Build the cot XML
-        val cot = """<?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid="$uid" type="a-f-G-U-C" time="$startTime" start="$startTime" stale="$staleTime" how="m-g"><point lat="${"%.6f".format(lat)}" lon="${"%.6f".format(lon)}" hae="${"%.1f".format(hae)}" ce="$ceTrim" le="$leTrim"/><detail><__group role="$roleValue" name="$teamValue"/><track course="$courseTrim" speed="$speedTrim"/><contact callsign="$callsign"/>${remarks}</detail></event>""".trimIndent()
+        // Build the cot XML
+        val cot = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$roleValue' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/></detail></event>""".trimIndent()
 //        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
 
         return cot
@@ -653,8 +672,7 @@ class CotDispatchService : Service() {
     }
 
     private fun sendLocationBiometricCotMessage(location: Location?, physioData: PhysioData) {
-        //val cotMessage = buildConciseLocationPhysioCot(location, physioData)
-        val cotMessage = buildVerboseLocationPhysioCot(location, physioData)
+        val cotMessage = buildConciseLocationPhysioCot(location, physioData)
         sendDataTAKServers(cotMessage, false)
         //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
         //Log.d(TAG, logString)
