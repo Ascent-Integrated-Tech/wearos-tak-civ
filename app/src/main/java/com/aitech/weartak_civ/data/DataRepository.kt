@@ -37,6 +37,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
@@ -267,6 +269,78 @@ class DataRepository(private val context: Context) {
         }
         _restingHeartRate.emit(restHr)
     }
+
+    // --- authoritative list (unchanged) ---
+    data class DroppedMarker(
+        val uid: String,
+        val markerType: String,
+        val timeDropped: Long
+    )
+
+    private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())
+    val droppedMarkerList: StateFlow<List<DroppedMarker>> = _droppedMarkerList
+
+    // Backend-only mutators (UI never calls these)
+    suspend fun appendDroppedMarker(item: DroppedMarker) {
+        _droppedMarkerList.emit(_droppedMarkerList.value + item)
+    }
+
+    suspend fun removeByUid(uid: String) {
+        _droppedMarkerList.emit(_droppedMarkerList.value.filterNot { it.uid == uid })
+    }
+
+    suspend fun storeDroppedMarkerList(droppedMarkerList: List<DroppedMarker>) {
+        _droppedMarkerList.emit(droppedMarkerList)
+    }
+
+    enum class MarkerType(
+        val type: String,
+        val icon: String
+    ) {
+        FRIENDLY("a-f-G", "COT_MAPPING_2525C/a-f/a-f-G"),
+        UNKNOWN("a-u-G", "COT_MAPPING_2525C/a-u/a-u-G"),
+        HOSTILE("a-h-G", "COT_MAPPING_2525C/a-h/a-h-G"),
+        NEUTRAL("a-n-G", "COT_MAPPING_2525C/a-n/a-n-G");
+
+        companion object {
+            fun parse(input: String): MarkerType? {
+                val s = input.trim()
+                return entries.firstOrNull {
+                    it.name.equals(s, ignoreCase = true) ||   // allow FRIENDLY / HOSTILE / …
+                            it.type.equals(s, ignoreCase = true)      // allow a-f-G / a-h-G / …
+                }
+            }
+        }
+    }
+
+    // --- request flows (UI -> backend) ---
+    data class DropRequest(val markerType: MarkerType, val timeMillis: Long)
+
+    sealed interface ClearRequest {
+        data class Specific(val uid: String) : ClearRequest
+        data object Last : ClearRequest
+        data object All : ClearRequest
+    }
+
+    private val _dropRequests = MutableSharedFlow<DropRequest>(extraBufferCapacity = 64)
+    val dropRequests: SharedFlow<DropRequest> = _dropRequests
+
+    private val _clearRequests = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
+    val clearRequests: SharedFlow<ClearRequest> = _clearRequests
+
+    // UI-facing API
+    suspend fun requestMarkerDrop(markerType: MarkerType, timeMillis: Long) =
+        _dropRequests.emit(DropRequest(markerType, timeMillis))
+
+    suspend fun requestMarkerDrop(markerTypeRaw: String, timeMillis: Long): Boolean {
+        val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
+        _dropRequests.emit(DropRequest(parsed, timeMillis))
+        return true
+    }
+    suspend fun requestClearSpecific(uid: String) =
+        _clearRequests.emit(ClearRequest.Specific(uid))
+    suspend fun requestClearLast() = _clearRequests.emit(ClearRequest.Last)
+    suspend fun requestClearAll() = _clearRequests.emit(ClearRequest.All)
 
     suspend fun storeLatestHeartRate(heartRate: Int) {
         _latestHeartRate.emit(heartRate)

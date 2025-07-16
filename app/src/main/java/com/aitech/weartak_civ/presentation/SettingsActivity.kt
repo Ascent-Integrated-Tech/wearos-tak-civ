@@ -53,8 +53,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1000,8 +998,7 @@ fun SwipeableTakServerChip(
     Log.d(TAG, "SwipeableTakServerChip called with index $index: takServerStatus($takServerStatus)")
     SwipeToRevealChip(
         revealState = revealState,
-        modifier =
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .semantics {
                 // Use custom actions to make the primary and secondary actions accessible
@@ -2364,61 +2361,6 @@ fun InvalidLicenseScreen (navController: NavController) {
         }
     }
 }
-
-@Composable
-fun SuccessDialog(shouldShowDialog: MutableState<Boolean>, successBoolean : MutableState<Boolean>, isConfirmed : MutableState<Boolean>) {
-    if (shouldShowDialog.value) {
-        Dialog(onDismissRequest = { shouldShowDialog.value = false }) {
-            LaunchedEffect(Unit) {
-                delay(2000) // Delay for 5 seconds
-                shouldShowDialog.value = false // Dismiss the dialog
-                isConfirmed.value = false
-            }
-//TODO: DUPLICATE CODE - Same successdialog as SOS Activity vvv
-            Card(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .height(200.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.background)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    if (successBoolean.value) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            modifier = Modifier.size(25.dp),
-                            contentDescription = null,
-                            tint = Color.Green
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = stringResource(R.string.success),
-                            textAlign = TextAlign.Center,
-                        )
-                    } else {
-                        Icon(
-                            Icons.Rounded.Clear,
-                            modifier = Modifier.size(25.dp),
-                            contentDescription = null,
-                            tint = Color.Red
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = stringResource(R.string.error),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-//TODO: DUPLICATE CODE - Same successdialog as SOS Activity ^^^
 
 @Composable
 fun PhysiologicalAlertsSetting(navController: NavController) {
