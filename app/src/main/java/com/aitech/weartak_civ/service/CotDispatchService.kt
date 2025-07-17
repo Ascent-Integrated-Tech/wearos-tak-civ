@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.io.File
 import java.io.FileWriter
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -49,6 +50,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -70,6 +72,8 @@ class CotDispatchService : Service() {
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
+
+    var LOG_TO_FILE_ENABLED = true
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -156,6 +160,21 @@ class CotDispatchService : Service() {
         }
     }
 
+    private fun writeCotToLogFile(label: String, location: Location) {
+        if (!LOG_TO_FILE_ENABLED) return
+        try {
+            val dateSuffix = SimpleDateFormat("dd_MM_yy", Locale.US).format(Date())
+            val timeStamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+            val logEntry = "[$label][$timeStamp] lat=${location.latitude}, lon=${location.longitude}"
+            val logFile = File(instance.filesDir, "Cot_send_${dateSuffix}.txt")
+            val writer = FileWriter(logFile, true)
+            writer.appendLine(logEntry)
+            writer.flush()
+            writer.close()
+        } catch (e: IOException) {
+            Log.e(TAG, "Error writing GPS coordinates to log", e)
+        }
+    }
 
     private fun buildLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
@@ -378,6 +397,7 @@ class CotDispatchService : Service() {
                 }
                 val cotMessage = buildMarkerCotMessage(location, heartRate, battery)
                 sendDataTAKServers(cotMessage, true)
+                //writeCotToLogFile("MARKER", location)
                 Log.v(TAG, "Marker CoT message sent: $cotMessage")
             } else {
                 Log.w(TAG, "Marker CoT message NOT sent as isAnyTakConnected(${TAKConnectService.isAnyTakConnected}) and location($location)")
@@ -432,6 +452,7 @@ class CotDispatchService : Service() {
     private fun sendLocationBiometricCotMessage(location: Location, heartRate: Int, battery: Int) {
         val cotMessage = buildLocationBiometricCotMessage(location, heartRate, battery)
         sendDataTAKServers(cotMessage, false)
+        //writeCotToLogFile("BIOMETRIC", location)
         Log.v(TAG, "Location/Biometric CoT message sent: $cotMessage")
     }
 

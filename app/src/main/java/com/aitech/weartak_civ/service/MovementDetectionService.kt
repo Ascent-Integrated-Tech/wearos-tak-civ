@@ -38,7 +38,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val orientation = FloatArray(3)
 
     private var lastKalmanPredictionTime = 0L
-    private val MIN_KALMAN_INTERVAL_MS = 1000L
+    private val MIN_KALMAN_INTERVAL_MS = 100L
 
     private val gravity = FloatArray(3)
     private val gyro = FloatArray(3)
@@ -63,7 +63,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private lateinit var logFile: File
     private lateinit var logWriter: PrintWriter
     private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-    private val isLogging = true
+    private val isLogging = false
 
     private fun logToFile(message: String) {
         if (::logWriter.isInitialized && isLogging) {
@@ -71,7 +71,7 @@ class MovementDetectionService : Service(), SensorEventListener {
             logWriter.println("[$timestamp] $message")
             logWriter.flush()
         }
-        Log.d("MovementDetection", message)
+        //Log.d("MovementDetection", message)
     }
 
     private var isStationary = false
@@ -90,7 +90,7 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     private var movementState: MovementState = MovementState.STATIONARY
 
-    private val stepDetector = StepDetector()
+    //private val stepDetector = StepDetector()
     private var lastStepLogTime = 0L
 
     private var orientationQuat = Quaternion(1f, 0f, 0f, 0f)
@@ -523,12 +523,12 @@ class MovementDetectionService : Service(), SensorEventListener {
                 val linearAccel = FloatArray(3) { i -> event.values[i] - gravity[i] }
 
                 // Step detection
-                stepDetector.processAccelerometerData(
+                /*stepDetector.processAccelerometerData(
                     linearAccel[0],
                     linearAccel[1],
                     linearAccel[2],
                     now
-                )
+                )*/
 
                 // Run prediction only if interval has elapsed
                 if (now - lastKalmanPredictionTime >= MIN_KALMAN_INTERVAL_MS) {
@@ -570,11 +570,11 @@ class MovementDetectionService : Service(), SensorEventListener {
                     lastKalmanPredictionTime = now
                 }
 
-                val stepRate = stepDetector.getStepRate().toFloat()
+                /*val stepRate = stepDetector.getStepRate().toFloat()
                 val stepCount = stepDetector.getStepCount()
                 val distanceMoved = stepDetector.getDistanceMeters().toFloat()
 
-                updateMovementState(stepRate, userSpeedMps)
+                updateMovementState(stepRate, userSpeedMps)*/
 
                 //logToFile("👣 Steps=$stepCount | Distance=${"%.2f".format(distanceMoved)}m | Rate=${"%.2f".format(stepRate)} Hz | State=$movementState")
                 lastStepLogTime = now

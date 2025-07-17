@@ -11,10 +11,10 @@ class EnhancedKalmanEstimator {
     private var P = Array(6) { FloatArray(6) }
     private var lastTimestamp: Long = -1L
 
-    private val processNoise = 0.003f // ↓ Reduced trust in model dynamics
+    private val processNoise = 0.001f // ↓ Reduced trust in model dynamics
     private val measurementNoise = 8.0f // ↑ Slightly more trust in GPS when updating
 
-    private val velocityCap = 5.0f // m/s cap for damping predictions
+    private val velocityCap = 4.0f // m/s cap for damping predictions
 
     var onGpsUpdateRequired: (() -> Unit)? = null
 
