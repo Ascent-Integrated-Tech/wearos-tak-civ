@@ -14,7 +14,7 @@ class EnhancedKalmanEstimator {
     private val processNoise = 0.001f // ↓ Reduced trust in model dynamics
     private val measurementNoise = 8.0f // ↑ Slightly more trust in GPS when updating
 
-    private val velocityCap = 4.0f // m/s cap for damping predictions
+    private val velocityCap = 20.0f // m/s cap for damping predictions
 
     var onGpsUpdateRequired: (() -> Unit)? = null
 

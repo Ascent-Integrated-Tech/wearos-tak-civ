@@ -56,7 +56,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var lastPredictedLon: Float? = null
     private var lastPredictedAlt: Float = 0f
 
-    private val GPS_DRIFT_THRESHOLD_DEGREES = 0.0005f
+    private val GPS_DRIFT_THRESHOLD_DEGREES = 0.005f
     private var lastGpsRequestTime = 0L
     private val GPS_REQUEST_COOLDOWN_MS = 15000L
 
@@ -166,236 +166,19 @@ class MovementDetectionService : Service(), SensorEventListener {
             val driftExceeded = latDrift > GPS_DRIFT_THRESHOLD_DEGREES || lonDrift > GPS_DRIFT_THRESHOLD_DEGREES
 
             val now = System.currentTimeMillis()
-            if (driftExceeded && now - lastGpsRequestTime > GPS_REQUEST_COOLDOWN_MS) {
+            val timeSinceLastFix = now - lastGpsRequestTime
+            val forceFixDue = timeSinceLastFix > 5 * 60 * 1000L  // 5 minutes
+
+            if (driftExceeded || forceFixDue) {
                 lastGpsRequestTime = now
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                     requestInitialGpsFix()
+                    logToFile("📡 GPS fix requested [reason=${if (driftExceeded) "drift" else "5min rebase"}]")
+                } else {
+                    logToFile("❌ GPS fix skipped: permission not granted")
                 }
             }
         }
-
-        /*kalmanEstimator.onGpsUpdateRequired = {
-            val pos = kalmanEstimator.getEstimatedPosition()
-            val (estLat, estLon) = metersToLatLon(pos[0], pos[1])
-
-            // Estimate altitude
-            var estAlt = when (altitudeMode) {
-                AltitudeMode.GPS_ONLY -> lastPredictedAlt
-                AltitudeMode.BARO_SENSOR -> currentAltitude.takeIf { it != 0f } ?: lastPredictedAlt
-                AltitudeMode.KALMAN_ESTIMATED -> (referenceAlt?.toFloat() ?: 0f) + pos[2]
-            }
-
-            // Clamp vertical movement
-            val deltaAlt = estAlt - lastPredictedAlt
-            val maxAllowedDelta = if (isStationary) MAX_ALTITUDE_DELTA_STATIONARY else MAX_ALTITUDE_DELTA_MOVING
-            if (abs(deltaAlt) > maxAllowedDelta) {
-                estAlt = lastPredictedAlt + maxAllowedDelta * sign(deltaAlt)
-            }
-
-            // Step-rate based horizontal clamping
-            val stepRate = stepDetector.getStepRate().toFloat()
-            val shouldClamp = stepRate < 0.2f  // Clamp if nearly stationary
-            val maxJump = 5f // meters
-
-            val cappedLatLon = if (shouldClamp && lastPredictedLat != null && lastPredictedLon != null) {
-                val distance = FloatArray(1)
-                Location.distanceBetween(
-                    lastPredictedLat!!.toDouble(), lastPredictedLon!!.toDouble(),
-                    estLat.toDouble(), estLon.toDouble(), distance
-                )
-
-                if (distance[0] > maxJump) {
-                    val ratio = maxJump / distance[0]
-                    val cappedLat = lastPredictedLat!! + (estLat - lastPredictedLat!!) * ratio
-                    val cappedLon = lastPredictedLon!! + (estLon - lastPredictedLon!!) * ratio
-                    logToFile("🔒 Clamped Kalman jump from ${distance[0]}m to $maxJump [stepRate=$stepRate Hz]")
-                    Pair(cappedLat, cappedLon)
-                } else {
-                    Pair(estLat, estLon)
-                }
-            } else {
-                Pair(estLat, estLon)
-            }
-
-            val (finalLat, finalLon) = cappedLatLon
-
-            // Update predicted state
-            lastPredictedLat = finalLat
-            lastPredictedLon = finalLon
-            lastPredictedAlt = estAlt
-
-            predictedLat = finalLat
-            predictedLon = finalLon
-            predictedAlt = estAlt
-
-            lastPredictedLocation = Location("kalman_prediction").apply {
-                latitude = finalLat.toDouble()
-                longitude = finalLon.toDouble()
-                altitude = estAlt.toDouble()
-                time = System.currentTimeMillis()
-            }
-
-            logToFile("📍 Prediction: lat=$finalLat, lon=$finalLon, alt=$estAlt [stepRate=$stepRate Hz]")
-
-            // Drift check to request new GPS fix
-            val latDrift = abs(finalLat - (lastCorrectedLat ?: finalLat))
-            val lonDrift = abs(finalLon - (lastCorrectedLon ?: finalLon))
-            val driftExceeded = latDrift > GPS_DRIFT_THRESHOLD_DEGREES || lonDrift > GPS_DRIFT_THRESHOLD_DEGREES
-
-            val now = System.currentTimeMillis()
-            if (driftExceeded && now - lastGpsRequestTime > GPS_REQUEST_COOLDOWN_MS) {
-                lastGpsRequestTime = now
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    requestInitialGpsFix()
-                }
-            }
-        }*/
-
-        /*kalmanEstimator.onGpsUpdateRequired = {
-            val pos = kalmanEstimator.getEstimatedPosition()
-            val (rawLat, rawLon) = metersToLatLon(pos[0], pos[1])
-            val rawLatD = rawLat.toDouble()
-            val rawLonD = rawLon.toDouble()
-            val lastLatD = lastPredictedLat?.toDouble() ?: rawLatD
-            val lastLonD = lastPredictedLon?.toDouble() ?: rawLonD
-
-            var estAlt = when (altitudeMode) {
-                AltitudeMode.GPS_ONLY -> lastPredictedAlt
-                AltitudeMode.BARO_SENSOR -> currentAltitude.takeIf { it != 0f } ?: lastPredictedAlt
-                AltitudeMode.KALMAN_ESTIMATED -> (referenceAlt?.toFloat() ?: 0f) + pos[2].toFloat()
-            }
-
-            val deltaAlt = estAlt - lastPredictedAlt
-            val maxAllowedDelta = if (isStationary) MAX_ALTITUDE_DELTA_STATIONARY else MAX_ALTITUDE_DELTA_MOVING
-            if (abs(deltaAlt) > maxAllowedDelta) {
-                estAlt = lastPredictedAlt + maxAllowedDelta * sign(deltaAlt)
-            }
-
-            // Clamp prediction using CoordinateLimiter
-            CoordinateLimiter.lastLat = lastLatD
-            CoordinateLimiter.lastLon = lastLonD
-            val (finalLat, finalLon) = CoordinateLimiter.clampJump(rawLatD, rawLonD)
-
-            lastPredictedLat = finalLat.toFloat()
-            lastPredictedLon = finalLon.toFloat()
-            lastPredictedAlt = estAlt
-
-            predictedLat = finalLat.toFloat()
-            predictedLon = finalLon.toFloat()
-            predictedAlt = estAlt
-
-            lastPredictedLocation = Location("kalman_prediction").apply {
-                latitude = finalLat
-                longitude = finalLon
-                altitude = estAlt.toDouble()
-                time = System.currentTimeMillis()
-            }
-
-            logToFile("\uD83D\uDCCD Prediction: lat=$finalLat, lon=$finalLon, alt=$estAlt")
-
-            // Update limiter's last fix time if it's time for compulsory GPS fix
-            if (CoordinateLimiter.shouldForceGpsFix()) {
-                logToFile("\u23F3 Forcing GPS fix due to 5-min timeout")
-                if (ContextCompat.checkSelfPermission(this@MovementDetectionService, Manifest.permission.ACCESS_FINE_LOCATION)
-                    == PackageManager.PERMISSION_GRANTED) {
-                    this@MovementDetectionService.requestInitialGpsFix()
-                } else {
-                    logToFile("\u274C GPS fix skipped: permission not granted")
-                }
-            }
-
-            val latDrift = abs(finalLat.toFloat() - (lastCorrectedLat ?: finalLat.toFloat()))
-            val lonDrift = abs(finalLon.toFloat() - (lastCorrectedLon ?: finalLon.toFloat()))
-            val driftExceeded = latDrift > GPS_DRIFT_THRESHOLD_DEGREES || lonDrift > GPS_DRIFT_THRESHOLD_DEGREES
-
-            val now = System.currentTimeMillis()
-            if (driftExceeded && now - lastGpsRequestTime > GPS_REQUEST_COOLDOWN_MS) {
-                lastGpsRequestTime = now
-                if (ContextCompat.checkSelfPermission(this@MovementDetectionService, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    requestInitialGpsFix()
-                }
-            }
-        }*/
-
-        /*kalmanEstimator.onGpsUpdateRequired = {
-            val pos = kalmanEstimator.getEstimatedPosition()
-            val (rawLat, rawLon) = metersToLatLon(pos[0], pos[1])
-            val rawLatD = rawLat.toDouble()
-            val rawLonD = rawLon.toDouble()
-            val lastLatD = lastPredictedLat?.toDouble() ?: rawLatD
-            val lastLonD = lastPredictedLon?.toDouble() ?: rawLonD
-
-            var finalLat: Double
-            var finalLon: Double
-            var estAlt = when (altitudeMode) {
-                AltitudeMode.GPS_ONLY -> lastPredictedAlt
-                AltitudeMode.BARO_SENSOR -> currentAltitude.takeIf { it != 0f } ?: lastPredictedAlt
-                AltitudeMode.KALMAN_ESTIMATED -> (referenceAlt?.toFloat() ?: 0f) + pos[2].toFloat()
-            }
-
-            val deltaAlt = estAlt - lastPredictedAlt
-            val maxAllowedDelta = if (isStationary) MAX_ALTITUDE_DELTA_STATIONARY else MAX_ALTITUDE_DELTA_MOVING
-            if (abs(deltaAlt) > maxAllowedDelta) {
-                estAlt = lastPredictedAlt + maxAllowedDelta * sign(deltaAlt)
-            }
-
-            if (movementState == MovementState.STATIONARY) {
-                // ⏹️ Don't update coordinates
-                finalLat = lastPredictedLat?.toDouble() ?: rawLatD
-                finalLon = lastPredictedLon?.toDouble() ?: rawLonD
-                logToFile("⏹️ Using last predicted coordinates (stationary)")
-            } else {
-                // Clamp jump as normal
-                CoordinateLimiter.lastLat = lastLatD
-                CoordinateLimiter.lastLon = lastLonD
-                val clamped = CoordinateLimiter.clampJump(rawLatD, rawLonD, movementState)
-                finalLat = clamped.first
-                finalLon = clamped.second
-            }
-
-            // Update state
-            lastPredictedLat = finalLat.toFloat()
-            lastPredictedLon = finalLon.toFloat()
-            lastPredictedAlt = estAlt
-
-            predictedLat = finalLat.toFloat()
-            predictedLon = finalLon.toFloat()
-            predictedAlt = estAlt
-
-            lastPredictedLocation = Location("kalman_prediction").apply {
-                latitude = finalLat
-                longitude = finalLon
-                altitude = estAlt.toDouble()
-                time = System.currentTimeMillis()
-            }
-
-            logToFile("📍 Prediction: lat=$finalLat, lon=$finalLon, alt=$estAlt")
-
-            // Force GPS fix every 5 minutes
-            if (CoordinateLimiter.shouldForceGpsFix()) {
-                logToFile("⏰ Forcing GPS fix due to 5-min timeout")
-                if (ContextCompat.checkSelfPermission(this@MovementDetectionService, Manifest.permission.ACCESS_FINE_LOCATION)
-                    == PackageManager.PERMISSION_GRANTED
-                ) {
-                    this@MovementDetectionService.requestInitialGpsFix()
-                } else {
-                    logToFile("❌ GPS fix skipped (no permission)")
-                }
-            }
-
-            val latDrift = abs(finalLat.toFloat() - (lastCorrectedLat ?: finalLat.toFloat()))
-            val lonDrift = abs(finalLon.toFloat() - (lastCorrectedLon ?: finalLon.toFloat()))
-            val driftExceeded = latDrift > GPS_DRIFT_THRESHOLD_DEGREES || lonDrift > GPS_DRIFT_THRESHOLD_DEGREES
-
-            val now = System.currentTimeMillis()
-            if (driftExceeded && now - lastGpsRequestTime > GPS_REQUEST_COOLDOWN_MS) {
-                lastGpsRequestTime = now
-                if (ContextCompat.checkSelfPermission(this@MovementDetectionService, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    requestInitialGpsFix()
-                }
-            }
-        }*/
-
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -518,9 +301,11 @@ class MovementDetectionService : Service(), SensorEventListener {
 
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
-                val alpha = 0.8f
-                for (i in 0..2) gravity[i] = alpha * gravity[i] + (1 - alpha) * event.values[i]
-                val linearAccel = FloatArray(3) { i -> event.values[i] - gravity[i] }
+
+                //// PREVIOUS HIGH PASS FILTER
+                //val alpha = 0.8f
+                //for (i in 0..2) gravity[i] = alpha * gravity[i] + (1 - alpha) * event.values[i]
+                //val linearAccel = FloatArray(3) { i -> event.values[i] - gravity[i] }
 
                 // Step detection
                 /*stepDetector.processAccelerometerData(
@@ -529,6 +314,8 @@ class MovementDetectionService : Service(), SensorEventListener {
                     linearAccel[2],
                     now
                 )*/
+
+                val linearAccel = event.values.clone()  // Use raw acceleration directly
 
                 // Run prediction only if interval has elapsed
                 if (now - lastKalmanPredictionTime >= MIN_KALMAN_INTERVAL_MS) {
