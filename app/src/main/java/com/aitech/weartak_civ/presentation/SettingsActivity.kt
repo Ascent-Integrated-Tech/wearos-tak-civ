@@ -107,7 +107,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -240,7 +239,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSt
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.categoryRolesEntryLists
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsActivity
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
@@ -259,10 +257,12 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServerComplicationUpdate
-import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
-import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.category
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.categorySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.categoryRolesEntryLists
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.categorySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRate
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -283,50 +283,22 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
-        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
-        val categorySettingsState = MutableLiveData<String>("")
+//        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
+//        val categorySettingsState = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settingsActivity = this
-        enableLocationServiceSettingsState.postValue(enableLocationService)
-        enableDittoServiceSettingsState.postValue(enableDittoService)
-        enableChatServiceSettingsState.postValue(enableChatService)
-        enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
-        enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
-        callsignSettingsState.postValue(callsign)
-        teamSettingsState.postValue(team)
-
-        lifecycleScope.launch {
-            categoryRolesEntryLists = dataRepository.getCategoryRolesList.first()
-            if (categoryRolesEntryLists.isEmpty())
-                categoryRolesEntryLists = applicationContext.defaultRoleCategoryEntriesFromRaw()
-
-            categorySettingsState.postValue(dataRepository.getRoleCategory.first())
-        }
-
-        roleSettingsState.postValue(role)
-        enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
-        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
-        enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
-        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
-        wifiSsidListState.postValue(wifiSsidList)
-        wifiSsidListSettingsState.postValue(wifiSsidList)
-        takServerListState.postValue(takServerList)
-        saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
-        enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
-        hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
-        hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
-        ageState.postValue(ageValue)
-        heightFeetState.postValue(heightFeetValue)
-        heightInchesState.postValue(heightInchesValue)
-        weightState.postValue(weightValue)
-        sexState.postValue(sexValue)
-        bloodTypeState.postValue(bloodTypeValue)
-        allergyListState.postValue(allergyList)
-        userTypeState.postValue(userTypeValue)
+        loadSettingsValues()
+        //TODO: Is there a reason this is called here? Is the same thing done through main activity?
+//        lifecycleScope.launch {
+//            categoryRolesEntryLists = dataRepository.getCategoryRolesList.first()
+//            if (categoryRolesEntryLists.isEmpty())
+//                categoryRolesEntryLists = applicationContext.defaultRoleCategoryEntriesFromRaw()
+//
+//            categorySettingsState.postValue(dataRepository.getRoleCategory.first())
+//        }
         Log.d(TAG, "SettingsActivity onCreate called with enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState and enablePhysiologicalAlerts=$enablePhysiologicalAlerts")
 
         enableEdgeToEdge()
@@ -338,6 +310,39 @@ class SettingsActivity : ComponentActivity() {
             }
         }
     }
+}
+
+fun loadSettingsValues(){
+    enableLocationServiceSettingsState.postValue(enableLocationService)
+    enableDittoServiceSettingsState.postValue(enableDittoService)
+    enableChatServiceSettingsState.postValue(enableChatService)
+    enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
+    enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
+    callsignSettingsState.postValue(callsign)
+    teamSettingsState.postValue(team)
+    categorySettingsState.postValue(category)
+    roleSettingsState.postValue(role)
+    enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
+    enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
+    enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
+    enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
+    wifiSsidListState.postValue(wifiSsidList)
+    wifiSsidListSettingsState.postValue(wifiSsidList)
+    takServerListState.postValue(takServerList)
+    saveBattOnWifiStringState.postValue(saveBattOnWifiString)
+    smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
+    enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
+    hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
+    hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
+    ageState.postValue(ageValue)
+    heightFeetState.postValue(heightFeetValue)
+    heightInchesState.postValue(heightInchesValue)
+    weightState.postValue(weightValue)
+    sexState.postValue(sexValue)
+    bloodTypeState.postValue(bloodTypeValue)
+    allergyListState.postValue(allergyList)
+    userTypeState.postValue(userTypeValue)
+    restingHeartRateState.postValue(restingHeartRate)
 }
 
 @Composable
@@ -480,6 +485,10 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_usertype_screen") {
             SexBloodtypeUsertypeSetting(navController, userTypeSettingsState, userTypeOptionsList, stringResource(R.string.user_type))
+        }
+        composable(
+            "physiological_metrics_resting_hr_screen") {
+            AgeWeightSetting(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context)
         }
     }
 
@@ -2587,7 +2596,7 @@ fun AgeWeightSetting(
                 },
                 onClickConfirm = {
                     metricSettingState.postValue(metricTextFieldValue.text.toInt())
-                    Log.d(TAG, "Settings saved with age or weight: ${metricSettingState.value}")
+                    Log.d(TAG, "$label Settings saved: ${metricSettingState.value}")
                     navController.navigate("physiological_metrics_setting_screen") {
                         popUpTo(("physiological_metrics_setting_screen")) {
                             inclusive = true
@@ -2911,6 +2920,7 @@ WearTakCivScreenDimensions(
         DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
         DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
         DataMetricsChip("physiological_metrics_usertype_screen", stringResource(R.string.user_type), userTypeSettingsState.value.toString(), navController)
+        DataMetricsChip("physiological_metrics_resting_hr_screen", stringResource(R.string.resting_heart_rate), restingHeartRateSettingsState.value.toString(), navController)
 
         Spacer(modifier = Modifier.height(16.dp))
     },
@@ -2933,8 +2943,9 @@ WearTakCivScreenDimensions(
                         bloodTypeState.postValue(bloodTypeSettingsState.value)
                         allergyListState.postValue(allergyListSettingsState.value)
                         userTypeState.postValue(userTypeSettingsState.value)
+                        restingHeartRateState.postValue(restingHeartRateSettingsState.value)
 
-                        Log.d(TAG, "Finished saving physio state settings")
+                Log.d(TAG, "Finished saving physio state settings")
 
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
@@ -3247,6 +3258,7 @@ fun SettingsScreen(
                         bloodTypeSettingsState.postValue(bloodTypeState.value)
                         allergyListSettingsState.postValue(allergyListState.value)
                         userTypeSettingsState.postValue(userTypeState.value)
+                        restingHeartRateSettingsState.postValue(restingHeartRateState.value)
 
                         navController.navigate("physiological_metrics_setting_screen") {
                             popUpTo("physiological_metrics_setting_screen") { inclusive = true }
@@ -3283,36 +3295,7 @@ fun SettingsScreen(
 //                                inclusive = true
 //                            }
 //                        }
-                    enableLocationServiceSettingsState.postValue(enableLocationService)
-                    enableDittoServiceSettingsState.postValue(enableDittoService)
-                    enableChatServiceSettingsState.postValue(enableChatService)
-                    enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
-                    enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
-                    callsignSettingsState.postValue(callsign)
-                    teamSettingsState.postValue(team)
-                    roleSettingsState.postValue(role)
-                    categorySettingsState.postValue(category)
-                    enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
-                    enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
-                    enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
-                    enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
-                    wifiSsidListState.postValue(wifiSsidList)
-                    wifiSsidListSettingsState.postValue(wifiSsidList)
-                    takServerListState.postValue(takServerList)
-                    saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-                    smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
-
-                    enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
-                    hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
-                    hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
-                    ageState.postValue(ageValue)
-                    heightFeetState.postValue(heightFeetValue)
-                    heightInchesState.postValue(heightInchesValue)
-                    weightState.postValue(weightValue)
-                    sexState.postValue(sexValue)
-                    bloodTypeState.postValue(bloodTypeValue)
-                    allergyListState.postValue(allergyList)
-                    userTypeState.postValue(userTypeValue)
+                    loadSettingsValues()
 
                     settingsActivity.finish()
                     context.startActivity(Intent(context, MainActivity::class.java))
@@ -3345,6 +3328,7 @@ fun SettingsScreen(
                     var bloodTypeChanged: Boolean = false
                     var allergiesChanged: Boolean = false
                     var userTypeChanged: Boolean = false
+                    var restingHeartRateChanged: Boolean = false
 
                     if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
@@ -3386,6 +3370,10 @@ fun SettingsScreen(
                     if (userTypeValue != userTypeState.value) {
                         settingsChanged = true; userTypeChanged = true
                         userTypeValue = userTypeState.value ?: userTypeValue
+                    }
+                    if (restingHeartRate != restingHeartRateState.value) {
+                        settingsChanged = true; restingHeartRateChanged = true
+                        restingHeartRate = restingHeartRateState.value ?: restingHeartRate
                     }
 
                     if (!callsign.equals(callsignSettingsState.value)) {
@@ -3616,6 +3604,10 @@ fun SettingsScreen(
                              if (userTypeChanged) {
                                  Log.d(TAG, "Storing User Type ($userTypeValue)")
                                  dataRepository.storePhysiologicalMetricUserType(userTypeValue)
+                             }
+                             if (restingHeartRateChanged) {
+                                 Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
+                                 dataRepository.storeRestingHeartRate(restingHeartRate)
                              }
                              if (saveBattOnWifiChanged) {
                                   Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")

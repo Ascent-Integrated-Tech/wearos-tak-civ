@@ -182,7 +182,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.SkinTempService
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.categoryRolesEntryLists
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -225,6 +224,8 @@ class MainActivity : ComponentActivity() {
         var team = ""
         // Unlike team and teamValue, role does not have a roleValue. So removing roleValue. Please use role wherever roleValue was previously used.
         var role = ""
+        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
+        val categorySettingsState = MutableLiveData<String>("")
         var category = ""
         var license = "License"
         var teamValue = ""
@@ -260,6 +261,8 @@ class MainActivity : ComponentActivity() {
         val allergyListState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
         val allergyListSettingsState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
         var restingHeartRate = DEFAULT_RESTING_HR
+        val restingHeartRateState = MutableLiveData<Int>(DEFAULT_RESTING_HR)
+        val restingHeartRateSettingsState = MutableLiveData<Int>(DEFAULT_RESTING_HR)
         var userTypeValue = "N/A"
         val userTypeState = MutableLiveData<String>("N/A")
         val userTypeSettingsState = MutableLiveData<String>("N/A")
@@ -1026,7 +1029,7 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "Exited initCategoryAndRole() w/ category ($category) and role ($role)")
     }
 
-    private suspend fun initCategoryAndRoleAndCatogoryRolesList(dataRepoCategoryRolesList: List<CategoryRolesEntry> ) {
+    private suspend fun initCategoryAndRoleAndCategoryRolesList(dataRepoCategoryRolesList: List<CategoryRolesEntry> ) {
         try {
             Log.i(TAG, "Just before loading category entries from DataStore")
             categoryRolesEntryLists = dataRepoCategoryRolesList
@@ -1081,7 +1084,7 @@ class MainActivity : ComponentActivity() {
             initTeamEntriesValuesList(teamNames, teamColors)
             initTeamAndTeamValue()
 
-            initCategoryAndRoleAndCatogoryRolesList(dataRepository.getCategoryRolesList.first())
+            initCategoryAndRoleAndCategoryRolesList(dataRepository.getCategoryRolesList.first())
 
             license = dataRepository.getLicense.first()
 
@@ -1134,6 +1137,7 @@ class MainActivity : ComponentActivity() {
             bloodTypeValue = dataRepository.getPhysiologicalMetricBloodType.first()
             allergyList = dataRepository.getPhysiologicalMetricAllergyList.first()
             userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
+            restingHeartRate = dataRepository.getRestingHeartRate.first()
 
             Log.d(TAG, "============= Done Initializing Settings ===============")
         }
@@ -1224,6 +1228,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "BloodType:", bloodTypeValue)}
                     ${String.format("%-25s %-30s", "Allergies:", allergyList)}
                     ${String.format("%-25s %-30s", "UserType:", userTypeValue)}
+                    ${String.format("%-25s %-30s", "RestingHeartRate:", restingHeartRate)}
                     
                     """.trimIndent()
         Log.v(TAG, logOutput)
@@ -1426,6 +1431,8 @@ class MainActivity : ComponentActivity() {
         allergyListSettingsState.postValue(allergyList)
         userTypeState.postValue(userTypeValue)
         userTypeSettingsState.postValue(userTypeValue)
+        restingHeartRateState.postValue(restingHeartRate)
+        restingHeartRateSettingsState.postValue(restingHeartRate)
 
         requestCallsignComplicationUpdate(context)
         requestLocationComplicationUpdate(context)
@@ -1758,7 +1765,7 @@ class MainActivity : ComponentActivity() {
                         }
                         dataRepository.storeCategoryRolesList(entries)
                 }
-                initCategoryAndRoleAndCatogoryRolesList(entries)
+                initCategoryAndRoleAndCategoryRolesList(entries)
             }
 
             if ((null != teamsNames) && (null != teamsColors)) {

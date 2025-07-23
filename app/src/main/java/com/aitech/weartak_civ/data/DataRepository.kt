@@ -110,7 +110,10 @@ class DataRepository(private val context: Context) {
         val elevationMeters: Double
     )
 
-    // Functions to update the data
+    val getRestingHeartRate: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[RESTING_HEART_RATE] ?: DEFAULT_RESTING_HR
+    }
+
     suspend fun storeRestingHeartRate(restHr: Int) {
         context.dataStore.edit { prefs ->
             prefs[RESTING_HEART_RATE] = restHr
