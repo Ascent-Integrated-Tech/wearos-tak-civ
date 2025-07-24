@@ -40,6 +40,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_C
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
@@ -88,9 +89,10 @@ class CotDispatchService : Service() {
     private var markerType: String = ""
     private var alertOrCancel = false
     private var sosAlertUid: String = ""
-    private var canSendCotXml = true      // local cache
+    private var pauseCotDispatch = false
     private var useProtobuf = false
     private val schedCotScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val protoScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -148,18 +150,39 @@ class CotDispatchService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-        CoroutineScope(Dispatchers.IO).launch {
-            dataRepository.canSendCotXml
-                .combine(dataRepository.useProtobuf) { xml, proto ->
-                    xml to proto
+        initFlowCollectors()
+        Log.v(TAG, "CotDispatchService onCreate()")
+    }
+
+    private fun initFlowCollectors() {
+        protoScope.launch {
+            dataRepository.pauseCotDipstach
+                .combine(dataRepository.useProtobuf) { cot, proto ->
+                    cot to proto
                 }
-                .collect { (xmlAllowed, proto) ->
-                    canSendCotXml = xmlAllowed
-                    useProtobuf   = proto
-                    Log.i(TAG, "flags → xml=$xmlAllowed  proto=$proto")
+                .collect { (pauseCot, protoEnabled) ->
+                    pauseCotDispatch = pauseCot
+                    useProtobuf   = protoEnabled
+                    Log.i(TAG, "flags → PauseDispatch=$pauseCot  ProtoEnabled=$protoEnabled")
+//                    if (pauseCotDispatch) {
+//                        stopDispatchScheduler()
+//                    } else {
+//                        startDispatchScheduler()
+//                    }
                 }
         }
-        Log.v(TAG, "CotDispatchService onCreate()")
+        protoScope.launch {
+            MainActivity.dataRepository.protobufVers.collect { version ->
+                Log.i(TAG, "Protobuf Version Changed to: $version")
+                tempTakServerDetail.protobufVersion = version
+            }
+        }
+        protoScope.launch {
+            MainActivity.dataRepository.protobufUid.collect { uid ->
+                Log.i(TAG, "Protobuf Uid Changed to: $uid")
+                tempTakServerDetail.protobufUid = uid
+            }
+        }
     }
 
     private fun startDispatchScheduler() {
@@ -516,7 +539,7 @@ class CotDispatchService : Service() {
 
     private fun sendMarkerCotMessage() {
         ioScope.launch(Dispatchers.IO) {
-            if (!canSendCotXml) {
+            if (pauseCotDispatch) {
                 Log.v(TAG, "Sending Marker CoT Message Blocked: waiting for protobuf handshake")
                 return@launch
             }
@@ -560,8 +583,9 @@ class CotDispatchService : Service() {
 
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
         ioScope.launch(Dispatchers.IO) {
-            if (!canSendCotXml) {
+            if (pauseCotDispatch) {
                 Log.v(TAG, "Sending Emergency Alert CoT Message Blocked: waiting for protobuf handshake")
+                return@launch
             }
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
@@ -609,7 +633,8 @@ class CotDispatchService : Service() {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             schedCotScope.launch {
-                if (!canSendCotXml) {
+
+                if (pauseCotDispatch) {
                     Log.v(TAG, "Sending Scheduled PLI CoT Message Blocked: waiting for protobuf handshake")
                     return@launch                      // TODO: buffer cots in a Channel<String> so we don't lose data. Need to do this for markers and alerts etc. Really depends on handshake.
                 }
@@ -631,21 +656,29 @@ class CotDispatchService : Service() {
                     battery = battery
                 )
 
-                sendLocationBiometricCotMessage(location, physioData)
+                sendLocationBiometricCotMessage(location, physioData, tempTakServerDetail)
             }
         }
 
     }
 
-    private fun sendLocationBiometricCotMessage(location: Location?, physioData: PhysioData) {
+    var lastTimeProtoSent: Long = 0L
 
-        val protobofReady: Boolean = false
-
-        if (protobofReady) {
+    private fun sendLocationBiometricCotMessage(location: Location?, physioData: PhysioData, takServerDetail: TAKConnectService.TakServerDetail) {
+        if (useProtobuf) {
             // ------ Cot Protobuf ------
-            val protoCotBytes = Utils.CotUtils.buildSerializedProtobuf(location, physioData)
+            val protoCotBytes = Utils.CotUtils.buildTakProtoPayload(location, physioData, takServerDetail)
+            val now = System.currentTimeMillis()
+            val diff: Long = if (lastTimeProtoSent != 0L) {
+                now - lastTimeProtoSent
+            } else {
+                0L
+            }
+            Log.i(TAG, String.format("PLI Pbuf CoT Sending...  Size: %-4s , Reporting Rate: %-4s", protoCotBytes.size, currReportingIntervalInSecs))
             sendDataTAKServers(protoCotBytes, isNotPli = false)   // ~210-byte payload
-            Log.i(TAG, "protoCot size: ${protoCotBytes.size} \n ${protoCotBytes}")
+            Log.i(TAG, String.format("Sent! Time since last Pbuf dispatch: %-5s seconds", (diff/1000).toInt()))
+            lastTimeProtoSent = now
+            takServerDetail.lastTimeMsgSent = now  // for some logic in the sendData() functions
         } else {
             // ------ Cot XML String ------
 //            val cotMessage = buildVerboseLocationPhsyioCot(location, physioData)   // ~750-byte payload
@@ -774,6 +807,7 @@ class CotDispatchService : Service() {
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
+
         // Time interval within which GPS is considered "fresh"
         // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed
         private const val FRESH_GPS_INTERVAL = 3_000L
@@ -782,10 +816,12 @@ class CotDispatchService : Service() {
         private var OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT = 30
         private const val GPS_STALE_TIME_INTERVAL_MS_JSON_KEY = "gpsStaleTimeInterval"
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
-        val isRunning : AtomicBoolean = AtomicBoolean(false)
+        val isRunning: AtomicBoolean = AtomicBoolean(false)
         var reportingUpdateIntervalSecs = 10
         var currReportingIntervalInSecs = 10
         lateinit var instance: CotDispatchService
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+        var tempTakServerDetail = TAKConnectService.TakServerDetail(
+            isEnabled = true, name = "tempServerDispatchService", address = "", port = 0, isP12Cert = false, username = "", password = "", p12Cert = null, p12CertPassword = null, reportingUpdateInterval = reportingUpdateIntervalSecs)
     }
 }

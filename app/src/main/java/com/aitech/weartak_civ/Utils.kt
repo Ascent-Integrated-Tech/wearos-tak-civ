@@ -17,6 +17,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
+import com.aitech.weartak_civ.service.TAKConnectService
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -31,7 +32,9 @@ import kotlin.math.cos
 import kotlin.math.sqrt
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
+import java.io.ByteArrayOutputStream
 import java.io.StringReader
+import java.nio.ByteBuffer
 import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
@@ -40,6 +43,13 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import javax.net.ssl.SSLSocket
+import com.aitech.weartak_civ.Detail
+import com.aitech.weartak_civ.Contact
+import com.aitech.weartak_civ.Group
+import com.aitech.weartak_civ.Track
+import com.aitech.weartak_civ.CotEvent
+import com.aitech.weartak_civ.TakMessage
+import com.aitech.weartak_civ.TakControl
 
 
 object Utils {
@@ -431,56 +441,119 @@ object Utils {
             return rooms
         }
 
-        /* ----  TAK-Protocol (XML) helpers  ---- */
+        private const val STREAM_MAGIC: Byte = 0xBF.toByte()
 
-        private val uidRx         = """<event[^>]*\buid=['"]([^'"]+)['"]""".toRegex()
-        private val supportRx     = """<TakProtocolSupport[^>]*\bversion=['"](\d+)['"]""".toRegex()
-        private val requestRx     = """<TakRequest[^>]*\bversion=['"](\d+)['"]""".toRegex()
-        private val responseRx    = """<TakResponse[^>]*\bstatus=['"]([^'"]+)['"]""".toRegex()
+        /**
+         *  Builds and serializes a Tak Protocol Payload for
+         *  COT Events using google protobuf. For more info, see:
+         *
+         *  src/main/proto/com/aitech/weartak_civ/protocol.txt
+         *
+         */
+        @Throws(Exception::class)
+        fun buildTakProtoPayload(
+            location: android.location.Location?,
+            physioData: CotDispatchService.PhysioData,
+            takServerDetail: TAKConnectService.TakServerDetail
+        ): ByteArray {
+            val pVer       = takServerDetail.protobufVersion ?: 1
+            val pUid       = takServerDetail.protobufUid ?: ""
 
-        fun isTakProtocolAdvert(raw: String): Boolean =
-            raw.contains("type=\"t-x-takp-v\"") && supportRx.containsMatchIn(raw)
+            val now = System.currentTimeMillis()
+            val staleSec  = (3L * currReportingIntervalInSecs * 1_000).toLong()
+            val staleTime = (now) + staleSec
 
-        fun isTakProtocolResponse(raw: String, uid: String): Boolean =
-            raw.contains("type=\"t-x-takp-r\"") && raw.contains("uid=\"$uid\"")
+            val uid       = MainActivity.device_uid
+            val lat       = location?.latitude  ?: 0.0
+            val lon       = location?.longitude ?: 0.0
+            val hae       = (location?.altitude ?: 0.0)
+            val ce        = location?.accuracy?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+            val le        = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+            val course    = location?.bearing?.toInt() ?: 0
+            val speed     = location?.speed?.toInt()   ?: 0
 
-        fun extractUid(raw: String): String =
-            uidRx.find(raw)?.groupValues?.getOrNull(1) ?: ""
+            val hr        = physioData.heartRate
+            val st        = physioData.skinTemp.toInt()
+            val bat       = physioData.battery
 
-        fun extractTakProtocolVersion(raw: String): Int? =
-            supportRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                ?: requestRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val detail = Detail.newBuilder()
+                // embed any raw XML or remarks here:
+                .setXmlDetail("H:${hr};T:${st};B:${bat}")
+                .setContact(Contact.newBuilder()
+                    .setCallsign(callsign)
+                    .build()
+                )
+                .setGroup(Group.newBuilder()
+                    .setName(teamValue)
+                    .setRole(roleValue)
+                    .build()
+                )
+                .setTrack(Track.newBuilder()
+                    .setCourse(course.toDouble())
+                    .setSpeed(speed.toDouble())
+                    .build()
+                )
+                .build()
 
-        fun extractTakProtocolStatus(raw: String): Boolean =
-            responseRx.find(raw)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
+            // 3) Build the CotEvent payload
+            val cotEvent = CotEvent.newBuilder()
+                .setType("a-f-G-U-C")
+                .setUid(uid)
+                .setSendTime(now)
+                .setStartTime(now)
+                .setStaleTime(staleTime)
+                .setHow("m-g")
+                .setLat(lat)
+                .setLon(lon)
+                .setHae(hae)
+                .setCe(ce.toDouble())
+                .setLe(le.toDouble())
+                .setDetail(detail)
+                .build()
 
-        /* Build <t-x-takp-q> message for upstream protobuf handshake */
-        fun buildTakpQuery(uid: String, version: Int = 1): String =
-            """
-            <?xml version='1.0' encoding='UTF-8'?>
-            <event version='2.0' uid='$uid' type='t-x-takp-q' how='m-g'
-                   time='${isoNow()}' start='${isoNow()}' stale='${staleIso(30)}'>
-              <point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>
-              <detail>
-                <TakControl>
-                  <TakRequest version='$version'/>
-                </TakControl>
-              </detail>
-            </event>
-            """.trimIndent()
+            // 4) Optional: include a minimal TakControl (defaults assume v1)
+            val control = TakControl.newBuilder()
+                .setMinProtoVersion(pVer)
+                .setMaxProtoVersion(pVer)
+                .setContactUid(pUid)
+                .build()
 
-        fun sendCot(xml: String, socket: SSLSocket) {
-            socket.getOutputStream().writer(Charsets.UTF_8).apply {
-                write(xml)
-                flush()
-            }
+            // 5) Wrap in the top-level TakMessage
+            val takMsgBytes = TakMessage.newBuilder()
+                .setTakControl(control)
+                .setCotEvent(cotEvent)
+                .build()
+                .toByteArray()
+
+            // 6) Prepend the streaming header: 0xBF + varint(payload length)
+            val header = ByteArrayOutputStream().apply {
+                write(STREAM_MAGIC.toInt())
+                write(encodeVarint(takMsgBytes.size))
+            }.toByteArray()
+
+            return ByteBuffer
+                .allocate(header.size + takMsgBytes.size)
+                .put(header)
+                .put(takMsgBytes)
+                .array()
         }
 
-        /* --- tiny ISO helpers reused elsewhere --- */
-        private fun isoNow() = Instant.now().toString()
-        private fun staleIso(secs: Long) = Instant.now().plusSeconds(secs).toString()
+        private fun encodeVarint(value: Int): ByteArray {
+            var v = value
+            val out = ByteArrayOutputStream()
+            while (true) {
+                var byteVal = v and 0x7F
+                v = v ushr 7
+                if (v != 0) byteVal = byteVal or 0x80
+                out.write(byteVal)
+                if (v == 0) break
+            }
+            return out.toByteArray()
+        }
 
+    }
 
+    /*
         /**
          * Builds and serializes a COT Event protobuf directly,
          * without ever creating or parsing XML.
@@ -557,5 +630,7 @@ object Utils {
             // 3) Serialize to protobuf bytes
             return event.toByteArray()
         }
-    }
+    */
+
 }
+

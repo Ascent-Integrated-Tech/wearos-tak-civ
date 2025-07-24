@@ -56,11 +56,11 @@ class DataRepository(private val context: Context) {
 //        }
 //    }
 
-    private val _canSendCotXml = MutableStateFlow(true)          // NEW
-    val  canSendCotXml: StateFlow<Boolean> = _canSendCotXml
+    private val _pauseCotDispatch = MutableStateFlow(true)          // NEW
+    val  pauseCotDipstach: StateFlow<Boolean> = _pauseCotDispatch
 
-    internal fun setCanSendCotXml(flag: Boolean) {               // NEW
-        _canSendCotXml.value = flag
+    fun setPauseCotDipstach(flag: Boolean) {               // NEW
+        _pauseCotDispatch.value = flag
     }
 
     private val _useProtobuf = MutableStateFlow<Boolean>(false)
@@ -69,6 +69,9 @@ class DataRepository(private val context: Context) {
     fun setUseProtobuf(enabled: Boolean) {
         _useProtobuf.value = enabled
     }
+
+    val protobufVers: MutableStateFlow<Int?> = MutableStateFlow<Int?>(0)
+    val protobufUid: MutableStateFlow<String?> = MutableStateFlow<String?>("")
 
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate

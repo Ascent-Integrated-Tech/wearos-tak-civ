@@ -1,53 +1,53 @@
-syntax = "proto3";
-
-// This package declaration should match your Kotlin/Java imports
-package com.aitech.weartak_civ;
-
-// Instruct protoc to generate Java classes under this package
-option java_package = "com.aitech.weartak_civ";
-option java_multiple_files = true;
-
-// --- Sub-messages ---
-
-message Point {
-  double lat = 1;
-  double lon = 2;
-  float  hae = 3;
-  float  ce  = 4;
-  float  le  = 5;
-}
-
-message Group {
-  string role = 1;
-  string name = 2;
-}
-
-message Track {
-  float course = 1;
-  float speed  = 2;
-}
-
-message Contact {
-  string callsign = 1;
-}
-
-message Detail {
-  Group   group   = 1;
-  Track   track   = 2;
-  Contact contact = 3;
-  string  remarks = 4;
-}
-
-// --- Top-level event ---
-
-message Event {
-  string  version = 1;
-  string  uid     = 2;
-  string  type    = 3;
-  string  time    = 4;
-  string  start   = 5;
-  string  stale   = 6;
-  string  how     = 7;
-  Point   point   = 8;
-  Detail  detail  = 9;
-}
+//syntax = "proto3";
+//
+//// This package declaration should match your Kotlin/Java imports
+//package com.aitech.weartak_civ;
+//
+//// Instruct protoc to generate Java classes under this package
+//option java_package = "com.aitech.weartak_civ";
+//option java_multiple_files = true;
+//
+//// --- Sub-messages ---
+//
+//message Point {
+//  double lat = 1;
+//  double lon = 2;
+//  float  hae = 3;
+//  float  ce  = 4;
+//  float  le  = 5;
+//}
+//
+//message Group {
+//  string role = 1;
+//  string name = 2;
+//}
+//
+//message Track {
+//  float course = 1;
+//  float speed  = 2;
+//}
+//
+//message Contact {
+//  string callsign = 1;
+//}
+//
+//message Detail {
+//  Group   group   = 1;
+//  Track   track   = 2;
+//  Contact contact = 3;
+//  string  remarks = 4;
+//}
+//
+//// --- Top-level event ---
+//
+//message Event {
+//  string  version = 1;
+//  string  uid     = 2;
+//  string  type    = 3;
+//  string  time    = 4;
+//  string  start   = 5;
+//  string  stale   = 6;
+//  string  how     = 7;
+//  Point   point   = 8;
+//  Detail  detail  = 9;
+//}

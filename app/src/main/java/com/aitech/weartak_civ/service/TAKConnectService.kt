@@ -88,18 +88,27 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.events.TakChatEvent
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import kotlinx.coroutines.CompletableDeferred
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withTimeoutOrNull
-import java.net.SocketException
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import javax.net.ssl.TrustManagerFactory
-import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val cotScope     = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val chatScope    = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val protoScope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     class SignClientResponse {
         var signedCert: String? = null
@@ -108,8 +117,7 @@ class TAKConnectService: Service() {
     }
 
     data class NameValueEntry(
-        var name: String,
-        var value: String
+        var name: String, var value: String
     )
 
     data class TakServerDetail(
@@ -124,43 +132,60 @@ class TAKConnectService: Service() {
         var p12CertPassword: String?,
         var reportingUpdateInterval: Int,
         var currReportingUpdateInterval: Int = 0,
-        var numConnAttempts : Int = 0,
-        val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
+        var numConnAttempts: Int = 0,
+        val connectionStatus: AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
         val connectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_DISCONNECTED_STRING),
-        val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
+        val keyStore: KeyStore = KeyStore.getInstance("PKCS12"),
         var privateKey: PrivateKey? = null,
-        var secureSocket : SSLSocket? = null,
-        var lastTimeMsgSent: Long = 0L
+        var secureSocket: SSLSocket? = null,
+        var lastTimeMsgSent: Long = 0L,
+        var takProtocol: TakProtocol = TakProtocol(),
+        var cotListenerJob: Job? = null,
+        var protoHsTimeoutJob: Job? = null,
+        var protobufUid: String? = null,
+        var protobufVersion: Int? = null
     )
-
 
     override fun onCreate() {
         Log.d(TAG, "TAKConnectService onCreate")
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+        initFlowCollection()
         return super.onCreate()
     }
 
-
-    fun setFromDatastore() {
+    private fun setFromDatastore() {
         runBlocking {
-            val takServers : List<TakServerItem> = dataRepository.getTakServerList.first()
+            val takServers: List<TakServerItem> = dataRepository.getTakServerList.first()
             takServerDetails = mutableListOf()
             for (takServer in takServers) {
-                val currReportingUpdateInterval = if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
+                val currReportingUpdateInterval = if (currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
                     PowerManagerService.slowDownReportingInterval(takServer.reportingUpdateInterval)
                 } else {
                     takServer.reportingUpdateInterval
                 }
-                takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
-                    takServer.isP12Cert, takServer.username, takServer.password,
-                    takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval,
-                    currReportingUpdateInterval = currReportingUpdateInterval, numConnAttempts = 0))
-                Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
-                Log.d(TAG, "                 reportInterval(${takServer.reportingUpdateInterval}), currReportingUpdateInterval($currReportingUpdateInterval),")
-                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
+                takServerDetails.add(
+                    TakServerDetail(
+                        takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port, takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval, currReportingUpdateInterval = currReportingUpdateInterval, numConnAttempts = 0
+                    )
+                )
+//                Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
+//                Log.d(TAG, "                 reportInterval(${takServer.reportingUpdateInterval}), currReportingUpdateInterval($currReportingUpdateInterval),")
+//                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
+            val sb = StringBuilder().apply {
+                appendLine("=== === Server Settings (${takServers.size} servers) === ===")
+                takServers.forEachIndexed { i, srv ->
+                    appendLine("Server $i: name=${srv.name}, enabled=${srv.isEnabled}")
+                    appendLine("    addr=${srv.address.trim()}:${srv.port}, interval=${srv.reportingUpdateInterval}s")
+                    appendLine("    auth=user=${srv.username}, pwd=${srv.password}")
+                    appendLine("    cert=usesP12=${srv.isP12Cert}, path=${srv.p12Cert}")
+                    appendLine("    certPwd=${srv.p12CertPassword}")
+                    appendLine("")
+                }
+            }
+            Log.d(TAG, sb.toString())
         }
     }
 
@@ -174,7 +199,8 @@ class TAKConnectService: Service() {
             isNetworkConnected = networkManager?.isNetworkConnected() ?: false
             isWifiConnected = networkManager?.isWifiConnected() ?: false
             if (isNetworkConnected) {
-                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
+//                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
+                Log.d(TAG, "Connecting to Tak Servers ... onStartCommand connectToTakServers()")
                 connectToTakServers()
             }
         }
@@ -182,19 +208,10 @@ class TAKConnectService: Service() {
     }
 
     private fun startForegroundService() {
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "TAK Connect Service"
-        }
+        val channelId = createNotificationChannel()
 
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV TAK Connect service running")
-            .setPriority(PRIORITY_MAX)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
+        val notification = notificationBuilder.setOngoing(true).setSmallIcon(R.drawable.splash_icon).setContentText("WearTAK-CIV TAK Connect service running").setPriority(PRIORITY_MAX).setCategory(Notification.CATEGORY_SERVICE).build()
         startForeground(TAK_CONNECT_SERVICE_NOTIFICATION_ID, notification)
     }
 
@@ -224,13 +241,18 @@ class TAKConnectService: Service() {
         }
         networkManager = null
         closeTakServerSockets()
+        cotScope.cancel()
+        chatScope.cancel()
+        protoScope.cancel()
     }
 
     private fun resetTakServerConnectionDetails() {
+        Log.i(TAG, "... Resetting Tak Server Connection Details ")
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
-		requestTakServerComplicationUpdate(context)
+        requestTakServerComplicationUpdate(context)
         for (takServerDetail in takServerDetails) {
+            Log.i(TAG, "... ... Clearing Details for ${takServerDetail.name} ")
             takServerDetail.numConnAttempts = 0
             takServerDetail.secureSocket = null
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
@@ -243,7 +265,14 @@ class TAKConnectService: Service() {
         val currIsConn = event.isConn
         val currTransport = event.transport
         val currIsWifi = (currTransport == WIFI)
-        Log.d(TAG, "onNwConnEvent received NwConnEvent (isConn, isWifi)=($currIsConn, $currIsWifi) w/ previous ($isNetworkConnected, $isWifiConnected)")
+//        Log.v(TAG, "onNwConnEvent received NwConnEvent (isConn, isWifi)=($currIsConn, $currIsWifi) w/ previous ($isNetworkConnected, $isWifiConnected)")
+        Log.v(TAG,
+            "Network Event: " +
+                    "currConn=$currIsConn, " +
+                    "currWifi=$currIsWifi, " +
+                    "prevConn=$isNetworkConnected, " +
+                    "prevWifi=$isWifiConnected"
+        )
         if (currIsConn) { // Network is connected
             if (currIsConn != isNetworkConnected) { // Previously network was NOT connected. So now reconnect to TAK
                 Log.d(TAG, "Previously network was NOT connected but now is connected. So reconnecting to TAK server")
@@ -286,12 +315,12 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "SERVER_ADDED index($index) != takServers.size(${takServers.size})-1")
             }
             val takServer = takServers.last()
-            val takServerDetail = TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
-                takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword,
-                takServer.reportingUpdateInterval, currReportingUpdateInterval = takServer.reportingUpdateInterval)
-            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
+            val takServerDetail = TakServerDetail(
+                takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port, takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval, currReportingUpdateInterval = takServer.reportingUpdateInterval
+            )
+            if (currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
                 // There is power optimization going on
-                Log.d(TAG, "GPS Power optimization going on")
+//                Log.d(TAG, "GPS Power optimization going on")
                 takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
             }
             if (takServerDetails.size == index) {
@@ -333,10 +362,7 @@ class TAKConnectService: Service() {
         runBlocking {
             val takServers: List<TakServerItem> = dataRepository.getTakServerList.first()
             val takServer = takServers.get(index)
-            if (takServer.address != oldAddress || takServer.port != oldTakServerDetail.port ||
-                takServer.isEnabled != oldTakServerDetail.isEnabled || takServer.isP12Cert != oldTakServerDetail.isP12Cert ||
-                takServer.username != oldTakServerDetail.username || takServer.password != oldTakServerDetail.password ||
-                takServer.p12Cert != oldTakServerDetail.p12Cert || takServer.p12CertPassword != oldTakServerDetail.p12CertPassword) {
+            if (takServer.address != oldAddress || takServer.port != oldTakServerDetail.port || takServer.isEnabled != oldTakServerDetail.isEnabled || takServer.isP12Cert != oldTakServerDetail.isP12Cert || takServer.username != oldTakServerDetail.username || takServer.password != oldTakServerDetail.password || takServer.p12Cert != oldTakServerDetail.p12Cert || takServer.p12CertPassword != oldTakServerDetail.p12CertPassword) {
                 serverConnDetailsChanged = true
             } else if (takServer.reportingUpdateInterval != oldTakServerDetail.reportingUpdateInterval) {
                 Log.d(TAG, "Reporting interval changed")
@@ -344,14 +370,14 @@ class TAKConnectService: Service() {
             val takServerDetail = takServerDetails[index]
             takServerDetail.isEnabled = takServer.isEnabled; takServerDetail.name = takServer.name
             takServerDetail.address = takServer.address.trim(); takServerDetail.port = takServer.port
-            takServerDetail.isP12Cert = takServer.isP12Cert;
+            takServerDetail.isP12Cert = takServer.isP12Cert
             takServerDetail.username = takServer.username; takServerDetail.password = takServer.password
             takServerDetail.p12Cert = takServer.p12Cert; takServerDetail.p12CertPassword = takServer.p12CertPassword
             takServerDetail.reportingUpdateInterval = takServer.reportingUpdateInterval
             takServerDetail.numConnAttempts = 0
             if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
                 // There is power optimization going on
-                Log.d(TAG, "GPS Power optimization going on")
+//                Log.d(TAG, "GPS Power optimization going on")
                 takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
             } else {
                 takServerDetail.currReportingUpdateInterval = takServerDetail.reportingUpdateInterval
@@ -393,7 +419,9 @@ class TAKConnectService: Service() {
         takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
         if (takServerDetail.isEnabled) {
             if ((TAK_SERVER_CONNECTED_COT_PORT == takServerDetail.connectionStatus.get()) && isNetworkConnected) {
-                if ((null != takServerDetail.secureSocket) && ((takServerDetail.secureSocket?.isClosed ?: true) == false)) {
+                if ((null != takServerDetail.secureSocket) && ((takServerDetail.secureSocket?.isClosed
+                        ?: true) == false)
+                ) {
                     Log.d(TAG, "Closing socket")
                     takServerDetail.secureSocket?.close()
                 }
@@ -424,7 +452,9 @@ class TAKConnectService: Service() {
         takServerDetail.numConnAttempts = 0
         if (takServerDetail.isEnabled) {
             if ((TAK_SERVER_CONNECTED_COT_PORT == takServerDetail.connectionStatus.get()) && isNetworkConnected) {
-                if ((null != takServerDetail.secureSocket) && ((takServerDetail.secureSocket?.isClosed ?: true) == false)) {
+                if ((null != takServerDetail.secureSocket) && ((takServerDetail.secureSocket?.isClosed
+                        ?: true) == false)
+                ) {
                     Log.d(TAG, "Closing socket")
                     takServerDetail.secureSocket?.close()
                 }
@@ -460,16 +490,16 @@ class TAKConnectService: Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onPowerManagerEvent(powerManagerEvent: PowerManagerEvent) {
-        Log.d(TAG, "TAKConnectService received PowerManagerEvent")
+//        Log.d(TAG, "TAKConnectService received PowerManagerEvent")
         if (CHANGED_UPDATE_INTERVAL == powerManagerEvent.eventType) {
             if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
                 // Power optimization going on
-                Log.d(TAG, "GPS Power optimization going on")
+//                Log.d(TAG, "GPS Power optimization going on")
                 for (takServer in takServerDetails) {
                     takServer.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServer.reportingUpdateInterval)
                 }
             } else {
-                Log.d(TAG, "No GPS Power optimization going on")
+//                Log.d(TAG, "No GPS Power optimization going on")
                 for (takServer in takServerDetails) {
                     takServer.currReportingUpdateInterval = takServer.reportingUpdateInterval
                 }
@@ -483,7 +513,7 @@ class TAKConnectService: Service() {
                 val secureSocket = takServer.secureSocket
                 if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
                     // TODO: check logic above
-                    runBlocking( Dispatchers.IO) {
+                    runBlocking(Dispatchers.IO) {
                         secureSocket?.close()
                     }
                     takServer.secureSocket = null
@@ -492,102 +522,47 @@ class TAKConnectService: Service() {
         }
     }
 
+    fun closeSpecificTakServerSocket(takServerDetail: TakServerDetail) {
+        takServerDetail.cotListenerJob?.cancel()            // stop the cot listener job
+        takServerDetail.protoHsTimeoutJob?.cancel()         // stop any handshake timeout timers
+        takServerDetail.secureSocket?.close()
+        takServerDetail.cotListenerJob = null
+        takServerDetail.protoHsTimeoutJob = null
+        takServerDetail.secureSocket = null
+        // TODO: Do we have to wipe anything in detail out?
+    }
+
     fun connectToTakServers() {
+        Log.i(TAG, "Trying to Connect to TAK Servers!")
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(isAnyTakConnecting)
         requestTakServerComplicationUpdate(context)
         for (takServer in takServerDetails) {
-            if (takServer.isEnabled) {
+            Log.i(TAG, String.format("... Found a TakServer! - Name: %-20s  Address: %-20s  Enabled: %-5s", takServer.name, takServer.address, takServer.isEnabled))
+                if (takServer.isEnabled) {
+                Log.i(TAG, String.format("... Getting Client Certificate and Connecting to %-20s at %-20s ...", takServer.name, takServer.address))
                 getClientCertificateAndConnect(takServer)
             }
         }
     }
 
     companion object {
-        const val TAK_SERVER_DISCONNECTED = 0
-        const val TAK_SERVER_DISCONNECTED_STRING = "DISCONNECTED"
-
-        // The states TAK_SERVER_OBTAINING_CLIENT_CERT, TAK_SERVER_OBTAINED_CLIENT_CERT, TAK_SERVER_CONNECTING_COT_PORT
-        // are part of the "CONNECTING" phase as far as the UI is concerned.
-        const val TAK_SERVER_OBTAINING_CLIENT_CERT = 1
-        const val TAK_SERVER_OBTAINED_CLIENT_CERT = 2
-        const val TAK_SERVER_CONNECTING_COT_PORT = 3
-        const val TAK_SERVER_CONNECTING_STRING = "CONNECTING"
-
-        const val TAK_SERVER_CONNECTED_COT_PORT = 4
-        const val TAK_SERVER_CONNECTED_STRING = "CONNECTED"
-
-        const val TAK_SERVER_CONNECTION_FAILED = 5
-        const val TAK_SERVER_CONNECTION_FAILED_STRING = "CONNECTION_FAILED"
-
-        val isRunning : AtomicBoolean = AtomicBoolean(false)
+        // --------- static, stateless constants, enums, tags and helper functions --------------------------------------------------------------------------------
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
+        private val PROTOBUF_HANDSHAKE_TIMEOUT: kotlin.time.Duration = 30_000.milliseconds       // 30 s
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         const private val KEYSTORE_PASS = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
-        var isNetworkConnected = false
-        var isWifiConnected = false
-        var isAnyTakConnected : Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
-        val isAnyTakConnectedLiveData = MutableLiveData<Boolean>(false)
-        val context: Context = mainActivity.applicationContext
-
-        var isAnyTakConnecting : Boolean = false // Overall flag indicating if connection is being made to any TAK server
-        val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
-
-        var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
-
-        var newServerAddedViaUi = false
-        val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
-
-        private enum class HandshakeState { PENDING_V, SENT_Q, ENABLED, DISABLED }
-        private const val PROTOBUF_HANDSHAKE_TIMEOUT_MS = 20_000L      // 20 s
-        private fun nowMillis() = System.currentTimeMillis()
-        private val connecting = AtomicBoolean(false)
-
-        private val TAK_CONNECT_SERVICE = TAKConnectService()
-        public fun getInstance() : TAKConnectService {
-            return TAK_CONNECT_SERVICE
-        }
-
-        /**
-         * Keeps at most ONE ongoing connect attempt per TAK host:port.
-         */
-        object ConnectGuards {
-            private val map = ConcurrentHashMap<String, AtomicBoolean>()
-
-            /** Returns `true` if we successfully claimed the guard, `false` if another
-            coroutine is already connecting to the same endpoint.            */
-            fun tryClaim(host: String, port: Int): Boolean =
-                map.computeIfAbsent("$host:$port") { AtomicBoolean(false) }
-                    .compareAndSet(false, true)
-
-            /** Releases the guard when connect attempt finishes (success or fail). */
-            fun release(host: String, port: Int) {
-                map["$host:$port"]?.set(false)
-            }
-        }
-
-        private fun setIsAnyNetworkConnecting() {
-            var anyTakConnecting = false
-            for (takServerDetail in takServerDetails) {
-                if (takServerDetail.isEnabled) {
-                    val connectionStatus = takServerDetail.connectionStatus.get()
-                    if ((TAK_SERVER_OBTAINING_CLIENT_CERT == connectionStatus) ||
-                        (TAK_SERVER_OBTAINED_CLIENT_CERT == connectionStatus) ||
-                        (TAK_SERVER_CONNECTING_COT_PORT == connectionStatus)) {
-                        anyTakConnecting = true
-                        break
-                    }
-                }
-            }
-            isAnyTakConnecting = anyTakConnecting
-            isAnyTakConnectingLiveData.postValue(anyTakConnecting)
-            requestTakServerComplicationUpdate(context)
-            //Log.d(TAG, "setIsAnyNetworkConnecting: $isAnyTakConnecting")
-        }
-
-        private fun generateBase64CSR(nameValueList: MutableList<NameValueEntry>, takServerDetail: TakServerDetail): String? {
+        // The states TAK_SERVER_OBTAINING_CLIENT_CERT, TAK_SERVER_OBTAINED_CLIENT_CERT, TAK_SERVER_CONNECTING_COT_PORT
+        // are part of the "CONNECTING" phase as far as the UI is concerned.
+        const val TAK_SERVER_DISCONNECTED_STRING = "DISCONNECTED"; const val TAK_SERVER_DISCONNECTED = 0
+        const val TAK_SERVER_CONNECTING_STRING = "CONNECTING"; const val TAK_SERVER_OBTAINING_CLIENT_CERT = 1 ;const val TAK_SERVER_OBTAINED_CLIENT_CERT = 2; const val TAK_SERVER_CONNECTING_COT_PORT = 3
+        const val TAK_SERVER_CONNECTED_STRING = "CONNECTED"; const val TAK_SERVER_CONNECTED_COT_PORT = 4
+        const val TAK_SERVER_CONNECTION_FAILED_STRING = "CONNECTION_FAILED"; const val TAK_SERVER_CONNECTION_FAILED = 5
+        private fun generateBase64CSR(
+            nameValueList: MutableList<NameValueEntry>, takServerDetail: TakServerDetail
+        ): String? {
             val cnName = takServerDetail.username
             var base64CSR: String? = null
             try {
@@ -634,146 +609,11 @@ class TAKConnectService: Service() {
             }
             return base64CSR
         }
-
-        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry>? {
-            val takServer = takServerDetail.address
-            val username = takServerDetail.username
-            val password = takServerDetail.password
-            val nameValueList : MutableList<NameValueEntry> = mutableListOf()
-
-            val url = "https://$takServer:8446/Marti/api/tls/config"
-            val client = OkHttpClient()
-
-            // Basic Authentication
-            val credential = Credentials.basic(username, password)
-
-            try {
-                val request = Request.Builder()
-                    .url(url)
-                    .header("Authorization", credential)
-                    .get()
-                    .build()
-
-                Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
-                        return nameValueList
-                    }
-
-                    val responseBody = response.body?.string()
-                    if (null == responseBody) {
-                        Log.e(TAG, "ERROR fetch certification config response is null")
-                        return nameValueList
-                    } else {
-                        Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
-                    }
-
-                    // Parse XML response
-                    val document = parseXml(responseBody)
-                    val nameEntries = document.getElementsByTagName("nameEntry")
-                    for (i in 0 until nameEntries.length) {
-                        val element = nameEntries.item(i) as? org.w3c.dom.Element
-                        val name = element?.getAttribute("name")
-                        val value = element?.getAttribute("value")
-                        if ((null !=name) && (null != value)) {
-                                nameValueList.add(NameValueEntry(name, value))
-                            }
-                    }
-
-                    Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
-                    return nameValueList
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
-                return null
-            } catch (e: IllegalArgumentException) {
-                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
-                return null
-            }
-            return nameValueList
-        }
-
         fun parseXml(xml: String): Document {
             val factory = DocumentBuilderFactory.newInstance()
             val builder = factory.newDocumentBuilder()
             val inputSource = InputSource(StringReader(xml))
             return builder.parse(inputSource)
-        }
-
-        // Returns null on ERROR else response body as String
-        private fun postCsrAndGetResponse(takServer: String, username: String, password: String, base64CSR: String): String? {
-            try {
-                var versionName: String? = null
-                try {
-                    val pInfo: PackageInfo = MainActivity.mainActivity.getPackageManager()
-                        .getPackageInfo(MainActivity.mainActivity.getPackageName(), 0)
-                    versionName = pInfo.versionName
-                } catch (e: PackageManager.NameNotFoundException) {
-                    Log.w(TAG, "postCsrAndGetResponse: Cannot get versionName")
-                }
-                var versionInfo = ""
-                if (null != versionName) {
-                    versionInfo = "+v$versionName"
-                }
-                val urlString = "https://$takServer:8446/Marti/api/tls/signClient/v2?clientUid=${MainActivity.device_uid}&version=WearTAK-Civ$versionInfo"
-
-                Log.d(TAG, "postCsrAndGetResponse CSR request: ($urlString)")
-
-                // Build OkHttpClient
-                val client = OkHttpClient()
-
-                // Basic Auth header
-                val credential = Credentials.basic(username, password)
-
-                // Prepare the request body (text/plain)
-                val body: RequestBody =
-                    RequestBody.create("text/plain; charset=utf-8".toMediaTypeOrNull(), base64CSR)
-
-                // Build the request
-                val request: Request = Request.Builder()
-                    .url(urlString)
-                    .header("Authorization", credential)
-                    .header("Content-Type", "text/plain")
-                    .post(body)
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "ERROR CSR response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
-                        return null
-                    }
-                    val responseBodyString = response.body?.string()
-                    Log.d(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
-                    // Return the response body as string
-                    return responseBodyString
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "postCsrAndGetResponse ERROR: ${e.message}", e)
-            }
-            return null
-        }
-
-        fun postCsrAndParse(takServerDetail: TakServerDetail, base64CSR: String): SignClientResponse? {
-            val takServer = takServerDetail.address
-            val username = takServerDetail.username
-            val password = takServerDetail.password
-
-            var result: SignClientResponse? = null
-
-            val csrResponse = postCsrAndGetResponse(takServer, username, password, base64CSR)
-            if (null != csrResponse) {
-                try {
-                    val mapper = ObjectMapper()
-                    result = mapper.readValue(csrResponse, SignClientResponse::class.java)
-                    println("signedCert: " + result.signedCert)
-                    println("ca0: " + result.ca0)
-                    println("ca1: " + result.ca1)
-                } catch (e: Exception) {
-                    Log.e(TAG, "postCsrAndParse: could not parse response", e)
-                }
-            }
-            return result
         }
         fun isCertExpiringSoon(expiryDate: Date): Boolean {
             val now = Date()
@@ -781,7 +621,6 @@ class TAKConnectService: Service() {
             val diffInDays = TimeUnit.MILLISECONDS.toDays(diffInMillis)
             return diffInDays < 3
         }
-
         fun deleteFile(fileName: String) {
             try {
                 if (MainActivity.mainActivity.deleteFile(fileName)) {
@@ -789,12 +628,11 @@ class TAKConnectService: Service() {
                 } else {
                     Log.w(TAG, "Could not remove $fileName")
                 }
-            } catch(e: Exception) {
+            } catch (e: Exception) {
                 Log.e(TAG, "ERROR in deleteFile: ${e.message}", e)
             }
         }
-
-        fun loadKeyStore(keyStore : KeyStore, fileName: String, password: String): Boolean {
+        fun loadKeyStore(keyStore: KeyStore, fileName: String, password: String): Boolean {
             return runBlocking {
                 try {
                     MainActivity.mainActivity.openFileInput(fileName).use { fis ->
@@ -806,12 +644,12 @@ class TAKConnectService: Service() {
                         // The first certificate in the chain is the user's certificate (signedCert)
                         val signedCert = chain[0] as X509Certificate
 
-                        val signedCertExpiry : Date = signedCert.getNotAfter()
+                        val signedCertExpiry: Date = signedCert.getNotAfter()
                         if (isCertExpiringSoon(signedCertExpiry)) {
-                            Log.w(TAG, "Certificate is expiring soon ($signedCertExpiry). Getting new certificate")
+//                            Log.w(TAG, "Certificate is expiring soon ($signedCertExpiry). Getting new certificate")
                             return@runBlocking false
                         } else {
-                            Log.v(TAG, "Certificate is NOT expiring soon ($signedCertExpiry)")
+                            Log.v(TAG, "... Certificate is NOT expiring soon ($signedCertExpiry)")
                         }
                     } else {
                         Log.e(TAG, "No certificate chain found for alias: $KEY_ALIAS")
@@ -824,8 +662,9 @@ class TAKConnectService: Service() {
                 return@runBlocking true
             }
         }
-
-        fun setKeystore(takServerDetail: TakServerDetail, signClientResponse: SignClientResponse): Boolean {
+        fun setKeystore(
+            takServerDetail: TakServerDetail, signClientResponse: SignClientResponse
+        ): Boolean {
             val takServer = takServerDetail.address
             var retVal = true
 
@@ -872,7 +711,6 @@ class TAKConnectService: Service() {
             }
             return retVal
         }
-
         @Throws(java.lang.Exception::class)
         private fun parseBase64ToX509(base64Cert: String): X509Certificate {
             // Remove newlines if present
@@ -884,8 +722,6 @@ class TAKConnectService: Service() {
                 return cf.generateCertificate(`in`) as X509Certificate
             }
         }
-
-
         fun base64ToInputStream(encodedString: String?): InputStream? {
             var inputStream: InputStream? = null
             if (null == encodedString) {
@@ -902,18 +738,17 @@ class TAKConnectService: Service() {
             }
             return inputStream
         }
-
-        private fun checkIssuerEqualsSubject(cert1: X509Certificate, cert2: X509Certificate): Boolean {
+        private fun checkIssuerEqualsSubject(
+            cert1: X509Certificate, cert2: X509Certificate
+        ): Boolean {
             return cert1.issuerX500Principal == cert2.subjectX500Principal
         }
-
         fun requestTakServerComplicationUpdate(context: Context) {
             val componentName = ComponentName(context, TakServerComplicationService::class.java)
 
             val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
             requester.requestUpdateAll()
         }
-
         /*
         private fun sendTakConnectionStatusEvent(connStatus: Int) {
             if (CONNECTING == connStatus) {
@@ -946,13 +781,197 @@ class TAKConnectService: Service() {
 
          */
 
-        fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
-            // avoid multiple socket connections on same server. Permit multiple sockets to different servers.
-            if (!ConnectGuards.tryClaim(takServerDetail.address, takServerDetail.port)) {
-                Log.d(TAG, "Connect already in progress to ${takServerDetail.address}:${takServerDetail.port}")
-                return
+        fun replaceQuotedStringAfterSubstring(input: String, substring: String, replacement: String): String {
+            val regex = Regex("$substring='(.*?)'")
+            return input.replace(regex, "$substring='$replacement'")
+        }
+        fun getQuotedStringAfterSubstring(text: String, substring: String): String? {
+            val startIndex = text.indexOf("$substring='")
+            if (startIndex == -1) {
+                return null
             }
-            Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
+
+            val valueStartIndex = startIndex + "$substring='".length
+            val endIndex = text.indexOf("'", valueStartIndex)
+            if (endIndex == -1) {
+                return null
+            }
+
+            return text.substring(valueStartIndex, endIndex)
+        }
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        //  --------- StateFULL move out of companion object!!!! -----------------------------------------------------------------------------------------------------
+        private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val cotScope     = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val chatScope    = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val protoScope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        val context: Context = mainActivity.applicationContext
+        private val TAK_CONNECT_SERVICE = TAKConnectService()
+
+        val isRunning: AtomicBoolean = AtomicBoolean(false)
+        var isNetworkConnected = false
+        var isWifiConnected = false
+        var isAnyTakConnected: Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
+        val isAnyTakConnectedLiveData = MutableLiveData<Boolean>(false)
+        var isAnyTakConnecting: Boolean = false // Overall flag indicating if connection is being made to any TAK server
+        val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
+        var newServerAddedViaUi = false
+        val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
+        var takServerDetails: MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
+        private var useProtobuf: Boolean = false
+        private var enableChatService: Boolean = false
+        //private val takProtocol = TakProtocol()
+        private val chatCotXml = MutableSharedFlow<String>(replay = 0)
+
+        public fun getInstance(): TAKConnectService {
+            return TAK_CONNECT_SERVICE
+        }
+        private fun setIsAnyNetworkConnecting() {
+            var anyTakConnecting = false
+            for (takServerDetail in takServerDetails) {
+                if (takServerDetail.isEnabled) {
+                    val connectionStatus = takServerDetail.connectionStatus.get()
+                    if ((TAK_SERVER_OBTAINING_CLIENT_CERT == connectionStatus) || (TAK_SERVER_OBTAINED_CLIENT_CERT == connectionStatus) || (TAK_SERVER_CONNECTING_COT_PORT == connectionStatus)) {
+                        anyTakConnecting = true
+                        break
+                    }
+                }
+            }
+            isAnyTakConnecting = anyTakConnecting
+            isAnyTakConnectingLiveData.postValue(anyTakConnecting)
+            requestTakServerComplicationUpdate(context)
+            //Log.d(TAG, "setIsAnyNetworkConnecting: $isAnyTakConnecting")
+        }
+        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry>? {
+            val takServer = takServerDetail.address
+            val username = takServerDetail.username
+            val password = takServerDetail.password
+            val nameValueList: MutableList<NameValueEntry> = mutableListOf()
+
+            val url = "https://$takServer:8446/Marti/api/tls/config"
+            val client = OkHttpClient()
+
+            // Basic Authentication
+            val credential = Credentials.basic(username, password)
+
+            try {
+                val request = Request.Builder().url(url).header("Authorization", credential).get().build()
+
+                Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
+                        return nameValueList
+                    }
+
+                    val responseBody = response.body?.string()
+                    if (null == responseBody) {
+                        Log.e(TAG, "ERROR fetch certification config response is null")
+                        return nameValueList
+                    } else {
+                        Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
+                    }
+
+                    // Parse XML response
+                    val document = parseXml(responseBody)
+                    val nameEntries = document.getElementsByTagName("nameEntry")
+                    for (i in 0 until nameEntries.length) {
+                        val element = nameEntries.item(i) as? org.w3c.dom.Element
+                        val name = element?.getAttribute("name")
+                        val value = element?.getAttribute("value")
+                        if ((null != name) && (null != value)) {
+                            nameValueList.add(NameValueEntry(name, value))
+                        }
+                    }
+
+                    Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
+                    return nameValueList
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
+            }
+            return nameValueList
+        }
+        // Returns null on ERROR else response body as String
+        private fun postCsrAndGetResponse(
+            takServer: String, username: String, password: String, base64CSR: String
+        ): String? {
+            try {
+                var versionName: String? = null
+                try {
+                    val pInfo: PackageInfo = MainActivity.mainActivity.getPackageManager().getPackageInfo(MainActivity.mainActivity.getPackageName(), 0)
+                    versionName = pInfo.versionName
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "postCsrAndGetResponse: Cannot get versionName")
+                }
+                var versionInfo = ""
+                if (null != versionName) {
+                    versionInfo = "+v$versionName"
+                }
+                val urlString = "https://$takServer:8446/Marti/api/tls/signClient/v2?clientUid=${MainActivity.device_uid}&version=WearTAK-Civ$versionInfo"
+
+                Log.d(TAG, "postCsrAndGetResponse CSR request: ($urlString)")
+
+                // Build OkHttpClient
+                val client = OkHttpClient()
+
+                // Basic Auth header
+                val credential = Credentials.basic(username, password)
+
+                // Prepare the request body (text/plain)
+                val body: RequestBody = RequestBody.create("text/plain; charset=utf-8".toMediaTypeOrNull(), base64CSR)
+
+                // Build the request
+                val request: Request = Request.Builder().url(urlString).header("Authorization", credential).header("Content-Type", "text/plain").post(body).build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "ERROR CSR response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
+                        return null
+                    }
+                    val responseBodyString = response.body?.string()
+                    Log.d(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
+                    // Return the response body as string
+                    return responseBodyString
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "postCsrAndGetResponse ERROR: ${e.message}", e)
+            }
+            return null
+        }
+
+        fun postCsrAndParse(
+            takServerDetail: TakServerDetail, base64CSR: String
+        ): SignClientResponse? {
+            val takServer = takServerDetail.address
+            val username = takServerDetail.username
+            val password = takServerDetail.password
+
+            var result: SignClientResponse? = null
+
+            val csrResponse = postCsrAndGetResponse(takServer, username, password, base64CSR)
+            if (null != csrResponse) {
+                try {
+                    val mapper = ObjectMapper()
+                    result = mapper.readValue(csrResponse, SignClientResponse::class.java)
+                    println("signedCert: " + result.signedCert)
+                    println("ca0: " + result.ca0)
+                    println("ca1: " + result.ca1)
+                } catch (e: Exception) {
+                    Log.e(TAG, "postCsrAndParse: could not parse response", e)
+                }
+            }
+            return result
+        }
+
+        fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
+//            Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             if (isNetworkConnected) {
@@ -960,13 +979,12 @@ class TAKConnectService: Service() {
                     return
                 }
                 takServerDetail.numConnAttempts++
-                CoroutineScope(Dispatchers.IO).launch {
-                    val secureSocket = takServerDetail.secureSocket
-                    if ((null != secureSocket) && ((secureSocket?.isClosed ?: true) == false)) {
-                        // TODO: check logic above
-                        Log.d(TAG, "Closing socket for takServer ${takServerDetail.address}")
-                        secureSocket?.close()
-
+                serviceScope.launch {
+                    takServerDetail.secureSocket?.let { socket ->
+                        if (!socket.isClosed) {
+                            Log.d(TAG, "Closing socket for takServer ${takServerDetail.name}")
+                            socket.close()
+                        }
                     }
                     isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
                     takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)
@@ -974,17 +992,22 @@ class TAKConnectService: Service() {
                     requestTakServerComplicationUpdate(context)
 
                     if (takServerDetail.isP12Cert) {
-                        Log.d(TAG, "isP12Cert true")
+                        Log.d(TAG, "Using P12Cert for ${takServerDetail.name} ...")
                         //takServerDetail.keyStore = KeyStore.getInstance("PKCS12")
                         val inputStream = base64ToInputStream(takServerDetail.p12Cert)
                         if (null != inputStream) {
                             try {
-                                takServerDetail.keyStore.load(inputStream, takServerDetail.p12CertPassword?.toCharArray() ?: "".toCharArray())
+                                takServerDetail.keyStore.load(
+                                    inputStream, takServerDetail.p12CertPassword?.toCharArray()
+                                        ?: "".toCharArray()
+                                )
                                 takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                                 connectTAKServer(takServerDetail)
+                                Log.i(TAG, String.format("Obtained client certificate from keystore loading!"))
                             } catch (e: Exception) {
-                                Log.e(TAG, "ERROR getClientCertificateAndConnect: Cannot load p12Cert for takServer ${takServerDetail.address}: ${e.message}", e)
+                                Log.e(TAG, String.format("Error loading p12Cert from keystore for TakServer Name: %-20s Address: %-20s \n ERROR: ${e.message}", takServerDetail.name, takServerDetail.address), e)
+
                                 takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
                                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
                                 setIsAnyNetworkConnected()
@@ -993,8 +1016,6 @@ class TAKConnectService: Service() {
                                     newServerAddedViaUi = false
                                     newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
                                 }
-                            } finally {
-                                ConnectGuards.release(takServerDetail.address, takServerDetail.port)
                             }
                         } else {
                             Log.e(TAG, "ERROR getClientCertificateAndConnect: Cannot parse p12Cert for takServer ${takServerDetail.address}")
@@ -1009,7 +1030,8 @@ class TAKConnectService: Service() {
                         }
                     } else {
                         if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", KEYSTORE_PASS)) {
-                            Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
+//                            Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
+                            Log.i(TAG, String.format("... Successfully loaded Client Certificate from File: ${takServerDetail.address}.jks!"))
                             takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                             connectTAKServer(takServerDetail)
@@ -1020,7 +1042,7 @@ class TAKConnectService: Service() {
                             var signClientResponse: SignClientResponse? = null
                             var base64CSR: String? = null
                             if (null != nameValueList) {
-                               base64CSR = generateBase64CSR(nameValueList, takServerDetail)
+                                base64CSR = generateBase64CSR(nameValueList, takServerDetail)
                             }
                             if (null != base64CSR) {
                                 //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
@@ -1077,23 +1099,30 @@ class TAKConnectService: Service() {
                 }
             }
         }
-        
+
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             val takServer = takServerDetail.address
             val port = takServerDetail.port
-            Log.d(TAG,"connectTAKServer called for takServer ($takServer)")
+            Log.i(TAG, String.format("... Connecting to TakServer - Name: %-20s Address: %-20s Port: %-5s ...", takServerDetail.name, takServerDetail.address, takServerDetail.port))
+//            Log.d(TAG, "connectTAKServer called for takServer ($takServer)")
             if (takServerDetail.connectionStatus.getAndSet(TAK_SERVER_CONNECTING_COT_PORT) == TAK_SERVER_OBTAINED_CLIENT_CERT) {
                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                 try {
                     // Initialize the KeyManagerFactory with the client certificate
                     val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
                     if (takServerDetail.isP12Cert) {
-                        keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
+                        keyManagerFactory.init(
+                            takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()
+                                ?: "".toCharArray()
+                        )
+                        Log.i(TAG, "... Using P12 Cert ... ")
                     } else {
                         keyManagerFactory.init(takServerDetail.keyStore, KEYSTORE_PASS.toCharArray())
+                        Log.i(TAG, "... NOT Using P12 Cert ... ")
                     }
 
                     // Initialize SSL Context with TrustManager
+                    Log.i(TAG, "... Build the SSL Context ... ")
                     val sslContext = SSLContext.getInstance("TLSv1.3")
                     val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
                     trustManagerFactory.init(takServerDetail.keyStore)
@@ -1102,15 +1131,15 @@ class TAKConnectService: Service() {
                     if (null != trustManager) {
                         sslContext.init(keyManagerFactory.keyManagers, arrayOf(trustManager), null)
                     } else {
-                        Log.e(TAG, "trustManager is null")
-                        throw Exception("X509TrustManager is NULL. Cannot connect to ${takServerDetail.name}.")
+                        Log.e(TAG, "... trustManager is null")
+                        throw Exception("... ... X509TrustManager is NULL. Cannot connect to ${takServerDetail.name}.")
                     }
 
-                    Log.d(TAG, "Going to createSocket and startHandshake")
                     // Create the socket and connect
+                    Log.i(TAG, "... Creating Socket and Initiating SSL HandShake ... ")
                     val socketFactory = sslContext.socketFactory
                     takServerDetail.secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket
-                    Log.d(TAG, "Starting secureSocket handshake")
+//                    Log.d(TAG, "Starting secureSocket handshake")
                     takServerDetail.secureSocket?.startHandshake()
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
@@ -1120,98 +1149,56 @@ class TAKConnectService: Service() {
                     // Reset counters for connection attempts
                     takServerDetail.numConnAttempts = 0
                     setIsAnyNetworkConnecting()
-                    Log.d(TAG, "Successfully connected to $takServer on port $port")
+                    Log.i(TAG, "... Successfully connected to $takServer!!!")
+                    Log.i(TAG, "... Protobuf enabled is: $useProtobuf ")
+
                     if (newServerAddedViaUi) {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
+                        Log.i(TAG, "... Connection was triggered by adding server through the UI --> Notifying the UI we are connected!")
                     }
 
-                    // Handle CoT XML from the socket for:
-                    //      ① Protobuf Handshake Initiation from Server
-                    //      ② TAK Chat Messages
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
-                        val buffer = StringBuilder()
+                    serviceScope.launch {
+                        takServerDetail.cotListenerJob?.cancelAndJoin()
+                    }
 
-                        var handshakeState = HandshakeState.PENDING_V
-                        var handshakeStartMillis = System.currentTimeMillis()
-                        var protobufVersion = 1
-                        var protobufUid = ""
+                    takServerDetail.cotListenerJob  = cotScope.launch {
+                        Log.i(TAG, String.format("... Listening to messages over the socket for - Name: %-20s Address: %-20s Port: %-5s ...", takServerDetail.name, takServerDetail.address, takServerDetail.port))
+                        val reader  = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
+                        val buffer  = StringBuilder()
 
                         try {
-                            while (isActive) {               // auto-stops when parent scope is cancelled
+                            while (true) {
                                 val line = reader.readLine() ?: break
                                 buffer.append(line)
 
-                                val bufStr = buffer.toString()
-                                val endIdx = bufStr.indexOf("</event>")
-                                if (endIdx < 0) continue
+                                val endIdx = buffer.indexOf("</event>")
+                                if (endIdx < 0) continue          // wait for a full XML blob
 
-                                val rawXml = bufStr.substring(0, endIdx + "</event>".length)
+                                val rawXml = buffer.substring(0, endIdx + "</event>".length)
                                 buffer.delete(0, endIdx + "</event>".length)
 
-                                /* ---------- ①  PROTOBUF HANDSHAKE RECEIVER & EXECUTOR ----------- */
-                                when (handshakeState) {
-                                    HandshakeState.PENDING_V -> {
-                                        if (CotUtils.isTakProtocolAdvert(rawXml)) {
-                                            protobufUid = CotUtils.extractUid(rawXml)
-                                            protobufVersion = CotUtils.extractTakProtocolVersion(rawXml) ?: 1
-
-                                            // ❶ stop all *outgoing* XML immediately
-                                            dataRepository.setCanSendCotXml(false)
-
-                                            // ❷ build & send <t-x-takp-q>
-                                            val qXml = CotUtils.buildTakpQuery(protobufUid, protobufVersion)
-                                            CotUtils.sendCot(qXml, takServerDetail.secureSocket!!)
-                                            Log.i(TAG, "Sent TAKP-Q (v=$protobufVersion uid=$protobufUid)")
-                                            handshakeState       = HandshakeState.SENT_Q
-                                            handshakeStartMillis = System.currentTimeMillis()
-                                        } else if (nowMillis() - handshakeStartMillis > PROTOBUF_HANDSHAKE_TIMEOUT_MS) {
-                                            handshakeState = HandshakeState.DISABLED
-                                            dataRepository.setUseProtobuf(false)
-                                        }
-                                    }
-
-                                    HandshakeState.SENT_Q -> {
-                                        if (CotUtils.isTakProtocolResponse(rawXml, protobufUid)) {
-                                            val accepted = CotUtils.extractTakProtocolStatus(rawXml)
-                                            if (accepted) {
-                                                handshakeState = HandshakeState.ENABLED
-                                                dataRepository.setUseProtobuf(true)  // ← cotDispatchService PLI will switch to binary when this flag flips
-                                                Log.i(TAG, "Protobuf ENABLED")
-                                            } else {
-                                                handshakeState = HandshakeState.DISABLED
-                                                dataRepository.setUseProtobuf(false)
-                                            }
-                                            // ❸ re-open XML pipe when negotiation finished
-                                            dataRepository.setCanSendCotXml(true)
-                                        } else if (nowMillis() - handshakeStartMillis > PROTOBUF_HANDSHAKE_TIMEOUT_MS) {
-                                            Log.w(TAG, "No TAKP-R within 60 s – disconnect & retry")
-                                            takServerDetail.secureSocket?.close()
-                                            return@launch                                     // reader ends – caller’s reconnect logic kicks in
-                                        }
-                                    }
-                                    else -> Unit   // ENABLED / DISABLED – no further handshake logic
+                                /*  ─────────────  PROTOBUF STATE MACHINE  ─────────────  */
+                                if (takServerDetail.takProtocol.isHandshakeCot(rawXml)) {
+                                    Log.i(TAG, String.format("... PROTOBUF HANDSHAKE MSG RCVD FROM: %-20s at: %-20s ... \n... ... ${rawXml}", takServerDetail.name, takServerDetail.address))
+                                    takServerDetail.takProtocol.process(HEvent.XmlReceived(rawXml), takServerDetail)
+                                    continue      // handshake COTs never enter chat filter
                                 }
 
-                                /* ---------- ②  CHAT SERVICE RECEIVER ----------- */
-                                if (CotUtils.isChatMessage(rawXml)
-                                    && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)
+                                /*  ─────────────  CHAT MSG RCVR & FILTER  ────────────  */
+                                if (enableChatService &&
+                                    CotUtils.isChatMessage(rawXml) &&
+                                    CotUtils.isChatForMe(rawXml, MainActivity.device_uid)
                                 ) {
-                                    EventBus.getDefault().post(TakChatEvent(rawXml))
+                                    Log.i(TAG, String.format("... CHAT MSG RCVD FROM: %-20s at: %-20s ... \n ${rawXml}", takServerDetail.name, takServerDetail.address))
+                                    chatCotXml.emit(rawXml)       // completely separate flow
                                 }
                             }
-                        } catch (e: SocketException) {
-                            if (e.message == "Socket closed") {
-                                Log.d(TAG, "Reader stopped – socket already closed by client/OS")
-                            } else {
-                                Log.e(TAG, "Reader failed unexpectedly", e)
-                            }
-                        } finally {
-                            reader.close()
+                        } catch (e: IOException) {
+                            Log.w(TAG, "Cot Reader loop on ${takServerDetail.name} ended: ${e.message}")
                         }
+                        // TODO: Read Protobuf Cot Messages?
                     }
-
                 } catch (e: Exception) {
                     //sendTakConnectionStatusEvent(CONNECTION_FAILURE)
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
@@ -1253,53 +1240,20 @@ class TAKConnectService: Service() {
         }
 
         private fun writePayload(
-            detail: TakServerDetail,
-            bytes: ByteArray,
-            isNotPli: Boolean,
-            now: Long
+            takServerDetail: TakServerDetail, payload: ByteArray, isNotPli: Boolean, currTime: Long
         ) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val sock = detail.secureSocket
-                    if (sock != null && sock.isConnected) {
-                        sock.getOutputStream().use { it.write(bytes); it.flush() }
-
-                        if (!isNotPli) {
-                            detail.lastTimeMsgSent = max(
-                                now,
-                                detail.lastTimeMsgSent +
-                                        detail.currReportingUpdateInterval * 1_000L
-                            )
-                        }
-
-                        Log.i(TAG, "Sent ${bytes.size} B to ${detail.address}")
-                    } else {
-                        reconnectToTak(detail, "socket null / not connected")
-                    }
-                } catch (e: IOException) {
-                    reconnectToTak(detail, e.message ?: "IO error", e)
-                } catch (e: Exception) {
-                    reconnectToTak(detail, e.message ?: "generic error", e)
-                }
-            }
-        }
-
-/*
-        fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
-            //Log.d(TAG, "sendData called")
-            CoroutineScope(Dispatchers.IO).launch {
+            serviceScope.launch {
                 try {
                     if ((null != takServerDetail.secureSocket) && (takServerDetail.secureSocket?.isConnected == true)) {
                         val outputStream = takServerDetail.secureSocket!!.getOutputStream()
-                        outputStream.write(msg.toByteArray(charset("UTF-8")))
+                        outputStream.write(payload)
                         outputStream.flush()
                         //Log.d(TAG, "Sent data to ${takServerDetail.address}: $msg")
                         if (!isNotPli) {
-                            takServerDetail.lastTimeMsgSent = max(currTime, takServerDetail.lastTimeMsgSent + takServerDetail.currReportingUpdateInterval*1000L)
+                            takServerDetail.lastTimeMsgSent = max(currTime, takServerDetail.lastTimeMsgSent + takServerDetail.currReportingUpdateInterval * 1000L)
 
                             //Log.d(TAG, "sendData: sent PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
-                        }
-                        /* else {
+                        }/* else {
                             Log.d(TAG, "sendData: sent non-PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
                         } */
                     } else {
@@ -1336,116 +1290,336 @@ class TAKConnectService: Service() {
                 }
             }
         }
-*/
+
+        fun sendData(
+            takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long
+        ) {
+            //Log.d(TAG, "sendData called")
+            try {
+                writePayload(takServerDetail, msg.toByteArray(charset("UTF-8")), isNotPli, currTime)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error writing String msg payload to server")
+            }
+        }
+
         /**
          * Raw-bytes variant of sendData().
          */
-
-        /* CoT XML String */
-        private fun sendData(
-            detail: TakServerDetail,
-            msg: String,
-            isNotPli: Boolean,
-            now: Long
-        ) = writePayload(detail, msg.toByteArray(Charsets.UTF_8), isNotPli, now)
-
-        /* Protobuf Raw bytes */
-        private fun sendData(
-            detail: TakServerDetail,
-            bytes: ByteArray,
-            isNotPli: Boolean,
-            now: Long
-        ) = writePayload(detail, bytes, isNotPli, now)
-
-        /** Mini helper so both catch blocks stay DRY */
-        private fun reconnectToTak(detail: TakServerDetail, reason: String, ex: Exception? = null) {
-            Log.e(TAG, "Error sending bytes to ${detail.address}: $reason", ex)
-            if (detail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                detail.secureSocket?.close()
-                detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
-                detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
-                setIsAnyNetworkConnected()
-                setIsAnyNetworkConnecting()
-                getClientCertificateAndConnect(detail)
-            }
-        }
-
-        fun replaceQuotedStringAfterSubstring(input: String, substring: String, replacement: String): String {
-            val regex = Regex("$substring='(.*?)'")
-            return input.replace(regex, "$substring='$replacement'")
-        }
-
-        fun getQuotedStringAfterSubstring(text: String, substring: String): String? {
-            val startIndex = text.indexOf("$substring='")
-            if (startIndex == -1) {
-                return null
-            }
-
-            val valueStartIndex = startIndex + "$substring='".length
-            val endIndex = text.indexOf("'", valueStartIndex)
-            if (endIndex == -1) {
-                return null
-            }
-
-            return text.substring(valueStartIndex, endIndex)
-        }
-
-        /** Generic broadcaster – supply a payload builder per server. */
-        private inline fun broadcastToTakServers(
-            isNotPli: Boolean,
-            crossinline buildPayload: (TakServerDetail) -> ByteArray?
+        fun sendData(
+            takServerDetail: TakServerDetail, payload: ByteArray, isNotPli: Boolean, currTime: Long
         ) {
-            if (!isLicenseValid() || !isNetworkConnected) {
-                Log.d(TAG, "License invalid or network down – skipping send.")
-                return
-            }
-
-            val now = System.currentTimeMillis()
-
-            for (detail in takServerDetails) {
-                if (!detail.isEnabled ||
-                    detail.connectionStatus.get() == TAK_SERVER_OBTAINING_CLIENT_CERT
-                ) continue
-
-                val payload = buildPayload(detail) ?: continue
-
-                val okToSend =
-                    isNotPli ||
-                            detail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs ||
-                            ((now - detail.lastTimeMsgSent) * 1.2 >=
-                                    detail.currReportingUpdateInterval * 1_000.0)
-
-                if (okToSend) {
-                    sendData(detail, payload, isNotPli, now)
-                } else {
-                    Log.v(TAG, "Not okay to send to server for some reason. ")
-                }
+            try {
+                writePayload(takServerDetail, payload, isNotPli, currTime)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error writing String msg payload to server")
             }
         }
 
-        /* CoT XML */
-        fun sendDataTAKServers(msg: String, isNotPli: Boolean) =
-            broadcastToTakServers(isNotPli) { detail ->
-                var adjusted = msg
-                if (!isNotPli &&
-                    detail.reportingUpdateInterval != CotDispatchService.reportingUpdateIntervalSecs
-                ) {
-                    getQuotedStringAfterSubstring(msg, "start")?.let { start ->
-                        val sd = dateTimeFormatter.parse(start)
-                        Calendar.getInstance().apply {
-                            time = sd
-                            add(Calendar.SECOND, 3 * detail.currReportingUpdateInterval)
-                            adjusted = replaceQuotedStringAfterSubstring(
-                                msg, "stale", dateTimeFormatter.format(time)
-                            )
+        /**
+         * Proof-of-concept: identical looping logic but writes a raw ByteArray.
+         *
+         * ⚠️  Does **not** attempt “stale-time manipulation”; if you eventually need
+         *     that for protobuf, do it earlier when you build the message.
+         */
+        fun sendDataTAKServers(bytes: ByteArray, isNotPli: Boolean) {
+            if (isLicenseValid() && isNetworkConnected) {
+                val currTime = System.currentTimeMillis()
+
+                for (takServerDetail in takServerDetails) {
+                    if (takServerDetail.connectionStatus.get() == TAK_SERVER_OBTAINING_CLIENT_CERT) {
+                        Log.i(TAG, "Connecting to TAK server ${takServerDetail.address}. Skipping byte send.")
+                        continue
+                    }
+
+                    if (!takServerDetail.isEnabled) continue
+
+                    if (isNotPli) {
+                        // send immediately
+                        sendData(takServerDetail, bytes, isNotPli, currTime)
+                    } else {
+                        // keep the same interval logic, minus XML-editing
+                        if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
+                            sendData(takServerDetail, bytes, isNotPli, currTime)
+                            Log.i(TAG, "Sent Data to tak server")
+                        } else if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >= (takServerDetail.currReportingUpdateInterval * 1000.0)) {
+                            sendData(takServerDetail, bytes, isNotPli, currTime)
                         }
                     }
                 }
-                adjusted.toByteArray(Charsets.UTF_8)
+            } else {
+                Log.d(TAG, "License invalid or network down – not sending protobuf bytes.")
+            }
+        }
+
+        fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
+            if (isLicenseValid() && isNetworkConnected) {
+                val currTime = System.currentTimeMillis()
+                for (takServerDetail in takServerDetails) {
+                    if (TAK_SERVER_OBTAINING_CLIENT_CERT == takServerDetail.connectionStatus.get()) {
+                        Log.i(TAG, "Connecting to TAK server ${takServerDetail.address}. Hence not sending this message: $msg")
+                        continue
+                    }
+                    if (takServerDetail.isEnabled) {
+                        if (isNotPli) {
+                            // Send immediately
+                            sendData(takServerDetail, msg, isNotPli, currTime)
+                        } else {
+                            if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
+                                // TODO: What about wifi optimization?
+                                //Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
+                                sendData(takServerDetail, msg, isNotPli, currTime)
+                            } else {
+                                //Log.d(TAG, "currTime($currTime) - takServerDetail.lastTimeMsgSent(${takServerDetail.lastTimeMsgSent}) = ${(currTime - takServerDetail.lastTimeMsgSent)*1.2} >= ${(takServerDetail.currReportingUpdateInterval * 1000L)}")
+                                if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >= (takServerDetail.currReportingUpdateInterval * 1000.0)) {
+                                    //Log.d(TAG, "Going to send data after manipulating stale time")
+                                    var newMsg = msg
+                                    try {
+                                        val startTime = getQuotedStringAfterSubstring(msg, "start")
+                                        if (null != startTime) {
+                                            val startDateTime = dateTimeFormatter.parse(startTime)
+                                            val calendar: Calendar = Calendar.getInstance()
+                                            calendar.setTime(startDateTime)
+                                            calendar.add(Calendar.SECOND, 3 * takServerDetail.currReportingUpdateInterval)
+                                            val staleTime = dateTimeFormatter.format(calendar.time)
+                                            newMsg = replaceQuotedStringAfterSubstring(msg, "stale", staleTime)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "sendDataTAKServers stale time manipulation ERROR: ${e.message}", e)
+                                    }
+                                    sendData(takServerDetail, newMsg, isNotPli, currTime)
+                                }/* else {
+                                    Log.d(TAG, "Not sending data to ${takServerDetail.address}")
+                                } */
+                            }
+                        }
+                    }
+                }
+            } else {
+                Log.d(TAG, "License Invalid or network NOT connected: NOT sending any data")
+            }
+        }
+
+        fun initFlowCollection() {
+            chatScope.launch {
+                chatCotXml.collect { xml ->
+                    EventBus.getDefault().post(TakChatEvent(xml))
+                }
             }
 
-        /* protobuf Bytes */
-        fun sendDataTAKServers(bytes: ByteArray, isNotPli: Boolean) =
-            broadcastToTakServers(isNotPli) { bytes }   // passthrough
+            chatScope.launch {
+                dataRepository.getEnableChatService.collect { enabled ->
+                    enableChatService = enabled
+                    Log.i(TAG, "Detected Change in EnableChatService Flow. ChatService Enabled: $enabled")
+                }
+            }
+
+            protoScope.launch {
+                dataRepository.useProtobuf.collect { enabled ->
+                    useProtobuf = enabled
+//                    Log.i(TAG, "Detected Change in Protobuf Usage State! useProtobuf=$enabled")
+                }
+            }
+
+        }
+
+        private fun startTimeoutTimer(takServerDetail: TakServerDetail) {
+            takServerDetail.protoHsTimeoutJob?.cancel()
+            takServerDetail.protoHsTimeoutJob = cotScope.launch {
+                delay(PROTOBUF_HANDSHAKE_TIMEOUT)
+                takServerDetail.takProtocol.process(HEvent.Timeout, takServerDetail)
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+        /** All possible handshake states */
+        sealed interface HState {
+            data class AwaitSupport(val xml: String? = null) : HState
+            data class AwaitResponse(val attempt: Int, val xml: String? = null) : HState
+            data class ProtoBufEnabled(val xml: String? = null) : HState
+            object ProtoBufDisabled : HState
+        }
+
+        /** Everything that can happen *to* the machine */
+        sealed interface HEvent {
+            data class XmlReceived(val xml: String) : HEvent
+            object Timeout : HEvent
+            object SendRequest : HEvent
+            object Disconnect : HEvent
+        }
+
+        class TakProtocol {
+//            private var protobufUid: String?  = null
+//            private var protobufVersion: Int? = null
+            private val _state = MutableStateFlow<HState>(HState.AwaitSupport())
+            val state: StateFlow<HState> = _state.asStateFlow()
+            private val INSTANT_FMT = DateTimeFormatter.ISO_INSTANT
+            private val MAX_RETRIES = 3
+
+            suspend fun process(event: HEvent, takServerDetail: TakServerDetail) {
+                val cur = _state.value
+                val next = when (cur) {
+                    is HState.AwaitSupport -> when (event) {
+                        is HEvent.XmlReceived ->
+                            if (isSupportCot(event.xml)) {
+                                takServerDetail.protobufUid     = extractProtoUid(event.xml);
+                                takServerDetail.protobufVersion = extractProtoVers(event.xml);
+
+                                dataRepository.protobufUid.value = takServerDetail.protobufUid          // TODO: This only works for one server at a time. Need to fix if we have more than one server connection.
+                                dataRepository.protobufVers.value = takServerDetail.protobufVersion
+
+                                Log.i(TAG, "... ... Protobuf Handshake SUPPORT msg rcvd: \n... ... ... ${event.xml} \n... ... ... VERS: ${takServerDetail.protobufVersion}, UID: ${takServerDetail.protobufUid} \n ... ... Setting Protobuf Handshake State to [AwaitResponse]")
+                                HState.AwaitResponse(attempt = 1, event.xml)
+                            } else cur
+                        else -> cur
+                    }
+
+                    is HState.AwaitResponse -> when (event) {
+                        is HEvent.XmlReceived -> {
+                            if (takServerDetail.protobufUid?.let { isResponseCot(event.xml, it) } == true) {
+                                Log.i(TAG, "... ... Protobuf Handshake RESPONSE msg rcvd: ${event.xml}")
+                                if (protoEnabled(event.xml)) {
+                                    HState.ProtoBufEnabled(event.xml)
+                                } else if (cur.attempt >= MAX_RETRIES) {
+                                    HState.ProtoBufDisabled
+                                } else {
+                                    HState.AwaitResponse(cur.attempt + 1, event.xml)
+                                }
+                            } else {
+                                cur
+                            }
+//                            if (protoEnabled(event.xml)) {
+//                                HState.ProtoBufEnabled(event.xml)
+//                            } else if (cur.attempt >= MAX_RETRIES) {
+//                                HState.ProtoBufDisabled
+//                            } else {
+//                                HState.AwaitResponse(cur.attempt + 1, event.xml)
+//                            }
+                        }
+
+                        HEvent.Timeout -> {
+                            if (cur.attempt >= MAX_RETRIES) {
+                                HState.ProtoBufDisabled
+                            } else {
+                                HState.AwaitResponse(cur.attempt + 1, xml = null)
+                            }
+                        }
+                        else -> cur
+                    }
+                    else -> cur
+                }
+
+                if (next != _state.value) {
+                    _state.value = next
+                    onEnter(next, takServerDetail)
+                }
+            }
+
+            /* ---------------------------------------------------------- */
+            /* side-effects on state entry                                */
+            /* ---------------------------------------------------------- */
+
+            private suspend fun onEnter(s: HState, takServerDetail: TakServerDetail) = when (s) {
+                is HState.AwaitResponse -> {
+                    Log.i(TAG, "... ... Protobuf Handshake State → AwaitResponse (attempt ${s.attempt})")
+                    sendProtobufRequest(takServerDetail)   // will call process(HEvent.SendRequest) on completion
+                    startTimeoutTimer(takServerDetail)     // arm timeout
+                }
+
+                is HState.ProtoBufEnabled -> {
+                    dataRepository.setPauseCotDipstach(false)
+                    dataRepository.setUseProtobuf(true)
+                    Log.i(TAG, "... ... Protobuf Handshake State → ENABLED")
+                }
+
+                HState.ProtoBufDisabled -> {
+                    Log.i(TAG, "... ... Protobuf Handshake State → DISABLED")
+                    dataRepository.setPauseCotDipstach(false)
+                    dataRepository.setUseProtobuf(false)
+                }
+
+                else -> Unit
+            }
+
+            /* ---------------------------------------------------------- */
+            /* helpers                                                    */
+            /* ---------------------------------------------------------- */
+
+            private suspend fun sendProtobufRequest(takServerDetail: TakServerDetail) {
+                Log.i(TAG, "... ... Sending ProtobufRequest CoT to ${takServerDetail.name}")
+
+                dataRepository.setPauseCotDipstach(true)
+                dataRepository.setUseProtobuf(false)
+
+                val cot = buildRequestCot(takServerDetail.protobufUid, takServerDetail.protobufVersion)
+                sendDataTAKServers(cot, false)
+
+                process(HEvent.SendRequest, takServerDetail)         // notify FSM after send completes
+            }
+
+            /* ----  TAK-Protocol (XML) helpers  ---- */
+            private val uidRx = """<event[^>]*\buid=['"]([^'"]+)['"]""".toRegex()
+            private val supportRx = """<TakProtocolSupport[^>]*\bversion=['"](\d+)['"]""".toRegex()
+            private val requestRx = """<TakRequest[^>]*\bversion=['"](\d+)['"]""".toRegex()
+            private val responseRx = """<TakResponse[^>]*\bstatus=['"]([^'"]+)['"]""".toRegex()
+
+            fun isHandshakeCot(raw: String): Boolean =
+                raw.contains("type=\"t-x-takp-")
+
+            fun isSupportCot(raw: String): Boolean =
+                raw.contains("type=\"t-x-takp-v\"") && supportRx.containsMatchIn(raw)
+
+            fun isResponseCot(raw: String, uid: String): Boolean =
+                raw.contains("type=\"t-x-takp-r\"") && raw.contains("uid=\"$uid\"")
+
+            fun extractProtoUid(raw: String): String =
+                uidRx.find(raw)?.groupValues?.getOrNull(1) ?: ""
+
+            fun extractProtoVers(raw: String): Int? =
+                supportRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?: requestRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+            fun protoEnabled(raw: String): Boolean =
+                responseRx.find(raw)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
+
+            fun eventTimeNow(): String = INSTANT_FMT.format(Instant.now())
+
+            fun eventTimeStale(factor: Long = 3): String =
+                INSTANT_FMT.format(Instant.now().plusSeconds(currReportingIntervalInSecs * factor))
+
+            fun eventTimeStamps(factor: Long = 3): Pair<String, String> =
+                eventTimeNow().let { ts -> ts to eventTimeStale(factor) }
+
+            /* Build <t-x-takp-q> message for requesting a tak protocol version to server */
+            fun buildRequestCot(uid: String?, version: Int? = 1): String {
+                val (time, stale) = eventTimeStamps(30)
+                return """
+            <?xml version='1.0' encoding='UTF-8'?>
+            <event version='2.0' uid='$uid' type='t-x-takp-q' how='m-g'
+                   time='$time' start='$time' stale='$stale'>
+              <point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>
+              <detail>
+                <TakControl>
+                  <TakRequest version='$version'/>
+                </TakControl>
+              </detail>
+            </event>
+            """.trimIndent()
+            }
+
+            fun resetProtobuf(whereFrom: String) {
+                // we need to clear in memory prootbuf data from old socket. This way, the new socket will be primed to handle a new protobuf handshake.
+                val pro = dataRepository.useProtobuf.value
+                val cot = dataRepository.pauseCotDipstach.value
+                val uid = dataRepository.protobufUid.value
+                val vrs = dataRepository.protobufVers.value
+                Log.i(TAG, "... Resetting Protobuf Data from $whereFrom")
+                Log.i(TAG, "... ... Before Reset: useProtobuf =$pro | pauseCotDipstach =$cot | protobufUid =$uid protobufVers =$vrs")
+                dataRepository.setPauseCotDipstach(false)
+                dataRepository.setUseProtobuf(false)
+                dataRepository.protobufUid.value = ""
+                Log.i(TAG, "... ... After  Reset: useProtobuf =$pro | pauseCotDipstach =$cot | protobufUid =$uid protobufVers =$vrs")
+            }
+        }
     }
 }
+
