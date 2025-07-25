@@ -456,8 +456,8 @@ object Utils {
             physioData: CotDispatchService.PhysioData,
             takServerDetail: TAKConnectService.TakServerDetail
         ): ByteArray {
-            val pVer       = takServerDetail.protobufVersion ?: 1
-            val pUid       = takServerDetail.protobufUid ?: ""
+            val pVer       = takServerDetail.takProtocol?.protobufVersion ?: 1
+            val pUid       = takServerDetail.takProtocol?.protobufUid ?: ""
 
             val now = System.currentTimeMillis()
             val staleSec  = (3L * currReportingIntervalInSecs * 1_000).toLong()
@@ -549,6 +549,60 @@ object Utils {
                 if (v == 0) break
             }
             return out.toByteArray()
+        }
+
+        /* ----  TAK-Protocol (XML) Parsing helpers  ---- */
+        private val uidRx = """<event[^>]*\buid=['"]([^'"]+)['"]""".toRegex()
+        private val supportRx = """<TakProtocolSupport[^>]*\bversion=['"](\d+)['"]""".toRegex()
+        private val requestRx = """<TakRequest[^>]*\bversion=['"](\d+)['"]""".toRegex()
+        private val responseRx = """<TakResponse[^>]*\bstatus=['"]([^'"]+)['"]""".toRegex()
+
+        fun isHandshakeCot(raw: String): Boolean =
+            raw.contains("type=\"t-x-takp-")
+
+        fun isSupportCot(raw: String): Boolean =
+            raw.contains("type=\"t-x-takp-v\"") && supportRx.containsMatchIn(raw)
+
+        fun isResponseCot(raw: String, uid: String?): Boolean {
+            if (uid.isNullOrEmpty()) return false
+            return raw.contains("type=\"t-x-takp-r\"") && raw.contains("uid=\"$uid\"")
+        }
+
+        fun extractProtoUid(raw: String): String =
+            uidRx.find(raw)?.groupValues?.getOrNull(1) ?: ""
+
+        fun extractProtoVers(raw: String): Int? =
+            supportRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                ?: requestRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+        fun protoEnabled(raw: String): Boolean =
+            responseRx.find(raw)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
+
+        private val INSTANT_FMT = DateTimeFormatter.ISO_INSTANT
+
+        fun eventTimeNow(): String = INSTANT_FMT.format(Instant.now())
+
+        fun eventTimeStale(factor: Long = 3): String =
+            INSTANT_FMT.format(Instant.now().plusSeconds(currReportingIntervalInSecs * factor))
+
+        fun eventTimeStamps(factor: Long = 3): Pair<String, String> =
+            eventTimeNow().let { ts -> ts to eventTimeStale(factor) }
+
+        /* Build <t-x-takp-q> message for requesting a tak protocol version to server */
+        fun buildRequestCot(uid: String?, version: Int? = 1): String {
+            val (time, stale) = eventTimeStamps(30)
+            return """
+            <?xml version='1.0' encoding='UTF-8'?>
+            <event version='2.0' uid='$uid' type='t-x-takp-q' how='m-g'
+                   time='$time' start='$time' stale='$stale'>
+              <point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>
+              <detail>
+                <TakControl>
+                  <TakRequest version='$version'/>
+                </TakControl>
+              </detail>
+            </event>
+            """.trimIndent()
         }
 
     }

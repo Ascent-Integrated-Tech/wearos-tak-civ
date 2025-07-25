@@ -87,6 +87,13 @@ import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.Utils.CotUtils.buildRequestCot
+import com.aitech.weartak_civ.Utils.CotUtils.extractProtoUid
+import com.aitech.weartak_civ.Utils.CotUtils.extractProtoVers
+import com.aitech.weartak_civ.Utils.CotUtils.isHandshakeCot
+import com.aitech.weartak_civ.Utils.CotUtils.isResponseCot
+import com.aitech.weartak_civ.Utils.CotUtils.isSupportCot
+import com.aitech.weartak_civ.Utils.CotUtils.protoEnabled
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
 import kotlinx.coroutines.Job
@@ -120,6 +127,8 @@ class TAKConnectService: Service() {
         var name: String, var value: String
     )
 
+    enum class DispatchMode { XML_ONLY, HANDSHAKE, PROTOBUF }  // PROTO means enabled & healthy
+
     data class TakServerDetail(
         var isEnabled: Boolean,
         var name: String,
@@ -139,11 +148,12 @@ class TAKConnectService: Service() {
         var privateKey: PrivateKey? = null,
         var secureSocket: SSLSocket? = null,
         var lastTimeMsgSent: Long = 0L,
-        var takProtocol: TakProtocol = TakProtocol(),
+        var takProtocol: TakProtocol? = null,
         var cotListenerJob: Job? = null,
-        var protoHsTimeoutJob: Job? = null,
-        var protobufUid: String? = null,
-        var protobufVersion: Int? = null
+        var dispatchMode: DispatchMode = DispatchMode.XML_ONLY,
+        var lastProtoOkAt: Long = 0L,
+        var protoBreakerUntil: Long = 0L,
+        var watchdogJob: Job? = null
     )
 
     override fun onCreate() {
@@ -522,16 +532,6 @@ class TAKConnectService: Service() {
         }
     }
 
-    fun closeSpecificTakServerSocket(takServerDetail: TakServerDetail) {
-        takServerDetail.cotListenerJob?.cancel()            // stop the cot listener job
-        takServerDetail.protoHsTimeoutJob?.cancel()         // stop any handshake timeout timers
-        takServerDetail.secureSocket?.close()
-        takServerDetail.cotListenerJob = null
-        takServerDetail.protoHsTimeoutJob = null
-        takServerDetail.secureSocket = null
-        // TODO: Do we have to wipe anything in detail out?
-    }
-
     fun connectToTakServers() {
         Log.i(TAG, "Trying to Connect to TAK Servers!")
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
@@ -545,6 +545,7 @@ class TAKConnectService: Service() {
             }
         }
     }
+
 
     companion object {
         // --------- static, stateless constants, enums, tags and helper functions --------------------------------------------------------------------------------
@@ -820,8 +821,10 @@ class TAKConnectService: Service() {
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
         var takServerDetails: MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
-        private var useProtobuf: Boolean = false
+
+        private var useProtobuf:       Boolean = false
         private var enableChatService: Boolean = false
+
         //private val takProtocol = TakProtocol()
         private val chatCotXml = MutableSharedFlow<String>(replay = 0)
 
@@ -1149,6 +1152,20 @@ class TAKConnectService: Service() {
                     // Reset counters for connection attempts
                     takServerDetail.numConnAttempts = 0
                     setIsAnyNetworkConnecting()
+
+                    takServerDetail.takProtocol?.shutdown() // restart timeout timers
+
+                    /* Each server will hold its own protobuf FSM
+                     * & manage its own timeout. TakProto instance
+                     * needs access to service fun sendPbufReq to
+                     * complete a pbuf handshake with that server.
+                     */
+                    takServerDetail.takProtocol = TakProtocol(
+                        detail = takServerDetail,
+                        sendPbufReqFun = ::sendPbufReq,
+                        scope = protoScope
+                    )
+
                     Log.i(TAG, "... Successfully connected to $takServer!!!")
                     Log.i(TAG, "... Protobuf enabled is: $useProtobuf ")
 
@@ -1179,9 +1196,9 @@ class TAKConnectService: Service() {
                                 buffer.delete(0, endIdx + "</event>".length)
 
                                 /*  ─────────────  PROTOBUF STATE MACHINE  ─────────────  */
-                                if (takServerDetail.takProtocol.isHandshakeCot(rawXml)) {
+                                if (isHandshakeCot(rawXml)) {
                                     Log.i(TAG, String.format("... PROTOBUF HANDSHAKE MSG RCVD FROM: %-20s at: %-20s ... \n... ... ${rawXml}", takServerDetail.name, takServerDetail.address))
-                                    takServerDetail.takProtocol.process(HEvent.XmlReceived(rawXml), takServerDetail)
+                                    takServerDetail.takProtocol!!.process(HEvent.XmlReceived(rawXml))
                                     continue      // handshake COTs never enter chat filter
                                 }
 
@@ -1422,19 +1439,16 @@ class TAKConnectService: Service() {
 
         }
 
-        private fun startTimeoutTimer(takServerDetail: TakServerDetail) {
-            takServerDetail.protoHsTimeoutJob?.cancel()
-            takServerDetail.protoHsTimeoutJob = cotScope.launch {
-                delay(PROTOBUF_HANDSHAKE_TIMEOUT)
-                takServerDetail.takProtocol.process(HEvent.Timeout, takServerDetail)
-            }
+        private fun sendPbufReq(detail: TakServerDetail, msg: String) {
+            sendData(detail, msg, true, System.currentTimeMillis())
         }
 
         // -----------------------------------------------------------------------------------------------------------------------------------------------------------
         /** All possible handshake states */
         sealed interface HState {
-            data class AwaitSupport(val xml: String? = null) : HState
-            data class AwaitResponse(val attempt: Int, val xml: String? = null) : HState
+            data class AwaitSupport(val attempt: Int, val xml: String? = null) : HState
+            data class SendingRequest(val attempt: Int, val xml: String? = null) : HState
+            data class AwaitResponse(val attempt: Int) : HState
             data class ProtoBufEnabled(val xml: String? = null) : HState
             object ProtoBufDisabled : HState
         }
@@ -1444,180 +1458,168 @@ class TAKConnectService: Service() {
             data class XmlReceived(val xml: String) : HEvent
             object Timeout : HEvent
             object SendRequest : HEvent
+            object RequestSent : HEvent
             object Disconnect : HEvent
         }
 
-        class TakProtocol {
-//            private var protobufUid: String?  = null
-//            private var protobufVersion: Int? = null
-            private val _state = MutableStateFlow<HState>(HState.AwaitSupport())
-            val state: StateFlow<HState> = _state.asStateFlow()
-            private val INSTANT_FMT = DateTimeFormatter.ISO_INSTANT
+        class TakProtocol (
+            private val detail: TakServerDetail,
+            private val sendPbufReqFun: (TakServerDetail, String) -> Unit,
+            private val scope: CoroutineScope
+        ) {
+            var protoHsTimeoutJob: Job?   = null
+            var protobufUid: String?      = null
+            var protobufVersion: Int?     = null
+            var protobufEnabled: Boolean? = null
+            var pauseCotDispatch: Boolean = false // don't pause for this server until we are shaking hands for proto.
+            @Volatile private var active  = true
+            private val token             = Any() // unique token to keep track of the specific instance of TakProtocol
+            private fun isCur(): Boolean  = active && (detail.takProtocol === this) // guards against dead instances on server reconnects (calls to connectTakServer)
+
+            fun shutdown() {
+                active = false
+                protoHsTimeoutJob?.cancel()
+                protoHsTimeoutJob = null
+            }
+
+
+
+            private val _state = MutableStateFlow<HState>(HState.AwaitSupport(0, null))
             private val MAX_RETRIES = 3
 
-            suspend fun process(event: HEvent, takServerDetail: TakServerDetail) {
+            suspend fun process(event: HEvent) {
+                Log.i(TAG, "... ... Processing TAK Protocol/buf Event ... ... Event: [$event] | State: [${_state.value}]" )
                 val cur = _state.value
                 val next = when (cur) {
+                    //── AwaitSupport ────────────────────────────────────────────────
                     is HState.AwaitSupport -> when (event) {
-                        is HEvent.XmlReceived ->
-                            if (isSupportCot(event.xml)) {
-                                takServerDetail.protobufUid     = extractProtoUid(event.xml);
-                                takServerDetail.protobufVersion = extractProtoVers(event.xml);
+                        is HEvent.XmlReceived -> if (isSupportCot(event.xml)) {
+//                            Log.i(TAG, "... ... SUPPORT msg rcvd: \n... ... ... ${event.xml}")
+                            Log.i(TAG, "... ... SUPPORT msg rcvd.")
+                            HState.SendingRequest(attempt = cur.attempt + 1, xml = event.xml)
+                        } else cur
 
-                                dataRepository.protobufUid.value = takServerDetail.protobufUid          // TODO: This only works for one server at a time. Need to fix if we have more than one server connection.
-                                dataRepository.protobufVers.value = takServerDetail.protobufVersion
+                        is HEvent.Timeout -> {
+                            // We timed out waiting for a support msg, assume server has no support. bail and use standard xml.
+                            protoHsTimeoutJob?.cancel()
+                            HState.ProtoBufDisabled
+                        }
 
-                                Log.i(TAG, "... ... Protobuf Handshake SUPPORT msg rcvd: \n... ... ... ${event.xml} \n... ... ... VERS: ${takServerDetail.protobufVersion}, UID: ${takServerDetail.protobufUid} \n ... ... Setting Protobuf Handshake State to [AwaitResponse]")
-                                HState.AwaitResponse(attempt = 1, event.xml)
-                            } else cur
+                        else -> cur
+                    }
+                    //── SendingRequest ────────────────────────────────────────────────
+                    is HState.SendingRequest -> when (event) {
+                        is HEvent.RequestSent -> HState.AwaitResponse(attempt = cur.attempt)
                         else -> cur
                     }
 
+                    //── AwaitResponse ────────────────────────────────────────────────
                     is HState.AwaitResponse -> when (event) {
                         is HEvent.XmlReceived -> {
-                            if (takServerDetail.protobufUid?.let { isResponseCot(event.xml, it) } == true) {
-                                Log.i(TAG, "... ... Protobuf Handshake RESPONSE msg rcvd: ${event.xml}")
+                            if (isResponseCot(event.xml, protobufUid)) {
+                                Log.i(TAG, "... ... RESPONSE msg rcvd")
                                 if (protoEnabled(event.xml)) {
                                     HState.ProtoBufEnabled(event.xml)
                                 } else if (cur.attempt >= MAX_RETRIES) {
                                     HState.ProtoBufDisabled
+                                    // TODO: as per protocol.txt, I think we have to disconnect from the socket and try again.
                                 } else {
-                                    HState.AwaitResponse(cur.attempt + 1, event.xml)
+                                    startTimeoutTimer()
+                                    HState.AwaitResponse(cur.attempt + 1)
                                 }
-                            } else {
-                                cur
-                            }
-//                            if (protoEnabled(event.xml)) {
-//                                HState.ProtoBufEnabled(event.xml)
-//                            } else if (cur.attempt >= MAX_RETRIES) {
-//                                HState.ProtoBufDisabled
-//                            } else {
-//                                HState.AwaitResponse(cur.attempt + 1, event.xml)
-//                            }
+                            } else cur
                         }
 
-                        HEvent.Timeout -> {
+                        is HEvent.Timeout -> {
                             if (cur.attempt >= MAX_RETRIES) {
                                 HState.ProtoBufDisabled
                             } else {
-                                HState.AwaitResponse(cur.attempt + 1, xml = null)
+                                startTimeoutTimer()
+                                HState.AwaitResponse(cur.attempt + 1)
                             }
                         }
                         else -> cur
                     }
+
+                    //── All Others (Enabled/Disabled) ────────────────────────────────────────────────
                     else -> cur
                 }
 
                 if (next != _state.value) {
+                    Log.v(TAG, "... → State was: [$cur]")
+                    Log.v(TAG, "... → State now: [$next]")
                     _state.value = next
-                    onEnter(next, takServerDetail)
+                    onEnter(next)
                 }
             }
 
-            /* ---------------------------------------------------------- */
-            /* side-effects on state entry                                */
-            /* ---------------------------------------------------------- */
-
-            private suspend fun onEnter(s: HState, takServerDetail: TakServerDetail) = when (s) {
-                is HState.AwaitResponse -> {
-                    Log.i(TAG, "... ... Protobuf Handshake State → AwaitResponse (attempt ${s.attempt})")
-                    sendProtobufRequest(takServerDetail)   // will call process(HEvent.SendRequest) on completion
-                    startTimeoutTimer(takServerDetail)     // arm timeout
+            private fun startTimeoutTimer() {
+                protoHsTimeoutJob?.cancel()
+                val self = this
+                protoHsTimeoutJob = scope.launch {
+                    delay(PROTOBUF_HANDSHAKE_TIMEOUT)
+                    // Drop the timeout if this instance is no longer current / active,
+                    // or if we are no longer in a state that expects a timeout.
+                    if (!self.isCur()) return@launch
+                    val st = _state.value
+                    if (st !is HState.AwaitResponse && st !is HState.AwaitSupport) return@launch
+                    process(HEvent.Timeout)
                 }
-
-                is HState.ProtoBufEnabled -> {
-                    dataRepository.setPauseCotDipstach(false)
-                    dataRepository.setUseProtobuf(true)
-                    Log.i(TAG, "... ... Protobuf Handshake State → ENABLED")
-                }
-
-                HState.ProtoBufDisabled -> {
-                    Log.i(TAG, "... ... Protobuf Handshake State → DISABLED")
-                    dataRepository.setPauseCotDipstach(false)
-                    dataRepository.setUseProtobuf(false)
-                }
-
-                else -> Unit
             }
 
-            /* ---------------------------------------------------------- */
-            /* helpers                                                    */
-            /* ---------------------------------------------------------- */
+            /* ---------------------------------------------------------- *//* side-effects on state entry                                *//* ---------------------------------------------------------- */
 
-            private suspend fun sendProtobufRequest(takServerDetail: TakServerDetail) {
-                Log.i(TAG, "... ... Sending ProtobufRequest CoT to ${takServerDetail.name}")
+            private suspend fun onEnter(s: HState) {
+                if (!isCur()) return
 
+                when (s) {
+                    is HState.SendingRequest -> {
+                        Log.i(TAG, "... ... → Sending Request (attempt ${s.attempt})")
+                        protobufUid     = s.xml?.let {  extractProtoUid(it) };
+                        protobufVersion = s.xml?.let { extractProtoVers(it) };
+                        dataRepository.protobufUid.value  = protobufUid      // TODO: Remove these data repo values that are universal for servers, find out how to only send pbuf cots for one specific server.
+                        dataRepository.protobufVers.value = protobufVersion
+                        sendProtobufRequest()
+                        process(HEvent.RequestSent)
+                    }
+
+                    is HState.AwaitResponse -> {
+                        Log.i(TAG, "... ... → AwaitResponse (attempt ${s.attempt})")
+                        startTimeoutTimer()     // arm timeout
+                    }
+
+                    is HState.ProtoBufEnabled -> {
+                        protoHsTimeoutJob?.cancel()
+                        if (!isCur()) return
+                        dataRepository.setPauseCotDipstach(false)
+                        dataRepository.setUseProtobuf(true)
+                        Log.i(TAG, "... ... → Protobuf ENABLED")
+                    }
+
+                    is HState.ProtoBufDisabled -> {
+                        protoHsTimeoutJob?.cancel()
+                        if (!isCur()) return
+                        Log.i(TAG, "... ... → Protobuf DISABLED")
+                        dataRepository.setPauseCotDipstach(false)
+                        dataRepository.setUseProtobuf(false)
+                        disconnectFromServer()
+                    }
+
+                    else -> Unit
+                }
+            }
+
+            private fun disconnectFromServer() {
+                // TODO: Actually disconnect. Probably need entry point to service funs in TakProtocol(), like sendData.
+            }
+
+            /* ---------------------------------------------------------- *//* helpers                                                    *//* ---------------------------------------------------------- */
+            private fun sendProtobufRequest() {
                 dataRepository.setPauseCotDipstach(true)
                 dataRepository.setUseProtobuf(false)
-
-                val cot = buildRequestCot(takServerDetail.protobufUid, takServerDetail.protobufVersion)
-                sendDataTAKServers(cot, false)
-
-                process(HEvent.SendRequest, takServerDetail)         // notify FSM after send completes
-            }
-
-            /* ----  TAK-Protocol (XML) helpers  ---- */
-            private val uidRx = """<event[^>]*\buid=['"]([^'"]+)['"]""".toRegex()
-            private val supportRx = """<TakProtocolSupport[^>]*\bversion=['"](\d+)['"]""".toRegex()
-            private val requestRx = """<TakRequest[^>]*\bversion=['"](\d+)['"]""".toRegex()
-            private val responseRx = """<TakResponse[^>]*\bstatus=['"]([^'"]+)['"]""".toRegex()
-
-            fun isHandshakeCot(raw: String): Boolean =
-                raw.contains("type=\"t-x-takp-")
-
-            fun isSupportCot(raw: String): Boolean =
-                raw.contains("type=\"t-x-takp-v\"") && supportRx.containsMatchIn(raw)
-
-            fun isResponseCot(raw: String, uid: String): Boolean =
-                raw.contains("type=\"t-x-takp-r\"") && raw.contains("uid=\"$uid\"")
-
-            fun extractProtoUid(raw: String): String =
-                uidRx.find(raw)?.groupValues?.getOrNull(1) ?: ""
-
-            fun extractProtoVers(raw: String): Int? =
-                supportRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                    ?: requestRx.find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull()
-
-            fun protoEnabled(raw: String): Boolean =
-                responseRx.find(raw)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
-
-            fun eventTimeNow(): String = INSTANT_FMT.format(Instant.now())
-
-            fun eventTimeStale(factor: Long = 3): String =
-                INSTANT_FMT.format(Instant.now().plusSeconds(currReportingIntervalInSecs * factor))
-
-            fun eventTimeStamps(factor: Long = 3): Pair<String, String> =
-                eventTimeNow().let { ts -> ts to eventTimeStale(factor) }
-
-            /* Build <t-x-takp-q> message for requesting a tak protocol version to server */
-            fun buildRequestCot(uid: String?, version: Int? = 1): String {
-                val (time, stale) = eventTimeStamps(30)
-                return """
-            <?xml version='1.0' encoding='UTF-8'?>
-            <event version='2.0' uid='$uid' type='t-x-takp-q' how='m-g'
-                   time='$time' start='$time' stale='$stale'>
-              <point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>
-              <detail>
-                <TakControl>
-                  <TakRequest version='$version'/>
-                </TakControl>
-              </detail>
-            </event>
-            """.trimIndent()
-            }
-
-            fun resetProtobuf(whereFrom: String) {
-                // we need to clear in memory prootbuf data from old socket. This way, the new socket will be primed to handle a new protobuf handshake.
-                val pro = dataRepository.useProtobuf.value
-                val cot = dataRepository.pauseCotDipstach.value
-                val uid = dataRepository.protobufUid.value
-                val vrs = dataRepository.protobufVers.value
-                Log.i(TAG, "... Resetting Protobuf Data from $whereFrom")
-                Log.i(TAG, "... ... Before Reset: useProtobuf =$pro | pauseCotDipstach =$cot | protobufUid =$uid protobufVers =$vrs")
-                dataRepository.setPauseCotDipstach(false)
-                dataRepository.setUseProtobuf(false)
-                dataRepository.protobufUid.value = ""
-                Log.i(TAG, "... ... After  Reset: useProtobuf =$pro | pauseCotDipstach =$cot | protobufUid =$uid protobufVers =$vrs")
+                val cot = buildRequestCot(protobufUid, protobufVersion)
+                Log.i(TAG, "... ... ... Request Cot: $cot")
+                sendPbufReqFun(detail, cot)
             }
         }
     }

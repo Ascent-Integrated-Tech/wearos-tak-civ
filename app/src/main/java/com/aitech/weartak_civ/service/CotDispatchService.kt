@@ -164,23 +164,19 @@ class CotDispatchService : Service() {
                     pauseCotDispatch = pauseCot
                     useProtobuf   = protoEnabled
                     Log.i(TAG, "flags → PauseDispatch=$pauseCot  ProtoEnabled=$protoEnabled")
-//                    if (pauseCotDispatch) {
-//                        stopDispatchScheduler()
-//                    } else {
-//                        startDispatchScheduler()
-//                    }
+
                 }
         }
         protoScope.launch {
             MainActivity.dataRepository.protobufVers.collect { version ->
                 Log.i(TAG, "Protobuf Version Changed to: $version")
-                tempTakServerDetail.protobufVersion = version
+                tempTakServerDetail.takProtocol?.protobufVersion = version
             }
         }
         protoScope.launch {
             MainActivity.dataRepository.protobufUid.collect { uid ->
                 Log.i(TAG, "Protobuf Uid Changed to: $uid")
-                tempTakServerDetail.protobufUid = uid
+                tempTakServerDetail.takProtocol?.protobufUid = uid
             }
         }
     }
@@ -675,15 +671,15 @@ class CotDispatchService : Service() {
                 0L
             }
             Log.i(TAG, String.format("PLI Pbuf CoT Sending...  Size: %-4s , Reporting Rate: %-4s", protoCotBytes.size, currReportingIntervalInSecs))
-            sendDataTAKServers(protoCotBytes, isNotPli = false)   // ~210-byte payload
+            sendDataTAKServers(protoCotBytes, isNotPli = false)   // ~163 byte payload
             Log.i(TAG, String.format("Sent! Time since last Pbuf dispatch: %-5s seconds", (diff/1000).toInt()))
             lastTimeProtoSent = now
             takServerDetail.lastTimeMsgSent = now  // for some logic in the sendData() functions
         } else {
             // ------ Cot XML String ------
 //            val cotMessage = buildVerboseLocationPhsyioCot(location, physioData)   // ~750-byte payload
-            val cotMessage = buildConciseLocationPhsyioCot(location, physioData) // ~430-byte payload
-            sendDataTAKServers(cotMessage, false)
+            val cotMessage = buildConciseLocationPhsyioCot(location, physioData) // ~430 byte payload
+            sendDataTAKServers(cotMessage, isNotPli = false)
         }
 
         //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
