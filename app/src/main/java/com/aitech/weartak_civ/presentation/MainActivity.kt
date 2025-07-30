@@ -236,6 +236,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
+import com.aitech.weartak_civ.service.FallDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -505,6 +506,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startFallDetectionService() {
+            if (!FallDetectionService.isRunning.get()) {
+                Log.d(TAG, "Starting FallDetectionService")
+                mainActivity.startForegroundService(Intent(mainActivity, FallDetectionService::class.java))
+            } else {
+                Log.d(TAG, "FallDetectionService is already running")
+            }
+        }
+
         fun startBatteryService() {
             if (!BatteryService.isRunning.get()) {
                 Log.d(TAG, "Starting BatteryService")
@@ -580,6 +590,7 @@ class MainActivity : ComponentActivity() {
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()
+                startFallDetectionService()
             } else {
                 Log.d(TAG, """
                             ===   Application Services Info   ===                                
