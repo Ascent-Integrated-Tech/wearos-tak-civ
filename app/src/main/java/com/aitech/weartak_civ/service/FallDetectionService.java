@@ -1,12 +1,20 @@
 package com.aitech.weartak_civ.service;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.IBinder;
 import android.util.Log;
+
+import androidx.core.app.NotificationCompat;
+
+import com.aitech.weartak_civ.R;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -24,16 +32,50 @@ public class FallDetectionService extends Service implements SensorEventListener
     private float[] prevGravity = new float[3];
     public static final AtomicBoolean isRunning = new AtomicBoolean(false);
 
+    private float[] currentGyro = new float[3];
+    private float[] currentOrientation = new float[3];
+
+    private SensorManager sensorManager;
+
     @Override
     public void onCreate() {
         super.onCreate();
         isRunning.set(true);
+
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+
+        Sensor accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        Sensor gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        Sensor magSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+
+        sensorManager.registerListener(this, accelSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, gyroSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, magSensor, SensorManager.SENSOR_DELAY_NORMAL);
+
+        NotificationChannel channel = new NotificationChannel(
+                "fall_channel_id",
+                "Fall Detection",
+                NotificationManager.IMPORTANCE_LOW
+        );
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.createNotificationChannel(channel);
+        }
+
+        Notification notification = new NotificationCompat.Builder(this, "fall_channel_id")
+                .setContentTitle("Fall Detection Active")
+                .setContentText("Monitoring movement for fall events...")
+                .setSmallIcon(R.drawable.splash_icon)
+                .build();
+
+        startForeground(1, notification);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         isRunning.set(false);
+        sensorManager.unregisterListener(this);
     }
 
     @Override
@@ -43,34 +85,41 @@ public class FallDetectionService extends Service implements SensorEventListener
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            float[] accel = event.values.clone();
-            float[] gyro = new float[]{0f, 0f, 0f}; // mock gyro
-            float[] orientation = new float[]{0f, 0f, 0f}; // mock orientation
-            float[] newGravity = accel.clone();
+        switch (event.sensor.getType()) {
+            case Sensor.TYPE_ACCELEROMETER:
+                float[] accel = event.values.clone();
+                float[] newGravity = accel.clone();
+                boolean fallDetected = false;
 
-            boolean fallDetected = false;
+                switch (selectedMethod) {
+                    case VOTE_METHOD:
+                        fallDetected = detectFall5Vote(accel, currentGyro, currentOrientation);
+                        break;
+                    case THRESHOLD_FLOW:
+                        fallDetected = detectFallThresholdFlow(accel, currentGyro, currentOrientation);
+                        break;
+                    case QUATERNION:
+                        fallDetected = detectFallQuaternion(prevGravity, newGravity);
+                        break;
+                    case HYBRID:
+                        fallDetected = detectFallHybrid(accel, currentGyro, currentOrientation, prevGravity, newGravity);
+                        break;
+                }
 
-            switch (selectedMethod) {
-                case VOTE_METHOD:
-                    fallDetected = detectFall5Vote(accel, gyro, orientation);
-                    break;
-                case THRESHOLD_FLOW:
-                    fallDetected = detectFallThresholdFlow(accel, gyro, orientation);
-                    break;
-                case QUATERNION:
-                    fallDetected = detectFallQuaternion(prevGravity, newGravity);
-                    break;
-                case HYBRID:
-                    fallDetected = detectFallHybrid(accel, gyro, orientation, prevGravity, newGravity);
-                    break;
-            }
+                if (fallDetected) {
+                    Log.d("FallDetection", "FALL DETECTED via " + selectedMethod);
+                }
 
-            if (fallDetected) {
-                Log.d("FallDetection", "FALL DETECTED via " + selectedMethod);
-            }
+                prevGravity = newGravity;
+                break;
 
-            prevGravity = newGravity;
+            case Sensor.TYPE_GYROSCOPE:
+                currentGyro = event.values.clone();
+                break;
+
+            case Sensor.TYPE_MAGNETIC_FIELD:
+                // if you're using a Madgwick filter, update orientation here
+                break;
         }
     }
 
