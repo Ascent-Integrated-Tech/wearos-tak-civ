@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import android.location.Location
 import android.graphics.Color
 import android.os.Build
 import android.util.Log
@@ -50,6 +51,11 @@ import com.aitech.weartak_civ.Track
 import com.aitech.weartak_civ.CotEvent
 import com.aitech.weartak_civ.TakMessage
 import com.aitech.weartak_civ.TakControl
+import com.aitech.weartak_civ.presentation.MainActivity.Constants
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
+import java.util.Calendar
+import java.util.UUID
 
 
 object Utils {
@@ -605,6 +611,267 @@ object Utils {
             """.trimIndent()
         }
 
+        /**
+         * Protobuf builders for non-PLI CoT events (Marker, Emergency).
+         *
+         * Times are **UTC epoch millis** (Long). We compute a single `now` and derive
+         * `start` and `stale` from it to avoid drift.
+         *
+         * Detail mapping rule (per CotEvent.proto): only include typed messages we can
+         * guarantee (Contact, Group, Track). Anything else stays in `xmlDetail` with no
+         * XML header and without the surrounding <detail> element.
+         */
+        object TakProtoBuilders {
+
+            // ---------- Public time helpers (simple + explicit) ----------
+
+            /** Returns (nowMillis, startMillis==now, staleMillis) using `intervalSecs * factor`. */
+            fun eventTimesFromInterval(intervalSecs: Int, factor: Long = 3L, nowMillis: Long = System.currentTimeMillis()): Triple<Long, Long, Long> {
+                val addMs = intervalSecs.toLong() * factor * 1000L
+                val stale = nowMillis + addMs
+                return Triple(nowMillis, nowMillis, stale)
+            }
+
+            /** Returns (now, now, now + staleMs). */
+            fun eventTimesWithFixedStale(staleMs: Long, nowMillis: Long = System.currentTimeMillis()): Triple<Long, Long, Long> {
+                val stale = nowMillis + staleMs
+                return Triple(nowMillis, nowMillis, stale)
+            }
+
+            // ---------- Builders ----------
+
+            /** Marker drop – default mirrors sample XML: type a-f-G-U-C, how=h-e, ~35s stale. */
+            fun buildMarker(
+                loc: Location,
+                heartRate: Int,
+                batteryPercent: Int,
+                tak: TAKConnectService.TakServerDetail,
+                markerType: String,
+                iconSetPath: String,
+                staleMs: Long = 35_000L,
+            ): ByteArray {
+                val (now, start, stale) = eventTimesWithFixedStale(staleMs)
+                val uid = UUID.randomUUID().toString()
+                dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+                val calendar: Calendar = Calendar.getInstance()
+                calendar.setTime(Date())
+                val mTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
+                mTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+                val mCallsignAppendTime = mTimeFormatter.format(calendar.time)
+                val markerCallsign = "${MainActivity.callsign}_$mCallsignAppendTime"
+
+                val contact   = Contact.newBuilder().setCallsign(markerCallsign).build()
+
+                val xmlDetail = buildMarkerXmlDetail(
+                    heartRate = heartRate,
+                    batteryPercent = batteryPercent,
+                    iconSetPath = iconSetPath,
+                )
+
+                val detail = Detail.newBuilder()
+                    .setXmlDetail(xmlDetail)
+                    .setContact(contact)
+                    .build()
+
+                val ce = (loc.accuracy.takeIf { !it.isNaN() } ?: 9999f).toDouble()
+                val le = (loc.verticalAccuracyMeters.takeIf { !it.isNaN() } ?: 9999999f).toDouble()
+
+                val cot = CotEvent.newBuilder()
+                    .setType(markerType)
+                    .setUid(uid)
+                    .setSendTime(now)
+                    .setStartTime(start)
+                    .setStaleTime(stale)
+                    .setHow("h-g-i-g-o")
+                    .setAccess("Undefined")
+                    .setLat(loc.latitude)
+                    .setLon(loc.longitude)
+                    .setHae(loc.altitude)
+                    .setCe(ce)
+                    .setLe(le)
+                    .setDetail(detail)
+                    .build()
+
+                val control = TakControl.newBuilder()
+                    .setMinProtoVersion(tak.takProtocol?.protobufVersion ?: 1)
+                    .setMaxProtoVersion(tak.takProtocol?.protobufVersion ?: 1)
+                    .setContactUid(tak.takProtocol?.protobufUid ?: "")
+                    .build()
+
+                return frame(
+                    TakMessage.newBuilder()
+                        .setTakControl(control)
+                        .setCotEvent(cot)
+                        .build()
+                        .toByteArray()
+                )
+            }
+
+            /** Emergency custom alert – default mirrors sample: type b-a-u-a, how=h-e, ~10s stale. */
+            fun buildEmergency(
+                loc: Location,
+                originUid: String,
+                callsign: String,
+                category: String,      // e.g., "Manual SOS Alert"
+                description: String,   // inner text of <emergency>
+                iconsetPath: String,   // e.g., "911 Alert"
+                argbColor: String,     // e.g., "-1"
+                tak: TAKConnectService.TakServerDetail,
+                uid: String = UUID.randomUUID().toString(),
+                how: String = "h-e",
+                staleMs: Long = 10_000L,
+            ): ByteArray {
+                val (now, start, stale) = eventTimesWithFixedStale(staleMs)
+
+                val contact = Contact.newBuilder().setCallsign(callsign).build()
+
+                val xmlDetail = buildEmergencyXmlDetail(
+                    linkUid = originUid,
+                    linkType = "a-f-G-U-C",
+                    relation = "p-p",
+                    category = category,
+                    description = description,
+                    userIconPath = iconsetPath,
+                    argbColor = argbColor,
+                    callsign = callsign,
+                    // Keep label simple; consumers can rely on typed Contact for callsign
+                    label = "${callsign}_${now}\n$category",
+                )
+
+                val detail = Detail.newBuilder()
+                    .setContact(contact)
+                    .setXmlDetail(xmlDetail)
+                    .build()
+
+                val ce = (loc.accuracy.takeIf { !it.isNaN() } ?: 15.7f).toDouble()
+                val le = (loc.verticalAccuracyMeters.takeIf { !it.isNaN() } ?: 0.5f).toDouble()
+
+                val cot = CotEvent.newBuilder()
+                    .setType("b-a-u-a")
+                    .setUid(uid)
+                    .setSendTime(now)
+                    .setStartTime(start)
+                    .setStaleTime(stale)
+                    .setHow(how)
+                    .setLat(loc.latitude)
+                    .setLon(loc.longitude)
+                    .setHae(loc.altitude)
+                    .setCe(ce)
+                    .setLe(le)
+                    .setDetail(detail)
+                    .build()
+
+                val control = TakControl.newBuilder()
+                    .setMinProtoVersion(tak.takProtocol?.protobufVersion ?: 1)
+                    .setMaxProtoVersion(tak.takProtocol?.protobufVersion ?: 1)
+                    .setContactUid(tak.takProtocol?.protobufUid ?: "")
+                    .build()
+
+                return frame(
+                    TakMessage.newBuilder()
+                        .setTakControl(control)
+                        .setCotEvent(cot)
+                        .build()
+                        .toByteArray()
+                )
+            }
+
+            // ---------- xmlDetail (only elements NOT mapped to typed messages) ----------
+
+            private fun buildMarkerXmlDetail(
+                iconSetPath: String,
+                heartRate: Int,
+                batteryPercent: Int,
+            ): String {
+                dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+                val calendar: Calendar = Calendar.getInstance()
+                calendar.setTime(Date())
+                val startTime = dateTimeFormatter.format(calendar.time)
+
+                val sb = StringBuilder()
+                sb.append("<link uid='")
+                    .append(xmlEscape(device_uid))
+                    .append("' production_time='")
+                    .append(xmlEscape(startTime))
+                    .append("' type='")
+                    .append(xmlEscape("a-f-G-U-C"))
+                    .append("' parent_callsign='")
+                    .append(xmlEscape(callsign))
+                    .append("' relation='")
+                    .append(xmlEscape("p-p"))
+                    .append("'/>")
+                sb.append("<usericon iconsetpath='")
+                    .append(xmlEscape(iconSetPath))
+                    .append("'/>")
+                if (batteryPercent >= 0) sb.append("<status battery='").append(batteryPercent).append("'/>")
+                val phys = mutableListOf<String>()
+                if (heartRate >= 0) phys += "HR:$heartRate"
+                if (batteryPercent >= 0) phys += "Bat:$batteryPercent"
+                if (phys.isNotEmpty()) sb.append("<remarks>").append(xmlEscape(phys.joinToString(";"))).append("</remarks>")
+                return sb.toString()
+            }
+
+            private fun buildEmergencyXmlDetail(
+                linkUid: String,
+                linkType: String,
+                relation: String,
+                category: String,
+                description: String,
+                userIconPath: String,
+                argbColor: String,
+                callsign: String,
+                label: String,
+            ): String {
+                val sb = StringBuilder()
+                sb.append("<link uid='").append(xmlEscape(linkUid)).append("' type='")
+                    .append(xmlEscape(linkType)).append("' relation='")
+                    .append(xmlEscape(relation)).append("'/>")
+                sb.append("<emergency type='").append(xmlEscape(category)).append("'>")
+                    .append(xmlEscape(description)).append("</emergency>")
+                sb.append("<usericon iconsetpath='").append(xmlEscape(userIconPath)).append("'/>")
+                sb.append("<color argb='").append(xmlEscape(argbColor)).append("'/>")
+                // Don't duplicate <contact>. Some clients look for a UI label; provide one.
+                sb.append("<label>").append(xmlEscape(label)).append("</label>")
+                return sb.toString()
+            }
+
+            private const val STREAM_MAGIC: Byte = 0xBF.toByte()
+
+            private fun frame(payload: ByteArray): ByteArray {
+                val header = ByteArrayOutputStream().apply {
+                    write(STREAM_MAGIC.toInt())
+                    write(encodeVarint(payload.size))
+                }.toByteArray()
+                return ByteBuffer.allocate(header.size + payload.size)
+                    .put(header)
+                    .put(payload)
+                    .array()
+            }
+
+            private fun encodeVarint(value: Int): ByteArray {
+                var v = value
+                val out = ByteArrayOutputStream()
+                while (true) {
+                    var b = v and 0x7F
+                    v = v ushr 7
+                    if (v != 0) b = b or 0x80
+                    out.write(b)
+                    if (v == 0) break
+                }
+                return out.toByteArray()
+            }
+
+            private fun xmlEscape(s: String): String = buildString(s.length) {
+                for (c in s) when (c) {
+                    '&' -> append("&amp;")
+                    '<' -> append("&lt;")
+                    '>' -> append("&gt;")
+                    '\'' -> append("&apos;")
+                    '"' -> append("&quot;")
+                    else -> append(c)
+                }
+            }
+        }
     }
 
     /*

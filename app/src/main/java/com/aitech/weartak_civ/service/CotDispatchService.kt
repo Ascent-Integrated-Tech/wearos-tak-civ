@@ -58,6 +58,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.bouncycastle.jcajce.provider.symmetric.util.PBE.Util
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -539,6 +540,7 @@ class CotDispatchService : Service() {
                 Log.v(TAG, "Sending Marker CoT Message Blocked: waiting for protobuf handshake")
                 return@launch
             }
+
             // 1) Grab latest location; if null, take note & bail out
             val loc = dataRepository.latestLocation.value
             if (loc == null) {
@@ -552,6 +554,28 @@ class CotDispatchService : Service() {
             val battery   = dataRepository.latestBatteryPercentage.value ?: -1
 
             // 3) Build CoT XML (unchanged signature)
+            if (useProtobuf) {
+                val bytes = Utils.CotUtils.TakProtoBuilders.buildMarker(
+                    loc = loc,
+                    heartRate = heartRate,
+                    batteryPercent = battery,
+                    tak = tempTakServerDetail,
+                    markerType = markerType,
+                    iconSetPath = iconSetPath,
+                    staleMs = 3 * 1_000L * currReportingIntervalInSecs
+                )
+
+                Log.d(TAG, "Sending Marker using Protobuf size; ${bytes.size}")
+
+                markerDropToBeSent.set(false)
+                sendDataTAKServers(bytes, isNotPli = true)
+
+                // we don't support protobuf over Ditto yet.
+                if (!DittoService.isRunning.get()) {
+                    return@launch
+                }
+            }
+
             val cotMessage = buildMarkerCotMessage(loc, heartRate, battery)
 
             // 5) Only send to TAK servers if connected

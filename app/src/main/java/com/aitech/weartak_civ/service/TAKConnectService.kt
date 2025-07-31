@@ -105,6 +105,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onEach
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import javax.net.ssl.TrustManagerFactory
@@ -1353,14 +1354,16 @@ class TAKConnectService: Service() {
                     if (isNotPli) {
                         // send immediately
                         sendData(takServerDetail, bytes, isNotPli, currTime)
+                        Log.i(TAG, "Sent Non PLI Data to tak server")
+
                     } else {
                         // keep the same interval logic, minus XML-editing
                         if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
                             sendData(takServerDetail, bytes, isNotPli, currTime)
-                            Log.i(TAG, "Sent Data to tak server")
                         } else if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >= (takServerDetail.currReportingUpdateInterval * 1000.0)) {
                             sendData(takServerDetail, bytes, isNotPli, currTime)
                         }
+                        Log.i(TAG, "Sent PLI Data to tak server")
                     }
                 }
             } else {
@@ -1431,10 +1434,9 @@ class TAKConnectService: Service() {
             }
 
             protoScope.launch {
-                dataRepository.useProtobuf.collect { enabled ->
-                    useProtobuf = enabled
-//                    Log.i(TAG, "Detected Change in Protobuf Usage State! useProtobuf=$enabled")
-                }
+                dataRepository.useProtobuf
+                    .onEach { Log.d(TAG, "useProtobuf flow emitted → $it") }
+                    .collect { enabled -> useProtobuf = enabled }
             }
 
         }
