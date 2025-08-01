@@ -40,7 +40,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_C
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
@@ -58,7 +57,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import org.bouncycastle.jcajce.provider.symmetric.util.PBE.Util
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -89,7 +87,7 @@ class CotDispatchService : Service() {
     private var iconSetPath: String = ""
     private var markerType: String = ""
     private var alertOrCancel = false
-    private var sosAlertUid: String = ""
+    private var currentSosUid: String = ""
     private var pauseCotDispatch = false
     private var useProtobuf = false
     private val schedCotScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -221,7 +219,7 @@ class CotDispatchService : Service() {
         val ce: Float // Horizontal Error
     )
 
-    private fun mapLocationAgainstClosestBleBeacon(startTimeInMs: Long, lat: Double, lon: Double, hae: Double, ce: Float): BleLocationOutput {
+    fun mapLocationAgainstClosestBleBeacon(startTimeInMs: Long, lat: Double, lon: Double, hae: Double, ce: Float): BleLocationOutput {
         var latActual = lat; var lonActual = lon; var haeActual = hae; var ceActual = ce
 
         //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
@@ -409,11 +407,11 @@ class CotDispatchService : Service() {
         val uid = if (!alertOrCancel) {
             // Generate and store a new UID
             val newUid = UUID.randomUUID().toString()
-            sosAlertUid = newUid
+            currentSosUid = newUid
             newUid
         } else {
             // Use the previously stored UID
-            sosAlertUid ?: "undefined"
+            currentSosUid ?: "undefined"
         }
         val linkUid = MainActivity.device_uid
 
@@ -555,7 +553,7 @@ class CotDispatchService : Service() {
 
             // 3) Build CoT XML (unchanged signature)
             if (useProtobuf) {
-                val bytes = Utils.CotUtils.TakProtoBuilders.buildMarker(
+                val bytes = takProtoBuilder.buildMarker(
                     loc = loc,
                     heartRate = heartRate,
                     batteryPercent = battery,
@@ -601,7 +599,9 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
+    private val takProtoBuilder: Utils.CotUtils.TakProtoBuilders = Utils.CotUtils.TakProtoBuilders
+
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, cancel: Boolean) {
         ioScope.launch(Dispatchers.IO) {
             if (pauseCotDispatch) {
                 Log.v(TAG, "Sending Emergency Alert CoT Message Blocked: waiting for protobuf handshake")
@@ -618,8 +618,24 @@ class CotDispatchService : Service() {
                 return@launch
             }
 
+            if (useProtobuf) {
+
+                if (!cancel) {
+                    currentSosUid = UUID.randomUUID().toString()
+                }
+                val bytes = takProtoBuilder.buildEmergency(loc, cancel, currentSosUid, emergencyCategory, emergencyDesc, tempTakServerDetail)
+                Log.i(TAG, "CANCEL: $cancel | sosAlertUid=$currentSosUid")
+                Log.d(TAG, "Sending Emergency Cot using Protobuf size; ${bytes.size}")
+                sendDataTAKServers(bytes, isNotPli = true)
+
+                // we don't support protobuf over Ditto yet.
+                if (!DittoService.isRunning.get()) {
+                    return@launch
+                }
+            }
+
             // build the CoT XML for this alert
-            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
+            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, cancel)
 
             // only forward to TAK if we’re connected
             if (TAKConnectService.isAnyTakConnected) {
@@ -694,9 +710,9 @@ class CotDispatchService : Service() {
             } else {
                 0L
             }
-            Log.i(TAG, String.format("PLI Pbuf CoT Sending...  Size: %-4s , Reporting Rate: %-4s", protoCotBytes.size, currReportingIntervalInSecs))
+//            Log.i(TAG, String.format("PLI Pbuf CoT Sending...  Size: %-4s , Reporting Rate: %-4s", protoCotBytes.size, currReportingIntervalInSecs))
             sendDataTAKServers(protoCotBytes, isNotPli = false)   // ~163 byte payload
-            Log.i(TAG, String.format("Sent! Time since last Pbuf dispatch: %-5s seconds", (diff/1000).toInt()))
+//            Log.i(TAG, String.format("Sent! Time since last Pbuf dispatch: %-5s seconds", (diff/1000).toInt()))
             lastTimeProtoSent = now
             takServerDetail.lastTimeMsgSent = now  // for some logic in the sendData() functions
         } else {

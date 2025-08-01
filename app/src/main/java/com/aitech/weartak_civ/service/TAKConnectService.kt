@@ -113,10 +113,6 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val cotScope     = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val chatScope    = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val protoScope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     class SignClientResponse {
         var signedCert: String? = null

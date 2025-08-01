@@ -624,7 +624,7 @@ object Utils {
         object TakProtoBuilders {
 
             // ---------- Public time helpers (simple + explicit) ----------
-
+            var sosAlertUid = ""
             /** Returns (nowMillis, startMillis==now, staleMillis) using `intervalSecs * factor`. */
             fun eventTimesFromInterval(intervalSecs: Int, factor: Long = 3L, nowMillis: Long = System.currentTimeMillis()): Triple<Long, Long, Long> {
                 val addMs = intervalSecs.toLong() * factor * 1000L
@@ -710,32 +710,39 @@ object Utils {
             /** Emergency custom alert – default mirrors sample: type b-a-u-a, how=h-e, ~10s stale. */
             fun buildEmergency(
                 loc: Location,
-                originUid: String,
-                callsign: String,
+                cancel: Boolean,
+                uid: String,
                 category: String,      // e.g., "Manual SOS Alert"
                 description: String,   // inner text of <emergency>
-                iconsetPath: String,   // e.g., "911 Alert"
-                argbColor: String,     // e.g., "-1"
                 tak: TAKConnectService.TakServerDetail,
-                uid: String = UUID.randomUUID().toString(),
-                how: String = "h-e",
                 staleMs: Long = 10_000L,
             ): ByteArray {
+                dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+                val calendar: Calendar = Calendar.getInstance()
+                calendar.setTime(Date())
+                val startTime = dateTimeFormatter.format(calendar.time)
+                val startTimeInMs = calendar.timeInMillis
+                val emergencyCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
+                emergencyCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+                val emergencyCallsignAppendTime = emergencyCallsignDateTimeFormatter.format(calendar.time)
+                var emergencyCallsign = "${callsign}_$emergencyCallsignAppendTime"
+                emergencyCallsign += "&#10;${category}"
+
                 val (now, start, stale) = eventTimesWithFixedStale(staleMs)
 
-                val contact = Contact.newBuilder().setCallsign(callsign).build()
+                val contact = Contact.newBuilder().setCallsign(emergencyCallsign).build()
+
+                val type = if (cancel) {
+                    "b-a-o-can"
+                } else {
+                    "b-a-o"
+                }
+
+                //TODO: BLE Beacon mapping.
 
                 val xmlDetail = buildEmergencyXmlDetail(
-                    linkUid = originUid,
-                    linkType = "a-f-G-U-C",
-                    relation = "p-p",
-                    category = category,
+                    cancel = cancel,
                     description = description,
-                    userIconPath = iconsetPath,
-                    argbColor = argbColor,
-                    callsign = callsign,
-                    // Keep label simple; consumers can rely on typed Contact for callsign
-                    label = "${callsign}_${now}\n$category",
                 )
 
                 val detail = Detail.newBuilder()
@@ -747,12 +754,13 @@ object Utils {
                 val le = (loc.verticalAccuracyMeters.takeIf { !it.isNaN() } ?: 0.5f).toDouble()
 
                 val cot = CotEvent.newBuilder()
-                    .setType("b-a-u-a")
+                    .setType(type)
                     .setUid(uid)
                     .setSendTime(now)
                     .setStartTime(start)
                     .setStaleTime(stale)
-                    .setHow(how)
+                    .setHow("h-e")
+                    .setAccess("Undefined")
                     .setLat(loc.latitude)
                     .setLon(loc.longitude)
                     .setHae(loc.altitude)
@@ -812,26 +820,30 @@ object Utils {
             }
 
             private fun buildEmergencyXmlDetail(
-                linkUid: String,
-                linkType: String,
-                relation: String,
-                category: String,
+                cancel: Boolean,
                 description: String,
-                userIconPath: String,
-                argbColor: String,
-                callsign: String,
-                label: String,
+                userIconPath: String = "911 Alert",
             ): String {
+                // If this is a cancellation, emit only the simple emergency tag
+                if (cancel) {
+                    return "<emergency cancel='true'>${xmlEscape(callsign)}</emergency>"
+                }
+
                 val sb = StringBuilder()
-                sb.append("<link uid='").append(xmlEscape(linkUid)).append("' type='")
-                    .append(xmlEscape(linkType)).append("' relation='")
-                    .append(xmlEscape(relation)).append("'/>")
-                sb.append("<emergency type='").append(xmlEscape(category)).append("'>")
-                    .append(xmlEscape(description)).append("</emergency>")
-                sb.append("<usericon iconsetpath='").append(xmlEscape(userIconPath)).append("'/>")
-                sb.append("<color argb='").append(xmlEscape(argbColor)).append("'/>")
-                // Don't duplicate <contact>. Some clients look for a UI label; provide one.
-                sb.append("<label>").append(xmlEscape(label)).append("</label>")
+                sb.append("<link uid='")
+                    .append(xmlEscape(device_uid))
+                    .append("' type='a-f-G-U-C' relation='p-p'/>")
+
+                sb.append("<emergency type='")
+                    .append(xmlEscape(description))
+                    .append("'>")
+                    .append(xmlEscape(callsign))
+                    .append("</emergency>")
+
+                sb.append("<usericon iconsetpath='")
+                    .append(userIconPath)
+                    .append("'/>")
+
                 return sb.toString()
             }
 
