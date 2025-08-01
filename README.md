@@ -169,6 +169,9 @@ In adb shell:
 Follow the log:
 `tail -f files/yourLogFileName.log`
 
+Depending on how logs are written, they can appear in other locations. Another directory to check is:
+`ls /storage/emulated/0/Android/data/com.aitech.weartak_civ/files/`
+
 #### App Runtime Permissions Script:
 ```bash
 #!/usr/bin/env bash
