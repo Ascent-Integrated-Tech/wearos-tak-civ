@@ -22,6 +22,7 @@ import android.view.accessibility.AccessibilityEvent
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.startMainActivityIfNotRunning
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CustomAccessibilityService: AccessibilityService() {
@@ -71,6 +72,7 @@ class CustomAccessibilityService: AccessibilityService() {
             startForegroundService()
         }
 
+        startMainActivityIfNotRunning(applicationContext)
         return START_NOT_STICKY
     }
 

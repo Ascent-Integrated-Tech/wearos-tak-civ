@@ -402,7 +402,6 @@
     <string name="sos_inactive">SOS Inactive</string>
     <string name="sos_text_complication_service" translatable="false">SOS Text Complication Service</string>
     <string name="sos_active_text_complication_service" translatable="false">SOS Active Text Complication Service</string>
-    <string name="sos_complication_service" />
     <string name="on_off">ON/OFF</string>
     <string name="sms_recipients">SMS Recipients</string>
     <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
@@ -422,4 +421,8 @@
     <string name="threshold_high_heart_rate">Threshold - High Heart Rate</string>
     <string name="threshold_high_heart_rate_length">Threshold - High Heart Rate Length</string>
     <string name="resting_heart_rate">Resting Heart Rate</string>
+    <string name="loading">Loading...</string>
+    <string name="callsign_loading">Callsign Loading</string>
+    <string name="invalid_license">INVALID LICENSE</string>
+    <string name="sos_details_loading">SOS Details Loading</string>
 </resources>

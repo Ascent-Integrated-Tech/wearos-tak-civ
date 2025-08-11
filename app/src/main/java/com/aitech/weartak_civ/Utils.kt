@@ -10,16 +10,19 @@
 package com.aitech.weartak_civ
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.presentation.MainActivity
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -49,6 +52,31 @@ object Utils {
     const val DEFAULT_RESTING_HR : Int = 70
     const val DEFAULT_AGE : Int = 24
     val secureRandom: SecureRandom = SecureRandom()
+
+    fun startMainActivityIfNotRunning(context: Context) {
+        if (!isActivityRunning(MainActivity::class.java, context)) {
+            Log.w(TAG, "MainActivity not running. Starting it...")
+            val bootIntent = Intent(context, MainActivity::class.java)
+            bootIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(bootIntent)
+        } else {
+            Log.w(TAG, "Activity is already running. Do not start one")
+        }
+    }
+
+    fun isActivityRunning(activityClass: Class<*>, currContext: Context): Boolean {
+        val activityManager = currContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val tasks = activityManager.getRunningTasks(Int.MAX_VALUE)
+
+        for (task in tasks) {
+            if (activityClass.canonicalName.equals(task.baseActivity?.className ?: "null", ignoreCase = true)) {
+                Log.d(TAG, "isActivityRunning returned true")
+                return true
+            }
+        }
+        Log.d(TAG, "isActivityRunning returned false")
+        return false
+    }
 
     fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {
         return list1.size == list2.size && list1.toSet() == list2.toSet()

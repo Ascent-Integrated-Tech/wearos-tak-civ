@@ -1437,6 +1437,9 @@ class MainActivity : ComponentActivity() {
         requestCallsignComplicationUpdate(context)
         requestLocationComplicationUpdate(context)
         requestHeartRateComplicationUpdate(context)
+        requestSosColorComplicationUpdate(context)
+        requestSosTextComplicationUpdate(context)
+        requestSosActiveTextComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
