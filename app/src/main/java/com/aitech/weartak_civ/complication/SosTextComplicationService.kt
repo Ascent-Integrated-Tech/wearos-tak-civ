@@ -9,12 +9,6 @@
 
 package com.aitech.weartak_civ.complication
 
-import android.os.Build
-import android.text.Html
-import android.text.Html.FROM_HTML_MODE_LEGACY
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.TextUtils
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.PlainComplicationText
@@ -25,12 +19,11 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.complication.SosColorComplicationService.Companion.isAlertActive
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import androidx.core.text.htmlEncode
 
 
 class SosTextComplicationService: SuspendingComplicationDataSourceService() {
     companion object {
-        val TAG = "WearTAK-" + CallsignComplicationService::class.java.simpleName
+        val TAG = "WearTAK-" + SosTextComplicationService::class.java.simpleName
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
@@ -42,9 +35,8 @@ class SosTextComplicationService: SuspendingComplicationDataSourceService() {
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
-
         if (null == mainActivityIsInit) {
-            return createComplicationData("Loading...", "SOS Details Loading")
+            return createComplicationData(getString(R.string.loading), getString(R.string.sos_details_loading))
         }
 
         return when (isLicenseValid()) {
@@ -52,9 +44,9 @@ class SosTextComplicationService: SuspendingComplicationDataSourceService() {
                 true -> createComplicationData(getString(R.string.sos_active), getString(R.string.sos_active))
                 false -> createComplicationData(getString(R.string.sos), getString(R.string.sos_inactive))
 
-                else -> createComplicationData("Loading...", "SOS Details Loading")
+                else -> createComplicationData(getString(R.string.loading), getString(R.string.sos_details_loading))
             }
-            false -> createComplicationData("Loading...", getString(R.string.invalid_license_key))
+            false -> createComplicationData(getString(R.string.loading), getString(R.string.invalid_license_key))
         }
     }
 

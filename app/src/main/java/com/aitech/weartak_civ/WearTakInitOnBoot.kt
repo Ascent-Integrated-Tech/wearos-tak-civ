@@ -15,6 +15,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.aitech.weartak_civ.Utils.isActivityRunning
 import com.aitech.weartak_civ.presentation.MainActivity
 
 class WearTakInitOnBoot : BroadcastReceiver() {
@@ -25,6 +26,10 @@ class WearTakInitOnBoot : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         Log.d(TAG, "onReceive of WearTAK boot completed w/ action ${intent?.action}")
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent?.action)) {
+            if ((context != null) && isActivityRunning(MainActivity::class.java, context)) {
+                Log.d(TAG, "MainActivity is already running. No need to start it")
+                return
+            }
             // Create an intent to start MainActivity.
             val activityIntent = Intent(context, MainActivity::class.java).apply {
                 // Needed when starting an Activity from a non-Activity context.

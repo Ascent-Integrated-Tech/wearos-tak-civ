@@ -9,12 +9,11 @@
 
 package com.aitech.weartak_civ
 
-import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.Utils.startMainActivityIfNotRunning
 
 class WearTakInitOnUpdate : BroadcastReceiver() {
     companion object {
@@ -30,28 +29,7 @@ class WearTakInitOnUpdate : BroadcastReceiver() {
                 e.printStackTrace()
             }
 
-            if (!isActivityRunning(MainActivity::class.java, context!!)) {
-                Log.e(TAG, "Starting the main activity on an update")
-                val bootIntent = Intent(context, MainActivity::class.java)
-                bootIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(bootIntent)
-            } else {
-                Log.e(TAG, "Activity is already running. Do not start one")
-            }
+            if (context != null) startMainActivityIfNotRunning(context)
         }
-    }
-
-    fun isActivityRunning(activityClass: Class<*>, currContext: Context): Boolean {
-        val activityManager = currContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val tasks = activityManager.getRunningTasks(Int.MAX_VALUE)
-
-        for (task in tasks) {
-            if (activityClass.canonicalName.equals(task.baseActivity?.className ?: "null", ignoreCase = true)) {
-                Log.d(TAG, "isActivityRunning returned true")
-                return true
-            }
-        }
-
-        return false
     }
 }

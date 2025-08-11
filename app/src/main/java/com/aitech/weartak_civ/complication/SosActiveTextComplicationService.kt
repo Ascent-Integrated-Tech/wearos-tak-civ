@@ -22,7 +22,7 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class SosActiveTextComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
-        val TAG = "WearTAK-" + CallsignComplicationService::class.java.simpleName
+        val TAG = "WearTAK-" + SosActiveTextComplicationService::class.java.simpleName
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
@@ -34,9 +34,8 @@ class SosActiveTextComplicationService : SuspendingComplicationDataSourceService
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
-
         if (null == mainActivityIsInit) {
-            return createComplicationData("Loading...", "SOS Details Loading")
+            return createComplicationData(getString(R.string.loading), getString(R.string.sos_details_loading))
         }
 
         return when (isLicenseValid()) {
@@ -44,9 +43,9 @@ class SosActiveTextComplicationService : SuspendingComplicationDataSourceService
                 true -> createComplicationData(getString(R.string.sos_active), getString(R.string.sos_active))
                 false -> createComplicationData(" ", getString(R.string.sos_inactive))
 
-                else -> createComplicationData("Loading...", "SOS Details Loading")
+                else -> createComplicationData(getString(R.string.loading), getString(R.string.sos_details_loading))
             }
-            false -> createComplicationData("Loading...", getString(R.string.invalid_license_key))
+            false -> createComplicationData(getString(R.string.loading), getString(R.string.invalid_license_key))
         }
     }
 
