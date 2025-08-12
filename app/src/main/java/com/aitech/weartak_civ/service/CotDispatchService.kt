@@ -24,10 +24,12 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
@@ -40,7 +42,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CON
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
@@ -50,9 +51,16 @@ import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaco
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDistance
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
+import com.aitech.weartak_civ.service.HailService.checkLicense
+import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
+import com.rain.hail.sdk.HailDetail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
@@ -61,7 +69,6 @@ import org.greenrobot.eventbus.ThreadMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
-import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -70,7 +77,7 @@ import kotlin.math.roundToInt
 
 
 class CotDispatchService : Service() {
-    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
+//    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private var lastLocationUpdateRcvd: Long = 0L
@@ -86,7 +93,14 @@ class CotDispatchService : Service() {
     private var iconSetPath: String = ""
     private var markerType: String = ""
     private var alertOrCancel = false
+    private var inManualAlertingState = false
     private var sosAlertUid: String = ""
+
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private var buildHailDetail: Boolean = false
+    @Volatile private var hailEnabled: Boolean = false
+    private var combatId: Int = 0
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -96,7 +110,7 @@ class CotDispatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        Log.v(TAG, "CotDispatchService onStartCommand()")
+//        Log.v(TAG, "CotDispatchService onStartCommand()")
         if (!isRunning.getAndSet(true)) {
             startForegroundService()
             startDispatchScheduler()
@@ -109,7 +123,7 @@ class CotDispatchService : Service() {
 
     // starting requires notification to the user
     private fun startForegroundService() {
-        Log.v(TAG, "Starting $TAG as a ForegroundService")
+//        Log.v(TAG, "Starting $TAG as a ForegroundService")
         val channelId = createNotificationChannel()
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
@@ -137,6 +151,11 @@ class CotDispatchService : Service() {
         return channelId
     }
 
+    @Volatile private var lastLicenseState: HailService.HailLicenseStates = HailService.HailLicenseStates.INVALID
+
+    private var gateCtr = 0
+    private fun lgGate(msg: String) = Log.d(TAG, "[gate#${++gateCtr}] $msg")
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -144,8 +163,87 @@ class CotDispatchService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-        // TODO: kick off collection of protobufReady for dispatching.
-        Log.v(TAG, "CotDispatchService onCreate()")
+
+        serviceScope.launch {
+            dataRepository.hailLicenseInfoFlow.first()?.let { HailService.hailLicenseInfo = it }
+        }
+
+        serviceScope.launch {
+            combine(
+                dataRepository.enableHailService,                 // Boolean
+                dataRepository.hailLicenseState                   // HailLicenseStates
+            ) { enable, state ->
+                lastLicenseState = state
+                enable && (state == HailService.HailLicenseStates.VALID ||
+                        state == HailService.HailLicenseStates.SOFT_EXPIRED)
+            }
+                .distinctUntilChanged() // stops identical re-triggers
+                .collect { gate ->
+                    buildHailDetail = gate
+                    lgGate("[buildHailDetail]=$gate [state]=$lastLicenseState")
+                }
+        }
+
+        // Initialize the SDK only when enable becomes true (keep this simple & idempotent)
+        serviceScope.launch {
+            dataRepository.enableHailService
+                .collect { enable ->
+                    Log.d(TAG, "[enable] $enable")
+                    if (enable) {
+                        HailService.initialize(
+                            appId = "com.rain.hail",
+                            context = applicationContext,
+                            deviceUid = MainActivity.device_uid
+                        )
+                    }
+                }
+        }
+
+        // @Molly this is how we can collect the button state, so you know when it becomes false again.
+        serviceScope.launch {
+            dataRepository.hailCheckLicenseButtonPressed
+                .collect { pressed ->
+                    if (pressed) {
+                        dataRepository.hailCheckLicenseButtonPressed.emit(false)
+                        if (!dataRepository.getEnableHailService.first()) {
+                            return@collect
+                        }
+                        Log.d(TAG,"Hail Check Button pressed ... Entering CHECKING state")
+                        checkLicense {
+                            checkLocalHailLicense()
+                        }
+                    }
+                }
+        }
+
+        // gives the dispatchers
+        serviceScope.launch {
+            dataRepository.getCombatId
+                .collect { id -> combatId = id ?: 0 }
+        }
+
+        serviceScope.launch {
+            dataRepository.hailInfoStateFlow
+                .collect { info ->
+                    lgGate("""
+                    hailInfoStateFlow changed:
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    """.trimIndent().format(
+                                            "Pairing code:", info?.pairingCode ?: "null",
+                                            "Expiration date:", info?.expirationDate ?: "null",
+                                            "Soft exp. date:", info?.softExpirationDate ?: "null",
+                                            "Account number:", info?.accountNumber ?: "null",
+                                            "License ID:", info?.licenseId ?: "null",
+                                            "Device ID:", info?.deviceId ?: "null"
+                                            )
+                    )
+                }
+        }
     }
 
     private fun startDispatchScheduler() {
@@ -234,7 +332,9 @@ class CotDispatchService : Service() {
         val steps: Long,
         val calories: Double,
         val floors: Double,
-        val elevationM: Double?
+        val elevationM: Double?,
+        val weight: Int,
+        val age: Int
     )
 
     private fun buildConciseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
@@ -303,11 +403,47 @@ class CotDispatchService : Service() {
                 append("Bat:${bat ?: -1}")
             }
         }
+
+        val hailCotDetailString = buildHailDetail(physioData)
+
         // Build the cot XML
-        val cot = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/></detail></event>""".trimIndent()
-//        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
+        val cot = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
+        //Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
+        //Log.i(TAG, "===> HailCotDetail: $hailCotDetailString")
 
         return cot
+    }
+
+    private fun buildHailDetail(physioData: PhysioData): String {
+        val licenseValid = HailService.isHailLicenseValid() // so we call this everytime.
+        if (!buildHailDetail || !licenseValid) {
+            return ""
+        } else {
+            val hailEncoded: Result<String> = HailService.encodeHailDetail(combatId, callsign) { hail ->
+                hail.setHeartRate(physioData.heartRate.toShort())
+                hail.setSkinTemp(physioData.skinTemp.toInt().toShort())
+                hail.setWeight(physioData.weight.toShort())
+                hail.setAge(physioData.age.toByte())
+                if (inManualAlertingState) {
+                    hail.setMedevent(true)
+                } else {
+                    hail.setMedevent(false)
+                }
+            }
+
+            val cotDetail = hailEncoded.fold(
+                onSuccess = { encoded ->
+                    Utils.CotUtils.CotDetail(HailDetail.HAIL_DETAIL)
+                        .setAttribute("version", HailDetail.HAIL_DETAIL_ENCODE_VERSION.toString())
+                        .setInnerText(encoded)
+                },
+                onFailure = { e ->
+                    Log.e("HAIL", "Error creating Hail CotDetail", e)
+                    null
+                }
+            )
+            return cotDetail?.toXmlString() ?: ""
+        }
     }
 
     private fun buildVerboseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
@@ -366,6 +502,11 @@ class CotDispatchService : Service() {
         manualSosReceivedSendSms = event.sendSms
         val currTime = System.currentTimeMillis()
         alertOrCancel = event.category == ALERT_CANCELLED
+        if (manualSosReceivedCategory == DESC_SOS_ALERT) {
+            inManualAlertingState = true
+        } else {
+            inManualAlertingState = false
+        }
 
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
             Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
@@ -579,7 +720,7 @@ class CotDispatchService : Service() {
                 }
                 markerDropToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
-                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
+//                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
             } else {
                 Log.w(TAG, "Marker CoT NOT sent to TAK (disconnected)")
                 // 4) Mesh into Ditto if the DittoService is running
@@ -653,7 +794,10 @@ class CotDispatchService : Service() {
                 val calories   = daily?.calories   ?: -1.0          // Double
                 val floors     = daily?.floors     ?: -1.0          // Double
                 val elevationM = daily?.elevationM ?: -1.0          // Double
-                val steps      = daily?.steps?.toLong() ?: -1L
+                val steps      = daily?.steps ?: -1L
+
+                val weight     = dataRepository.getPhysiologicalMetricWeight.first()
+                val age        = dataRepository.getPhysiologicalMetricAge.first()
 
                 val physioData = PhysioData(
                     heartRate  = heartRate,
@@ -663,9 +807,10 @@ class CotDispatchService : Service() {
                     steps      = steps,
                     calories   = calories,
                     floors     = floors,
-                    elevationM = elevationM
+                    elevationM = elevationM,
+                    weight     = weight,
+                    age        = age
                 )
-
                 sendLocationBiometricCotMessage(location, physioData)
             }
         }
@@ -767,6 +912,8 @@ class CotDispatchService : Service() {
             EventBus.getDefault().unregister(this)
         }
         stopDispatchScheduler()
+        HailService.hailScope.cancel()
+        serviceScope.cancel()
         isRunning.set(false)
     }
 
