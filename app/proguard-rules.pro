@@ -25,6 +25,10 @@
 -keep class live.ditto.** { *; }
 -keepnames class com.fasterxml.jackson.** { *; }
 
+# For HAIL
+# Keep the API and impl packages (don’t strip)
+-keep class io.jsonwebtoken.** { *; }
+
 # For Gson
 # Keep generic type signatures used for reflection
 -keepattributes Signature

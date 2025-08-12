@@ -96,6 +96,13 @@
         android:defaultValue="@string/chat_service_enabled_default" />
 
     <restriction
+        android:key="hail_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/hail_service_title"
+        android:description="@string/hail_service_description"
+        android:defaultValue="@string/hail_service_enabled_default" />
+
+    <restriction
         android:key="wifiOptimization_service_enabled"
         android:restrictionType="bool"
         android:title="@string/wifiOptimization_service_enabled_title"

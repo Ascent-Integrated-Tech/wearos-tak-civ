@@ -260,9 +260,14 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.category
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categoryRolesEntryLists
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categorySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHailService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHailServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateState
+import com.aitech.weartak_civ.service.HailService
+import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -270,7 +275,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
-
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 
 class SettingsActivity : ComponentActivity() {
@@ -283,8 +292,6 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
-//        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
-//        val categorySettingsState = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -318,6 +325,7 @@ fun loadSettingsValues(){
     enableChatServiceSettingsState.postValue(enableChatService)
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
+    enableHailServiceSettingsState.postValue(enableHailService)
     callsignSettingsState.postValue(callsign)
     teamSettingsState.postValue(team)
     categorySettingsState.postValue(category)
@@ -489,6 +497,14 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_resting_hr_screen") {
             AgeWeightSetting(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context)
+        }
+        composable(
+            "hail_setting_screen") {
+            HailSetting(navController)
+        }
+        composable(
+            "hail_pairing_screen") {
+            InvalidHailScreen(navController)
         }
     }
 
@@ -1294,7 +1310,7 @@ fun NewServerPage(navController: NavController) {
                         Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network connected")
                         isNetworkConnected.value = true
                         displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        LoadingDialog(shouldShowLoadingDialog)
+                        LoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
                         ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog,shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
                     } else {
                         Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network disconnected")
@@ -1606,7 +1622,7 @@ fun EditServerPage(
                         val isNetworkConnected = remember { mutableStateOf(true)}
 
                         displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        LoadingDialog(shouldShowLoadingDialog)
+                        LoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
                         ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
                     } else {
                         Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network disconnected")
@@ -2021,6 +2037,7 @@ fun EditedWiFiSSIDSetting(
 @Composable
 fun LoadingDialog(
     shouldShowDialog: MutableState<Boolean>,
+    secondaryText: String
 ) {
     if (shouldShowDialog.value) {
         Dialog(
@@ -2044,7 +2061,7 @@ fun LoadingDialog(
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = stringResource(R.string.registering_device_with_tak_server),
+                        text = secondaryText,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -2420,6 +2437,7 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
         SettingSwitchToggleLiveData(
             physiologicalAlertsCheckedLive,
             { enablePhysiologicalAlertsSettingState.postValue(it) },
+            {},
             stringResource(R.string.physiological_alerts),
             stringResource(R.string.on_off)
         )
@@ -2911,7 +2929,7 @@ fun AllergySetting (
 fun PhysiologicalMetricsSetting(navController: NavController) {
     Log.d(TAG, "PhysioMetricsSetting called")
 
-WearTakCivScreenDimensions(
+    WearTakCivScreenDimensions(
     columnContent = {
         DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
         DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
@@ -2945,6 +2963,7 @@ WearTakCivScreenDimensions(
                         userTypeState.postValue(userTypeSettingsState.value)
                         restingHeartRateState.postValue(restingHeartRateSettingsState.value)
 
+
                 Log.d(TAG, "Finished saving physio state settings")
 
                 navController.navigate("settings_screen") {
@@ -2956,6 +2975,256 @@ WearTakCivScreenDimensions(
     },
     text = stringResource(R.string.physiological_user_metrics)
 )
+}
+
+@Composable
+fun HailTitleText(text: String, canChangeColor: Boolean, status: HailLicenseStates?){
+    Text(text, modifier = Modifier.padding(top = 15.dp, bottom = 5.dp), textAlign = TextAlign.Center,
+        color =
+            if (canChangeColor)
+                if (status == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
+                else if (status == HailLicenseStates.EXPIRED) Color.Red
+                else Color.White
+            else Color.White)
+}
+@Composable
+fun HailDataText(text: String, canChangeColor: Boolean, status: HailLicenseStates?){
+    Text(text, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+        color =
+            if (canChangeColor)
+                if (status == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
+                else if (status == HailLicenseStates.EXPIRED) Color.Red
+                else Color.White
+            else Color.White)
+}
+
+@Composable
+fun hailLicenseStatusTextFromString(status: HailLicenseStates?): String {
+    val statusString: String = when (status) {
+        HailLicenseStates.VALID -> "License Valid"
+        HailLicenseStates.CHECKING -> "Checking License"
+        HailLicenseStates.SOFT_EXPIRED -> "Expiring Soon"
+        HailLicenseStates.EXPIRED -> "License Expired"
+        HailLicenseStates.INVALID -> "License Invalid"
+        else -> stringResource(R.string.error)
+    }
+    return statusString
+}
+
+
+@Composable
+fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
+    // Parse the incoming date (pattern matches "Tue Sep 30 00:00:00 CDT 2025")
+    if (serverDateString != "null") {
+        val parser = java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.ENGLISH)
+    val parsedDate = parser.parse(serverDateString)!!
+
+    // Convert java.util.Date to LocalDate
+    val localDate = parsedDate.toInstant()
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+
+    // Format as "9/30/2025"
+    val displayDate = localDate.format(DateTimeFormatter.ofPattern("M/d/yyyy"))
+
+    // Calculate days difference
+    val today = LocalDate.now()
+    val daysDiff = ChronoUnit.DAYS.between(today, localDate)
+    val daysDisplay = "$daysDiff Days"
+
+    // Display in Compose
+        HailDataText(text = displayDate, true, status)
+        if (status != HailLicenseStates.EXPIRED)
+            HailDataText(text = daysDisplay, true, status)
+    } else {
+        HailDataText(text = stringResource(R.string.error), true, status)
+    }
+}
+
+@Composable
+fun HailSetting(navController: NavController) {
+    Log.d(TAG, "HailSetting called")
+    val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState().value
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            Text(
+                "Status:",
+                modifier = Modifier.padding(bottom = 5.dp),
+                textAlign = TextAlign.Center,
+                color = if (hailLicenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
+                        else if (hailLicenseState == HailLicenseStates.EXPIRED) Color.Red
+                        else Color.White
+            )
+
+            HailDataText(hailLicenseStatusTextFromString(hailLicenseState), true, hailLicenseState)
+
+            if (hailLicenseState == HailLicenseStates.EXPIRED || hailLicenseState == HailLicenseStates.SOFT_EXPIRED) {
+                Text(
+                    if (hailLicenseState == HailLicenseStates.EXPIRED) "Contact support to renew license" else "Contact support to extend license",
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp
+                )
+            }
+            HailTitleText(
+                if (hailLicenseState == HailLicenseStates.EXPIRED) "License Expired:" else "License Expires:",
+                true, hailLicenseState)
+            DateDisplay(info?.expirationDate.toString(), hailLicenseState)
+
+            HailTitleText("Account Number:", false, hailLicenseState)
+            HailDataText(info?.accountNumber.toString(), false, hailLicenseState)
+
+            HailTitleText("License Identification:", false, hailLicenseState)
+            HailDataText(info?.licenseId.toString(), false, hailLicenseState)
+
+            HailTitleText("Device Identification:", false, hailLicenseState)
+            HailDataText(info?.deviceId.toString(), false, hailLicenseState)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    } },
+            )
+        },
+        text = "HAIL Settings"
+    )
+}
+
+@SuppressLint("StateFlowValueCalledInComposition")
+@Composable
+fun InvalidHailScreen(navController: NavController) {
+    val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value // <-- observe backend license information changes
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState().value // <-- observe backend license state changes
+    val buttonPressed = dataRepository.hailCheckLicenseButtonPressed.collectAsState().value  // <-- observe button clicks
+    val scope = rememberCoroutineScope()
+    val showLoadingDialog = remember { mutableStateOf(false) } // single, stable state object for the dialog
+
+    // When user presses "Register", show loading while we await state updates
+    LaunchedEffect(buttonPressed) {
+        if (buttonPressed == true) showLoadingDialog.value = true
+    }
+
+    // React to license state transitions
+    LaunchedEffect(hailLicenseState) {
+        when (hailLicenseState) {
+            HailLicenseStates.CHECKING -> showLoadingDialog.value = true
+            HailLicenseStates.INVALID  -> showLoadingDialog.value = false   // stay on screen
+            HailLicenseStates.VALID,
+            HailLicenseStates.SOFT_EXPIRED -> {
+                showLoadingDialog.value = false
+                navController.navigate("hail_setting_screen") {
+                    popUpTo("settings_screen") { inclusive = true }
+                }
+            }
+            HailLicenseStates.EXPIRED -> showLoadingDialog.value = false // show message, stay
+        }
+    }
+
+    WearTAKCIVTheme {
+        Column(
+            modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.background)
+                    .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Activate Hail",
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(vertical = 10.dp, horizontal = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+            Text(
+                text = "Pairing Code:",
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = info?.pairingCode.toString(),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 25.sp,
+                modifier = Modifier
+                    .padding(vertical = 7.dp)
+                    .align(Alignment.CenterHorizontally)
+                )
+            Text(
+                text = "Enter the code on your HAIL license portal, then press Register below",
+                textAlign = TextAlign.Center,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+                )
+            Spacer(modifier = Modifier.size(5.dp))
+            Row(
+                modifier = Modifier
+                    .padding(bottom = 10.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center) {
+                Button(
+                    onClick = {
+                        navController.navigate("settings_screen") {
+                            popUpTo("settings_screen") { inclusive = true }
+                        }
+                    },
+                    contentPadding = PaddingValues(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.dismiss),
+                    )
+                }
+
+                Spacer(modifier = Modifier.size(10.dp))
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            dataRepository.hailCheckLicenseButtonPressed.emit(true)
+                        }
+                    },
+                    contentPadding = PaddingValues(10.dp),
+                    colors = ButtonDefaults.buttonColors(colors.primary),
+                ) {
+                    Text(
+                        text = "Register",
+                        color = Color.Black
+                    )
+                }
+            }
+        }
+        // Render the dialog ONCE, using the remembered state (no inline mutableStateOf(true))
+        LoadingDialog(shouldShowDialog = showLoadingDialog, secondaryText = "Checking License Status")
+    }
+}
+
+fun displayHailLoadingDialog(
+    state: HailLicenseStates?,
+    shouldShowLoadingDialog: MutableState<Boolean>,
+    navController: NavController) {
+    Log.d(TAG, "$state")
+    if (state == HailLicenseStates.CHECKING){
+        shouldShowLoadingDialog.value = true
+    } else if (state == HailLicenseStates.INVALID){
+        shouldShowLoadingDialog.value = false
+    } else {
+        shouldShowLoadingDialog.value = false
+        navController.navigate("hail_setting_screen") {
+            popUpTo("settings_screen") { inclusive = true }
+        }
+    }
+    Log.d(TAG, state.toString())
 }
 
 @Composable
@@ -2999,6 +3268,7 @@ fun SettingSwitchToggle(
 fun SettingSwitchToggleLiveData(
     checkedLive: Boolean?,
     onCheckedChange: (Boolean) -> Unit,
+    appIcon: @Composable () -> Unit,
     title: String,
     description: String,
 ) {
@@ -3012,6 +3282,7 @@ fun SettingSwitchToggleLiveData(
         secondaryLabel = {
             Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
         },
+        appIcon = {appIcon()},
         checked = checkedLive == true,
         // For Switch  toggle controls the Wear Material UX guidance is to set the
         // unselected toggle control color to ToggleChipDefaults.switchUncheckedIconColor()
@@ -3046,6 +3317,9 @@ fun SettingsScreen(
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
     var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
+    val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    Log.d(TAG, "Hail License State: $hailLicenseState")
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
@@ -3151,6 +3425,7 @@ fun SettingsScreen(
             SettingSwitchToggleLiveData(
                 locationCheckedLive,
                 { enableLocationServiceSettingsState.postValue(it) },
+                {},
                 stringResource(R.string.location_service),
                 stringResource(R.string.service_on_off)
             )
@@ -3158,6 +3433,7 @@ fun SettingsScreen(
             SettingSwitchToggleLiveData(
                 dittoCheckedLive,
                 { enableDittoServiceSettingsState.postValue(it) },
+                {},
                 stringResource(R.string.ditto),
                 stringResource(R.string.service_on_off)
             )
@@ -3165,6 +3441,7 @@ fun SettingsScreen(
             SettingSwitchToggleLiveData(
                 chatCheckedLive,
                 { enableChatServiceSettingsState.postValue(it) },
+                {},
                 stringResource(R.string.chat),
                 stringResource(R.string.service_on_off)
             )
@@ -3172,6 +3449,7 @@ fun SettingsScreen(
             SettingSwitchToggleLiveData(
                 enableSmsCheckedLive,
                 { enableSmsForAlertsSettingsState.postValue(it) },
+                {},
                 "SMS Alerts",
                 stringResource(R.string.on_off)
             )
@@ -3226,9 +3504,32 @@ fun SettingsScreen(
             SettingSwitchToggleLiveData(
                 physioCheckedLive,
                 { enablePhysiologicalServicesSettingsState.postValue(it) },
+                {},
                 stringResource(R.string.physiological_monitoring),
                 stringResource(R.string.service_on_off)
             )
+            SettingSwitchToggleLiveData(
+                hailCheckedLive,
+                { enableHailServiceSettingsState.postValue(it) },
+                { Icon(
+                    painter = painterResource(id = R.drawable.hail_icon),
+                    tint = Color.Unspecified,
+                    contentDescription = "null",
+                    modifier = Modifier
+                        .size(20.dp),
+                ) },
+                "HAIL",
+                stringResource(R.string.service_on_off)
+            )
+            if (enableHailServiceSettingsState.value == true){
+                DataMetricsChip(
+                    if (hailLicenseState == HailLicenseStates.INVALID) {
+                        "hail_pairing_screen"
+                    } else {
+                        "hail_setting_screen"
+                    },
+                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
+            }
             Chip(
                 onClick = {
                     hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThresholdState.value)
@@ -3311,6 +3612,7 @@ fun SettingsScreen(
                     val minReportRate: Int = 1
                     var locationCheckedChanged: Boolean = false
                     var physioCheckedChanged: Boolean = false
+                    var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var smsAlertsCheckedChanged: Boolean = false
@@ -3501,6 +3803,15 @@ fun SettingsScreen(
                         requestChatComplicationUpdate(context)
                     }
 
+                    if (enableHailService != enableHailServiceSettingsState.value) {
+                        settingsChanged = true; hailCheckedChanged = true
+                        enableHailService = enableHailServiceSettingsState.value ?: enableHailService
+                        runBlocking {
+                            // This is in case enableLocationService above is NOT set to enableLocationServiceSettingsState.value
+                            enableHailServiceSettingsState.postValue(enableHailService)
+                        }
+                    }
+
                     if (enableSmsForAlerts != enableSmsForAlertsSettingsState.value) {
                         settingsChanged = true; smsAlertsCheckedChanged = true
                         enableSmsForAlerts = enableSmsForAlertsSettingsState.value ?: enableSmsForAlerts
@@ -3639,6 +3950,10 @@ fun SettingsScreen(
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (hailCheckedChanged) {
+                                 Log.d(TAG, "Storing enableHailService $enableHailService")
+                                 dataRepository.storeEnableHailService(enableHailService)
                              }
                              if (smsAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
@@ -3787,7 +4102,7 @@ fun SettingsPreview() {
     SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
 }
 
-@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+@Preview(widthDp = 192, heightDp = 800, showBackground = true)
 @Composable
 fun PhysioSettingsPreview() {
 
@@ -3816,6 +4131,15 @@ fun AllergyMetricPreview() {
 @Preview(widthDp = 192, heightDp = 500, showBackground = true)
 @Composable
 fun PhysioAlertsPreview() {
-
     PhysiologicalAlertsSetting(rememberSwipeDismissableNavController())
+}
+@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+@Composable
+fun HailSettingPreview() {
+    HailSetting(rememberSwipeDismissableNavController())
+}
+@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+@Composable
+fun InvalidHailPreview() {
+    InvalidHailScreen(rememberSwipeDismissableNavController())
 }

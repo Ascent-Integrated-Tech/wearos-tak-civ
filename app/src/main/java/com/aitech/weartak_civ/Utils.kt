@@ -550,5 +550,98 @@ object Utils {
 
             return rooms
         }
+
+        class CotDetail(elementName: String = "detail") {
+            private var elemName: String = elementName
+                set(value) {
+                    require(value.isNotBlank()) { "Element name cannot be blank" }
+                    field = value
+                }
+
+            private val attrs = LinkedHashMap<String, String>()
+            private val children = mutableListOf<CotDetail>()
+            private var innerText: String? = null
+
+            fun elementName(): String = elemName
+
+            fun setElementName(name: String): CotDetail {
+                this.elemName = name
+                return this
+            }
+
+            fun setAttribute(name: String, value: String?): CotDetail {
+                if (!name.isNullOrBlank() && value != null) {
+                    attrs[name] = value
+                }
+                return this
+            }
+
+            fun removeAttribute(name: String): String? = attrs.remove(name)
+
+            fun clearAttributes(): CotDetail {
+                attrs.clear()
+                return this
+            }
+
+            /** Inner text and children are mutually exclusive (like ATAK’s CotDetail). */
+            fun setInnerText(text: String?): CotDetail {
+                children.clear()
+                innerText = text
+                return this
+            }
+
+            /** Adding a child clears innerText to mirror ATAK behavior. */
+            fun addChild(child: CotDetail): CotDetail {
+                require(child.elementName().isNotBlank()) { "Child element must have a name" }
+                innerText = null
+                children.add(child)
+                return this
+            }
+
+            fun getChildren(): List<CotDetail> = children.toList()
+
+            fun toXmlString(): String = buildString { buildXml(this) }
+
+            private fun buildXml(out: Appendable) {
+                out.append('<').append(elemName)
+                for ((k, v) in attrs) {
+                    out.append(' ').append(k).append("='")
+                    if (v != null) out.append(escapeXml(v))
+                    out.append('\'')
+                }
+                val text = innerText
+                if (text != null) {
+                    out.append('>')
+                    out.append(escapeXml(text))
+                    out.append("</").append(elemName).append('>')
+                } else {
+                    if (children.isEmpty()) {
+                        out.append("/>")
+                    } else {
+                        out.append('>')
+                        children.forEach { it.buildXml(out) }
+                        out.append("</").append(elemName).append('>')
+                    }
+                }
+            }
+
+            private fun escapeXml(s: String): String {
+                // Minimal, covers content/attr usage like ATAK’s CotDetail.escapeXmlText(...)
+                val sb = StringBuilder(s.length + 16)
+                for (ch in s) {
+                    when (ch) {
+                        '&'  -> sb.append("&amp;")
+                        '<'  -> sb.append("&lt;")
+                        '>'  -> sb.append("&gt;")
+                        '"'  -> sb.append("&quot;")
+                        '\'' -> sb.append("&apos;")
+                        else -> sb.append(ch)
+                    }
+                }
+                return sb.toString()
+            }
+
+        }
+
     }
 }

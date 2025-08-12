@@ -51,7 +51,6 @@ class SkinTempService : Service() {
         val LOG_FILENAME = "/sdcard/Download/skin_temp.log"
     }
 
-
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
 
@@ -193,10 +192,12 @@ class SkinTempService : Service() {
         //writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
         if (!isRunning.getAndSet(true)) {
             deviceWorn = sharedRepo.latestIsDeviceWorn.value ?: false
+
             if (deviceWorn && ::skinTracker.isInitialized) {
                 startSkinTracker()
                 scheduleNextReading()
             }
+
         }
         return START_NOT_STICKY
     }
@@ -213,8 +214,10 @@ class SkinTempService : Service() {
 
         // Ensure listener is removed and thread stopped
         stopSkinTracker(true)
+
         healthService.disconnectService()
         handlerThread.quitSafely()
+
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

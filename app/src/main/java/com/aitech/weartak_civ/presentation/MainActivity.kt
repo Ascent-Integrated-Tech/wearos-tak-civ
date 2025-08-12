@@ -185,6 +185,9 @@ import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -208,6 +211,8 @@ class MainActivity : ComponentActivity() {
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableHailService: Boolean = false
+        var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -304,7 +309,7 @@ class MainActivity : ComponentActivity() {
         var versionNumber : String = ""
         var logFile: java.io.File? = null
 
-        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
+//        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
@@ -1096,7 +1101,7 @@ class MainActivity : ComponentActivity() {
             enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             enableChatService = dataRepository.getEnableChatService.first()
-
+            enableHailService = dataRepository.getEnableHailService.first()
 
             val minReportingInterval = getMinReportingInterval(takServerList)
 
@@ -1197,6 +1202,8 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
                     ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
+                    ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
                     ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
@@ -1287,7 +1294,9 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "MainActivity onCreate called")
         mainActivity = this
         mainActivityIsInit = this
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        //device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        device_uid = "WEAROS-" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+
 
         val context = mainActivity.applicationContext
         dataRepository = DataRepository(this)
@@ -1404,6 +1413,7 @@ class MainActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableHailServiceSettingsState.postValue(enableHailService)
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableChatServiceSettingsState.postValue(enableChatService)
@@ -1530,6 +1540,7 @@ class MainActivity : ComponentActivity() {
         }
 
         Log.d(TAG, "Managed Configuration Item Size: ${appRestrictions.keySet().size}")
+
         /*
         for (key in appRestrictions.keySet()) {
             val value = appRestrictions.get(key)
@@ -1632,6 +1643,7 @@ class MainActivity : ComponentActivity() {
         val enableSkinTempServiceConfigUpdate = appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
 
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
@@ -1659,6 +1671,7 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsBloodTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_blood_type", bloodTypeValue)
         val physiologicalMetricsAllergiesServiceConfigUpdate = appRestrictions.getStringArray("physiological_metrics_allergies")
         val physiologicalMetricsUserTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_user_type", userTypeValue)
+
 
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
@@ -1871,6 +1884,7 @@ class MainActivity : ComponentActivity() {
                     dataRepository.storeDittoAuthToken(dittoAuthTokenConfigUpdate)
                 }
             }
+
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServicesConfigUpdate)
             dataRepository.storeEnableActivityRecognitionService(enableActivityRecognitionServiceConfigUpdate)
@@ -1879,6 +1893,7 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
+            dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
@@ -1958,6 +1973,7 @@ class MainActivity : ComponentActivity() {
                     restartTAKConnectService()
                 }
             }
+            enableHailService = enableHailServiceConfigUpdate
             enableSmsForAlerts = enableSmsForAlertsConfigUpdate
             smsNumbersList = smsNumbersListConfigUpdate
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
