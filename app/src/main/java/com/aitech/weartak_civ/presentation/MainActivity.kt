@@ -1411,6 +1411,7 @@ class MainActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableHailServiceSettingsState.postValue(enableHailService)
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableChatServiceSettingsState.postValue(enableChatService)
