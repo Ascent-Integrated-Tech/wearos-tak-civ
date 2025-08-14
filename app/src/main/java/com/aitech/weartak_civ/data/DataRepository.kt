@@ -442,15 +442,15 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_HAIL_SERVICE] ?: true
-    }
-
-    suspend fun storeEnableHailService(enableHailService: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_HAIL_SERVICE] = enableHailService
-        }
-    }
+//    val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+//        prefs[ENABLE_HAIL_SERVICE] ?: true
+//    }
+//
+//    suspend fun storeEnableHailService(enableHailService: Boolean) {
+//        context.dataStore.edit { prefs ->
+//            prefs[ENABLE_HAIL_SERVICE] = enableHailService
+//        }
+//    }
 
 
     val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -1057,7 +1057,6 @@ class DataRepository(private val context: Context) {
         private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_PHYSIOLOGICAL_SERVICES = booleanPreferencesKey("enable_physiological_services")
-        private val ENABLE_HAIL_SERVICE = booleanPreferencesKey("enable_hail_service")
         private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_activity_recognition_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
