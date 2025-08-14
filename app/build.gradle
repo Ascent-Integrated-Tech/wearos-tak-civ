@@ -95,8 +95,10 @@ android {
 
 dependencies {
     //implementation fileTree(dir: 'libs', include: '*.aar)
-    implementation files('libs/hail-sdk-no-samsung.aar')
-    implementation files('libs/samsung-health-sensor-api-1.3.0.aar')
+//    implementation files('libs/hail-sdk-no-samsung.aar')
+//    implementation files('libs/samsung-health-sensor-api-1.3.0.aar')
+    implementation files('libs/hail-sdk.aar')
+    implementation libs.protolite.well.known.types
 
     def room_version = "2.7.2"
     implementation "androidx.room:room-runtime:$room_version"

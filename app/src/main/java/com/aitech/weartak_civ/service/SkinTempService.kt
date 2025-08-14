@@ -22,6 +22,7 @@ import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
+/*
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -29,6 +30,7 @@ import com.samsung.android.service.health.tracking.HealthTracker
 import com.samsung.android.service.health.tracking.data.HealthTrackerType
 import com.samsung.android.service.health.tracking.data.DataPoint
 import com.samsung.android.service.health.tracking.data.ValueKey
+*/
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -54,10 +56,10 @@ class SkinTempService : Service() {
 
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
-
+/*
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
-
+*/
     private lateinit var handlerThread: HandlerThread
     private lateinit var backgroundHandler: Handler
     private var isHandlerRunning = false
@@ -80,7 +82,7 @@ class SkinTempService : Service() {
     }
 
     private val logFile: File by lazy { File(LOG_FILENAME) }
-
+/*
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
@@ -147,7 +149,7 @@ class SkinTempService : Service() {
             Log.e(TAG, "Tracker error: $error")
         }
     }
-
+*/
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SkinTempService onCreate")
@@ -171,11 +173,11 @@ class SkinTempService : Service() {
         // Start a dedicated thread for handling callbacks
         handlerThread = HandlerThread("SkinTempThread").apply { start() }
         backgroundHandler = Handler(handlerThread.looper)
-
+/*
         // Connect to the Samsung Health Tracking Service
         healthService = HealthTrackingService(connectionListener, applicationContext)
         healthService.connectService()
-
+*/
         // Promote to foreground to avoid being killed
         startForegroundServiceCompat(
             NOTIF_ID,
@@ -193,10 +195,12 @@ class SkinTempService : Service() {
         //writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
         if (!isRunning.getAndSet(true)) {
             deviceWorn = sharedRepo.latestIsDeviceWorn.value ?: false
+            /*
             if (deviceWorn && ::skinTracker.isInitialized) {
                 startSkinTracker()
                 scheduleNextReading()
             }
+             */
         }
         return START_NOT_STICKY
     }
@@ -213,8 +217,11 @@ class SkinTempService : Service() {
 
         // Ensure listener is removed and thread stopped
         stopSkinTracker(true)
+        /*
+
         healthService.disconnectService()
         handlerThread.quitSafely()
+        */
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -243,16 +250,16 @@ class SkinTempService : Service() {
     }
 
     private fun startSkinTracker() {
-        if (!::skinTracker.isInitialized || isHandlerRunning) return
+//        if (!::skinTracker.isInitialized || isHandlerRunning) return
         isHandlerRunning = true
-        backgroundHandler.post { skinTracker.setEventListener(trackerEventListener) }
+//        backgroundHandler.post { skinTracker.setEventListener(trackerEventListener) }
     }
 
     private fun stopSkinTracker(clearQueue: Boolean = false) {
         if (!isHandlerRunning) return
         isHandlerRunning = false
         backgroundHandler.post {
-            skinTracker.unsetEventListener()
+//            skinTracker.unsetEventListener()
             if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
         }
     }

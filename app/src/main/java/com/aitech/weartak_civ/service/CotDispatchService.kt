@@ -20,6 +20,7 @@ import android.location.Location
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
@@ -41,6 +42,7 @@ import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
@@ -50,11 +52,22 @@ import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaco
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDistance
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
+import com.aitech.weartak_civ.service.HailService.checkLicense
+import com.aitech.weartak_civ.service.HailService.createHailCotDetail
+import com.aitech.weartak_civ.service.HailService.licenseChecked
+import com.aitech.weartak_civ.service.HailService.licensed
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
+import com.rain.hail.sdk.HailDetail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -70,7 +83,7 @@ import kotlin.math.roundToInt
 
 
 class CotDispatchService : Service() {
-    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
+//    private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private var lastLocationUpdateRcvd: Long = 0L
@@ -88,6 +101,10 @@ class CotDispatchService : Service() {
     private var alertOrCancel = false
     private var sosAlertUid: String = ""
 
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private var buildHailDetail: Boolean = false
+
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
 
@@ -100,6 +117,15 @@ class CotDispatchService : Service() {
         if (!isRunning.getAndSet(true)) {
             startForegroundService()
             startDispatchScheduler()
+//            startForceCheckRegistration(maxMinutes = 2)
+//            checkLicense {
+//                if (dataRepository.hailPairingCode.value != null) {
+//                    Log.i(TAG, "Hail Pairing code exists, and has been stored persistently and is: ${dataRepository.hailPairingCode.value}")
+//                } else {
+//                    Log.w(TAG, "We have never stored a pairing code, need to try to fetch one.")
+//                    HailService.fetchPairingCode { checkLicense {} }
+//                }
+//            }
             CoroutineScope(Dispatchers.Main).launch {
                 setValuesFromCustomDeveloperConfig()
             }
@@ -137,6 +163,22 @@ class CotDispatchService : Service() {
         return channelId
     }
 
+    /*   Main Talking points for HAIL
+d
+    1. During init, the appId needs to be "com.rain.hail" or our package app id? Seems to not work with our app, only get a pairing code with "com.rain.hail"
+
+    2. Which LicensingManager api calls are network calls and which are local. Are the checks quick?
+            - checkLicense
+            - fetchPairingCode
+
+    2.
+
+    3. If we already "paired" or "registered" the device on the cloud, will fetching a pairing code generate a new code?
+
+    4. What is combat ID used for on the user end?
+
+     */
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -144,8 +186,60 @@ class CotDispatchService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+
+        // @Molly this is how we can collect the button state, so you know when it becomes false again.
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.hailCheckLicenseButtonPressed
+                .collect { pressed ->
+                    val logString = "Hail Check Button pressed: $pressed"
+                    // TODO: Change the state to CHECKING
+                    Log.d(TAG, logString)
+                }
+        }
+
+        // Should we build the hail detail or not. Only build if it is VALID or SOFT_EXPIRED.
+        // @Molly collect this as well in UI, adjust execution steps inside collect {} as needed.
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.hailLicenseState
+                .collect { state ->
+                    val logString = "Hail License State for HAIL updated: $state"
+                    Log.d(TAG, logString)
+
+                    if (!dataRepository.getEnableHailService.first()) {
+                        buildHailDetail = false
+                        Log.d(TAG, "HailService is Disabled, so don't build the HailDetail.")
+                        return@collect
+                    }
+                }
+        }
+
+        // Should we build the hail detail or not. Triggered by mgd configs or ui toggle button.
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.enableHailService
+                .collect { enable ->
+                    val logString = "Hail Service enabled is: $enable"
+                    Log.d(TAG, logString)
+                    buildHailDetail = enable
+                }
+        }
+
+        // Monitor Hail pairing code for changes
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.hailPairingCode
+                .collect { code ->
+                    val logString = "Pairing Code updated: $code"
+                    Log.d(TAG, logString)
+                }
+        }
+
         // TODO: kick off collection of protobufReady for dispatching.
         Log.v(TAG, "CotDispatchService onCreate()")
+
+        HailService.initialize(
+            appId = "com.rain.hail",
+            context = applicationContext,
+            deviceUid = MainActivity.device_uid
+        )
     }
 
     private fun startDispatchScheduler() {
@@ -303,9 +397,27 @@ class CotDispatchService : Service() {
                 append("Bat:${bat ?: -1}")
             }
         }
+
+        var hailCotDetailString: String? = ""
+        if (buildHailDetail && HailService.isHailLicenseValid()) {
+            val hailDetail = HailService.encodeHailDetail(555, callsign) { hail ->
+                hail.setHeartRate(hr.toShort())
+                hail.setSkinTemp(skt.toShort())
+            }
+
+            val cotDetail = createHailCotDetail(
+                hailDetail = hailDetail,
+                detailTagName = HailDetail.HAIL_DETAIL,
+                encodeVersion = HailDetail.HAIL_DETAIL_ENCODE_VERSION
+            ) { hd -> (hd as HailDetail).toCotDetailBody() }
+
+            hailCotDetailString = cotDetail?.toXmlString()
+            Log.i(TAG, "---- ---- ---- ----- hailCotDetailString: $hailCotDetailString")
+        }
+
         // Build the cot XML
-        val cot = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/></detail></event>""".trimIndent()
-//        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
+        val cot = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
+        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
 
         return cot
     }
@@ -642,6 +754,10 @@ class CotDispatchService : Service() {
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             CoroutineScope(Dispatchers.IO).launch {
+                HailService.isHailLicenseValid()
+            }
+
+            CoroutineScope(Dispatchers.IO).launch {
                 val location    = dataRepository.latestLocation.value
 
                 val heartRate  = dataRepository.latestHeartRate.value ?: -1
@@ -767,6 +883,7 @@ class CotDispatchService : Service() {
             EventBus.getDefault().unregister(this)
         }
         stopDispatchScheduler()
+        serviceScope.cancel()
         isRunning.set(false)
     }
 

@@ -250,6 +250,10 @@
     <string name="chat_service_description" translatable="false">Enable or disable Chat service</string>
     <string name="chat_service_enabled_default" translatable="false">false</string>
 
+    <string name="hail_service_title" translatable="false">Enable Hail Service</string>
+    <string name="hail_service_description" translatable="false">Enable or disable Hail service</string>
+    <string name="hail_service_enabled_default" translatable="false">false</string>
+
     <!-- WiFi Battery optimization-->
     <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
     <string name="wifiOptimization_service_enabled_description" translatable="false">Enable to increase battery life when connected to wifi networks.</string>

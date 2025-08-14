@@ -185,6 +185,9 @@ import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -208,6 +211,8 @@ class MainActivity : ComponentActivity() {
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableHailService: Boolean = false
+        var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -304,7 +309,7 @@ class MainActivity : ComponentActivity() {
         var versionNumber : String = ""
         var logFile: java.io.File? = null
 
-        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
+//        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
 
         fun generateSaveBattOnWifiString(enableWifiOpt: Boolean, enableAllWifiOpt: Boolean) : String {
             return when {
@@ -1096,7 +1101,7 @@ class MainActivity : ComponentActivity() {
             enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             enableChatService = dataRepository.getEnableChatService.first()
-
+            enableHailService = dataRepository.getEnableHailService.first()
 
             val minReportingInterval = getMinReportingInterval(takServerList)
 
@@ -1287,7 +1292,9 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "MainActivity onCreate called")
         mainActivity = this
         mainActivityIsInit = this
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+//        device_uid = "WEAROS-" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        device_uid = "WEAROS-" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+
 
         val context = mainActivity.applicationContext
         dataRepository = DataRepository(this)

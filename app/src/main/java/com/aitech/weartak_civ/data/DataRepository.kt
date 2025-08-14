@@ -42,6 +42,10 @@ import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.service.HailService
+import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.google.type.Date
+import org.apache.commons.lang3.mutable.Mutable
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -77,6 +81,120 @@ class DataRepository(private val context: Context) {
 //                }
 //        }
 //    }
+
+    // ======== ======== HAIL SECTION START ======== ========
+
+    var hailLicenseState = MutableStateFlow<HailLicenseStates?>(HailLicenseStates.INVALID)
+    suspend fun storeHailLicenseState(state: HailLicenseStates?) {
+        context.dataStore.edit { prefs ->
+            prefs[HAIL_LICENSE_STATE] = state.toString()
+        }
+        hailLicenseState.emit(state)
+    }
+    val getHailLicenseState: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[HAIL_LICENSE_STATE] ?: HailLicenseStates.INVALID.toString()
+    }
+
+    // Pairing code doesn't seem to change unless we delete device from server. So we should save it.
+    suspend fun storePairingCode(pairingCode: String?) {
+        context.dataStore.edit { prefs ->
+            prefs[HAIL_PAIRING_CODE] = pairingCode!!
+        }
+        _hailPairingCode.emit(pairingCode)
+    }
+    val getHailPairingCode: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[HAIL_PAIRING_CODE] ?: ""
+    }
+    private val _hailPairingCode = MutableStateFlow<String?>(null)
+    var hailPairingCode: Flow<String> = getHailPairingCode
+
+    // Basically controls whether or not we should build the hail detail.
+    private val _enableHailService = MutableStateFlow<Boolean>(false)
+    val enableHailService: StateFlow<Boolean> = _enableHailService
+    suspend fun storeEnableHailService(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_HAIL_SERVICE] = enable
+        }
+        _enableHailService.emit(enable)
+    }
+    val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_HAIL_SERVICE] ?: false
+    }
+
+    // @Molly when button is clicked, this value will be flipped to true by you. After the license check is made (once we exit CHECKING state), will be flipped to false.
+    var hailCheckLicenseButtonPressed = MutableStateFlow<Boolean>(false)
+
+    /**
+     * Change part of the saved license info without overwriting everything.
+     * Reads the current value, gives it to the transform function,
+     * then saves whatever that function returns.
+     * Return null from the transform to clear the value.
+     */
+    suspend fun updateHailLicenseInfo(
+        transform: (HailService.HailLicenseInfo?) -> HailService.HailLicenseInfo?
+    ) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[HAIL_LICENSE_INFO_JSON]?.let {
+                runCatching { gson.fromJson(it, HailService.HailLicenseInfo::class.java) }.getOrNull()
+            }
+            val next = transform(current)
+            if (next == null) {
+                prefs.remove(HAIL_LICENSE_INFO_JSON)
+            } else {
+                prefs[HAIL_LICENSE_INFO_JSON] = gson.toJson(next)
+            }
+        }
+    }
+
+    /**
+     * Save new license info or replace the old one.
+     * Pass null to completely clear it.
+     */
+    suspend fun storeHailLicenseInfo(info: HailService.HailLicenseInfo?) {
+        context.dataStore.edit { prefs ->
+            if (info == null) {
+                prefs.remove(HAIL_LICENSE_INFO_JSON)
+            } else {
+                // Single object: no TypeToken required
+                prefs[HAIL_LICENSE_INFO_JSON] = gson.toJson(info)
+            }
+        }
+    }
+
+    /**
+     * A live stream of the saved license info.
+     * Every time the stored value changes, this will emit the new value.
+     * Emits null if there is nothing saved.
+     */
+    val hailLicenseInfoFlow: Flow<HailService.HailLicenseInfo?> =
+        context.dataStore.data.map { prefs ->
+            val json = prefs[HAIL_LICENSE_INFO_JSON] ?: return@map null
+            runCatching {
+                gson.fromJson(json, HailService.HailLicenseInfo::class.java)
+            }.getOrNull()
+        }
+
+    /**
+     * A version of hailLicenseInfoFlow that always remembers the latest value.
+     * Useful for UI code so it can instantly read the current license info
+     * without waiting for a change.
+     */
+    val hailInfoStateFlow: StateFlow<HailService.HailLicenseInfo?> =
+        hailLicenseInfoFlow.stateIn(
+            scope = repoScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null
+        )
+
+    /**
+     * Remove the saved license info.
+     * Same as calling storeHailLicenseInfo(null), but with a clearer name.
+     */
+    suspend fun clearHailLicenseInfo() {
+        context.dataStore.edit { it.remove(HAIL_LICENSE_INFO_JSON) }
+    }
+
+    // ======== ======== HAIL SECTION END ======== ==========
 
     private val _latestActivityConfidence = MutableStateFlow<Int>(100)
     val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
@@ -919,6 +1037,10 @@ class DataRepository(private val context: Context) {
         private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
+        private val HAIL_PAIRING_CODE = stringPreferencesKey("hail_device_registered")
+        private val ENABLE_HAIL_SERVICE = booleanPreferencesKey("enable_hail_service")
+        private val HAIL_LICENSE_INFO_JSON = stringPreferencesKey("hail_license_info_json_v1") // include suffix for forward-compat
+        private val HAIL_LICENSE_STATE = stringPreferencesKey("hail_license_state")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
         private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
         private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")
