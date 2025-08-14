@@ -57,20 +57,7 @@ object HailService {
         }
         LicensingManager.initialize(appId, context, deviceUid)  // per SDK
         Log.i(TAG, "initialize(appId=$appId, ctx=${context.applicationContext.javaClass.simpleName}, deviceUid=$deviceUid)")
-        hailScope.launch {
-            getCombatId(deviceUid)
-        }
-        logCheck("initialize")
-        checkOnInit()
-    }
-
-    fun checkOnInit() {
-        if (TAKConnectService.isNetworkConnected) {
-            logCheck("Checking License since Network is connected ...")
-            runBlocking {
-                checkLicense {  }  // First check network call if net available
-            }
-        }
+        /*
         if (LicensingManager.isLicenseChecked()) {
             if (LicensingManager.isLicensed()) {
                 if (LicensingManager.isLicenseSoftExpired()) {
