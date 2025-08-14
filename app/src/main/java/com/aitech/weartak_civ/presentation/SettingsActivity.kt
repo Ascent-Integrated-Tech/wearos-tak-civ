@@ -291,8 +291,8 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
-        //TODO: Change to backend status once it's implemented
-        val hailLicenseStatusState = MutableLiveData<String>("SOFT_EXPIRE")
+        //TODO: WEAR-232 - Change to backend status once it's implemented
+        val hailLicenseStatusState = MutableLiveData<String>("INVALID")
 //        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
 //        val categorySettingsState = MutableLiveData<String>("")
     }
@@ -2979,7 +2979,7 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
 )
 }
 
-//TODO: Tommy's data class for Hail - Mutable Flow
+//TODO:  WEAR-232 - Tommy's data class for Hail - Mutable Flow
 //data class HailLicenseInfo(
 //    var licenseState: hailLicenseStates? = null,
 //    var pairingCode: String? = null,
@@ -3155,9 +3155,9 @@ fun InvalidHailScreen(navController: NavController) {
 
                 Button(
                     onClick = {
-                        //TODO: When pressed state variable boolean triggers checkLicense function on SDK
-                        //TODO: licenseState will equal CHECKING, show loading dialog
-                        //TODO: When licenseState changes to VALID, SOFT_EXPIRED, EXPIRED, or INVALID change screen accordingly
+                        //TODO:  WEAR-232 - When pressed state variable boolean triggers checkLicense function on SDK
+                        //TODO:  WEAR-232 - licenseState will equal CHECKING, show loading dialog
+                        //TODO:  WEAR-232 - When licenseState changes to VALID, SOFT_EXPIRED, EXPIRED, or INVALID change screen accordingly
                     },
                     contentPadding = PaddingValues(10.dp),
                     colors = ButtonDefaults.buttonColors(colors.primary),
@@ -3471,7 +3471,7 @@ fun SettingsScreen(
                     } else {
                         "hail_setting_screen"
                     },
-                    //TODO Change secondary text to make it not have underscores
+                    //TODO WEAR-232 - Change secondary text to make it not have underscores
                     "HAIL Settings", hailLicenseStatusState.value.toString(), navController)
             }
             Chip(
