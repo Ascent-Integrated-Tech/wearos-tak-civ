@@ -265,7 +265,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHailServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateState
+import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -290,10 +292,6 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
-        //TODO: WEAR-232 - Change to backend status once it's implemented
-//        val hailLicenseStatusState = MutableLiveData<String>("INVALID")
-//        var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
-//        val categorySettingsState = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -309,7 +307,10 @@ class SettingsActivity : ComponentActivity() {
 //            categorySettingsState.postValue(dataRepository.getRoleCategory.first())
 //        }
         Log.d(TAG, "SettingsActivity onCreate called with enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState and enablePhysiologicalAlerts=$enablePhysiologicalAlerts")
-
+        //TODO: WEAR-232 - Temporary testing code
+        CoroutineScope(Dispatchers.Main).launch {
+            HailService.updateHailLicenseState(HailLicenseStates.INVALID)
+        }
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
@@ -1312,7 +1313,7 @@ fun NewServerPage(navController: NavController) {
                         Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network connected")
                         isNetworkConnected.value = true
                         displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        LoadingDialog(shouldShowLoadingDialog)
+                        LoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
                         ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog,shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
                     } else {
                         Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network disconnected")
@@ -1624,7 +1625,7 @@ fun EditServerPage(
                         val isNetworkConnected = remember { mutableStateOf(true)}
 
                         displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
-                        LoadingDialog(shouldShowLoadingDialog)
+                        LoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
                         ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
                     } else {
                         Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network disconnected")
@@ -2039,6 +2040,7 @@ fun EditedWiFiSSIDSetting(
 @Composable
 fun LoadingDialog(
     shouldShowDialog: MutableState<Boolean>,
+    secondaryText: String
 ) {
     if (shouldShowDialog.value) {
         Dialog(
@@ -2062,7 +2064,7 @@ fun LoadingDialog(
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = stringResource(R.string.registering_device_with_tak_server),
+                        text = secondaryText,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -2978,17 +2980,6 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
 )
 }
 
-//TODO:  WEAR-232 - Tommy's data class for Hail - Mutable Flow
-//data class HailLicenseInfo(
-//    var licenseState: hailLicenseStates? = null,
-//    var pairingCode: String? = null,
-//    var expirationDate: Date? = null,
-//    var softExpirationDate: Date? = null,
-//    var accountNumber: String? = null,
-//    var licenseId: String? = null,
-//    var deviceId: String? = null
-//)
-
 @Composable
 fun HailTitleText(text: String, canChangeColor: Boolean, status: HailLicenseStates?){
     Text(text, modifier = Modifier.padding(top = 15.dp, bottom = 5.dp), textAlign = TextAlign.Center,
@@ -3011,9 +3002,24 @@ fun HailDataText(text: String, canChangeColor: Boolean, status: HailLicenseState
 }
 
 @Composable
+fun hailLicenseStatusTextFromString(status: HailLicenseStates?): String {
+    val statusString: String = when (status) {
+        HailLicenseStates.VALID -> "License Valid"
+        HailLicenseStates.CHECKING -> "Checking License"
+        HailLicenseStates.SOFT_EXPIRED -> "Expiring Soon"
+        HailLicenseStates.EXPIRED -> "License Expired"
+        HailLicenseStates.INVALID -> "License Invalid"
+        else -> stringResource(R.string.error)
+    }
+    return statusString
+}
+
+
+@Composable
 fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
     // Parse the incoming date (pattern matches "Tue Sep 30 00:00:00 CDT 2025")
-    val parser = java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.ENGLISH)
+    if (serverDateString != "null") {
+        val parser = java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.ENGLISH)
     val parsedDate = parser.parse(serverDateString)!!
 
     // Convert java.util.Date to LocalDate
@@ -3030,49 +3036,50 @@ fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
     val daysDisplay = "$daysDiff Days"
 
     // Display in Compose
-    HailDataText(text = displayDate, true, status)
-    if (status != HailLicenseStates.EXPIRED)
-        HailDataText(text = daysDisplay, true, status)
+        HailDataText(text = displayDate, true, status)
+        if (status != HailLicenseStates.EXPIRED)
+            HailDataText(text = daysDisplay, true, status)
+    } else {
+        HailDataText(text = stringResource(R.string.error), true, status)
+    }
 }
 
 @Composable
 fun HailSetting(navController: NavController) {
     Log.d(TAG, "PhysioMetricsSetting called")
     val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
 
     WearTakCivScreenDimensions(
         columnContent = {
             Text("Status:", modifier = Modifier.padding(bottom = 5.dp), textAlign = TextAlign.Center,
                 color =
-                        if (info?.licenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
-                        else if (info?.licenseState == HailLicenseStates.EXPIRED) Color.Red
+                        if (hailLicenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
+                        else if (hailLicenseState == HailLicenseStates.EXPIRED) Color.Red
                         else Color.White)
-            HailDataText(
-                if (info?.licenseState == HailLicenseStates.SOFT_EXPIRED) "EXPIRING SOON"
-                else if (info?.licenseState == HailLicenseStates.EXPIRED) "LICENSE EXPIRED"
-                else "ACTIVE", true, info?.licenseState)
-            if (info?.licenseState == HailLicenseStates.EXPIRED || info?.licenseState == HailLicenseStates.SOFT_EXPIRED) {
+            HailDataText(hailLicenseStatusTextFromString(hailLicenseState), true, hailLicenseState)
+            if (hailLicenseState == HailLicenseStates.EXPIRED || hailLicenseState == HailLicenseStates.SOFT_EXPIRED) {
                 Text(
-                    if (info.licenseState == HailLicenseStates.EXPIRED) "Contact support to renew license" else "Contact support to extend license",
+                    if (hailLicenseState == HailLicenseStates.EXPIRED) "Contact support to renew license" else "Contact support to extend license",
                     textAlign = TextAlign.Center,
-                    fontSize = 15.sp
+                    fontSize = 12.sp
                 )
             } else {
                //No text
             }
             HailTitleText(
-                if (info?.licenseState == HailLicenseStates.EXPIRED) "License Expired:" else "License Expires:",
-                true, info?.licenseState)
-            DateDisplay("Sun Oct 05 00:00:00 CDT 2025", info?.licenseState)
+                if (hailLicenseState == HailLicenseStates.EXPIRED) "License Expired:" else "License Expires:",
+                true, hailLicenseState)
+            DateDisplay(info?.expirationDate.toString(), hailLicenseState)
 
-            HailTitleText("Account Number:", false, info?.licenseState)
-            HailDataText("[PLACEHOLDER]", false, info?.licenseState)
+            HailTitleText("Account Number:", false, hailLicenseState)
+            HailDataText(info?.accountNumber.toString(), false, hailLicenseState)
 
-            HailTitleText("License Identification:", false, info?.licenseState)
-            HailDataText("[PLACEHOLDER]", false, info?.licenseState)
+            HailTitleText("License Identification:", false, hailLicenseState)
+            HailDataText(info?.licenseId.toString(), false, hailLicenseState)
 
-            HailTitleText("Device Identification:", false, info?.licenseState)
-            HailDataText("[PLACEHOLDER]", false, info?.licenseState)
+            HailTitleText("Device Identification:", false, hailLicenseState)
+            HailDataText(info?.deviceId.toString(), false, hailLicenseState)
 
             Spacer(modifier = Modifier.height(16.dp))
         },
@@ -3090,8 +3097,14 @@ fun HailSetting(navController: NavController) {
     )
 }
 
+@SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun InvalidHailScreen(navController: NavController) {
+    val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    var showLoadingDialog = remember { mutableStateOf(false) }
+    var buttonPressed = remember { mutableStateOf(false) }
+
     WearTAKCIVTheme {
         Column(
             modifier = Modifier
@@ -3115,7 +3128,7 @@ fun InvalidHailScreen(navController: NavController) {
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "1  6  1  6  4  1",
+                text = info?.pairingCode.toString(),
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 25.sp,
@@ -3155,9 +3168,13 @@ fun InvalidHailScreen(navController: NavController) {
 
                 Button(
                     onClick = {
-                        //TODO:  WEAR-232 - When pressed state variable boolean triggers checkLicense function on SDK
-                        //TODO:  WEAR-232 - licenseState will equal CHECKING, show loading dialog
-                        //TODO:  WEAR-232 - When licenseState changes to VALID, SOFT_EXPIRED, EXPIRED, or INVALID change screen accordingly
+                        CoroutineScope(Dispatchers.Main).launch {
+                            dataRepository.hailCheckLicenseButtonPressed.emit(true)
+                            //TODO: WEAR-232 - Temporary testing code
+                            HailService.updateHailLicenseState(HailLicenseStates.CHECKING)
+                            delay(3000)
+                            HailService.updateHailLicenseState(HailLicenseStates.EXPIRED)
+                        }
                     },
                     contentPadding = PaddingValues(10.dp),
                     colors = ButtonDefaults.buttonColors(colors.primary),
@@ -3167,9 +3184,30 @@ fun InvalidHailScreen(navController: NavController) {
                         color = Color.Black
                     )
                 }
+                if (dataRepository.hailCheckLicenseButtonPressed.value == true) {
+                    displayHailLoadingDialog(hailLicenseState, showLoadingDialog, navController )
+                    LoadingDialog(showLoadingDialog, "Checking License Status")
+                }
             }
         }
     }
+}
+
+fun displayHailLoadingDialog(
+    state: HailLicenseStates?,
+    shouldShowLoadingDialog: MutableState<Boolean>,
+    navController: NavController) {
+    if (state == HailLicenseStates.CHECKING){
+        shouldShowLoadingDialog.value = true
+    } else if (state == HailLicenseStates.INVALID){
+        shouldShowLoadingDialog.value = false
+    } else {
+        shouldShowLoadingDialog.value = false
+        navController.navigate("hail_setting_screen") {
+            popUpTo("settings_screen") { inclusive = true }
+        }
+    }
+    Log.d(TAG, state.toString())
 }
 
 @Composable
@@ -3263,7 +3301,8 @@ fun SettingsScreen(
     var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
-    val hailLicenseState = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    Log.d(TAG, "Hail License State$hailLicenseState")
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
@@ -3467,13 +3506,12 @@ fun SettingsScreen(
             )
             if (enableHailServiceSettingsState.value == true){
                 DataMetricsChip(
-                    if (hailLicenseState?.licenseState == HailLicenseStates.INVALID) {
+                    if (hailLicenseState == HailLicenseStates.INVALID) {
                         "hail_pairing_screen"
                     } else {
                         "hail_setting_screen"
                     },
-                    //TODO WEAR-232 - Change secondary text to make it not have underscores
-                    "HAIL Settings", hailLicenseState?.licenseState.toString(), navController)
+                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
             }
             Chip(
                 onClick = {

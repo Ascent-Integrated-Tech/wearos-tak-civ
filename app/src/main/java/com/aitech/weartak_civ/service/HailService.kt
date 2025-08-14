@@ -51,9 +51,6 @@ object HailService {
     fun initialize(appId: String, context: Context, deviceUid: String) {
         LicensingManager.initialize(appId, context, deviceUid)  // per SDK
         Log.i(TAG, "initialize(appId=$appId, ctx=${context.applicationContext.javaClass.simpleName}, deviceUid=$deviceUid)")
-        CoroutineScope(Dispatchers.IO).launch {
-            licenseState = repo().getHailLicenseState.first() as HailLicenseStates?
-        }
         /*
         if (LicensingManager.isLicenseChecked()) {
 
