@@ -211,6 +211,14 @@ class CotDispatchService : Service() {
                 }
         }
 
+        // gives the dispatchers
+        serviceScope.launch {
+            dataRepository.getCombatId
+                .collect { id ->
+                    combatId = id ?: 0
+                }
+        }
+
         serviceScope.launch {
             dataRepository.hailInfoStateFlow
                 .collect { info ->
@@ -406,7 +414,6 @@ class CotDispatchService : Service() {
     private fun buildHailDetail(physioData: PhysioData): String {
         val licenseValid = HailService.isHailLicenseValid() // so we call this everytime.
         if (!buildHailDetail || !licenseValid) {
-            Log.d(TAG, "Build hail detail is false, leaving it empty")
             return ""
         } else {
             val hailEncoded: Result<String> = HailService.encodeHailDetail(combatId, callsign) { hail ->
@@ -791,7 +798,6 @@ class CotDispatchService : Service() {
                     weight     = weight,
                     age        = age
                 )
-                Log.d(TAG, "dataRepository.getEnableHailService.first(): ${dataRepository.getEnableHailService.first()}     dataRepo.enableHailService.value = ${dataRepository.enableHailService.value}")
                 sendLocationBiometricCotMessage(location, physioData)
             }
         }
@@ -893,6 +899,7 @@ class CotDispatchService : Service() {
             EventBus.getDefault().unregister(this)
         }
         stopDispatchScheduler()
+        HailService.hailScope.cancel()
         serviceScope.cancel()
         isRunning.set(false)
     }

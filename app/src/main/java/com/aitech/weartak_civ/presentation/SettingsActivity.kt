@@ -3043,26 +3043,29 @@ fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
 
 @Composable
 fun HailSetting(navController: NavController) {
-    Log.d(TAG, "PhysioMetricsSetting called")
+    Log.d(TAG, "HailSetting called")
     val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value
-    val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState().value
 
     WearTakCivScreenDimensions(
         columnContent = {
-            Text("Status:", modifier = Modifier.padding(bottom = 5.dp), textAlign = TextAlign.Center,
-                color =
-                        if (hailLicenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
+            Text(
+                "Status:",
+                modifier = Modifier.padding(bottom = 5.dp),
+                textAlign = TextAlign.Center,
+                color = if (hailLicenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
                         else if (hailLicenseState == HailLicenseStates.EXPIRED) Color.Red
-                        else Color.White)
+                        else Color.White
+            )
+
             HailDataText(hailLicenseStatusTextFromString(hailLicenseState), true, hailLicenseState)
+
             if (hailLicenseState == HailLicenseStates.EXPIRED || hailLicenseState == HailLicenseStates.SOFT_EXPIRED) {
                 Text(
                     if (hailLicenseState == HailLicenseStates.EXPIRED) "Contact support to renew license" else "Contact support to extend license",
                     textAlign = TextAlign.Center,
                     fontSize = 12.sp
                 )
-            } else {
-               //No text
             }
             HailTitleText(
                 if (hailLicenseState == HailLicenseStates.EXPIRED) "License Expired:" else "License Expires:",
@@ -3097,10 +3100,32 @@ fun HailSetting(navController: NavController) {
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun InvalidHailScreen(navController: NavController) {
-    val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value
-    val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
-    var showLoadingDialog = remember { mutableStateOf(false) }
-    var buttonPressed = remember { mutableStateOf(false) }
+    val info = dataRepository.hailLicenseInfoFlow.collectAsState(initial = null).value // <-- observe backend license information changes
+    val hailLicenseState = dataRepository.hailLicenseState.collectAsState().value // <-- observe backend license state changes
+    val buttonPressed = dataRepository.hailCheckLicenseButtonPressed.collectAsState().value  // <-- observe button clicks
+    val scope = rememberCoroutineScope()
+    val showLoadingDialog = remember { mutableStateOf(false) } // single, stable state object for the dialog
+
+    // When user presses "Register", show loading while we await state updates
+    LaunchedEffect(buttonPressed) {
+        if (buttonPressed == true) showLoadingDialog.value = true
+    }
+
+    // React to license state transitions
+    LaunchedEffect(hailLicenseState) {
+        when (hailLicenseState) {
+            HailLicenseStates.CHECKING -> showLoadingDialog.value = true
+            HailLicenseStates.INVALID  -> showLoadingDialog.value = false   // stay on screen
+            HailLicenseStates.VALID,
+            HailLicenseStates.SOFT_EXPIRED -> {
+                showLoadingDialog.value = false
+                navController.navigate("hail_setting_screen") {
+                    popUpTo("settings_screen") { inclusive = true }
+                }
+            }
+            HailLicenseStates.EXPIRED -> showLoadingDialog.value = false // show message, stay
+        }
+    }
 
     WearTAKCIVTheme {
         Column(
@@ -3165,7 +3190,7 @@ fun InvalidHailScreen(navController: NavController) {
 
                 Button(
                     onClick = {
-                        CoroutineScope(Dispatchers.Main).launch {
+                        scope.launch {
                             dataRepository.hailCheckLicenseButtonPressed.emit(true)
                         }
                     },
@@ -3177,12 +3202,10 @@ fun InvalidHailScreen(navController: NavController) {
                         color = Color.Black
                     )
                 }
-                if (dataRepository.hailCheckLicenseButtonPressed.value == true) {
-                    displayHailLoadingDialog(hailLicenseState, showLoadingDialog, navController )
-                    LoadingDialog(showLoadingDialog, "Checking License Status")
-                }
             }
         }
+        // Render the dialog ONCE, using the remembered state (no inline mutableStateOf(true))
+        LoadingDialog(shouldShowDialog = showLoadingDialog, secondaryText = "Checking License Status")
     }
 }
 
@@ -3190,6 +3213,7 @@ fun displayHailLoadingDialog(
     state: HailLicenseStates?,
     shouldShowLoadingDialog: MutableState<Boolean>,
     navController: NavController) {
+    Log.d(TAG, "$state")
     if (state == HailLicenseStates.CHECKING){
         shouldShowLoadingDialog.value = true
     } else if (state == HailLicenseStates.INVALID){

@@ -19,24 +19,15 @@ import java.util.UUID
 
 object HailService {
     val TAG = "WearTAK-HailService"
-    private val hailScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    // State surface for UI
-    @Volatile var licenseChecked: Boolean = false
-        private set
-    @Volatile var licensed: Boolean = false
-        private set
-    @Volatile var licenseSoftExpired: Boolean = false
-        private set
-    @Volatile var licenseHardExpired: Boolean = false
-        private set
-    @Volatile var lastError: String? = null
-        private set
+    val hailScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val initialized = java.util.concurrent.atomic.AtomicBoolean(false)
     private fun repo() = MainActivity.dataRepository
-
     private var checkCtr = 0
     private fun logCheck(phase: String) = Log.d(TAG, "[check#${++checkCtr}] $phase")
+
     @Volatile var hailLicenseInfo: HailLicenseInfo = HailLicenseInfo()
+    @Volatile var lastError: String? = null
+        private set
 
     /**
      * Initialize licensing.
@@ -57,7 +48,25 @@ object HailService {
         }
         LicensingManager.initialize(appId, context, deviceUid)  // per SDK
         Log.i(TAG, "initialize(appId=$appId, ctx=${context.applicationContext.javaClass.simpleName}, deviceUid=$deviceUid)")
-        /*
+        hailScope.launch {
+            getCombatId(deviceUid)
+        }
+        logCheck("initialize")
+        checkOnInit()
+    }
+
+    /**
+     * Everytime we initialize hail, either on boot or toggling the service,
+     * we should check the license. Check with the Hail Cloud License server
+     * if we have network, otherwise, use the locally store authenticator.
+    **/
+    fun checkOnInit() {
+        if (TAKConnectService.isNetworkConnected) {
+            logCheck("Checking License since Network is connected ...")
+            runBlocking {
+                checkLicense {  }  // First check network call if net available
+            }
+        }
         if (LicensingManager.isLicenseChecked()) {
             if (LicensingManager.isLicensed()) {
                 if (LicensingManager.isLicenseSoftExpired()) {
@@ -88,6 +97,11 @@ object HailService {
         }
     }
 
+    /**
+     * Called when the License has not been checked. Makes network call
+     * to Hail Server to check the license. If we aren't registered,
+     * request a pairing code from HAIL cloud license server.
+     */
     fun checkAndFetchCode() {
         checkLicense {
             if (LicensingManager.isLicensed()) {
@@ -124,6 +138,10 @@ object HailService {
         INVALID
     }
 
+    /**
+     * License info displayed in UI, populated from network calls
+     * to the HAIL cloud license server.
+     */
     data class HailLicenseInfo(
         var pairingCode: String? = null,
         var expirationDate: String? = null,
@@ -133,6 +151,10 @@ object HailService {
         var deviceId: String? = null
     )
 
+    /**
+     * Runs everytime we build a Hail CotDetail, which is every CotDispatch.
+     * Checks the state of the license, locally, without network.
+     */
     fun isHailLicenseValid(): Boolean {
         if (LicensingManager.isLicenseChecked()) {
             if (LicensingManager.isLicensed()) {
@@ -196,7 +218,7 @@ object HailService {
     /**
      * Helper function for updating LicenseInfo in data repo.
      * Protects against overwriting existing data with null.
-    **/
+     **/
     fun updateHailLicenseInfo(info: (HailLicenseInfo) -> Unit) {
         hailScope.launch {
             repo().updateHailLicenseInfo({ current ->
@@ -267,14 +289,10 @@ object HailService {
         }
     }
 
-    fun combatIdFromDeviceId(deviceId: String): Int {
-        val bytes = deviceId.trim().lowercase().toByteArray(Charsets.UTF_8)
-        val uuid = UUID.nameUUIDFromBytes(bytes)
-        val folded = uuid.mostSignificantBits xor uuid.leastSignificantBits
-        val positive = (folded and 0x7fff_ffffL).toInt()
-        return if (positive == 0) 1 else positive
-    }
-
+    /**
+     * CombatId is a unique identifier per USER, not device. If we don't have
+     * one from the user in settings, we generate one from the device UUID (e.g. WEAROS-34aeoh77ff34...)
+     */
     suspend fun getCombatId(deviceId: String): Int = withContext(Dispatchers.IO) {
         val existing = repo().getCombatId.firstOrNull()
         if (existing != null) return@withContext existing
@@ -282,5 +300,16 @@ object HailService {
         val newId = combatIdFromDeviceId(deviceId)
         repo().storeCombatId(newId)
         newId
+    }
+
+    /**
+     * Hash our Device UUID to generate a unique combat ID if needed.
+     */
+    fun combatIdFromDeviceId(deviceId: String): Int {
+        val bytes = deviceId.trim().lowercase().toByteArray(Charsets.UTF_8)
+        val uuid = UUID.nameUUIDFromBytes(bytes)
+        val folded = uuid.mostSignificantBits xor uuid.leastSignificantBits
+        val positive = (folded and 0x7fff_ffffL).toInt()
+        return if (positive == 0) 1 else positive
     }
 }
