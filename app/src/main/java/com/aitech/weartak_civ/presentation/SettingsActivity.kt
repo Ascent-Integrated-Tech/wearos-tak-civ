@@ -307,10 +307,7 @@ class SettingsActivity : ComponentActivity() {
 //            categorySettingsState.postValue(dataRepository.getRoleCategory.first())
 //        }
         Log.d(TAG, "SettingsActivity onCreate called with enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState and enablePhysiologicalAlerts=$enablePhysiologicalAlerts")
-        //TODO: WEAR-232 - Temporary testing code
-        CoroutineScope(Dispatchers.Main).launch {
-            HailService.updateHailLicenseState(HailLicenseStates.INVALID)
-        }
+
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
@@ -3170,10 +3167,6 @@ fun InvalidHailScreen(navController: NavController) {
                     onClick = {
                         CoroutineScope(Dispatchers.Main).launch {
                             dataRepository.hailCheckLicenseButtonPressed.emit(true)
-                            //TODO: WEAR-232 - Temporary testing code
-                            HailService.updateHailLicenseState(HailLicenseStates.CHECKING)
-                            delay(3000)
-                            HailService.updateHailLicenseState(HailLicenseStates.EXPIRED)
                         }
                     },
                     contentPadding = PaddingValues(10.dp),
