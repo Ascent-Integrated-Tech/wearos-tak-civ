@@ -211,7 +211,7 @@ class MainActivity : ComponentActivity() {
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableHailService: Boolean = false
+        var enableHailService: Boolean = true
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
 
         var connectivityStatusComplication : String = ""
@@ -1639,6 +1639,7 @@ class MainActivity : ComponentActivity() {
         val enableSkinTempServiceConfigUpdate = appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", true)
 
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
@@ -1666,6 +1667,7 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsBloodTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_blood_type", bloodTypeValue)
         val physiologicalMetricsAllergiesServiceConfigUpdate = appRestrictions.getStringArray("physiological_metrics_allergies")
         val physiologicalMetricsUserTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_user_type", userTypeValue)
+
 
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
@@ -1864,7 +1866,8 @@ class MainActivity : ComponentActivity() {
                     Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(LOCALIZATION_BEACONS_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
                 }
             }
-
+            dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
+            dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeLicense(license)
             if (!dittoAppIdConfigUpdate.isEmpty()) {
                 if (dittoAppId != dittoAppIdConfigUpdate) {

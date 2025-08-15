@@ -2,7 +2,6 @@ package com.aitech.weartak_civ.service
 
 import android.content.Context
 import android.util.Log
-import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.rain.hail.sdk.HailDetail
 import com.rain.hail.sdk.licensing.ILicenseServiceCallbacks
@@ -10,14 +9,17 @@ import com.rain.hail.sdk.licensing.IPairingCodeCallbacks
 import com.rain.hail.sdk.licensing.LicensingManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import java.util.Date
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 object HailService {
     val TAG = "WearTAK-HailService"
+    private val hailScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     // State surface for UI
     @Volatile var licenseChecked: Boolean = false
         private set
@@ -27,13 +29,14 @@ object HailService {
         private set
     @Volatile var licenseHardExpired: Boolean = false
         private set
-    @Volatile var lastPairingCode: String? = null
-        private set
     @Volatile var lastError: String? = null
         private set
-    @Volatile var licenseState: HailLicenseStates? = null
-        private set
+    private val initialized = java.util.concurrent.atomic.AtomicBoolean(false)
     private fun repo() = MainActivity.dataRepository
+
+    private var checkCtr = 0
+    private fun logCheck(phase: String) = Log.d(TAG, "[check#${++checkCtr}] $phase")
+    @Volatile var hailLicenseInfo: HailLicenseInfo = HailLicenseInfo()
 
     /**
      * Initialize licensing.
@@ -49,79 +52,72 @@ object HailService {
      *          )
      */
     fun initialize(appId: String, context: Context, deviceUid: String) {
+        if (!initialized.compareAndSet(false, true)) {
+            Log.i(TAG, "initialized() ignored: already initialized")
+        }
         LicensingManager.initialize(appId, context, deviceUid)  // per SDK
         Log.i(TAG, "initialize(appId=$appId, ctx=${context.applicationContext.javaClass.simpleName}, deviceUid=$deviceUid)")
-        CoroutineScope(Dispatchers.IO).launch {
-            licenseState = repo().getHailLicenseState.first() as HailLicenseStates?
+        hailScope.launch {
+            getCombatId(deviceUid)
         }
-        /*
+        logCheck("initialize")
+        checkOnInit()
+    }
+
+    fun checkOnInit() {
+        if (TAKConnectService.isNetworkConnected) {
+            logCheck("Checking License since Network is connected ...")
+            runBlocking {
+                checkLicense {  }  // First check network call if net available
+            }
+        }
         if (LicensingManager.isLicenseChecked()) {
-
             if (LicensingManager.isLicensed()) {
-
-                // Check for soft expiration warning (still licensed but show renewal notice)
                 if (LicensingManager.isLicenseSoftExpired()) {
-                    Log.i(TAG, "Soft Expired") // Grace period - app still works
+                    logCheck( "License is Soft Expired") // Grace period - app still works
+                    updateHailLicenseState(HailLicenseStates.SOFT_EXPIRED)
+                } else {
+                    logCheck( "License is Valid")
+                    updateHailLicenseState(HailLicenseStates.VALID)
                 }
-
-                // License is good, proceed normally
-                Log.i(TAG, "App Run fine")
-
             } else {
                 // Check if token is valid but expired
                 if (LicensingManager.isTokenValid()) {
                     if (LicensingManager.isLicenseExpired()) {
-                        Log.i(TAG, "Licensed Hard Expired")
+                        logCheck("License is Hard Expired")
+                        updateHailLicenseState(HailLicenseStates.EXPIRED)
                     } else {
-                        Log.i(TAG, "Other Issue. Show License Dialog")
+                        logCheck("License is NOT Licensed... Token is VALID ... License is NOT Expired ... Check error on cloud end.")
+                        updateHailLicenseState(HailLicenseStates.INVALID)
                     }
                 } else {
-                    Log.i(TAG, "Invalid Token. Show License Dialog")
-
+                    logCheck("Token is Invalid.")
+                    updateHailLicenseState(HailLicenseStates.INVALID)
                 }
             }
         } else {
-            Log.i(TAG, "License is Not Checked")
-            LicensingManager.checkLicense(object : ILicenseServiceCallbacks {
-                override fun onLicenseValid() {
-                    licenseChecked = true
-                    licensed           = LicensingManager.isLicensed()
-                    licenseSoftExpired = LicensingManager.isLicenseSoftExpired()
-                    licenseHardExpired = LicensingManager.isLicenseExpired()
-                    Log.i(TAG, "License VALID (licensed=$licensed, soft=$licenseSoftExpired, hard=$licenseHardExpired)")
-                    repo().hailServiceAuthorized.value = true
-                    Log.i(TAG, "isLicenseChecked() = ${LicensingManager.isLicenseChecked()}")
-                }
-                override fun onLicenseInvalid() {
-                    lastError = "License invalid (soft=${LicensingManager.isLicenseSoftExpired()}, hard=${LicensingManager.isLicenseExpired()})"
-                    Log.w(TAG, lastError!!)
-                    Log.i(TAG, "isLicenseChecked() = ${LicensingManager.isLicenseChecked()}")
-                }
-            })
+            logCheck("License is Not Checked ... check and fetch code")
+            checkAndFetchCode()
         }
-        */
+    }
 
+    fun checkAndFetchCode() {
         checkLicense {
             if (LicensingManager.isLicensed()) {
+                logCheck("License is not Licensed exiting checkAndFetchCode()")
                 return@checkLicense
             } else {
-                Log.i(TAG, "License is not valid ... checking for token validity.")
-
+                logCheck("License is not valid ... checking for token validity ...")
                 if (!LicensingManager.isTokenValid()) {
-                    Log.i(TAG, "Token is not valid or missing ... fetching pairing code.")
-                    fetchPairingCode {
-                        if (lastError == null) {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                Log.i(TAG, "Received no error fetching code ... waiting for user to press the button.")
-                            }
-                        }
-                    }
+                    logCheck("Token is not valid or missing ... fetching pairing code.")
+                    fetchPairingCode {}
                 } else {
                     Log.w(TAG, "Token is valid, but License is NOT. License is Invalid.")
                 }
             }
         }
     }
+
 
     /**
      * Represents the possible states of the Hail license.
@@ -131,7 +127,7 @@ object HailService {
      * - SOFT_EXPIRED: License is still valid, but will expire soon; UI should indicate this.
      * - EXPIRED: License is no longer valid; stop adding Hail detail to CoT messages in the dispatcher.
      * - INVALID: Default or catch-all state (e.g., on first app launch before pairing, or after certain errors);
-     *   requires obtaining a pairing code or other recovery action.
+     *            requires obtaining a pairing code or other recovery action.
      */
     enum class HailLicenseStates {
         VALID,
@@ -142,7 +138,6 @@ object HailService {
     }
 
     data class HailLicenseInfo(
-        var licenseState: HailLicenseStates? = null,
         var pairingCode: String? = null,
         var expirationDate: String? = null,
         var softExpirationDate: String? = null,
@@ -154,24 +149,17 @@ object HailService {
     fun isHailLicenseValid(): Boolean {
         if (LicensingManager.isLicenseChecked()) {
             if (LicensingManager.isLicensed()) {
-
-                // License is good, proceed normally
-                // CHANGE THE STATE
                 updateHailLicenseState(HailLicenseStates.VALID)
                 return true
-
             } else {
                 // Check if token is valid but expired
                 if (LicensingManager.isTokenValid()) {
                     if (LicensingManager.isLicenseExpired()) {
                         Log.i(TAG, "Licensed Hard Expired")
                         updateHailLicenseState(HailLicenseStates.EXPIRED)
-                    } else {
-                        Log.i(TAG, "Other Issue. Show License Dialog")
-                        updateHailLicenseState(HailLicenseStates.INVALID)
                     }
                 } else {
-                    Log.i(TAG, "Invalid Token. Show License Dialog")
+                    Log.i(TAG, "Other Issue. We Probably are not paired. Show License Dialog")
                     updateHailLicenseState(HailLicenseStates.INVALID)
                 }
                 return false
@@ -179,42 +167,65 @@ object HailService {
         } else {
             return false
         }
-        return false
     }
 
     /**
-     * Trigger an async license check and update state for UI.  [oai_citation:5‡readme.md](file-service://file-WQM5E7xCmEkr2xQetVahG4)
+     * Trigger an async license check and update state for UI. Makes a
+     * network call to the Hail Cloud Licensing Server.
      */
     fun checkLicense(onChanged: (() -> Unit)? = null) {
-        updateHailLicenseState(HailLicenseStates.CHECKING)
-        licenseChecked = false
-        licensed = false
-        licenseSoftExpired = false
-        licenseHardExpired = false
-        lastError = null
-        Log.i(TAG, "Checking License ... ")
+        var state = HailLicenseStates.CHECKING
+        updateHailLicenseState(state)
+
+        Log.i(TAG, "===> Checking License ... ")
 
         LicensingManager.checkLicense(object : ILicenseServiceCallbacks {
             override fun onLicenseValid() {
-                licenseChecked = true
-                licensed           = LicensingManager.isLicensed()
-                licenseSoftExpired = LicensingManager.isLicenseSoftExpired()
-                licenseHardExpired = LicensingManager.isLicenseExpired()
-                Log.i(TAG, "License VALID (licensed=$licensed, soft=$licenseSoftExpired, hard=$licenseHardExpired)")
-                updateHailLicenseState(HailLicenseStates.VALID)
+                Log.i(TAG, "License VALID (licensed=${LicensingManager.isLicensed()}, soft=${LicensingManager.isLicenseSoftExpired()}, hard=${LicensingManager.isLicenseExpired()})")
+                state = if (LicensingManager.isLicenseSoftExpired()) {
+                    HailLicenseStates.SOFT_EXPIRED
+                } else {
+                    HailLicenseStates.VALID
+                }
+
+                updateHailLicenseState(state)
+                updateHailLicenseInfo { info ->
+                    info.expirationDate     = LicensingManager.expirationDate.toString()
+                    info.softExpirationDate = LicensingManager.softExpirationDate.toString()
+                    info.accountNumber      = LicensingManager.accountNumber
+                    info.licenseId          = LicensingManager.licenseId
+                    info.deviceId           = LicensingManager.deviceId
+                }
                 onChanged?.invoke()
             }
             override fun onLicenseInvalid() {
-                lastError = "License invalid (soft=${LicensingManager.isLicenseSoftExpired()}, hard=${LicensingManager.isLicenseExpired()})"
-                Log.w(TAG, lastError!!)
+                Log.w(TAG, " =======> License INVALID")
                 updateHailLicenseState(HailLicenseStates.INVALID)
                 onChanged?.invoke()
             }
         })
     }
 
+    /**
+     * Helper function for updating LicenseInfo in data repo.
+     * Protects against overwriting existing data with null.
+    **/
+    fun updateHailLicenseInfo(info: (HailLicenseInfo) -> Unit) {
+        hailScope.launch {
+            repo().updateHailLicenseInfo({ current ->
+                val base = current ?: HailLicenseInfo()
+                info(base)
+                base
+            })
+        }
+    }
+
+    /**
+     * Helper function for updating License State in data repo.
+     * Protects against rewriting the current state.
+     **/
     fun updateHailLicenseState(state: HailLicenseStates) {
-        CoroutineScope(Dispatchers.IO).launch {
+        hailScope.launch {
             if (state.toString() == repo().getHailLicenseState.first()) {
                 return@launch
             }
@@ -223,16 +234,21 @@ object HailService {
     }
 
     /**
-     * Fetch pairing code (device registration).  [oai_citation:7‡readme.md](file-service://file-WQM5E7xCmEkr2xQetVahG4)
+     * Fetch pairing code (device registration). Makes a network call
+     * to the Hail Cloud Licensing Server. Returns a pairing code or
+     * error.
      */
     fun fetchPairingCode(onChanged: (() -> Unit)? = null) {
         lastError = null
-        lastPairingCode = null
         LicensingManager.fetchPairingCode(object : IPairingCodeCallbacks {
             override fun onPairingCodeSuccess(pairingCode: String) {
-                lastPairingCode = pairingCode
-                Log.i(TAG, "Successfully retrieved a Pairing code: $pairingCode ... storing it")
-                CoroutineScope(Dispatchers.IO).launch { repo().storePairingCode(pairingCode) }
+                logCheck( "Successfully retrieved a Pairing code: $pairingCode ... storing it ... waiting for user to press the button.")
+                hailScope.launch {
+                    updateHailLicenseInfo { info ->
+                        info.pairingCode = pairingCode
+                    }
+                }
+
                 onChanged?.invoke()
             }
             override fun onPairingCodeFailure(error: String) {
@@ -241,19 +257,6 @@ object HailService {
                 onChanged?.invoke()
             }
         })
-    }
-
-    private var registrationJob: Job? = null
-
-    /**
-     * Entitlements helpers (feature flags / limits).  [oai_citation:8‡readme.md](file-service://file-WQM5E7xCmEkr2xQetVahG4)
-     */
-    fun hasEntitlementBoolean(key: String): Boolean {
-        return LicensingManager.getEntitlementBoolean(key)
-    }
-
-    fun getEntitlementString(key: String): String? {
-        return LicensingManager.getEntitlement(key)
     }
 
     /**
@@ -272,47 +275,25 @@ object HailService {
             builder(hail)
             val encoded: String = hail.toCotDetailBody()  // throws HailEncodingException on license issues
             Result.success(encoded)
-//            Result.failure(IllegalStateException("Hook up HailDetail once AAR imports are confirmed"))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    // pseudo types: replace with your real Hail SDK classes/constants
-// val HAIL_DETAIL = "hail"  // e.g., HailDetail.HAIL_DETAIL
-// val HAIL_DETAIL_ENCODE_VERSION = 1  // e.g., HailDetail.HAIL_DETAIL_ENCODE_VERSION
-
-    fun createHailCotDetail(
-        hailDetail: Any,                      // replace with actual type
-        detailTagName: String,                // e.g., HailDetail.HAIL_DETAIL
-        encodeVersion: Int,                   // e.g., HailDetail.HAIL_DETAIL_ENCODE_VERSION
-        encode: (Any) -> String               // e.g., { it as HailDetail -> it.toCotDetailBody() }
-    ): Utils.CotUtils.CotDetail? {
-        return try {
-            val hailEncoded = encode(hailDetail)          // may throw HailEncodingException
-            Utils.CotUtils.CotDetail(detailTagName)
-                .setAttribute("version", encodeVersion.toString())
-                .setInnerText(hailEncoded)
-        } catch (e: Exception) {
-            // If you need to distinguish license vs general error, catch your SDK’s specific exception first
-            Log.e("HAIL", "Error creating Hail CotDetail: ${e.message}")
-            null
-        }
+    fun combatIdFromDeviceId(deviceId: String): Int {
+        val bytes = deviceId.trim().lowercase().toByteArray(Charsets.UTF_8)
+        val uuid = UUID.nameUUIDFromBytes(bytes)
+        val folded = uuid.mostSignificantBits xor uuid.leastSignificantBits
+        val positive = (folded and 0x7fff_ffffL).toInt()
+        return if (positive == 0) 1 else positive
     }
 
-    /**
-     * Optional helpers to expose license metadata (dates, ids).  [oai_citation:12‡readme.md](file-service://file-WQM5E7xCmEkr2xQetVahG4)
-     */
-    fun getLicenseInfo(): Map<String, Any?> {
-        return mapOf(
-             "expiration" to LicensingManager.expirationDate,
-             "softExpiration" to LicensingManager.softExpirationDate,
-             "accountNumber" to LicensingManager.accountNumber,
-             "licenseId" to LicensingManager.licenseId,
-             "deviceId" to LicensingManager.deviceId
-        )
+    suspend fun getCombatId(deviceId: String): Int = withContext(Dispatchers.IO) {
+        val existing = repo().getCombatId.firstOrNull()
+        if (existing != null) return@withContext existing
+
+        val newId = combatIdFromDeviceId(deviceId)
+        repo().storeCombatId(newId)
+        newId
     }
-
-
-
 }

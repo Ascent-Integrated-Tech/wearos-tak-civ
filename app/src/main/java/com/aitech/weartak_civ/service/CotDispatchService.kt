@@ -20,11 +20,11 @@ import android.location.Location
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
-import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -41,8 +41,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CON
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
@@ -53,28 +51,22 @@ import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDista
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
 import com.aitech.weartak_civ.service.HailService.checkLicense
-import com.aitech.weartak_civ.service.HailService.createHailCotDetail
-import com.aitech.weartak_civ.service.HailService.licenseChecked
-import com.aitech.weartak_civ.service.HailService.licensed
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import com.rain.hail.sdk.HailDetail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
-import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -104,6 +96,8 @@ class CotDispatchService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private var buildHailDetail: Boolean = false
+    @Volatile private var hailEnabled: Boolean = false
+    private var combatId: Int = 0
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
@@ -113,19 +107,10 @@ class CotDispatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        Log.v(TAG, "CotDispatchService onStartCommand()")
+//        Log.v(TAG, "CotDispatchService onStartCommand()")
         if (!isRunning.getAndSet(true)) {
             startForegroundService()
             startDispatchScheduler()
-//            startForceCheckRegistration(maxMinutes = 2)
-//            checkLicense {
-//                if (dataRepository.hailPairingCode.value != null) {
-//                    Log.i(TAG, "Hail Pairing code exists, and has been stored persistently and is: ${dataRepository.hailPairingCode.value}")
-//                } else {
-//                    Log.w(TAG, "We have never stored a pairing code, need to try to fetch one.")
-//                    HailService.fetchPairingCode { checkLicense {} }
-//                }
-//            }
             CoroutineScope(Dispatchers.Main).launch {
                 setValuesFromCustomDeveloperConfig()
             }
@@ -135,7 +120,7 @@ class CotDispatchService : Service() {
 
     // starting requires notification to the user
     private fun startForegroundService() {
-        Log.v(TAG, "Starting $TAG as a ForegroundService")
+//        Log.v(TAG, "Starting $TAG as a ForegroundService")
         val channelId = createNotificationChannel()
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
@@ -163,21 +148,10 @@ class CotDispatchService : Service() {
         return channelId
     }
 
-    /*   Main Talking points for HAIL
-d
-    1. During init, the appId needs to be "com.rain.hail" or our package app id? Seems to not work with our app, only get a pairing code with "com.rain.hail"
+    @Volatile private var lastLicenseState: HailService.HailLicenseStates = HailService.HailLicenseStates.INVALID
 
-    2. Which LicensingManager api calls are network calls and which are local. Are the checks quick?
-            - checkLicense
-            - fetchPairingCode
-
-    2.
-
-    3. If we already "paired" or "registered" the device on the cloud, will fetching a pairing code generate a new code?
-
-    4. What is combat ID used for on the user end?
-
-     */
+    private var gateCtr = 0
+    private fun lgGate(msg: String) = Log.d(TAG, "[gate#${++gateCtr}] $msg")
 
     override fun onCreate() {
         super.onCreate()
@@ -187,59 +161,78 @@ d
             EventBus.getDefault().register(this)
         }
 
-        // @Molly this is how we can collect the button state, so you know when it becomes false again.
-        CoroutineScope(Dispatchers.IO).launch {
-            dataRepository.hailCheckLicenseButtonPressed
-                .collect { pressed ->
-                    val logString = "Hail Check Button pressed: $pressed"
-                    // TODO: Change the state to CHECKING
-                    Log.d(TAG, logString)
+        serviceScope.launch {
+            dataRepository.hailLicenseInfoFlow.first()?.let { HailService.hailLicenseInfo = it }
+        }
+
+        serviceScope.launch {
+            combine(
+                dataRepository.enableHailService,                 // Boolean
+                dataRepository.hailLicenseState                   // HailLicenseStates
+            ) { enable, state ->
+                lastLicenseState = state
+                enable && (state == HailService.HailLicenseStates.VALID ||
+                        state == HailService.HailLicenseStates.SOFT_EXPIRED)
+            }
+                .distinctUntilChanged() // stops identical re-triggers
+                .collect { gate ->
+                    buildHailDetail = gate
+                    lgGate("[buildHailDetail]=$gate [state]=$lastLicenseState")
                 }
         }
 
-        // Should we build the hail detail or not. Only build if it is VALID or SOFT_EXPIRED.
-        // @Molly collect this as well in UI, adjust execution steps inside collect {} as needed.
-        CoroutineScope(Dispatchers.IO).launch {
-            dataRepository.hailLicenseState
-                .collect { state ->
-                    val logString = "Hail License State for HAIL updated: $state"
-                    Log.d(TAG, logString)
-
-                    if (!dataRepository.getEnableHailService.first()) {
-                        buildHailDetail = false
-                        Log.d(TAG, "HailService is Disabled, so don't build the HailDetail.")
-                        return@collect
+        // Initialize the SDK only when enable becomes true (keep this simple & idempotent)
+        serviceScope.launch {
+            dataRepository.enableHailService
+                .collect { enable ->
+                    Log.d(TAG, "[enable] $enable")
+                    if (enable) {
+                        HailService.initialize(
+                            appId = "com.rain.hail",
+                            context = applicationContext,
+                            deviceUid = MainActivity.device_uid
+                        )
                     }
                 }
         }
 
-        // Should we build the hail detail or not. Triggered by mgd configs or ui toggle button.
-        CoroutineScope(Dispatchers.IO).launch {
-            dataRepository.enableHailService
-                .collect { enable ->
-                    val logString = "Hail Service enabled is: $enable"
-                    Log.d(TAG, logString)
-                    buildHailDetail = enable
+        // @Molly this is how we can collect the button state, so you know when it becomes false again.
+        serviceScope.launch {
+            dataRepository.hailCheckLicenseButtonPressed
+                .collect { pressed ->
+                    if (pressed) {
+                        dataRepository.hailCheckLicenseButtonPressed.emit(false)
+                        if (!dataRepository.getEnableHailService.first()) {
+                            return@collect
+                        }
+                        Log.d(TAG,"Hail Check Button pressed ... Entering CHECKING state")
+                        checkLicense {}
+                    }
                 }
         }
 
-        // Monitor Hail pairing code for changes
-        CoroutineScope(Dispatchers.IO).launch {
-            dataRepository.hailPairingCode
-                .collect { code ->
-                    val logString = "Pairing Code updated: $code"
-                    Log.d(TAG, logString)
+        serviceScope.launch {
+            dataRepository.hailInfoStateFlow
+                .collect { info ->
+                    lgGate("""
+                    hailInfoStateFlow changed:
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    """.trimIndent().format(
+                                            "Pairing code:", info?.pairingCode ?: "null",
+                                            "Expiration date:", info?.expirationDate ?: "null",
+                                            "Soft exp. date:", info?.softExpirationDate ?: "null",
+                                            "Account number:", info?.accountNumber ?: "null",
+                                            "License ID:", info?.licenseId ?: "null",
+                                            "Device ID:", info?.deviceId ?: "null"
+                                            )
+                    )
                 }
         }
-
-        // TODO: kick off collection of protobufReady for dispatching.
-        Log.v(TAG, "CotDispatchService onCreate()")
-
-        HailService.initialize(
-            appId = "com.rain.hail",
-            context = applicationContext,
-            deviceUid = MainActivity.device_uid
-        )
     }
 
     private fun startDispatchScheduler() {
@@ -328,7 +321,9 @@ d
         val steps: Long,
         val calories: Double,
         val floors: Double,
-        val elevationM: Double?
+        val elevationM: Double?,
+        val weight: Int,
+        val age: Int
     )
 
     private fun buildConciseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
@@ -398,28 +393,42 @@ d
             }
         }
 
-        var hailCotDetailString: String? = ""
-        if (buildHailDetail && HailService.isHailLicenseValid()) {
-            val hailDetail = HailService.encodeHailDetail(555, callsign) { hail ->
-                hail.setHeartRate(hr.toShort())
-                hail.setSkinTemp(skt.toShort())
-            }
-
-            val cotDetail = createHailCotDetail(
-                hailDetail = hailDetail,
-                detailTagName = HailDetail.HAIL_DETAIL,
-                encodeVersion = HailDetail.HAIL_DETAIL_ENCODE_VERSION
-            ) { hd -> (hd as HailDetail).toCotDetailBody() }
-
-            hailCotDetailString = cotDetail?.toXmlString()
-            Log.i(TAG, "---- ---- ---- ----- hailCotDetailString: $hailCotDetailString")
-        }
+        val hailCotDetailString = buildHailDetail(physioData)
 
         // Build the cot XML
         val cot = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
-        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
+//        Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
+        Log.i(TAG, "===> HailCotDetail: $hailCotDetailString")
 
         return cot
+    }
+
+    private fun buildHailDetail(physioData: PhysioData): String {
+        val licenseValid = HailService.isHailLicenseValid() // so we call this everytime.
+        if (!buildHailDetail || !licenseValid) {
+            Log.d(TAG, "Build hail detail is false, leaving it empty")
+            return ""
+        } else {
+            val hailEncoded: Result<String> = HailService.encodeHailDetail(combatId, callsign) { hail ->
+                hail.setHeartRate(physioData.heartRate.toShort())
+                hail.setSkinTemp(physioData.skinTemp.toInt().toShort())
+                hail.setWeight(physioData.weight.toShort())
+                hail.setAge(physioData.age.toByte())
+            }
+
+            val cotDetail = hailEncoded.fold(
+                onSuccess = { encoded ->
+                    Utils.CotUtils.CotDetail(HailDetail.HAIL_DETAIL)
+                        .setAttribute("version", HailDetail.HAIL_DETAIL_ENCODE_VERSION.toString())
+                        .setInnerText(encoded)
+                },
+                onFailure = { e ->
+                    Log.e("HAIL", "Error creating Hail CotDetail", e)
+                    null
+                }
+            )
+            return cotDetail?.toXmlString() ?: ""
+        }
     }
 
     private fun buildVerboseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
@@ -691,7 +700,7 @@ d
                 }
                 markerDropToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
-                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
+//                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
             } else {
                 Log.w(TAG, "Marker CoT NOT sent to TAK (disconnected)")
                 // 4) Mesh into Ditto if the DittoService is running
@@ -754,10 +763,6 @@ d
             Log.w(TAG, "Not connected to server. Not sending Cot message")
         } else {
             CoroutineScope(Dispatchers.IO).launch {
-                HailService.isHailLicenseValid()
-            }
-
-            CoroutineScope(Dispatchers.IO).launch {
                 val location    = dataRepository.latestLocation.value
 
                 val heartRate  = dataRepository.latestHeartRate.value ?: -1
@@ -769,7 +774,10 @@ d
                 val calories   = daily?.calories   ?: -1.0          // Double
                 val floors     = daily?.floors     ?: -1.0          // Double
                 val elevationM = daily?.elevationM ?: -1.0          // Double
-                val steps      = daily?.steps?.toLong() ?: -1L
+                val steps      = daily?.steps ?: -1L
+
+                val weight     = dataRepository.getPhysiologicalMetricWeight.first()
+                val age        = dataRepository.getPhysiologicalMetricAge.first()
 
                 val physioData = PhysioData(
                     heartRate  = heartRate,
@@ -779,9 +787,11 @@ d
                     steps      = steps,
                     calories   = calories,
                     floors     = floors,
-                    elevationM = elevationM
+                    elevationM = elevationM,
+                    weight     = weight,
+                    age        = age
                 )
-
+                Log.d(TAG, "dataRepository.getEnableHailService.first(): ${dataRepository.getEnableHailService.first()}     dataRepo.enableHailService.value = ${dataRepository.enableHailService.value}")
                 sendLocationBiometricCotMessage(location, physioData)
             }
         }

@@ -44,8 +44,6 @@ import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
-import com.google.type.Date
-import org.apache.commons.lang3.mutable.Mutable
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -64,6 +62,10 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Below is a prototype of a resting heart rate average calculator, using aggregate
+     * heart rate data to generate an average.
+     */
 //    init {
 //        repoScope.launch {
 //            _latestHeartRate
@@ -84,32 +86,12 @@ class DataRepository(private val context: Context) {
 
     // ======== ======== HAIL SECTION START ======== ========
 
-    var hailLicenseState = MutableStateFlow<HailLicenseStates?>(HailLicenseStates.INVALID)
-    suspend fun storeHailLicenseState(state: HailLicenseStates?) {
-        context.dataStore.edit { prefs ->
-            prefs[HAIL_LICENSE_STATE] = state.toString()
-        }
-        hailLicenseState.emit(state)
-    }
-    val getHailLicenseState: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[HAIL_LICENSE_STATE] ?: HailLicenseStates.INVALID.toString()
-    }
-
-    // Pairing code doesn't seem to change unless we delete device from server. So we should save it.
-    suspend fun storePairingCode(pairingCode: String?) {
-        context.dataStore.edit { prefs ->
-            prefs[HAIL_PAIRING_CODE] = pairingCode!!
-        }
-        _hailPairingCode.emit(pairingCode)
-    }
-    val getHailPairingCode: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[HAIL_PAIRING_CODE] ?: ""
-    }
-    private val _hailPairingCode = MutableStateFlow<String?>(null)
-    var hailPairingCode: Flow<String> = getHailPairingCode
-
-    // Basically controls whether or not we should build the hail detail.
-    private val _enableHailService = MutableStateFlow<Boolean>(false)
+    /**
+     * Hail Service is controlled by the User (or in managed configs), this gate
+     * initiates hail licensing and injection of data into a Hail Cot Detial, given
+     * the license is valid.
+     */
+    private val _enableHailService = MutableStateFlow<Boolean>(true)
     val enableHailService: StateFlow<Boolean> = _enableHailService
     suspend fun storeEnableHailService(enable: Boolean) {
         context.dataStore.edit { prefs ->
@@ -118,10 +100,70 @@ class DataRepository(private val context: Context) {
         _enableHailService.emit(enable)
     }
     val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_HAIL_SERVICE] ?: false
+        prefs[ENABLE_HAIL_SERVICE] ?: true
     }
 
-    // @Molly when button is clicked, this value will be flipped to true by you. After the license check is made (once we exit CHECKING state), will be flipped to false.
+    /**
+     * Hail License State can be one of the four states below and controls
+     * UI screens, license authentication, and activation of building
+     * the Hail CotDetail. See HailService.HailLicenseStates{} for more info:
+     *
+     *     enum class HailLicenseStates {
+     *         VALID,
+     *         CHECKING,
+     *         SOFT_EXPIRED,
+     *         EXPIRED,
+     *         INVALID
+     *     }
+    **/
+
+    private fun String.toHailStateOr(default: HailLicenseStates): HailLicenseStates =
+        runCatching { enumValueOf<HailLicenseStates>(this) }.getOrElse { default }
+    val hailLicenseState: StateFlow<HailLicenseStates> =
+        context.dataStore.data
+            .map { prefs ->
+                prefs[HAIL_LICENSE_STATE]?.toHailStateOr(HailLicenseStates.INVALID)
+                    ?: HailLicenseStates.INVALID
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.Eagerly,
+                initialValue = HailLicenseStates.INVALID
+            )
+
+    suspend fun storeHailLicenseState(state: HailLicenseStates?) {
+        context.dataStore.edit { prefs ->
+            if (state == null) {
+                prefs.remove(HAIL_LICENSE_STATE)   // don’t persist “null”
+            } else {
+                prefs[HAIL_LICENSE_STATE] = state.name
+            }
+        }
+    }
+    val getHailLicenseState: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[HAIL_LICENSE_STATE] ?: HailLicenseStates.INVALID.toString()
+    }
+
+    /**
+     * Combat ID is unique to each hail USER (aka INDIVIDUAL PERSON), not
+     * necessarily a device. This is a hail feature so users can have
+     * multiple devices/sensors feeding data into hail. The CombatID is
+     * required in the Hail CotDetail and is synonymous with a "card" in
+     * the ATAK plugin UI.
+     */
+    suspend fun storeCombatId(id: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HAIL_COMBAT_ID] = id
+        }
+    }
+    val getCombatId: Flow<Int?> = context.dataStore.data.map { prefs ->
+        prefs[HAIL_COMBAT_ID]
+    }
+
+    /**
+     * When check button is clicked in UI, this value will be
+     * flipped to true, and the license will be checked.
+     */
     var hailCheckLicenseButtonPressed = MutableStateFlow<Boolean>(false)
 
     /**
@@ -142,21 +184,6 @@ class DataRepository(private val context: Context) {
                 prefs.remove(HAIL_LICENSE_INFO_JSON)
             } else {
                 prefs[HAIL_LICENSE_INFO_JSON] = gson.toJson(next)
-            }
-        }
-    }
-
-    /**
-     * Save new license info or replace the old one.
-     * Pass null to completely clear it.
-     */
-    suspend fun storeHailLicenseInfo(info: HailService.HailLicenseInfo?) {
-        context.dataStore.edit { prefs ->
-            if (info == null) {
-                prefs.remove(HAIL_LICENSE_INFO_JSON)
-            } else {
-                // Single object: no TypeToken required
-                prefs[HAIL_LICENSE_INFO_JSON] = gson.toJson(info)
             }
         }
     }
@@ -185,14 +212,6 @@ class DataRepository(private val context: Context) {
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = null
         )
-
-    /**
-     * Remove the saved license info.
-     * Same as calling storeHailLicenseInfo(null), but with a clearer name.
-     */
-    suspend fun clearHailLicenseInfo() {
-        context.dataStore.edit { it.remove(HAIL_LICENSE_INFO_JSON) }
-    }
 
     // ======== ======== HAIL SECTION END ======== ==========
 
@@ -1037,10 +1056,10 @@ class DataRepository(private val context: Context) {
         private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
-        private val HAIL_PAIRING_CODE = stringPreferencesKey("hail_device_registered")
         private val ENABLE_HAIL_SERVICE = booleanPreferencesKey("enable_hail_service")
         private val HAIL_LICENSE_INFO_JSON = stringPreferencesKey("hail_license_info_json_v1") // include suffix for forward-compat
         private val HAIL_LICENSE_STATE = stringPreferencesKey("hail_license_state")
+        private val HAIL_COMBAT_ID = intPreferencesKey("hail_combat_id")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
         private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
         private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")
