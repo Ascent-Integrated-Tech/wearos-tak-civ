@@ -20,6 +20,10 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
+import android.net.Network
+import java.net.DatagramPacket
+import java.net.InetAddress
+import java.net.MulticastSocket
 
 
 object NetworkUtils {
@@ -70,5 +74,99 @@ object NetworkUtils {
         val url = "https://$takServerIp:18281/json/$departmentIdentifier/$jsonType.json"
         Log.v(TAG, "URL: $url")
         return url
+    }
+
+    object MulticastPublisher {
+        private const val TAG = "WearTAK-MulticastPub"
+        private const val MCAST_ADDR = "239.2.3.1"
+        private const val MCAST_PORT = 6969
+
+        @Volatile private var running = false
+        @Volatile private var currentNetwork: Network? = null
+        private var socket: MulticastSocket? = null
+        private var group: InetAddress? = null
+
+        /**
+         * Call when Wi-Fi becomes available. We resolve the Wi-Fi Network and bind the socket to it.
+         */
+        fun start(network: Network) {
+            synchronized(this) {
+                // No-op if already bound to this same Network and socket is alive
+                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed) return
+
+                // If running but on a different (or stale) Network, rebuild
+                stopLocked()
+
+                try {
+                    val ms = java.net.MulticastSocket(null).apply {
+                        reuseAddress = true
+                        try { timeToLive = 1 } catch (_: Throwable) {}  // keep multicast on LAN
+                        bind(null) // ephemeral source port
+                    }
+
+                    try {
+                        network.bindSocket(ms)  // ensure packets egress over this Wi-Fi network
+                    } catch (e: Exception) {
+                        android.util.Log.e(TAG, "bindSocket failed: ${e.message}", e)
+                        ms.close()
+                        return
+                    }
+
+                    socket = ms
+                    group = java.net.InetAddress.getByName(MCAST_ADDR)
+                    currentNetwork = network
+                    running = true
+                    Log.i(TAG, "MulticastPublisher started → $MCAST_ADDR:$MCAST_PORT")
+                } catch (e: Exception) {
+                    Log.e(TAG, "start() error: ${e.message}", e)
+                    stopLocked() // clean up partial state
+                }
+            }
+        }
+
+        fun stop() {
+            synchronized(this) {
+                stopLocked()
+            }
+        }
+
+        private fun stopLocked() {
+            if (!running && socket == null && group == null && currentNetwork == null) return
+            try {
+                socket?.close()
+            } catch (_: Throwable) { /* ignore */ }
+            socket = null
+            group = null
+            currentNetwork = null
+            running = false
+            Log.i(TAG, "MulticastPublisher stopped")
+        }
+
+        /**
+         * Non-blocking send. Safe to call from any thread.
+         * PLI CoT is small; if you ever send big payloads, consider chunking.
+         */
+        fun send(cotXml: String) {
+            //Log.i(TAG, "Checking socket")
+            val ms = socket ?: return
+            //Log.i(TAG, "Checking group")
+            val grp = group ?: return
+            //Log.i(TAG, "Checking multicast publisher running status")
+            if (!running) return
+            //Log.i(TAG, "Checking if multicast is enabled: ${MainActivity.enableMulticastOnWifi}")
+            if (!MainActivity.enableMulticastOnWifi) return
+
+            val bytes = cotXml.toByteArray(Charsets.UTF_8)
+            // Keep messages small; UDP can fragment.
+            if (bytes.size > 1300) {
+                Log.w(TAG, "CoT payload ${bytes.size}B may fragment over UDP.")
+            }
+            try {
+                ms.send(DatagramPacket(bytes, bytes.size, grp, MCAST_PORT))
+                //Log.i(TAG, "Sent Datagram to the multicast socket! $cotXml")
+            } catch (e: Exception) {
+                Log.e(TAG, "Multicast send() error: ${e.message}", e)
+            }
+        }
     }
 }

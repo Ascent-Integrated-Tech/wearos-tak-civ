@@ -254,6 +254,10 @@
     <string name="hail_service_description" translatable="false">Enable or disable Hail service</string>
     <string name="hail_service_enabled_default" translatable="false">false</string>
 
+    <string name="multicast_service_enabled_title" translatable="false">Enable Multicast</string>
+    <string name="multicast_service_enabled_description" translatable="false">Enabling multicast publishes PLI CoT over UDP on Wifi LAN</string>
+    <string name="multicast_service_enabled_default" translatable="false">true</string>
+
     <!-- WiFi Battery optimization-->
     <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
     <string name="wifiOptimization_service_enabled_description" translatable="false">Enable to increase battery life when connected to wifi networks.</string>
