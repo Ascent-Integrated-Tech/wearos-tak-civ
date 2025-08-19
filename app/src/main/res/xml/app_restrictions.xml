@@ -103,6 +103,13 @@
         android:defaultValue="@string/hail_service_enabled_default" />
 
     <restriction
+        android:key="multicast_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/multicast_service_enabled_title"
+        android:description="@string/multicast_service_enabled_description"
+        android:defaultValue="@string/multicast_service_enabled_default" />
+
+    <restriction
         android:key="wifiOptimization_service_enabled"
         android:restrictionType="bool"
         android:title="@string/wifiOptimization_service_enabled_title"

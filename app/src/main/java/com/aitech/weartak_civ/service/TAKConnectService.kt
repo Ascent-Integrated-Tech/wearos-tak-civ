@@ -28,6 +28,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.complication.TakServerComplicationService
@@ -125,15 +126,22 @@ class TAKConnectService: Service() {
         var lastTimeMsgSent: Long = 0L
     )
 
-
     override fun onCreate() {
         Log.d(TAG, "TAKConnectService onCreate")
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+        startMulticastCollector()
         return super.onCreate()
     }
 
+    private fun startMulticastCollector() {
+        CoroutineScope(Dispatchers.IO).launch {
+            NetworkManager.getInstance().wifiNetwork.collect { net ->
+                if (net != null) NetworkUtils.MulticastPublisher.start(net) else NetworkUtils.MulticastPublisher.stop()
+            }
+        }
+    }
 
     fun setFromDatastore() {
         runBlocking {
@@ -258,6 +266,12 @@ class TAKConnectService: Service() {
                 isWifiConnected = false
                 resetTakServerConnectionDetails()
             }
+        }
+        /*
+         * Notify all collectors (multicast handler) that isWifiConnected has changed
+         */
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.isWifiConnected.emit(isWifiConnected)
         }
     }
 

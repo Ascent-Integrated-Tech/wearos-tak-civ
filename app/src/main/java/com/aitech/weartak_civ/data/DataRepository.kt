@@ -224,8 +224,23 @@ class DataRepository(private val context: Context) {
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = null
         )
-
     // ======== ======== HAIL SECTION END ======== ==========
+
+    // ======== ======== Multicast SECTION Start ======== ==========
+    private val _enableMulticast = MutableStateFlow<Boolean>(true)
+    val enableMulticast: StateFlow<Boolean> = _enableMulticast
+
+    suspend fun storeEnableMulticast(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_MULTICAST] = enable
+        }
+        _enableHailService.emit(enable)
+    }
+
+    val getEnableMulticast: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_MULTICAST] ?: true
+    }
+    // ======== ======== Multicast SECTION END ======== ==========
 
     private val _latestActivityConfidence = MutableStateFlow<Int>(100)
     val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
@@ -591,6 +606,11 @@ class DataRepository(private val context: Context) {
             prefs[REPORTING_UPDATE_INTERVAL] = reportingUpdateInterval
         }
     }
+
+    /*
+     *  tracks the wifi connection state to start or stop multicasting.
+     */
+    var isWifiConnected = MutableStateFlow<Boolean>(false)
 
     val getEnableWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: true
@@ -1154,6 +1174,7 @@ class DataRepository(private val context: Context) {
         private val HAIL_LICENSE_INFO_JSON = stringPreferencesKey("hail_license_info_json_v1") // include suffix for forward-compat
         private val HAIL_LICENSE_STATE = stringPreferencesKey("hail_license_state")
         private val HAIL_COMBAT_ID = intPreferencesKey("hail_combat_id")
+        private val ENABLE_MULTICAST = booleanPreferencesKey("enable_multicast")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
         private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
         private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")

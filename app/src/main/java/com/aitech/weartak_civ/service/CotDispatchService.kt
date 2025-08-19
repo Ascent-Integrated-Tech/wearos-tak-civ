@@ -21,6 +21,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
@@ -48,6 +49,7 @@ import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
 import com.aitech.weartak_civ.service.HailService.checkLicense
 import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
+import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import com.rain.hail.sdk.HailDetail
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +60,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -350,7 +354,7 @@ class CotDispatchService : Service() {
                 // Once watch catches GPS, updates are at max 1s.
                 //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
                 //writeToLogFileLocation(logFile, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
-                buildAndSendLocationBiometricCotMessage()
+                buildAndSendPhysioLocationCotMsg()
             }
             // Schedule the next run
             cotDispatchHandler?.postDelayed(this, currReportingIntervalInSecs * 1000L)
@@ -864,6 +868,7 @@ class CotDispatchService : Service() {
                 }
                 markerDropToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
+                sendMulticastDatagram(cotMessage)
 //                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
             } else {
                 Log.w(TAG, "Marker CoT NOT sent to TAK (disconnected)")
@@ -876,9 +881,19 @@ class CotDispatchService : Service() {
                     markerDropToBeSent.set(true) // we need to try again
                 }
             }
+            sendMulticastDatagram(cotMessage)
         }
     }
-*/
+
+ */
+
+    private fun sendMulticastDatagram(cotXml: String) {
+        // the publisher will return if not connected to wifi. Just pass it every time for POC. //TODO: design a better system for cots to be dispatched to their proper endpoints (e.g. Ditto, LAN Multicast, TAK Server, Esri)
+        if (isLicenseValid()) {
+            Log.i(TAG, "Trying to multicast data to the wifi network! ")
+            NetworkUtils.MulticastPublisher.send(cotXml)
+        }
+    }
 
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
         serviceScope.launch(Dispatchers.IO) {
@@ -920,49 +935,70 @@ class CotDispatchService : Service() {
                     // TODO: Create an in memory (or persistent store) array of markers / SOS to be sent for when the device reconnects to the server.
                 }
             }
+            sendMulticastDatagram(cotMessage)
         }
     }
 
-    fun buildAndSendLocationBiometricCotMessage() {
-        if (!TAKConnectService.isAnyTakConnected) {
-            Log.w(TAG, "Not connected to server. Not sending Cot message")
-        } else {
-            CoroutineScope(Dispatchers.IO).launch {
-                val location    = dataRepository.latestLocation.value
+    private data class PhysioPli(
+        val loc: Location?,
+        val phys: PhysioData
+    )
 
-                val heartRate  = dataRepository.latestHeartRate.value ?: -1
-                val skinTempF  = dataRepository.latestSkinTemp.value ?: -1f
-                val exertion = dataRepository.exertionFlow.value
-                val battery    = dataRepository.latestBatteryPercentage.value
-                val daily      = dataRepository.latestDailyMetrics.value
+    private suspend fun getPhsyioAndPliData(): PhysioPli = withContext(Dispatchers.IO) {
+        val heartRate  = dataRepository.latestHeartRate.value ?: -1
+        val skinTempF  = dataRepository.latestSkinTemp.value ?: -1f
+        val exertion   = dataRepository.exertionFlow.value
+        val battery    = dataRepository.latestBatteryPercentage.value
+        val daily      = dataRepository.latestDailyMetrics.value
 
-                val calories   = daily?.calories   ?: -1.0          // Double
-                val floors     = daily?.floors     ?: -1.0          // Double
-                val elevationM = daily?.elevationM ?: -1.0          // Double
-                val steps      = daily?.steps ?: -1L
+        val calories   = daily?.calories   ?: -1.0
+        val floors     = daily?.floors     ?: -1.0
+        val elevationM = daily?.elevationM ?: -1.0
+        val steps      = daily?.steps ?: -1L
 
-                val weight     = dataRepository.getPhysiologicalMetricWeight.first()
-                val age        = dataRepository.getPhysiologicalMetricAge.first()
+        val weight     = dataRepository.getPhysiologicalMetricWeight.first()
+        val age        = dataRepository.getPhysiologicalMetricAge.first()
 
-                val physioData = PhysioData(
-                    heartRate  = heartRate,
-                    skinTemp   = skinTempF,
-                    exertion = exertion,
-                    battery    = battery,
-                    steps      = steps,
-                    calories   = calories,
-                    floors     = floors,
-                    elevationM = elevationM,
-                    weight     = weight,
-                    age        = age
-                )
-                sendLocationBiometricCotMessage(location, physioData)
+        val location   = dataRepository.latestLocation.value
+        val physioData = PhysioData(
+            heartRate  = heartRate,
+            skinTemp   = skinTempF,
+            exertion   = exertion,
+            battery    = battery,
+            steps      = steps,
+            calories   = calories,
+            floors     = floors,
+            elevationM = elevationM,
+            weight     = weight,
+            age        = age
+        )
+
+        PhysioPli(location, physioData)
+    }
+
+    fun buildAndSendPhysioLocationCotMsg() {
+        // Blocks the current (scheduler) thread until the work is done.
+        runBlocking(Dispatchers.IO) {
+            val data = getPhsyioAndPliData() // suspending
+            val location   = data.loc
+            val physioData = data.phys
+
+            if (!TAKConnectService.isAnyTakConnected) {
+                Log.w(TAG, "Not connected to a TAK Server. Not sending to TAK Server. Attempting Multicast…")
+            } else {
+                sendPhsyioLocationCotMsg(location, physioData)
             }
-        }
 
+            multicastPhysioPliCot(data) // always try multicast; helper handles Wi-Fi
+        }
     }
 
-    private fun sendLocationBiometricCotMessage(location: Location?, physioData: PhysioData) {
+    private fun multicastPhysioPliCot(physioPli: PhysioPli) {
+        val cotMessage = buildConciseLocationPhysioCot(physioPli.loc, physioPli.phys)
+        NetworkUtils.MulticastPublisher.send(cotMessage)
+    }
+
+    private fun sendPhsyioLocationCotMsg(location: Location?, physioData: PhysioData) {
         val cotMessage = buildConciseLocationPhysioCot(location, physioData)
         sendDataTAKServers(cotMessage, false)
         //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"; Log.d(TAG, logString)
@@ -982,7 +1018,7 @@ class CotDispatchService : Service() {
                 sendPendingMarkerDrops()
             }
         }
-        buildAndSendLocationBiometricCotMessage() // keep for your tracking path
+        buildAndSendPhysioLocationCotMsg()
     }
 
     private fun enqueueDrop(req: DataRepository.DropRequest) {
@@ -1070,7 +1106,7 @@ class CotDispatchService : Service() {
         Log.d(TAG, "onMessageEvent w/ msg($msg)")
         if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
             // send the "freshest" cot message with the newly updated callsign
-            buildAndSendLocationBiometricCotMessage()
+            buildAndSendPhysioLocationCotMsg()
         } else if (CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED == msg) {
             // Check for OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT and GPS_STALE_TIME_INTERVAL_MS
             // Json could be {"bleExitHysteresisCount" : "20", "bleStaleTimeIntervalMs" : "5000", "overrideGpsWithBleExitHysteresisCount" : "30", "gpsStaleTimeInterval" : "10000" }

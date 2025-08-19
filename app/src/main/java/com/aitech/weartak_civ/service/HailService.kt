@@ -178,7 +178,7 @@ object HailService {
                         updateHailLicenseState(HailLicenseStates.EXPIRED)
                     }
                 } else {
-                    Log.i(TAG, "Other Issue. We Probably are not paired. Show License Dialog")
+                    //Log.i(TAG, "Other Issue. We Probably are not paired. Show License Dialog")
                     updateHailLicenseState(HailLicenseStates.INVALID)
                 }
                 return false
