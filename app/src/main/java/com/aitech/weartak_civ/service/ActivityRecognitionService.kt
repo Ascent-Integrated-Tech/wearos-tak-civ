@@ -33,7 +33,6 @@ import androidx.health.services.client.HealthServices
 import androidx.health.services.client.PassiveListenerCallback
 import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
-import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.health.services.client.getCapabilities
 import kotlinx.coroutines.SupervisorJob
@@ -73,7 +72,9 @@ class ActivityRecognitionService : Service() {
         super.onCreate()
 
         isRunning.set(true)
-        Log.d(TAG, "ActivityRecognitionService onCreate called")
+        val logStr = "ActivityRecognitionService onCreate called"
+        Log.d(TAG, logStr)
+        writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
         startForegroundServiceCompat(
             NOTIF_ID,
@@ -153,7 +154,7 @@ class ActivityRecognitionService : Service() {
             // TODO: Need to look at confidence and do sthg if confidence is less than 50?
             val line = "Detected $name  confidence=${act?.confidence ?: 100}"
             Log.i(TAG, line)
-            //writeToLogFileLocation(logFile, line)
+            writeToLogFileLocation(logFile, line)
 
             // Persist in repo (backend-only)
             ioScope.launch {
@@ -190,7 +191,9 @@ class ActivityRecognitionService : Service() {
             container.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
             // DEBUG LOG: shows the cached snapshot
-//            writeToLogFileLocation(logFile, "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
+            val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
+            Log.d(TAG, logStr)
+            writeToLogFileLocation(logFile, logStr)
 
             // Push snapshot to repository
             scope.launch {
