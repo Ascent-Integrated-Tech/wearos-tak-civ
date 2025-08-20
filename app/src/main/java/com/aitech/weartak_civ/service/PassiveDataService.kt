@@ -57,9 +57,12 @@ class PassiveDataService : PassiveListenerService() {
                 latestHeartRate = it.toInt()
             }
         }
+        /*
         CoroutineScope(Dispatchers.IO).launch {
             processBiometrics(callsign, latestHeartRate!!)
         }
+
+         */
     }
 
     fun processBiometrics(callsign: String, heartrate: Int) {

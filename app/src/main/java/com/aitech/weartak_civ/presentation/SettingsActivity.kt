@@ -135,7 +135,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
@@ -890,19 +890,14 @@ fun TakServerSetting(navController: NavController) {
                                 val minReportingInterval = getMinReportingInterval(takServerList)
                                 var prevReportingInterval = 1
                                 runBlocking {
-                                    prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
+                                    prevReportingInterval = dataRepository.getStaticReportingInterval.first()
                                 }
                                 Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
                                 if (prevReportingInterval != minReportingInterval) {
                                     Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
                                     runBlocking {
-                                        dataRepository.storeReportingUpdateInterval(minReportingInterval)
+                                        dataRepository.storeStaticReportingInterval(minReportingInterval)
                                     }
-                                    CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                    EventBus.getDefault().post(
-                                        MessageEvent(
-                                            UPDATE_INTERVAL_CHANGED, minReportingInterval)
-                                    )
                                 }
                             } },
                         onPrimaryActionClick = {
@@ -1264,16 +1259,14 @@ fun NewServerPage(navController: NavController) {
                                     val minReportingInterval = getMinReportingInterval(takServerList)
                                     var prevReportingInterval = 1
                                     runBlocking {
-                                        prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
+                                        prevReportingInterval = dataRepository.getStaticReportingInterval.first()
                                     }
                                     Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
                                     if (prevReportingInterval != minReportingInterval) {
                                         Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
                                         runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(minReportingInterval)
+                                            dataRepository.storeStaticReportingInterval(minReportingInterval)
                                         }
-                                        CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
                                     }
                                     /*
                                     if (newReportingUpdateInterval < CotDispatchService.reportingUpdateIntervalSecs) {
@@ -1560,20 +1553,17 @@ fun EditServerPage(
                                     takServerList = mutableTakServerList.toList()
                                     takServerListState.postValue(takServerList)
 
-                                    val changedReportingUpdateInterval = reportingUpdateInterval.toInt()
                                     val minReportingInterval = getMinReportingInterval(takServerList)
                                     var prevReportingInterval = 1
                                     runBlocking {
-                                        prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
+                                        prevReportingInterval = dataRepository.getStaticReportingInterval.first()
                                     }
                                     Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
                                     if (prevReportingInterval != minReportingInterval) {
                                         Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
                                         runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(minReportingInterval)
+                                            dataRepository.storeStaticReportingInterval(minReportingInterval)
                                         }
-                                        CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
                                     }
 
                                     if (serverConnSettingsChanged.value || reportingIntervalChanged) {

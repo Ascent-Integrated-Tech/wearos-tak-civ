@@ -17,12 +17,13 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -79,7 +80,7 @@ class SkinTempService : Service() {
 //        )
     }
 
-    private val logFile: File by lazy { File(LOG_FILENAME) }
+    //private val logFile: File by lazy { File(LOG_FILENAME) }
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
@@ -156,7 +157,7 @@ class SkinTempService : Service() {
             sharedRepo.reportingUpdateIntervalSecs.collect { secs ->
                 val newIntervalMs = (secs * 1_000L).coerceAtLeast(MIN_SKIN_TEMP_INTERVAL_MS)
                 if (newIntervalMs != DISPATCH_INTERVAL_MS) {
-//                    writeToLogFileLocation(logFile, "Dispatch Interval Changed from ${DISPATCH_INTERVAL_MS/1000}s to ${newIntervalMs/1000}s"); Log.i(TAG, "Reporting interval updated -> $secs s")
+                    //writeToLogFileLocation(logFile, "Dispatch Interval Changed from ${DISPATCH_INTERVAL_MS/1000}s to ${newIntervalMs/1000}s"); Log.i(TAG, "Reporting interval updated -> $secs s")
                     DISPATCH_INTERVAL_MS = newIntervalMs
 
                     if (deviceWorn) {

@@ -55,10 +55,11 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.min
 
 
 class LocationService : Service() {
-
+    private val TAG = "WearTAK-" + LocationService::class.java.simpleName
     private var locationThread: HandlerThread? = null
     private var periodicLocationCallback: PeriodicLocationCallback = PeriodicLocationCallback()
     private var fusedLocationProviderClient: FusedLocationProviderClient? = null
@@ -227,7 +228,7 @@ class LocationService : Service() {
                 "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")"
         Log.d(TAG, logStr)
         //writeToLogFileLocation(logFile, logStr)
-        //printLocationRequest(locationRequest)
+        printLocationRequest(locationRequest)
         /*
         val builder = LocationSettingsRequest.Builder()
         builder.addLocationRequest(locationRequest)
@@ -363,17 +364,14 @@ class LocationService : Service() {
     }
 
     companion object {
-        private val TAG = "WearTAK-" + LocationService::class.java.simpleName
-        private val LOCATION_SERVICE_NOTIFICATION_ID = 1234
-        private val MAX_PERIODIC_GPS_UPDATE_INTERVAL : Int = 10
+        private const val LOCATION_SERVICE_NOTIFICATION_ID = 1234
+        private const val MAX_PERIODIC_GPS_UPDATE_INTERVAL : Int = 10
         // TODO: remove lat, lon, hae, ce, le after removing/refactoring PassiveDataService.kt
         var lat : Double? = null
         var lon : Double? = null
         var hae : Double? = null
         var ce : Float? = null
         var le : Float? = null
-        //var locationUpdateIntervalSecs = 2
-        //var locationUpdateFastestIntervalSecs = 1
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         @Volatile private var _instance: LocationService? = null
         fun getInstance(): LocationService? = _instance

@@ -61,7 +61,6 @@
         android:name="android.permission.BROADCAST_PACKAGE_REMOVED"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
@@ -258,7 +257,7 @@
                 android:resource="@drawable/tile_preview" />
         </service>
         <service
-            android:name=".service.MovementDetectionService"
+            android:name=".service.ReportingIntervalStrategyService"
             android:enabled="true"
             android:exported="true"
             android:foregroundServiceType="health">

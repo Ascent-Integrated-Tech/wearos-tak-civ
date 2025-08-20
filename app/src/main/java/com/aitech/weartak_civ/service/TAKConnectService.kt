@@ -357,6 +357,7 @@ class TAKConnectService: Service() {
             takServerDetail.numConnAttempts = 0
             if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
                 // There is power optimization going on
+                // TODO: Why check here? Cleanup
                 Log.d(TAG, "GPS Power optimization going on")
                 takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
             } else {

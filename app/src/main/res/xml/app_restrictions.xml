@@ -138,6 +138,35 @@
         android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
 
     <restriction
+        android:key="alerting_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/alerting_reporting_interval_title"
+        android:description="@string/alerting_reporting_interval_description"
+        android:defaultValue="@string/alerting_reporting_interval_default"/>
+
+    <restriction
+        android:key="on_foot_walking_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/on_foot_walking_reporting_interval_title"
+        android:description="@string/on_foot_walking_reporting_interval_description"
+        android:defaultValue="@string/on_foot_walking_reporting_interval_default"/>
+
+
+    <restriction
+        android:key="in_vehicle_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/in_vehicle_reporting_interval_title"
+        android:description="@string/in_vehicle_reporting_interval_description"
+        android:defaultValue="@string/in_vehicle_reporting_interval_default"/>
+
+    <restriction
+        android:key="stationary_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/stationary_reporting_interval_title"
+        android:description="@string/stationary_reporting_interval_description"
+        android:defaultValue="@string/stationary_reporting_interval_default"/>
+
+    <restriction
         android:key="enable_sms"
         android:restrictionType="bool"
         android:title="@string/enable_sms_title"

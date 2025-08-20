@@ -27,9 +27,13 @@ import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.DEFAULT_AGE
-import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -40,11 +44,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 
@@ -246,8 +250,11 @@ class DataRepository(private val context: Context) {
     private val _latestActivityConfidence = MutableStateFlow<Int>(100)
     val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
 
-    private val _latestActivityRecognized = MutableStateFlow<String>("UNKNOWN")
-    val latestActivityRecognized: StateFlow<String?> = _latestActivityRecognized
+    private val _latestActivityRecognized = MutableStateFlow<ActivityRecognized>(ActivityRecognized.UNKNOWN)
+    val latestActivityRecognized: StateFlow<ActivityRecognized> = _latestActivityRecognized
+
+    private val _isAlerting = MutableStateFlow<Boolean>(false)
+    val isAlerting : StateFlow<Boolean> = _isAlerting
 
     private val _latestHeartRate = MutableStateFlow<Int>(-1)
     val latestHeartRate: StateFlow<Int> = _latestHeartRate
@@ -362,12 +369,16 @@ class DataRepository(private val context: Context) {
         _latestHeartRate.emit(heartRate)
     }
 
-    suspend fun storeLatestActivityRecognized(activity: String) {
+    suspend fun storeLatestActivityRecognized(activity: ActivityRecognized) {
         _latestActivityRecognized.emit(activity)
     }
 
     suspend fun storeLatestActivityConfidence(confidence: Int) {
         _latestActivityConfidence.emit(confidence)
+    }
+
+    suspend fun storeIsAlerting(alerting: Boolean) {
+        _isAlerting.emit(alerting)
     }
 
     suspend fun storeLatestSkinTemp(skinTemp: Float) {
@@ -593,19 +604,11 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val reportingUpdateIntervalSecs: Flow<Int> =
-        context.dataStore.data
-            .map { it[REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL }  // default 60 s
-            .distinctUntilChanged()
-
-    val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
-    }
+    private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_REPORTING_INTERVAL)
+    val reportingUpdateIntervalSecs: StateFlow<Int> = _reportingUpdateIntervalSecs
 
     suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[REPORTING_UPDATE_INTERVAL] = reportingUpdateInterval
-        }
+        _reportingUpdateIntervalSecs.emit(reportingUpdateInterval)
     }
 
     /*
@@ -933,14 +936,99 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    private val _enableDynamicReportingStrategy = MutableStateFlow<Boolean?>(null) // TODO: Do we initialize with null OR from getEnableDynamicReportingStrategy
+    val enableDynamicReportingStrategy: StateFlow<Boolean?> = _enableDynamicReportingStrategy
+
     val getEnableDynamicReportingStrategy: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: false
     }
 
-    suspend fun storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy: Boolean) {
+    suspend fun storeEnableDynamicReportingStrategy(enableDynamicRS: Boolean) {
         context.dataStore.edit { prefs ->
-            prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = enableDynamicReportingStrategy
+            prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = enableDynamicRS
         }
+        _enableDynamicReportingStrategy.emit(enableDynamicRS)
+    }
+
+    private val _staticReportingInterval = MutableStateFlow<Int?>(null)
+    val staticReportingInterval: StateFlow<Int?> = _staticReportingInterval
+
+    val getStaticReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[STATIC_REPORTING_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+    }
+
+    suspend fun storeStaticReportingInterval(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[STATIC_REPORTING_INTERVAL] = interval
+        }
+        _staticReportingInterval.emit(interval)
+    }
+
+    private val _dynamicReportingInterval = MutableStateFlow<Int?>(null)
+    val dynamicReportingInterval: StateFlow<Int?> = _dynamicReportingInterval
+
+    suspend fun storeDynamicReportingInterval(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[DYNAMIC_REPORTING_INTERVAL] = interval
+        }
+        _dynamicReportingInterval.emit(interval)
+    }
+
+    private val _stationaryReportingInterval = MutableStateFlow<Int?>(null)
+    val stationaryReportingInterval: StateFlow<Int?> = _stationaryReportingInterval
+
+    val getStationaryReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[STATIONARY_REPORTING_INTERVAL] ?: DEFAULT_STATIONARY_REPORTING_INTERVAL
+    }
+
+    suspend fun storeStationaryReportingInterval(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[STATIONARY_REPORTING_INTERVAL] = interval
+        }
+        Log.d(TAG, "storeStationaryReportingInterval: $interval")
+        _stationaryReportingInterval.emit(interval)
+    }
+
+    private val _onFootReportingInterval = MutableStateFlow<Int?>(null)
+    val onFootReportingInterval: StateFlow<Int?> = _onFootReportingInterval
+
+    val getOnFootReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[ON_FOOT_REPORTING_INTERVAL] ?: DEFAULT_ON_FOOT_REPORTING_INTERVAL
+    }
+
+    suspend fun storeOnFootReportingInterval(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[ON_FOOT_REPORTING_INTERVAL] = interval
+        }
+        _onFootReportingInterval.emit(interval)
+    }
+
+    private val _vehicleReportingInterval = MutableStateFlow<Int?>(null)
+    val vehicleReportingInterval: StateFlow<Int?> = _vehicleReportingInterval
+
+    val getVehicleReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[VEHICLE_REPORTING_INTERVAL] ?: DEFAULT_VEHICLE_REPORTING_INTERVAL
+    }
+
+    suspend fun storeVehicleReportingInterval(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[VEHICLE_REPORTING_INTERVAL] = interval
+        }
+        _vehicleReportingInterval.emit(interval)
+    }
+
+    private val _whileAlertingReportingInterval = MutableStateFlow<Int?>(null)
+    val whileAlertingReportingInterval: StateFlow<Int?> = _whileAlertingReportingInterval
+
+    val getWhileAlertingReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[WHILE_ALERTING_REPORTING_INTERVAL] ?: DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
+    }
+
+    suspend fun storeWhileAlertingReportingInterval(interval: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[WHILE_ALERTING_REPORTING_INTERVAL] = interval
+        }
+        _whileAlertingReportingInterval.emit(interval)
     }
 
     val getEnableSmsForAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -1168,7 +1256,6 @@ class DataRepository(private val context: Context) {
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
-        private val REPORTING_UPDATE_INTERVAL = intPreferencesKey("reporting_update_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
         private val ENABLE_HAIL_SERVICE = booleanPreferencesKey("enable_hail_service")
@@ -1182,6 +1269,12 @@ class DataRepository(private val context: Context) {
         private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
         private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
+        private val STATIC_REPORTING_INTERVAL = intPreferencesKey("static_reporting_interval")
+        private val DYNAMIC_REPORTING_INTERVAL = intPreferencesKey("dynamic_reporting_interval")
+        private val STATIONARY_REPORTING_INTERVAL = intPreferencesKey("stationary_reporting_interval")
+        private val ON_FOOT_REPORTING_INTERVAL = intPreferencesKey("on_foot_reporting_interval")
+        private val VEHICLE_REPORTING_INTERVAL = intPreferencesKey("vehicle_reporting_interval")
+        private val WHILE_ALERTING_REPORTING_INTERVAL = intPreferencesKey("while_alerting_reporting_interval")
         private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")

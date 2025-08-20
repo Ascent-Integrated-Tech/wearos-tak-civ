@@ -271,8 +271,24 @@
     <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
 
     <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
-    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval is increased when device is detected to be moving slowly or stationary.</string>
+    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval changes based on motion and alerting status.</string>
     <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
+
+    <string name="alerting_reporting_interval_title" translatable="false">Alerting Reporting Interval (Dynamic Reporting Strategy)</string>
+    <string name="alerting_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when device is alerting: SOS or other alerts (part of Dynamic Reporting Strategy)</string>
+    <string name="alerting_reporting_interval_default" translatable="false">10</string>
+
+    <string name="on_foot_walking_reporting_interval_title" translatable="false">Walking/On Foot Reporting Interval (Dynamic Reporting Strategy)</string>
+    <string name="on_foot_walking_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is walking/on foot (part of Dynamic Reporting Strategy)</string>
+    <string name="on_foot_walking_reporting_interval_default" translatable="false">20</string>
+
+    <string name="in_vehicle_reporting_interval_title" translatable="false">In Vehicle/Driving Reporting Interval (Dynamic Reporting Strategy)</string>
+    <string name="in_vehicle_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is in vehicel/driving (part of Dynamic Reporting Strategy)</string>
+    <string name="in_vehicle_reporting_interval_default" translatable="false">60</string>
+
+    <string name="stationary_reporting_interval_title" translatable="false">Stationary Reporting Interval (Dynamic Reporting Strategy)</string>
+    <string name="stationary_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is stationary (part of Dynamic Reporting Strategy)</string>
+    <string name="stationary_reporting_interval_default" translatable="false">300</string>
 
     <string name="enable_sms_title" translatable="false">Enable SMS for Alerts</string>
     <string name="enable_sms_description" translatable="false">Boolean that determines if SMS will be sent on detection of alerts.</string>

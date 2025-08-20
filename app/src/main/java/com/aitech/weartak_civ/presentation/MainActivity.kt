@@ -104,7 +104,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_C
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
@@ -147,7 +146,6 @@ import androidx.wear.compose.foundation.padding
 import androidx.wear.compose.material.curvedText
 import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
 import com.aitech.weartak_civ.service.BleBeaconService
-import com.aitech.weartak_civ.service.MovementDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -156,9 +154,13 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.Utils.DEFAULT_AGE
-import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
@@ -182,6 +184,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocation
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.service.ActivityRecognitionService
+import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
+import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
+import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
 import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -291,6 +296,11 @@ class MainActivity : ComponentActivity() {
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
 
         var enableDynamicReportingStrategy = false
+        var staticReportingInterval = DEFAULT_REPORTING_INTERVAL
+        var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
+        var onFootReportingInterval = DEFAULT_ON_FOOT_REPORTING_INTERVAL
+        var vehicleReportingInterval = DEFAULT_VEHICLE_REPORTING_INTERVAL
+        var stationaryReportingInterval = DEFAULT_STATIONARY_REPORTING_INTERVAL
         var enableSmsForAlerts = false
         var enableSmsForAlertsSettingsState = MutableLiveData<Boolean>(false)
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
@@ -398,7 +408,7 @@ class MainActivity : ComponentActivity() {
 
         fun startStopActivityRecognitionService() {
             if (isLicenseValid()) {
-                if (enableActivityRecognitionService) {
+                if (enableActivityRecognitionService || enableDynamicReportingStrategy) {
                     startActivityRecognitionService()
                 } else {
                     if (ActivityRecognitionService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
@@ -414,7 +424,7 @@ class MainActivity : ComponentActivity() {
                 if (ActivityRecognitionService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
                 return
             }
-            if (enableActivityRecognitionService) {
+            if (enableActivityRecognitionService || enableDynamicReportingStrategy) {
                 if ((ActivityCompat.checkSelfPermission(
                         mainActivity.applicationContext,
                         Manifest.permission.BODY_SENSORS
@@ -675,37 +685,16 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "Starting CotDispatchService")
                 mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
             } else {
-                Log.d(TAG, "Cot DispatchService is already running")
+                Log.d(TAG, "CotDispatchService is already running")
             }
         }
 
-        fun startMovementDetectionService() {
-            if (enableDynamicReportingStrategy) {
-                if (!MovementDetectionService.isRunning.get()) {
-                    Log.d(TAG, "Starting MovementDetectionService")
-                    Handler(Looper.getMainLooper()).postDelayed({ mainActivity.startService(Intent(mainActivity, MovementDetectionService::class.java)) }, MOVEMENT_DETECTION_SERVICE_START_DELAY)
-
-                } else {
-                    Log.d(TAG, "MovementDetection is already running")
-                }
+        fun startReportingIntervalStrategyService() {
+            if (!ReportingIntervalStrategyService.isRunning.get()) {
+                Log.d(TAG, "Starting ReportingIntervalStrategyService")
+                mainActivity.startService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
             } else {
-                Log.d(TAG, "MovementDetection is disabled (enableDynamicReportingStrategy == false)")
-            }
-        }
-
-        fun startStopMovementDetectionService() {
-            if (isLicenseValid()) {
-                if (enableDynamicReportingStrategy) {
-                    startMovementDetectionService()
-                } else {
-                    if (MovementDetectionService.isRunning.get()) {
-                        mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
-                    }
-                }
-            } else {
-                if (MovementDetectionService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
-                }
+                Log.d(TAG, "ReportingIntervalStrategyService is already running")
             }
         }
 
@@ -754,13 +743,13 @@ class MainActivity : ComponentActivity() {
                         =====================================
                         """.trimIndent())
                 startTAKConnectService()
+                startReportingIntervalStrategyService()
                 startOffBodyDetectService()
                 startHeartrateService()
                 startSkinTempService()
                 startActivityRecognitionService()
                 startBatteryService()
                 startLocationService()
-                startMovementDetectionService()
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()
@@ -772,6 +761,9 @@ class MainActivity : ComponentActivity() {
                             """.trimIndent())
                 if (TAKConnectService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
+                }
+                if (ReportingIntervalStrategyService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
                 }
                 if (OffBodyDetectService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
@@ -790,9 +782,6 @@ class MainActivity : ComponentActivity() {
                 }
                 if (LocationService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                }
-                if (MovementDetectionService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
                 }
                 if (CotDispatchService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
@@ -935,7 +924,6 @@ class MainActivity : ComponentActivity() {
 
          */
         mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
-        mainActivity.stopService(Intent(mainActivity, MovementDetectionService::class.java))
         mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
         mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
         if (enablePhysiologicalServices) {
@@ -947,6 +935,7 @@ class MainActivity : ComponentActivity() {
         if (enableLocationService) {
             mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
         }
+        mainActivity.stopService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
         mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
         if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
 
@@ -1104,13 +1093,23 @@ class MainActivity : ComponentActivity() {
             enableHailService = dataRepository.getEnableHailService.first()
             enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
 
-            val minReportingInterval = getMinReportingInterval(takServerList)
+            enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
+            val minStaticReportingInterval = getMinReportingInterval(takServerList)
+            dataRepository.storeStaticReportingInterval(minStaticReportingInterval)
+            whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
+            onFootReportingInterval = dataRepository.getOnFootReportingInterval.first()
+            vehicleReportingInterval = dataRepository.getVehicleReportingInterval.first()
+            stationaryReportingInterval = dataRepository.getStationaryReportingInterval.first()
 
-            Log.d(TAG, "Setting storeReportingUpdateInterval & COT reportingUpdateIntervalSecs to $minReportingInterval secs")
-            dataRepository.storeReportingUpdateInterval(minReportingInterval)
-            CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-            CotDispatchService.currReportingIntervalInSecs = minReportingInterval
-            //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
+            // Initially on start ActivityRecognized is UNKNOWN
+            val dynamicReportingInterval = calcDynamicReportingInterval(false, ActivityRecognized.UNKNOWN,
+                whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval, stationaryReportingInterval)
+            dataRepository.storeDynamicReportingInterval(dynamicReportingInterval)
+            val reportingUpdateInterval = if (enableDynamicReportingStrategy) {dynamicReportingInterval} else {minStaticReportingInterval}
+            Log.d(TAG, "enableDynamicReportingStrategy($enableDynamicReportingStrategy): reportingUpdateInterval=$reportingUpdateInterval w/ minStaticReportingInterval=$minStaticReportingInterval, dynamicReportingInterval=$dynamicReportingInterval (activity=${ActivityRecognized.UNKNOWN.name}, alert=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval")
+            dataRepository.storeReportingUpdateInterval(reportingUpdateInterval)
+            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval
+            CotDispatchService.currReportingIntervalInSecs = reportingUpdateInterval
 
             enableWifiBatteryOptimization = dataRepository.getEnableWifiBatteryOptimization.first()
             PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
@@ -1118,8 +1117,6 @@ class MainActivity : ComponentActivity() {
             PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
             wifiSsidList = dataRepository.getWifiSsidList.first()
             saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
-
-            enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
 
             enableSmsForAlerts = dataRepository.getEnableSmsForAlerts.first()
             smsNumbersList = dataRepository.getSmsNumbersList.first()
@@ -1193,6 +1190,10 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Ditto App Id:", dittoAppId)}
                     ${String.format("%-25s %-30s", "Ditto Auth Token:", dittoAuthToken)}
                     ${String.format("%-25s %-30s", "Enable Dynamic Reporting:", enableDynamicReportingStrategy.toString())}
+                    ${String.format("%-25s %-30s", "While Alerting Reporting Interval (s):", whileAlertingReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "On Foot Reporting Interval (s):", onFootReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "Vehicle Reporting Interval (s):", vehicleReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "Stationary Reporting Interval (s):", stationaryReportingInterval.toString())}
                     ${String.format("%-25s %-30s", "Enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "Enable Physio:", enablePhysiologicalServices.toString())}
                     ${String.format("%-25s %-30s", "Enable Activity Recognition:", enableActivityRecognitionService.toString())}
@@ -1588,7 +1589,7 @@ class MainActivity : ComponentActivity() {
         var serverPassword: String? = null
         var serverCertPassword: String? = null
         var serverCertificate: String? = null
-        var serverUpdateInterval: Int = CotDispatchService.reportingUpdateIntervalSecs
+        var serverUpdateInterval: Int = DEFAULT_REPORTING_INTERVAL
         val takServerListConfig: MutableList<DataRepository.TakServerItem> = mutableListOf()
         val handler = Handler(Looper.getMainLooper())
 
@@ -1654,6 +1655,11 @@ class MainActivity : ComponentActivity() {
         Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
+        val whileAlertingReportingIntervalConfigUpdate = appRestrictions.getInt("alerting_reporting_interval", whileAlertingReportingInterval)
+        val onFootReportingIntervalConfigUpdate = appRestrictions.getInt("on_foot_walking_reporting_interval", onFootReportingInterval)
+        val vehicleReportingIntervalConfigUpdate = appRestrictions.getInt("in_vehicle_reporting_interval", vehicleReportingInterval)
+        val stationaryReportingIntervalConfigUpdate = appRestrictions.getInt("stationary_reporting_interval", stationaryReportingInterval)
+        Log.d(TAG, "ConfigUpdate: $enableDynamicReportingStrategyConfigUpdate, $whileAlertingReportingIntervalConfigUpdate, $onFootReportingIntervalConfigUpdate, $vehicleReportingIntervalConfigUpdate, $stationaryReportingIntervalConfigUpdate")
 
         val enableSmsForAlertsConfigUpdate = appRestrictions.getBoolean("enable_sms", enableSmsForAlerts)
         val smsNumbersString = appRestrictions.getString("sms_numbers_comma_separated", convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
@@ -1800,6 +1806,7 @@ class MainActivity : ComponentActivity() {
             }
 
             changed = false
+            var staticReportingIntervalChanged = false
             if (takServerListConfig.size > 0) {
                 for (i in takServerListConfig.indices) {
                     if (i < takServerList.size) {
@@ -1836,14 +1843,14 @@ class MainActivity : ComponentActivity() {
                         Log.d(TAG, "takServerList: ${takServerList}")
                     }
                 }
-                val minReportingInterval = getMinReportingInterval(takServerListConfig)
-                val prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
-                Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                if (prevReportingInterval != minReportingInterval) {
-                    Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                    dataRepository.storeReportingUpdateInterval(minReportingInterval)
-                    CotDispatchService.reportingUpdateIntervalSecs = minReportingInterval
-                    EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, minReportingInterval))
+                val minStaticReportingInterval = getMinReportingInterval(takServerList)
+                //val prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
+                val prevStaticReportingInterval = dataRepository.getStaticReportingInterval.first()
+                Log.d(TAG, "prevStaticReportingInterval($prevStaticReportingInterval); currMinStaticReportingInterval($minStaticReportingInterval)")
+                if (prevStaticReportingInterval != minStaticReportingInterval) {
+                    Log.d(TAG, "prevStaticReportingInterval($prevStaticReportingInterval) != currMinStaticReportingInterval($minStaticReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
+                    dataRepository.storeStaticReportingInterval(minStaticReportingInterval)
+                    staticReportingIntervalChanged = true
                 }
             }
 
@@ -1893,7 +1900,27 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
-            dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
+
+            if (whileAlertingReportingInterval != whileAlertingReportingIntervalConfigUpdate) {
+                whileAlertingReportingInterval = whileAlertingReportingIntervalConfigUpdate
+                dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingIntervalConfigUpdate)
+            }
+            if (onFootReportingInterval != onFootReportingIntervalConfigUpdate) {
+                onFootReportingInterval = onFootReportingIntervalConfigUpdate
+                dataRepository.storeOnFootReportingInterval(onFootReportingIntervalConfigUpdate)
+            }
+            if (vehicleReportingInterval != vehicleReportingIntervalConfigUpdate) {
+                vehicleReportingInterval = vehicleReportingIntervalConfigUpdate
+                dataRepository.storeVehicleReportingInterval(vehicleReportingIntervalConfigUpdate)
+            }
+            if (stationaryReportingInterval != stationaryReportingIntervalConfigUpdate) {
+                stationaryReportingInterval = stationaryReportingIntervalConfigUpdate
+                dataRepository.storeStationaryReportingInterval(stationaryReportingIntervalConfigUpdate)
+            }
+            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
+                dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
+            }
+
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeEnableMulticast(enableMulticastConfigUpdate)
@@ -1938,14 +1965,24 @@ class MainActivity : ComponentActivity() {
                     if (enableSkinTempServiceConfigUpdate == enableSkinTempService) {
                         startStopSkinTempService()
                     }
-                    if (enableActivityRecognitionServiceConfigUpdate == enableActivityRecognitionService) {
+                    if ((enableActivityRecognitionServiceConfigUpdate == enableActivityRecognitionService) &&
+                        (enableDynamicReportingStrategy == enableDynamicReportingStrategyConfigUpdate)) {
                         startStopActivityRecognitionService()
                     }
                 }
             }
+            var activityRecognitionServiceChanged = false
             if (enableActivityRecognitionServiceConfigUpdate != enableActivityRecognitionService) {
                 enableActivityRecognitionService = enableActivityRecognitionServiceConfigUpdate
-                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService")
+                activityRecognitionServiceChanged = true
+            }
+            var dynamicReportStrategyChanged = false
+            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
+                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
+                dynamicReportStrategyChanged = true
+            }
+            if (activityRecognitionServiceChanged || dynamicReportStrategyChanged) {
+                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService and enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
                 if (!calledOnCreate) startStopActivityRecognitionService()
             }
             if (enableSkinTempServiceConfigUpdate != enableSkinTempService) {
@@ -1963,11 +2000,6 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
                 if (!calledOnCreate) startStopBleBeaconService()
             }
-            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
-                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
-                Log.d(TAG, "enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
-                if (!calledOnCreate) startStopMovementDetectionService()
-			}
             if (enableChatServiceConfigUpdate != enableChatService) {
                 enableChatService = enableChatServiceConfigUpdate
                 Log.d(TAG, "enableChatService=$enableChatService")
