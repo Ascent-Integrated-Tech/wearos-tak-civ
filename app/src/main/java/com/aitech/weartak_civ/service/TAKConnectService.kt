@@ -40,13 +40,10 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
-import com.aitech.weartak_civ.events.PowerManagerEvent
-import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.manager.NetworkManager
-import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.esriGeojsonMsg
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -77,7 +74,6 @@ import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.Base64
-import java.util.Calendar
 import java.util.Date
 import java.util.Enumeration
 import java.util.concurrent.TimeUnit
@@ -88,10 +84,8 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
-import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.events.TakChatEvent
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategy
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
@@ -124,15 +118,12 @@ class TAKConnectService: Service() {
         var password: String,
         var p12Cert: String?,
         var p12CertPassword: String?,
-        var reportingUpdateInterval: Int,
-        var currReportingUpdateInterval: Int = 0,
         var numConnAttempts : Int = 0,
         val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
         val connectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_DISCONNECTED_STRING),
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
         var privateKey: PrivateKey? = null,
         var secureSocket : SSLSocket? = null,
-        var lastTimeMsgSent: Long = 0L
     )
 
     override fun onCreate() {
@@ -157,17 +148,10 @@ class TAKConnectService: Service() {
             val takServers : List<TakServerItem> = dataRepository.getTakServerList.first()
             takServerDetails = mutableListOf()
             for (takServer in takServers) {
-                val currReportingUpdateInterval = if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
-                    PowerManagerService.slowDownReportingInterval(takServer.reportingUpdateInterval)
-                } else {
-                    takServer.reportingUpdateInterval
-                }
                 takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
                     takServer.isP12Cert, takServer.username, takServer.password,
-                    takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval,
-                    currReportingUpdateInterval = currReportingUpdateInterval, numConnAttempts = 0))
+                    takServer.p12Cert, takServer.p12CertPassword, numConnAttempts = 0))
                 Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
-                Log.d(TAG, "                 reportInterval(${takServer.reportingUpdateInterval}), currReportingUpdateInterval($currReportingUpdateInterval),")
                 Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
@@ -304,13 +288,7 @@ class TAKConnectService: Service() {
             }
             val takServer = takServers.last()
             val takServerDetail = TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
-                takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword,
-                takServer.reportingUpdateInterval, currReportingUpdateInterval = takServer.reportingUpdateInterval)
-            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
-                // There is power optimization going on
-                Log.d(TAG, "GPS Power optimization going on")
-                takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
-            }
+                takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword)
             if (takServerDetails.size == index) {
                 Log.d(TAG, "Adding server at index $index")
                 takServerDetails.add(takServerDetail)
@@ -355,8 +333,6 @@ class TAKConnectService: Service() {
                 takServer.username != oldTakServerDetail.username || takServer.password != oldTakServerDetail.password ||
                 takServer.p12Cert != oldTakServerDetail.p12Cert || takServer.p12CertPassword != oldTakServerDetail.p12CertPassword) {
                 serverConnDetailsChanged = true
-            } else if (takServer.reportingUpdateInterval != oldTakServerDetail.reportingUpdateInterval) {
-                Log.d(TAG, "Reporting interval changed")
             }
             val takServerDetail = takServerDetails[index]
             takServerDetail.isEnabled = takServer.isEnabled; takServerDetail.name = takServer.name
@@ -364,16 +340,7 @@ class TAKConnectService: Service() {
             takServerDetail.isP12Cert = takServer.isP12Cert;
             takServerDetail.username = takServer.username; takServerDetail.password = takServer.password
             takServerDetail.p12Cert = takServer.p12Cert; takServerDetail.p12CertPassword = takServer.p12CertPassword
-            takServerDetail.reportingUpdateInterval = takServer.reportingUpdateInterval
             takServerDetail.numConnAttempts = 0
-            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
-                // There is power optimization going on
-                // TODO: Why check here? Cleanup
-                Log.d(TAG, "GPS Power optimization going on")
-                takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
-            } else {
-                takServerDetail.currReportingUpdateInterval = takServerDetail.reportingUpdateInterval
-            }
         }
         if (serverConnDetailsChanged) {
             Log.d(TAG, "serverConnDetailsChanged $serverConnDetailsChanged")
@@ -473,25 +440,6 @@ class TAKConnectService: Service() {
         } catch (e: Exception) {
             Log.w(TAG, "ERROR in MessageEvent ($message) w/ $addlIntInfo: ${e.message}")
             Log.w(TAG, "${e.printStackTrace()}")
-        }
-    }
-
-    @Subscribe(threadMode = ThreadMode.ASYNC)
-    public fun onPowerManagerEvent(powerManagerEvent: PowerManagerEvent) {
-        Log.d(TAG, "TAKConnectService received PowerManagerEvent")
-        if (CHANGED_UPDATE_INTERVAL == powerManagerEvent.eventType) {
-            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
-                // Power optimization going on
-                Log.d(TAG, "GPS Power optimization going on")
-                for (takServer in takServerDetails) {
-                    takServer.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServer.reportingUpdateInterval)
-                }
-            } else {
-                Log.d(TAG, "No GPS Power optimization going on")
-                for (takServer in takServerDetails) {
-                    takServer.currReportingUpdateInterval = takServer.reportingUpdateInterval
-                }
-            }
         }
     }
 
@@ -1314,15 +1262,7 @@ class TAKConnectService: Service() {
                         val outputStream = takServerDetail.secureSocket!!.getOutputStream()
                         outputStream.write(msg.toByteArray(charset("UTF-8")))
                         outputStream.flush()
-                        //Log.d(TAG, "Sent data to ${takServerDetail.address}: $msg")
-                        if (!isNotPli) {
-                            takServerDetail.lastTimeMsgSent = max(currTime, takServerDetail.lastTimeMsgSent + takServerDetail.currReportingUpdateInterval*1000L)
-
-                            //Log.d(TAG, "sendData: sent PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
-                        }
-                        /* else {
-                            Log.d(TAG, "sendData: sent non-PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
-                        } */
+                        //Log.d(TAG, "Sent data (notPli=$isNotPli) to ${takServerDetail.address}: $msg")
                     } else {
                         if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                             Log.i(TAG, "ERROR sendDataTAKServers to server(${takServerDetail.address}): secureSocket=${takServerDetail.secureSocket}; isConnected: ${takServerDetail.secureSocket?.isConnected ?: false}. Reconnecting....")
@@ -1441,51 +1381,14 @@ class TAKConnectService: Service() {
                         if (isNotPli) {
                             // Send immediately
                             sendData(takServerDetail, msg, isNotPli, currTime)
+                            // TODO: We need to add for ESRI and TabletCommand
                         } else {
-                            if (enableDynamicReportingStrategy) {
-                                Log.d(TAG, "enableDynamicReportingStrategy true")
-                                sendData(takServerDetail, msg, isNotPli, currTime)
-                                if (enableEsriEndpoint && !esriEndpoint.isNullOrEmpty() && !esriGeojsonMsg.isNullOrEmpty()) {
-                                    sendEsriData(esriGeojsonMsg)
-                                }
-                                if (enableTabletCommandEndpoint && !tabletCommandEndpoint.isNullOrEmpty() && !tabletCommandApikey.isNullOrEmpty() && !tabletCommandJsonMsg.isNullOrEmpty()) {
-                                    sendTabletCommandData(tabletCommandJsonMsg)
-                                }
-                                return
+                            sendData(takServerDetail, msg, isNotPli, currTime)
+                            if (enableEsriEndpoint && !esriEndpoint.isNullOrEmpty() && !esriGeojsonMsg.isNullOrEmpty()) {
+                                sendEsriData(esriGeojsonMsg)
                             }
-                            if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
-                                // TODO: What about wifi optimization?
-                                //Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
-                                sendData(takServerDetail, msg, isNotPli, currTime)
-                                if (enableEsriEndpoint && !esriEndpoint.isNullOrEmpty() && !esriGeojsonMsg.isNullOrEmpty()) {
-                                    sendEsriData(esriGeojsonMsg)
-                                }
-                                if (enableTabletCommandEndpoint && !tabletCommandEndpoint.isNullOrEmpty() && !tabletCommandApikey.isNullOrEmpty() && !tabletCommandJsonMsg.isNullOrEmpty()) {
-                                    sendTabletCommandData(tabletCommandJsonMsg)
-                                }
-                            } else {
-                                //Log.d(TAG, "currTime($currTime) - takServerDetail.lastTimeMsgSent(${takServerDetail.lastTimeMsgSent}) = ${(currTime - takServerDetail.lastTimeMsgSent)*1.2} >= ${(takServerDetail.currReportingUpdateInterval * 1000L)}")
-                                if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >= (takServerDetail.currReportingUpdateInterval * 1000.0)) {
-                                    //Log.d(TAG, "Going to send data after manipulating stale time")
-                                    var newMsg = msg
-                                    try {
-                                        val startTime = getQuotedStringAfterSubstring(msg, "start")
-                                        if (null != startTime) {
-                                            val startDateTime = dateTimeFormatter.parse(startTime)
-                                            val calendar: Calendar = Calendar.getInstance()
-                                            calendar.setTime(startDateTime)
-                                            calendar.add(Calendar.SECOND, 3 * takServerDetail.currReportingUpdateInterval)
-                                            val staleTime = dateTimeFormatter.format(calendar.time)
-                                            newMsg = replaceQuotedStringAfterSubstring(msg, "stale", staleTime)
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "sendDataTAKServers stale time manipulation ERROR: ${e.message}", e)
-                                    }
-                                    sendData(takServerDetail, newMsg, isNotPli, currTime)
-                                }
-                                /* else {
-                                    Log.d(TAG, "Not sending data to ${takServerDetail.address}")
-                                } */
+                            if (enableTabletCommandEndpoint && !tabletCommandEndpoint.isNullOrEmpty() && !tabletCommandApikey.isNullOrEmpty() && !tabletCommandJsonMsg.isNullOrEmpty()) {
+                                sendTabletCommandData(tabletCommandJsonMsg)
                             }
                         }
                     }

@@ -110,63 +110,6 @@
         android:defaultValue="@string/multicast_service_enabled_default" />
 
     <restriction
-        android:key="wifiOptimization_service_enabled"
-        android:restrictionType="bool"
-        android:title="@string/wifiOptimization_service_enabled_title"
-        android:description="@string/wifiOptimization_service_enabled_description"
-        android:defaultValue="@string/wifiOptimization_service_enabled_default" />
-
-    <restriction
-        android:key="wifiOptimization_all_enabled"
-        android:restrictionType="bool"
-        android:title="@string/wifiOptimization_all_title"
-        android:description="@string/wifiOptimization_all_description"
-        android:defaultValue="@string/wifiOptimization_all_default" />
-
-    <restriction
-        android:key="wifiOptimization_ssid_list"
-        android:restrictionType="string"
-        android:title="@string/wifiOptimization_ssid_list_title"
-        android:description="@string/wifiOptimization_ssid_list_description"
-        android:defaultValue=""/>
-
-    <restriction
-        android:key="enable_dynamic_reporting_strategy"
-        android:restrictionType="bool"
-        android:title="@string/enable_dynamic_reporting_strategy_title"
-        android:description="@string/enable_dynamic_reporting_strategy_description"
-        android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
-
-    <restriction
-        android:key="alerting_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/alerting_reporting_interval_title"
-        android:description="@string/alerting_reporting_interval_description"
-        android:defaultValue="@string/alerting_reporting_interval_default"/>
-
-    <restriction
-        android:key="on_foot_walking_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/on_foot_walking_reporting_interval_title"
-        android:description="@string/on_foot_walking_reporting_interval_description"
-        android:defaultValue="@string/on_foot_walking_reporting_interval_default"/>
-
-
-    <restriction
-        android:key="in_vehicle_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/in_vehicle_reporting_interval_title"
-        android:description="@string/in_vehicle_reporting_interval_description"
-        android:defaultValue="@string/in_vehicle_reporting_interval_default"/>
-
-    <restriction
-        android:key="stationary_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/stationary_reporting_interval_title"
-        android:description="@string/stationary_reporting_interval_description"
-        android:defaultValue="@string/stationary_reporting_interval_default"/>
-
-    <restriction
         android:key="enable_sms"
         android:restrictionType="bool"
         android:title="@string/enable_sms_title"
@@ -264,11 +207,68 @@
         android:defaultValue="@string/hr_high_alert_number_secs_threshold_default"/>
 
     <restriction
-        android:key="custom_developer_config_json"
+        android:key="wifiOptimization_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/wifiOptimization_service_enabled_title"
+        android:description="@string/wifiOptimization_service_enabled_description"
+        android:defaultValue="@string/wifiOptimization_service_enabled_default" />
+
+    <restriction
+        android:key="wifiOptimization_all_enabled"
+        android:restrictionType="bool"
+        android:title="@string/wifiOptimization_all_title"
+        android:description="@string/wifiOptimization_all_description"
+        android:defaultValue="@string/wifiOptimization_all_default" />
+
+    <restriction
+        android:key="wifiOptimization_ssid_list"
         android:restrictionType="string"
-        android:title="@string/custom_developer_config_json_title"
-        android:description="@string/custom_developer_config_json_description"
-        android:defaultValue="{}" />
+        android:title="@string/wifiOptimization_ssid_list_title"
+        android:description="@string/wifiOptimization_ssid_list_description"
+        android:defaultValue=""/>
+
+    <restriction
+        android:key="enable_dynamic_reporting_strategy"
+        android:restrictionType="bool"
+        android:title="@string/enable_dynamic_reporting_strategy_title"
+        android:description="@string/enable_dynamic_reporting_strategy_description"
+        android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
+
+    <restriction
+        android:key="constant_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/constant_reporting_interval_title"
+        android:description="@string/constant_reporting_interval_description"
+        android:defaultValue="@string/constant_reporting_interval_default"/>
+
+    <restriction
+        android:key="alerting_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/alerting_reporting_interval_title"
+        android:description="@string/alerting_reporting_interval_description"
+        android:defaultValue="@string/alerting_reporting_interval_default"/>
+
+    <restriction
+        android:key="on_foot_walking_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/on_foot_walking_reporting_interval_title"
+        android:description="@string/on_foot_walking_reporting_interval_description"
+        android:defaultValue="@string/on_foot_walking_reporting_interval_default"/>
+
+
+    <restriction
+        android:key="in_vehicle_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/in_vehicle_reporting_interval_title"
+        android:description="@string/in_vehicle_reporting_interval_description"
+        android:defaultValue="@string/in_vehicle_reporting_interval_default"/>
+
+    <restriction
+        android:key="stationary_reporting_interval"
+        android:restrictionType="integer"
+        android:title="@string/stationary_reporting_interval_title"
+        android:description="@string/stationary_reporting_interval_description"
+        android:defaultValue="@string/stationary_reporting_interval_default"/>
 
     <restriction
         android:key="select_data_endpoints"
@@ -353,13 +353,6 @@
                 android:title="@string/tak_server_cert_title"
                 android:description="@string/tak_server_cert_description"
                 android:defaultValue="" />
-
-            <restriction
-                android:key="update_interval"
-                android:restrictionType="integer"
-                android:title="@string/update_interval_title"
-                android:description="@string/update_interval_description"
-                android:defaultValue="@string/update_interval_default" />
         </restriction>
     </restriction>
 
@@ -410,5 +403,12 @@
         android:restrictionType="string"
         android:title="@string/localization_iBeacon_geojson_title"
         android:description="@string/localization_iBeacon_geojson_description" />
+
+    <restriction
+        android:key="custom_developer_config_json"
+        android:restrictionType="string"
+        android:title="@string/custom_developer_config_json_title"
+        android:description="@string/custom_developer_config_json_description"
+        android:defaultValue="{}" />
 
 </restrictions>
