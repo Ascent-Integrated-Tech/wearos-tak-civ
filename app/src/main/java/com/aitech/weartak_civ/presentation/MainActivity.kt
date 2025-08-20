@@ -87,7 +87,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Icon
@@ -137,6 +136,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.wear.compose.foundation.CurvedLayout
 import androidx.wear.compose.foundation.CurvedModifier
@@ -152,7 +152,6 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.DEFAULT_AGE
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
@@ -305,11 +304,24 @@ class MainActivity : ComponentActivity() {
         var tabletCommandReportingUpdateInterval : Int = DEFAULT_REPORTING_INTERVAL
 
         var enableDynamicReportingStrategy = false
-        var staticReportingInterval = DEFAULT_REPORTING_INTERVAL
-        var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
-        var onFootReportingInterval = DEFAULT_ON_FOOT_REPORTING_INTERVAL
-        var vehicleReportingInterval = DEFAULT_VEHICLE_REPORTING_INTERVAL
+        val enableDynamicReportingStrategyState = MutableLiveData<Boolean>(false)
+        val enableDynamicReportingStrategySettingsState = MutableLiveData<Boolean>(false)
+        var constantReportingInterval = DEFAULT_REPORTING_INTERVAL
+        val constantReportingIntervalState = MutableLiveData<Int>(DEFAULT_REPORTING_INTERVAL)
+        val constantReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_REPORTING_INTERVAL)
         var stationaryReportingInterval = DEFAULT_STATIONARY_REPORTING_INTERVAL
+        val stationaryReportingIntervalState = MutableLiveData<Int>(DEFAULT_STATIONARY_REPORTING_INTERVAL)
+        val stationaryReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_STATIONARY_REPORTING_INTERVAL)
+        var onFootReportingInterval = DEFAULT_ON_FOOT_REPORTING_INTERVAL
+        val onFootReportingIntervalState = MutableLiveData<Int>(DEFAULT_ON_FOOT_REPORTING_INTERVAL)
+        val onFootReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_ON_FOOT_REPORTING_INTERVAL)
+        var vehicleReportingInterval = DEFAULT_VEHICLE_REPORTING_INTERVAL
+        val vehicleReportingIntervalState = MutableLiveData<Int>(DEFAULT_VEHICLE_REPORTING_INTERVAL)
+        val vehicleReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_VEHICLE_REPORTING_INTERVAL)
+        var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
+        val whileAlertingReportingIntervalState = MutableLiveData<Int>(DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL)
+        val whileAlertingReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL)
+
         var enableSmsForAlerts = false
         var enableSmsForAlertsSettingsState = MutableLiveData<Boolean>(false)
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
@@ -809,20 +821,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
-        fun getMinReportingInterval(takServerList : List<DataRepository.TakServerItem>) : Int {
-            var minReportingInterval : Int = 100000001
-            for (takServer in takServerList) {
-                if (takServer.isEnabled) {
-                    Log.d(TAG, "getMinReportingInterval: ${takServer.address} reportingUpdateInterval ${takServer.reportingUpdateInterval}")
-                    minReportingInterval = min(minReportingInterval, takServer.reportingUpdateInterval)
-                }
-            }
-            if (minReportingInterval == 100000001) {
-                minReportingInterval = DEFAULT_REPORTING_INTERVAL
-            }
-            return minReportingInterval
-        }
     }
 
 
@@ -1103,12 +1101,12 @@ class MainActivity : ComponentActivity() {
             enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
 
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
-            val minStaticReportingInterval = getMinReportingInterval(takServerList)
-            dataRepository.storeStaticReportingInterval(minStaticReportingInterval)
-            whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
+            constantReportingInterval = dataRepository.getConstantReportingInterval.first()
+            stationaryReportingInterval = dataRepository.getStationaryReportingInterval.first()
             onFootReportingInterval = dataRepository.getOnFootReportingInterval.first()
             vehicleReportingInterval = dataRepository.getVehicleReportingInterval.first()
-            stationaryReportingInterval = dataRepository.getStationaryReportingInterval.first()
+            whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
+
             enableTakEndpoint = dataRepository.getEnableTakEndpoint.first()
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             enableTabletCommandEndpoint = dataRepository.getEnableTabletCommandEndpoint.first()
@@ -1124,8 +1122,8 @@ class MainActivity : ComponentActivity() {
             val dynamicReportingInterval = calcDynamicReportingInterval(false, ActivityRecognized.UNKNOWN,
                 whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval, stationaryReportingInterval)
             dataRepository.storeDynamicReportingInterval(dynamicReportingInterval)
-            val reportingUpdateInterval = if (enableDynamicReportingStrategy) {dynamicReportingInterval} else {minStaticReportingInterval}
-            Log.d(TAG, "enableDynamicReportingStrategy($enableDynamicReportingStrategy): reportingUpdateInterval=$reportingUpdateInterval w/ minStaticReportingInterval=$minStaticReportingInterval, dynamicReportingInterval=$dynamicReportingInterval (activity=${ActivityRecognized.UNKNOWN.name}, alert=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval")
+            val reportingUpdateInterval = if (enableDynamicReportingStrategy) {dynamicReportingInterval} else {constantReportingInterval}
+            Log.d(TAG, "enableDynamicReportingStrategy($enableDynamicReportingStrategy): reportingUpdateInterval=$reportingUpdateInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval (activity=${ActivityRecognized.UNKNOWN.name}, alert=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
             dataRepository.storeReportingUpdateInterval(reportingUpdateInterval)
             CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval
             CotDispatchService.currReportingIntervalInSecs = reportingUpdateInterval
@@ -1200,7 +1198,6 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Server $i Pswd:", takServer.password)}
                     ${String.format("%-25s %-30s", "Server $i Cert:", takServer.p12Cert)}
                     ${String.format("%-25s %-30s", "Server $i Cert Pswd:", takServer.p12CertPassword)}
-                    ${String.format("%-25s %-30s", "Server $i Update Intrvl:", "${takServer.reportingUpdateInterval} sec")}
                        
                     
                     """.trimIndent()
@@ -1221,11 +1218,12 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "License Key:", license)}
                     ${String.format("%-25s %-30s", "Ditto App Id:", dittoAppId)}
                     ${String.format("%-25s %-30s", "Ditto Auth Token:", dittoAuthToken)}
-                    ${String.format("%-25s %-30s", "Enable Dynamic Reporting:", enableDynamicReportingStrategy.toString())}
-                    ${String.format("%-25s %-30s", "While Alerting Reporting Interval (s):", whileAlertingReportingInterval.toString())}
-                    ${String.format("%-25s %-30s", "On Foot Reporting Interval (s):", onFootReportingInterval.toString())}
-                    ${String.format("%-25s %-30s", "Vehicle Reporting Interval (s):", vehicleReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "Reporting Strategy:", if (enableDynamicReportingStrategy) "Dynamic" else "Constant")}
+                    ${String.format("%-25s %-30s", "Constant Reporting Interval (s):", constantReportingInterval.toString())}
                     ${String.format("%-25s %-30s", "Stationary Reporting Interval (s):", stationaryReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "Vehicle Reporting Interval (s):", vehicleReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "On Foot Reporting Interval (s):", onFootReportingInterval.toString())}
+                    ${String.format("%-25s %-30s", "While Alerting Reporting Interval (s):", whileAlertingReportingInterval.toString())}
                     ${String.format("%-25s %-30s", "Enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "Enable Physio:", enablePhysiologicalServices.toString())}
                     ${String.format("%-25s %-30s", "Enable Activity Recognition:", enableActivityRecognitionService.toString())}
@@ -1443,6 +1441,19 @@ class MainActivity : ComponentActivity() {
         enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
         enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
         enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization) // ephemeral ui value
+        enableDynamicReportingStrategyState.postValue(enableDynamicReportingStrategy)
+        enableDynamicReportingStrategySettingsState.postValue(enableDynamicReportingStrategy)
+        constantReportingIntervalState.postValue(constantReportingInterval)
+        constantReportingIntervalSettingsState.postValue(constantReportingInterval)
+        stationaryReportingIntervalState.postValue(stationaryReportingInterval)
+        stationaryReportingIntervalSettingsState.postValue(stationaryReportingInterval)
+        onFootReportingIntervalState.postValue(onFootReportingInterval)
+        onFootReportingIntervalSettingsState.postValue(onFootReportingInterval)
+        vehicleReportingIntervalState.postValue(vehicleReportingInterval)
+        vehicleReportingIntervalSettingsState.postValue(vehicleReportingInterval)
+        whileAlertingReportingIntervalState.postValue(whileAlertingReportingInterval)
+        whileAlertingReportingIntervalSettingsState.postValue(whileAlertingReportingInterval)
+
         wifiSsidListState.postValue(wifiSsidList) // tell ui
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
@@ -1645,7 +1656,6 @@ class MainActivity : ComponentActivity() {
         var serverPassword: String? = null
         var serverCertPassword: String? = null
         var serverCertificate: String? = null
-        var serverUpdateInterval: Int = DEFAULT_REPORTING_INTERVAL
         val takServerListConfig: MutableList<DataRepository.TakServerItem> = mutableListOf()
         val handler = Handler(Looper.getMainLooper())
 
@@ -1676,8 +1686,7 @@ class MainActivity : ComponentActivity() {
                     serverPassword = serverBundle.getString("tak_server_password", null)
                     serverCertPassword = serverBundle.getString("tak_server_cert_password", null)
                     serverCertificate = serverBundle.getString("tak_server_cert", null)
-                    serverUpdateInterval = serverBundle.getInt("update_interval", serverUpdateInterval)
-                    takServerListConfig.add(DataRepository.TakServerItem(serverEnableTAKConnectService, serverName, serverAddress, serverPort.toInt(), serverUseCert, serverUsername, serverPassword, serverCertificate, serverCertPassword, serverUpdateInterval))
+                    takServerListConfig.add(DataRepository.TakServerItem(serverEnableTAKConnectService, serverName, serverAddress, serverPort.toInt(), serverUseCert, serverUsername, serverPassword, serverCertificate, serverCertPassword))
                     Log.v(TAG, "========================================")
                 } else {
                     Log.e(TAG, "Invalid server bundle at index $i")
@@ -1720,11 +1729,12 @@ class MainActivity : ComponentActivity() {
         Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
+        val constantReportingIntervalConfigUpdate = appRestrictions.getInt("constant_reporting_interval", constantReportingInterval)
         val whileAlertingReportingIntervalConfigUpdate = appRestrictions.getInt("alerting_reporting_interval", whileAlertingReportingInterval)
         val onFootReportingIntervalConfigUpdate = appRestrictions.getInt("on_foot_walking_reporting_interval", onFootReportingInterval)
         val vehicleReportingIntervalConfigUpdate = appRestrictions.getInt("in_vehicle_reporting_interval", vehicleReportingInterval)
         val stationaryReportingIntervalConfigUpdate = appRestrictions.getInt("stationary_reporting_interval", stationaryReportingInterval)
-        Log.d(TAG, "ConfigUpdate: $enableDynamicReportingStrategyConfigUpdate, $whileAlertingReportingIntervalConfigUpdate, $onFootReportingIntervalConfigUpdate, $vehicleReportingIntervalConfigUpdate, $stationaryReportingIntervalConfigUpdate")
+        Log.d(TAG, "ConfigUpdate: $enableDynamicReportingStrategyConfigUpdate, constRI=$constantReportingIntervalConfigUpdate, $whileAlertingReportingIntervalConfigUpdate, $onFootReportingIntervalConfigUpdate, $vehicleReportingIntervalConfigUpdate, $stationaryReportingIntervalConfigUpdate")
 
         val enableSmsForAlertsConfigUpdate = appRestrictions.getBoolean("enable_sms", enableSmsForAlerts)
         val smsNumbersString = appRestrictions.getString("sms_numbers_comma_separated", convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
@@ -1846,7 +1856,6 @@ class MainActivity : ComponentActivity() {
             }
 
             changed = false
-            var staticReportingIntervalChanged = false
             if (takServerListConfig.size > 0) {
                 for (i in takServerListConfig.indices) {
                     if (i < takServerList.size) {
@@ -1882,15 +1891,6 @@ class MainActivity : ComponentActivity() {
                         takServerList = mutableTakServerList.toList()
                         Log.d(TAG, "takServerList: ${takServerList}")
                     }
-                }
-                val minStaticReportingInterval = getMinReportingInterval(takServerList)
-                //val prevReportingInterval = dataRepository.getReportingUpdateInterval.first()
-                val prevStaticReportingInterval = dataRepository.getStaticReportingInterval.first()
-                Log.d(TAG, "prevStaticReportingInterval($prevStaticReportingInterval); currMinStaticReportingInterval($minStaticReportingInterval)")
-                if (prevStaticReportingInterval != minStaticReportingInterval) {
-                    Log.d(TAG, "prevStaticReportingInterval($prevStaticReportingInterval) != currMinStaticReportingInterval($minStaticReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                    dataRepository.storeStaticReportingInterval(minStaticReportingInterval)
-                    staticReportingIntervalChanged = true
                 }
             }
 
@@ -1975,7 +1975,10 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
-
+            if (constantReportingInterval != constantReportingIntervalConfigUpdate) {
+                constantReportingInterval = constantReportingIntervalConfigUpdate
+                dataRepository.storeConstantReportingInterval(constantReportingIntervalConfigUpdate)
+            }
             if (whileAlertingReportingInterval != whileAlertingReportingIntervalConfigUpdate) {
                 whileAlertingReportingInterval = whileAlertingReportingIntervalConfigUpdate
                 dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingIntervalConfigUpdate)

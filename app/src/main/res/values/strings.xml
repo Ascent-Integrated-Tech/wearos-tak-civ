@@ -298,8 +298,12 @@
     <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
 
     <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
-    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval changes based on motion and alerting status.</string>
+    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval dynamically changes based on motion and alerting status OR if it is constant.</string>
     <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
+
+    <string name="constant_reporting_interval_title" translatable="false">Constant Reporting Interval (Constant Reporting Strategy)</string>
+    <string name="constant_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when using Constant Reporting Strategy)</string>
+    <string name="constant_reporting_interval_default" translatable="false">60</string>
 
     <string name="alerting_reporting_interval_title" translatable="false">Alerting Reporting Interval (Dynamic Reporting Strategy)</string>
     <string name="alerting_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when device is alerting: SOS or other alerts (part of Dynamic Reporting Strategy)</string>

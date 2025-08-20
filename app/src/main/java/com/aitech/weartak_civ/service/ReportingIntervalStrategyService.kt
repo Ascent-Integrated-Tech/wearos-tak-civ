@@ -35,8 +35,6 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 
 
 class ReportingIntervalStrategyService : Service() {
@@ -45,7 +43,7 @@ class ReportingIntervalStrategyService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private var enableDynamicReportingStrategy = false
-    private var staticReportingInterval = DEFAULT_REPORTING_INTERVAL
+    private var constantReportingInterval = DEFAULT_REPORTING_INTERVAL
     private var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
     private var onFootReportingInterval = DEFAULT_ON_FOOT_REPORTING_INTERVAL
     private var vehicleReportingInterval = DEFAULT_VEHICLE_REPORTING_INTERVAL
@@ -69,7 +67,7 @@ class ReportingIntervalStrategyService : Service() {
             initializeVariables()
             startEnableDynamicStrategyCollector()
             startDynamicReportingIntervalCollector()
-            startStaticReportingIntervalCollector()
+            startConstantReportingIntervalCollector()
             startIsAlertingCollector()
             startActivityCollector()
         }
@@ -88,7 +86,7 @@ class ReportingIntervalStrategyService : Service() {
     private fun initializeVariables() {
         runBlocking {
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
-            staticReportingInterval = dataRepository.getStaticReportingInterval.first()
+            constantReportingInterval = dataRepository.getConstantReportingInterval.first()
             whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
             onFootReportingInterval = dataRepository.getOnFootReportingInterval.first()
             vehicleReportingInterval = dataRepository.getVehicleReportingInterval.first()
@@ -98,10 +96,10 @@ class ReportingIntervalStrategyService : Service() {
 
             dynamicReportingInterval = calcDynamicReportingInterval(isAlerting, latestActivity,
                 whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval, stationaryReportingInterval)
-            reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { staticReportingInterval }
+            reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
             dataRepository.storeReportingUpdateInterval(reportingInterval)
             Log.d(TAG, "initializeVariables enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
-                    "reportingInterval=$reportingInterval w/ staticReportingInterval=$staticReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
+                    "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
                     "(activity=$latestActivity, isAlerting=$isAlerting, alerting=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
             if (reportingInterval != CotDispatchService.reportingUpdateIntervalSecs) {
                 Log.d(TAG, "initializeVariables reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
@@ -112,10 +110,10 @@ class ReportingIntervalStrategyService : Service() {
     }
 
     private suspend fun calcReportingIntervalAndSendUpdate() {
-        reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { staticReportingInterval }
+        reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
         dataRepository.storeReportingUpdateInterval(reportingInterval)
         //Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
-        //            "reportingInterval=$reportingInterval w/ staticReportingInterval=$staticReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
+        //            "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
         //            "(activity=$latestActivity, alerting=$isAlerting, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
         if (reportingInterval != CotDispatchService.reportingUpdateIntervalSecs) {
             //Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
@@ -146,12 +144,12 @@ class ReportingIntervalStrategyService : Service() {
         }
     }
 
-    private fun startStaticReportingIntervalCollector() {
+    private fun startConstantReportingIntervalCollector() {
         serviceScope.launch {
-            dataRepository.staticReportingInterval.collect { staticRI ->
-                if ((null != staticRI) && (staticReportingInterval != staticRI)) {
-                    Log.d(TAG, "staticReportingInterval changed from $staticReportingInterval to $staticRI")
-                    staticReportingInterval = staticRI
+            dataRepository.constantReportingInterval.collect { constantRI ->
+                if ((null != constantRI) && (constantReportingInterval != constantRI)) {
+                    Log.d(TAG, "constantReportingInterval changed from $constantReportingInterval to $constantRI")
+                    constantReportingInterval = constantRI
                     calcReportingIntervalAndSendUpdate()
                 }
             }

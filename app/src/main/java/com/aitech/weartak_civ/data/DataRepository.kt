@@ -880,8 +880,7 @@ class DataRepository(private val context: Context) {
         val username: String,
         val password: String,
         val p12Cert: String,
-        val p12CertPassword: String,
-        val reportingUpdateInterval: Int
+        val p12CertPassword: String
     )
     val getTakServerList: Flow<List<TakServerItem>> = context.dataStore.data
         .map { preferences ->
@@ -1031,18 +1030,18 @@ class DataRepository(private val context: Context) {
         _enableDynamicReportingStrategy.emit(enableDynamicRS)
     }
 
-    private val _staticReportingInterval = MutableStateFlow<Int?>(null)
-    val staticReportingInterval: StateFlow<Int?> = _staticReportingInterval
+    private val _constantReportingInterval = MutableStateFlow<Int?>(null)
+    val constantReportingInterval: StateFlow<Int?> = _constantReportingInterval
 
-    val getStaticReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[STATIC_REPORTING_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+    val getConstantReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
     }
 
-    suspend fun storeStaticReportingInterval(interval: Int) {
+    suspend fun storeConstantReportingInterval(constantReportingInterval: Int) {
         context.dataStore.edit { prefs ->
-            prefs[STATIC_REPORTING_INTERVAL] = interval
+            prefs[CONSTANT_REPORTING_INTERVAL] = constantReportingInterval
         }
-        _staticReportingInterval.emit(interval)
+        _constantReportingInterval.emit(constantReportingInterval)
     }
 
     private val _dynamicReportingInterval = MutableStateFlow<Int?>(null)
@@ -1350,7 +1349,7 @@ class DataRepository(private val context: Context) {
         private val LOCALIZATION_BLE_BEACON_LIST_KEY = stringPreferencesKey("localization_ble_beacon_list")
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
         private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
-        private val STATIC_REPORTING_INTERVAL = intPreferencesKey("static_reporting_interval")
+        private val CONSTANT_REPORTING_INTERVAL = intPreferencesKey("constant_reporting_interval")
         private val DYNAMIC_REPORTING_INTERVAL = intPreferencesKey("dynamic_reporting_interval")
         private val STATIONARY_REPORTING_INTERVAL = intPreferencesKey("stationary_reporting_interval")
         private val ON_FOOT_REPORTING_INTERVAL = intPreferencesKey("on_foot_reporting_interval")

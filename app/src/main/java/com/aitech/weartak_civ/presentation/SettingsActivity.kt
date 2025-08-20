@@ -135,7 +135,6 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
@@ -147,7 +146,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
@@ -183,7 +181,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatt
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.generateSaveBattOnWifiString
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetValue
@@ -244,7 +241,6 @@ import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOp
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ChatService
-import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -259,18 +255,32 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.category
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categoryRolesEntryLists
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categorySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategy
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategyState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHailService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHailServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onFootReportingInterval
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onFootReportingIntervalSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onFootReportingIntervalState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRateState
-import com.aitech.weartak_civ.service.HailService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingInterval
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingInterval
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingIntervalSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingInterval
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalState
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
@@ -335,6 +345,18 @@ fun loadSettingsValues(){
     enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization)
     wifiSsidListState.postValue(wifiSsidList)
     wifiSsidListSettingsState.postValue(wifiSsidList)
+    enableDynamicReportingStrategyState.postValue(enableDynamicReportingStrategy)
+    enableDynamicReportingStrategySettingsState.postValue(enableDynamicReportingStrategy)
+    constantReportingIntervalState.postValue(constantReportingInterval)
+    constantReportingIntervalSettingsState.postValue(constantReportingInterval)
+    stationaryReportingIntervalState.postValue(stationaryReportingInterval)
+    stationaryReportingIntervalSettingsState.postValue(stationaryReportingInterval)
+    onFootReportingIntervalState.postValue(onFootReportingInterval)
+    onFootReportingIntervalSettingsState.postValue(onFootReportingInterval)
+    vehicleReportingIntervalState.postValue(vehicleReportingInterval)
+    vehicleReportingIntervalSettingsState.postValue(vehicleReportingInterval)
+    whileAlertingReportingIntervalState.postValue(whileAlertingReportingInterval)
+    whileAlertingReportingIntervalSettingsState.postValue(whileAlertingReportingInterval)
     takServerListState.postValue(takServerList)
     saveBattOnWifiStringState.postValue(saveBattOnWifiString)
     smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
@@ -441,6 +463,34 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             EditedWiFiSSIDSetting(navController, index)
         }
         composable(
+            "reporting_settings_screen") {
+            ReportingStrategySettings(navController)
+        }
+        composable(
+            "reporting_dynamic_constant_screen") {
+            ReportingStrategyDynamicConstantSetting(navController)
+        }
+        composable(
+            "constant_reporting_interval_screen") {
+            NumericEntryPage(navController, constantReportingIntervalSettingsState, 1000000, "Constant Reporting Interval", context, "reporting_settings_screen")
+        }
+        composable(
+            "stationary_reporting_interval_screen") {
+            NumericEntryPage(navController, stationaryReportingIntervalSettingsState, 1000000, "Stationary Reporting Interval", context, "reporting_settings_screen")
+        }
+        composable(
+            "on_foot_reporting_interval_screen") {
+            NumericEntryPage(navController, onFootReportingIntervalSettingsState, 1000000, "On Foot Reporting Interval", context, "reporting_settings_screen")
+        }
+        composable(
+            "vehicle_reporting_interval_screen") {
+            NumericEntryPage(navController, vehicleReportingIntervalSettingsState, 1000000, "Vehicle Reporting Interval", context,"reporting_settings_screen" )
+        }
+        composable(
+            "while_alerting_reporting_interval_screen") {
+            NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, "While Alerting Reporting Interval", context, "reporting_settings_screen")
+        }
+        composable(
             "license_setting_screen") {
             LicenseKeyScreen(navController, licenseSettingsState, context)
         }
@@ -454,11 +504,13 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_alerts_bpm_screen") {
-            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertBpmThresholdSettingsState, stringResource(R.string.threshold_high_heart_rate), "140")
+//            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertBpmThresholdSettingsState, stringResource(R.string.threshold_high_heart_rate), "140")
+            NumericEntryPage(navController, hrHighAlertBpmThresholdSettingsState, 300,stringResource(R.string.threshold_high_heart_rate), context,"physiological_alerts_setting_screen")
         }
         composable(
             "physiological_alerts_bpm_length_screen") {
-            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertNumSecsThresholdSettingsState, (stringResource(R.string.threshold_high_heart_rate_length)), "60" + "seconds")
+//            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertNumSecsThresholdSettingsState, (stringResource(R.string.threshold_high_heart_rate_length)), "60" + "seconds")
+            NumericEntryPage(navController, hrHighAlertNumSecsThresholdSettingsState, 1000000, (stringResource(R.string.threshold_high_heart_rate_length)), context, "physiological_alerts_setting_screen")
         }
         //Physio Metrics
         composable(
@@ -467,7 +519,8 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_age_screen") {
-            AgeWeightSetting(navController, ageSettingsState, 150, stringResource(R.string.age), context)
+//            AgeWeightSetting(navController, ageSettingsState, 150, stringResource(R.string.age), context)
+            NumericEntryPage(navController, ageSettingsState, 150, stringResource(R.string.age), context, "physiological_metrics_setting_screen")
         }
         composable(
             "physiological_metrics_height_screen") {
@@ -475,7 +528,8 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_weight_screen") {
-            AgeWeightSetting(navController, weightSettingsState, 1000, stringResource(R.string.weight), context)
+//            AgeWeightSetting(navController, weightSettingsState, 1000, stringResource(R.string.weight), context)
+            NumericEntryPage(navController, weightSettingsState, 1000, stringResource(R.string.weight), context, "physiological_metrics_setting_screen")
         }
         composable(
             "physiological_metrics_sex_screen") {
@@ -495,7 +549,8 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_resting_hr_screen") {
-            AgeWeightSetting(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context)
+//            AgeWeightSetting(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context)
+            NumericEntryPage(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context, "physiological_metrics_setting_screen")
         }
         composable(
             "hail_setting_screen") {
@@ -887,18 +942,6 @@ fun TakServerSetting(navController: NavController) {
                                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(
                                     MessageEvent(SERVER_TOGGLED, index)
                                 ) }, EVENT_SEND_DELAY_MS)
-                                val minReportingInterval = getMinReportingInterval(takServerList)
-                                var prevReportingInterval = 1
-                                runBlocking {
-                                    prevReportingInterval = dataRepository.getStaticReportingInterval.first()
-                                }
-                                Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                if (prevReportingInterval != minReportingInterval) {
-                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                    runBlocking {
-                                        dataRepository.storeStaticReportingInterval(minReportingInterval)
-                                    }
-                                }
                             } },
                         onPrimaryActionClick = {
                             Log.d(TAG, "Remove takServerItem ($takServerItem)")
@@ -1089,7 +1132,6 @@ fun NewServerPage(navController: NavController) {
         var port by remember { mutableStateOf("8089") }
         var username by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
-        var reportingUpdateInterval by remember { mutableStateOf(DEFAULT_REPORTING_INTERVAL.toString()) }
         var isP12Cert = false
         val context = LocalContext.current
         val serverSettingsChanged = remember { mutableStateOf(false) }
@@ -1162,53 +1204,53 @@ fun NewServerPage(navController: NavController) {
 
                 val focusManager = LocalFocusManager.current
 
-                OutlinedTextField(
-                    modifier = Modifier.padding(vertical = 5.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(
-                                    mainActivity,
-                                    context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(
-                                    mainActivity,
-                                    //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server pagevvv
-                                    context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                            } else {
-                                // If there is valid input, we can clear focus
-                                // (which typically dismisses the keyboard)
-                                focusManager.clearFocus()
-
-                                // Now you can navigate or do the next action
-                            }
-                        }
-                    ),
-                    singleLine = true,
-                    value = reportingUpdateInterval,
-                    onValueChange = {
-                        reportingUpdateInterval = it
-                    },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.reporting_interval),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.interval_in_secs),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    textStyle = TextStyle(color = colors.primary),
-                )
+//                OutlinedTextField(
+//                    modifier = Modifier.padding(vertical = 5.dp),
+//                    keyboardOptions = KeyboardOptions(
+//                        keyboardType = KeyboardType.Number,
+//                        imeAction = ImeAction.Done
+//                    ),
+//                    keyboardActions = KeyboardActions(
+//                        onDone = {
+//                            if (reportingUpdateInterval.isEmpty()) {
+//                                Toast.makeText(
+//                                    mainActivity,
+//                                    context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
+//                            } else if (reportingUpdateInterval == "0") {
+//                                Toast.makeText(
+//                                    mainActivity,
+//                                    //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server pagevvv
+//                                    context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
+//                            } else {
+//                                // If there is valid input, we can clear focus
+//                                // (which typically dismisses the keyboard)
+//                                focusManager.clearFocus()
+//
+//                                // Now you can navigate or do the next action
+//                            }
+//                        }
+//                    ),
+//                    singleLine = true,
+//                    value = reportingUpdateInterval,
+//                    onValueChange = {
+//                        reportingUpdateInterval = it
+//                    },
+//                    label = {
+//                        Text(
+//                            text = stringResource(R.string.reporting_interval),
+//                            color = colors.primary,
+//                            style = MaterialTheme.typography.caption3
+//                        )
+//                    },
+//                    placeholder = {
+//                        Text(
+//                            text = stringResource(R.string.interval_in_secs),
+//                            color = colors.primary,
+//                            style = MaterialTheme.typography.caption3
+//                        )
+//                    },
+//                    textStyle = TextStyle(color = colors.primary),
+//                )
                 //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server page^^^
                 Spacer(modifier = Modifier.height(10.dp))
             }
@@ -1230,57 +1272,22 @@ fun NewServerPage(navController: NavController) {
                     onClickConfirm = {
                         scope.launch {
                             if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
-                                password.isNotBlank() && reportingUpdateInterval.isNotBlank()) {
-                                if (reportingUpdateInterval.equals("")) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                                } else if (reportingUpdateInterval.equals("0")) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                                } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                    Toast.makeText(mainActivity, context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    val newReportingUpdateInterval = reportingUpdateInterval.toInt()
-                                    val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
-                                        isP12Cert, username, password, "", "", newReportingUpdateInterval)
-                                    runBlocking {
-                                        dataRepository.addTakServerItem(takServerItem)
-                                    }
-                                    val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                                    mutableTakServerList.add(takServerItem)
-                                    takServerList = mutableTakServerList.toList()
-                                    takServerListState.postValue(takServerList)
-                                    serverSettingsChanged.value = true
-
-                                    Log.d(TAG, "serverSettingsChanged=${serverSettingsChanged.value}")
-                                    Handler(Looper.getMainLooper()).postDelayed(
-                                        { EventBus.getDefault().post(MessageEvent(
-                                            SERVER_ADDED_VIA_UI, takServerList.size-1)) }, EVENT_SEND_DELAY_MS)
-
-                                    Log.d(TAG, "reportingUpdateInterval.toInt()=${newReportingUpdateInterval}; COT:${CotDispatchService.reportingUpdateIntervalSecs}")
-                                    val minReportingInterval = getMinReportingInterval(takServerList)
-                                    var prevReportingInterval = 1
-                                    runBlocking {
-                                        prevReportingInterval = dataRepository.getStaticReportingInterval.first()
-                                    }
-                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                    if (prevReportingInterval != minReportingInterval) {
-                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                        runBlocking {
-                                            dataRepository.storeStaticReportingInterval(minReportingInterval)
-                                        }
-                                    }
-                                    /*
-                                    if (newReportingUpdateInterval < CotDispatchService.reportingUpdateIntervalSecs) {
-                                        Log.d(TAG, "Setting reportingUpdateIntervalSecs (curr= ${CotDispatchService.reportingUpdateIntervalSecs}) to ${newReportingUpdateInterval}")
-                                        runBlocking {
-                                            dataRepository.storeReportingUpdateInterval(newReportingUpdateInterval)
-                                        }
-                                        CotDispatchService.reportingUpdateIntervalSecs = newReportingUpdateInterval
-                                        //LocationService.locationUpdateFastestIntervalSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                        EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, newReportingUpdateInterval))
-                                    }
-
-                                     */
+                                password.isNotBlank()) {
+                                val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
+                                        isP12Cert, username, password, "", "")
+                                runBlocking {
+                                    dataRepository.addTakServerItem(takServerItem)
                                 }
+                                val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
+                                mutableTakServerList.add(takServerItem)
+                                takServerList = mutableTakServerList.toList()
+                                takServerListState.postValue(takServerList)
+                                serverSettingsChanged.value = true
+
+                                Log.d(TAG, "serverSettingsChanged=${serverSettingsChanged.value}")
+                                Handler(Looper.getMainLooper()).postDelayed(
+                                    { EventBus.getDefault().post(MessageEvent(
+                                        SERVER_ADDED_VIA_UI, takServerList.size-1)) }, EVENT_SEND_DELAY_MS)
                             } else {
                                 Toast.makeText(
                                     mainActivity,
@@ -1329,7 +1336,6 @@ fun EditServerPage(
         var port by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.port.toString().orEmpty()) }
         var username by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.username.orEmpty()) }
         var password by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.password.orEmpty()) }
-        var reportingUpdateInterval by remember { mutableStateOf(takServerListLocal.getOrNull(index)?.reportingUpdateInterval.toString().orEmpty()) }
         var isP12Cert by remember { mutableStateOf(takServerListLocal.get(index)?.isP12Cert ?: false) }
         val context = LocalContext.current
         val serverConnSettingsChanged = remember { mutableStateOf(false) }
@@ -1420,49 +1426,49 @@ fun EditServerPage(
                 }
                 val focusManager = LocalFocusManager.current
 
-                OutlinedTextField(
-                    modifier = Modifier.padding(vertical = 5.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (reportingUpdateInterval.isEmpty()) {
-                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval == "0") {
-                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                            //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server pagevvv
-                            } else {
-                                // If there is valid input, we can clear focus
-                                // (which typically dismisses the keyboard)
-                                focusManager.clearFocus()
-
-                                // Now you can navigate or do the next action
-                            }
-                        }
-                    ),
-                    singleLine = true,
-                    value = reportingUpdateInterval,
-                    onValueChange = {
-                        reportingUpdateInterval = it
-                    },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.reporting_interval),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.interval_in_secs),
-                            color = colors.primary,
-                            style = MaterialTheme.typography.caption3
-                        )
-                    },
-                    textStyle = TextStyle(color = colors.primary),
-                )
+//                OutlinedTextField(
+//                    modifier = Modifier.padding(vertical = 5.dp),
+//                    keyboardOptions = KeyboardOptions(
+//                        keyboardType = KeyboardType.Number,
+//                        imeAction = ImeAction.Done
+//                    ),
+//                    keyboardActions = KeyboardActions(
+//                        onDone = {
+//                            if (reportingUpdateInterval.isEmpty()) {
+//                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
+//                            } else if (reportingUpdateInterval == "0") {
+//                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
+//                            //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server pagevvv
+//                            } else {
+//                                // If there is valid input, we can clear focus
+//                                // (which typically dismisses the keyboard)
+//                                focusManager.clearFocus()
+//
+//                                // Now you can navigate or do the next action
+//                            }
+//                        }
+//                    ),
+//                    singleLine = true,
+//                    value = reportingUpdateInterval,
+//                    onValueChange = {
+//                        reportingUpdateInterval = it
+//                    },
+//                    label = {
+//                        Text(
+//                            text = stringResource(R.string.reporting_interval),
+//                            color = colors.primary,
+//                            style = MaterialTheme.typography.caption3
+//                        )
+//                    },
+//                    placeholder = {
+//                        Text(
+//                            text = stringResource(R.string.interval_in_secs),
+//                            color = colors.primary,
+//                            style = MaterialTheme.typography.caption3
+//                        )
+//                    },
+//                    textStyle = TextStyle(color = colors.primary),
+//                )
                 //TODO: DUPLICATE CODE - Same outlinetextfield credentials for New and Edited TAK server page^^^
                 if (isP12Cert == true) {
                     Text(
@@ -1492,105 +1498,61 @@ fun EditServerPage(
                         }
                     },
                     onClickConfirm = {
-                        if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && reportingUpdateInterval.isNotBlank() &&
+                        if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
                             (if (isP12Cert) { true } else { username.isNotBlank() } ) &&
                             (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
-                            if (reportingUpdateInterval.equals("")) {
-                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_empty_enter_again), Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval.equals("0")) {
-                                Toast.makeText(mainActivity, context.getString(R.string.reporting_interval_0_enter_again), Toast.LENGTH_SHORT).show()
-                            } else if (reportingUpdateInterval.toInt() < minReportRate /* || reportingUpdateInterval.text.toInt() > maxReportRate */) {
-                                Toast.makeText(mainActivity,
-                                    context.getString(R.string.reporting_rate_outside_bounds) + " " + "$minReportRate" + "-" + "$maxReportRate", Toast.LENGTH_SHORT).show()
-                            } else {
-                                var reportingIntervalChanged = false
-                                val takServerDetails = takServerList.get(index)
-                                Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
-                                Log.d(TAG, "takServerDetails: $takServerDetails")
-                                Log.d(TAG, "name: $name, address: $address, port=$port, username=$username, password=$password, reportingUpdateInterval=${reportingUpdateInterval.toInt()}")
-                                if (name != takServerDetails.name || address != takServerDetails.address || port != takServerDetails.port.toString() ||
-                                    username != takServerDetails.username || password != takServerDetails.password ||
-                                    takServerDetails.reportingUpdateInterval != reportingUpdateInterval.toInt()) {
-                                    if (name == takServerDetails.name) {
-                                        // Name is same, so something else in address, port, username, password or reporting interval has changed
-                                        if (takServerDetails.reportingUpdateInterval == reportingUpdateInterval.toInt()) {
-                                            serverConnSettingsChanged.value = true
-                                            Log.d(TAG, "serverConnSettingsChanged set to true")
-                                        } else {
-                                            reportingIntervalChanged = true
-                                            Log.d(TAG, "reportingIntervalChanged set to true")
-                                        }
-                                    } else { // Name is different
-                                        if (address != takServerDetails.address || port.toInt() != takServerDetails.port ||
-                                            username != takServerDetails.username || password != takServerDetails.password ||
-                                            reportingUpdateInterval.toInt() != takServerDetails.reportingUpdateInterval) {
-                                            // Apart from name, something else is different
-                                            if (reportingUpdateInterval.toInt() == takServerDetails.reportingUpdateInterval) {
-                                                serverConnSettingsChanged.value = true
-                                                Log.d(TAG, "serverConnSettingsChanged set to true with name being different")
-                                            } else {
-                                                reportingIntervalChanged = true
-                                                Log.d(TAG, "reportingIntervalChanged set to true with name being different")
-                                            }
-                                        }
+                            val takServerDetails = takServerList.get(index)
+                            Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
+                            Log.d(TAG, "takServerDetails: $takServerDetails")
+                            Log.d(TAG, "name: $name, address: $address, port=$port, username=$username, password=$password")
+                            if (name != takServerDetails.name || address != takServerDetails.address || port != takServerDetails.port.toString() ||
+                                username != takServerDetails.username || password != takServerDetails.password) {
+                                if (name == takServerDetails.name) {
+                                    // Name is same, so something else in address, port, username, or password has changed
+                                    serverConnSettingsChanged.value = true
+                                    Log.d(TAG, "serverConnSettingsChanged set to true")
+                                } else { // Name is different
+                                    if (address != takServerDetails.address || port.toInt() != takServerDetails.port ||
+                                        username != takServerDetails.username || password != takServerDetails.password) {
+                                        // Apart from name, something else is different
+                                        serverConnSettingsChanged.value = true
+                                        Log.d(TAG, "serverConnSettingsChanged set to true with name being different")
                                     }
-                                    val changedTakServerDetail: DataRepository.TakServerItem =
-                                        if (isP12Cert == true) {
-                                            DataRepository.TakServerItem(takServerListLocal.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
-                                                takServerListLocal.get(index).username, takServerListLocal.get(index).password, takServerListLocal.get(index).p12Cert, takServerListLocal.get(index).p12CertPassword,
-                                                reportingUpdateInterval.toInt())
-                                        } else {
-                                            DataRepository.TakServerItem(takServerListLocal.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
-                                                username, password, "", "", reportingUpdateInterval.toInt())
-                                        }
-
-                                    runBlocking {
-                                        dataRepository.updateTakServerItem(index, changedTakServerDetail)
-                                    }
-
-                                    val mutableTakServerList = takServerListLocal.toMutableList()
-                                    mutableTakServerList.set(index, changedTakServerDetail)
-                                    takServerList = mutableTakServerList.toList()
-                                    takServerListState.postValue(takServerList)
-
-                                    val minReportingInterval = getMinReportingInterval(takServerList)
-                                    var prevReportingInterval = 1
-                                    runBlocking {
-                                        prevReportingInterval = dataRepository.getStaticReportingInterval.first()
-                                    }
-                                    Log.d(TAG, "prevReportingInterval($prevReportingInterval); currMinReportingInterval($minReportingInterval)")
-                                    if (prevReportingInterval != minReportingInterval) {
-                                        Log.d(TAG, "prevReportingInterval($prevReportingInterval) != currMinReportingInterval($minReportingInterval). Sending UPDATE_INTERVAL_CHANGED")
-                                        runBlocking {
-                                            dataRepository.storeStaticReportingInterval(minReportingInterval)
-                                        }
-                                    }
-
-                                    if (serverConnSettingsChanged.value || reportingIntervalChanged) {
-                                        Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value} or reportingIntervalChanged=$reportingIntervalChanged")
-                                        EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
-                                        if (reportingIntervalChanged) {
-                                            // Go back to previous page
-                                            navController.navigate("tak_server_screen") {
-                                                popUpTo(("tak_server_screen")) {
-                                                    inclusive = true
-                                                }
-                                            }
-                                        }
+                                }
+                                val changedTakServerDetail: DataRepository.TakServerItem =
+                                    if (isP12Cert == true) {
+                                        DataRepository.TakServerItem(takServerListLocal.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
+                                            takServerListLocal.get(index).username, takServerListLocal.get(index).password, takServerListLocal.get(index).p12Cert, takServerListLocal.get(index).p12CertPassword)
                                     } else {
-                                        navController.navigate("tak_server_screen") {
-                                            popUpTo(("tak_server_screen")) {
-                                                inclusive = true
-                                            }
-                                        }
+                                        DataRepository.TakServerItem(takServerListLocal.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
+                                            username, password, "", "")
                                     }
+
+                                runBlocking {
+                                    dataRepository.updateTakServerItem(index, changedTakServerDetail)
+                                }
+
+                                val mutableTakServerList = takServerListLocal.toMutableList()
+                                mutableTakServerList.set(index, changedTakServerDetail)
+                                takServerList = mutableTakServerList.toList()
+                                takServerListState.postValue(takServerList)
+
+                                if (serverConnSettingsChanged.value) {
+                                    Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value}")
+                                    EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
                                 } else {
-                                    Log.d(TAG, "EditServerPage onClickConfirm: nothing has changed")
-                                    serverConnSettingsChanged.value = false
                                     navController.navigate("tak_server_screen") {
                                         popUpTo(("tak_server_screen")) {
                                             inclusive = true
                                         }
+                                    }
+                                }
+                            } else {
+                                Log.d(TAG, "EditServerPage onClickConfirm: nothing has changed")
+                                serverConnSettingsChanged.value = false
+                                navController.navigate("tak_server_screen") {
+                                    popUpTo(("tak_server_screen")) {
+                                        inclusive = true
                                     }
                                 }
                             }
@@ -2219,6 +2181,291 @@ fun ConfirmationDialog(
         )
     }
 }
+//Used for PhysioAlerts, Reporting Rates, and some User Metrics
+@Composable
+fun NumericEntryPage(
+    navController: NavController,
+    metricSettingState: MutableLiveData<Int>,
+    maximum: Int,
+    label: String,
+    context: Context,
+    route: String
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var metricTextFieldValue by remember { mutableStateOf(TextFieldValue(metricSettingState.value.toString())) }
+        //Log.d(TAG, "metricTextFieldValue=" + metricTextFieldValue.text)
+        val focusManager = LocalFocusManager.current
+
+        OutlinedTextField(
+            value = metricTextFieldValue,
+            onValueChange = {
+                metricTextFieldValue = it
+            },
+            maxLines = 1,
+            label = { Text(text = label, color = colors.primary) },
+            placeholder = { Text(text = label, color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    if (metricTextFieldValue.text.toInt() > maximum) {
+                        Toast.makeText(
+                            mainActivity,
+                            context.getString(R.string.value_exceeds_maximum_please_re_enter), Toast.LENGTH_LONG).show()
+                    } else {
+                        focusManager.clearFocus()
+                    }
+                }
+            ),
+
+            )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate(route) {
+                        popUpTo((route)) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    metricSettingState.setValue(metricTextFieldValue.text.toInt())
+                    Log.d(TAG, "Settings State saved with bpm threshold: ${metricSettingState.value}")
+                    navController.navigate(route) {
+                        popUpTo((route)) {
+                            inclusive = true
+                        }
+                    }
+                })
+        }
+    }
+}
+@Composable
+fun ReportingStrategySettings(navController: NavController) {
+    val enableDynamicReporting by enableDynamicReportingStrategySettingsState.observeAsState()
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            Chip(
+                onClick = {
+                    navController.navigate("reporting_dynamic_constant_screen") {
+                        popUpTo("reporting_dynamic_constant_screen") { inclusive = true }
+                    }
+                },
+                enabled = true,
+                label = { Text(text = "Reporting Strategy") },
+                secondaryLabel = {
+                    if (enableDynamicReporting == true) {
+                        Text("Dynamic Reporting")
+                    } else {
+                        Text("Constant Reporting")
+                    }
+                },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
+            Spacer(modifier = Modifier.height(5.dp))
+
+            if (enableDynamicReporting == true) {
+                DataMetricsChip("stationary_reporting_interval_screen", "Stationary Reporting Interval", stationaryReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("on_foot_reporting_interval_screen", "On Foot Reporting Interval", onFootReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("vehicle_reporting_interval_screen", "Vehicle Reporting Interval", vehicleReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("while_alerting_reporting_interval_screen", "While Alerting Reporting Interval", whileAlertingReportingIntervalSettingsState.value.toString(), navController)
+
+            } else {
+                DataMetricsChip("constant_reporting_interval_screen", "Constant Reporting Interval", constantReportingIntervalSettingsState.value.toString(), navController)
+
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    enableDynamicReportingStrategySettingsState.postValue(enableDynamicReportingStrategy)
+                    constantReportingIntervalSettingsState.setValue(constantReportingInterval)
+                    stationaryReportingIntervalSettingsState.setValue(stationaryReportingInterval)
+                    onFootReportingIntervalSettingsState.setValue(onFootReportingInterval)
+                    vehicleReportingIntervalSettingsState.setValue(vehicleReportingInterval)
+                    whileAlertingReportingIntervalSettingsState.setValue(whileAlertingReportingInterval)
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    constantReportingIntervalState.setValue(constantReportingIntervalSettingsState.value)
+                    stationaryReportingIntervalState.setValue(stationaryReportingIntervalSettingsState.value)
+                    onFootReportingIntervalState.setValue(onFootReportingIntervalSettingsState.value)
+                    vehicleReportingIntervalState.setValue(vehicleReportingIntervalSettingsState.value)
+                    whileAlertingReportingIntervalState.setValue(whileAlertingReportingIntervalSettingsState.value)
+
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = "Reporting Settings"
+    )
+}
+
+@Composable
+fun ReportingStrategyDynamicConstantSetting (
+    navController: NavController,
+) {
+    val enableDynamicReporting = enableDynamicReportingStrategySettingsState.value ?: true
+    val radioOptions = listOf("Constant Reporting", "Dynamic Reporting")
+    val initialValue = when {
+        !enableDynamicReporting -> radioOptions[0]  // "Constant"
+        else  -> radioOptions[1] // "Dynamic"
+    }
+    val selectedValue = remember { mutableStateOf(initialValue) }
+    val isSelectedItem: (String) -> Boolean = { selectedValue.value == it }
+    val onChangeState: (String) -> Unit = { selectedValue.value = it }
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+
+    //Log.d(TAG, "OptimizeBatteryonWifiSelectScreen called")
+    WearTakCivScreenDimensions(
+        columnContent = {
+            Log.d(TAG, "initial  value = $initialValue, selected value: ${selectedValue.value}")
+            radioOptions.forEach { text ->
+                SelectableChip(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 5.dp),
+                    selected = isSelectedItem(text),
+                    onClick = { onChangeState(text)
+                        if (text == "Constant Reporting") {
+                            enableDynamicReportingStrategySettingsState.postValue(false)
+                        } else {
+                            enableDynamicReportingStrategySettingsState.postValue(true)
+                        }
+                    },
+                    label = {
+                        // The primary label should have a maximum 3 lines of text
+                        Text(text, maxLines = 3, fontSize = 14.sp, overflow = TextOverflow.Ellipsis)
+                    },
+                    enabled = true,
+                )
+
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Reporting Strategy Settings NOT saved")
+                    enableDynamicReportingStrategySettingsState.postValue(enableDynamicReportingStrategyState.value)
+                    navController.navigate("reporting_settings_screen") {
+                        popUpTo(("reporting_settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    val prevSelection: Boolean = enableDynamicReportingStrategyState.value ?: true
+                    val currSelection = enableDynamicReportingStrategySettingsState.value ?: true
+
+                    if ((prevSelection != currSelection)) {
+                        Log.d(TAG, "Changed Reporting Strategy: $currSelection")
+                        enableDynamicReportingStrategyState.postValue(currSelection)
+                    } else {
+                        Log.d(TAG, "Settings NOT changed, NOT saved")
+                    }
+
+                    navController.navigate("reporting_settings_screen") {
+                        popUpTo(("reporting_settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+
+                })
+        },
+        text = "Reporting Strategy"
+    )
+}
+
+//TODO: Can combine with physio alerts settings
+@Composable
+fun ReportingStrategyIntervalSettings(
+    navController: NavController,
+    intervalSettingState: MutableLiveData<Int>,
+    label: String,
+    placeholder: String
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        var intervalSettingTextFieldValue by remember {
+            mutableStateOf(
+                TextFieldValue(
+                    intervalSettingState.value.toString() ?: "null"
+                )
+            )
+        }
+
+        OutlinedTextField(
+            value = intervalSettingTextFieldValue,
+            onValueChange = {
+                intervalSettingTextFieldValue = it
+            },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number),
+            maxLines = 1,
+            label = { Text(text = label, color = colors.primary, fontSize =  11.sp) },
+            placeholder = { Text(text = placeholder, color = colors.primary) },
+            textStyle = TextStyle(color = colors.primary)
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Settings NOT saved")
+                    navController.navigate("reporting_settings_screen") {
+                        popUpTo(("reporting_settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    intervalSettingState.postValue(intervalSettingTextFieldValue.text.toInt())
+                    Log.d(TAG, "Settings saved with reporting interval: ${intervalSettingState.value}")
+                    navController.navigate("reporting_settings_screen") {
+                        popUpTo(("reporting_settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        }
+    }
+}
+
 
 @Composable
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>, context: Context) {
@@ -2384,7 +2631,10 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
         ConfirmCancelButtons(
             onClickCancel = {
                 Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
-                enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
+                enablePhysiologicalAlertsSettingState.setValue(enablePhysiologicalAlerts)
+                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThreshold)
+                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThreshold)
+
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -2404,64 +2654,6 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
     },
     text = stringResource(R.string.physiological_alerts)
 )
-}
-
-@Composable
-fun PhysioAlertsBpmThresholdSetting(
-    navController: NavController,
-    physioAlertSettingState: MutableLiveData<Int>,
-    label: String,
-    placeholder: String
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        var physioAlertSettingTextFieldValue by remember {
-            mutableStateOf(
-                TextFieldValue(
-                    physioAlertSettingState.value.toString() ?: "null"
-                )
-            )
-        }
-
-        OutlinedTextField(
-            value = physioAlertSettingTextFieldValue,
-            onValueChange = {
-                physioAlertSettingTextFieldValue = it
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number),
-            maxLines = 1,
-            label = { Text(text = label, color = colors.primary, fontSize =  11.sp) },
-            placeholder = { Text(text = placeholder, color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
-        )
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "Settings NOT saved")
-                    navController.navigate("physiological_alerts_setting_screen") {
-                        popUpTo(("physiological_alerts_setting_screen")) {
-                            inclusive = true
-                        }
-                    }
-                },
-                onClickConfirm = {
-                    physioAlertSettingState.postValue(physioAlertSettingTextFieldValue.text.toInt())
-                    Log.d(TAG, "Settings saved with bpm threshold: ${physioAlertSettingState.value}")
-                    navController.navigate("physiological_alerts_setting_screen") {
-                        popUpTo(("physiological_alerts_setting_screen")) {
-                            inclusive = true
-                        }
-                    }
-                })
-        }
-    }
 }
 
 @Composable
@@ -2487,75 +2679,6 @@ fun DataMetricsChip(
             .fillMaxWidth()
             .padding(bottom = 3.dp)
     )
-}
-
-@Composable
-fun AgeWeightSetting(
-    navController: NavController,
-    metricSettingState: MutableLiveData<Int>,
-    maximum: Int,
-    label: String,
-    context: Context
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        var metricTextFieldValue by remember { mutableStateOf(TextFieldValue(metricSettingState.value.toString())) }
-        //Log.d(TAG, "metricTextFieldValue=" + metricTextFieldValue.text)
-        val focusManager = LocalFocusManager.current
-
-        OutlinedTextField(
-            value = metricTextFieldValue,
-            onValueChange = {
-                metricTextFieldValue = it
-            },
-            maxLines = 1,
-            label = { Text(text = label, color = colors.primary) },
-            placeholder = { Text(text = label, color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number,
-                imeAction = ImeAction.Done
-            ),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    if (metricTextFieldValue.text.toInt() > maximum) {
-                        Toast.makeText(
-                            mainActivity,
-                            context.getString(R.string.value_exceeds_maximum_please_re_enter), Toast.LENGTH_LONG).show()
-                    } else {
-                        focusManager.clearFocus()
-                    }
-                }
-            ),
-
-        )
-        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    Log.d(TAG, "AgeWeightSetting Settings NOT saved")
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
-                            inclusive = true
-                        }
-                    }
-                },
-                onClickConfirm = {
-                    metricSettingState.postValue(metricTextFieldValue.text.toInt())
-                    Log.d(TAG, "$label Settings saved: ${metricSettingState.value}")
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
-                            inclusive = true
-                        }
-                    }
-                })
-        }
-    }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -2879,6 +3002,15 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
         ConfirmCancelButtons(
             onClickCancel = {
                 Log.d(TAG, "Physiological Settings NOT saved")
+                ageState.setValue(ageValue)
+                heightFeetState.setValue(heightFeetValue)
+                heightInchesState.setValue(heightInchesValue)
+                weightState.setValue(weightValue)
+                sexState.setValue(sexValue)
+                bloodTypeState.setValue(bloodTypeValue)
+//                allergyListState.postValue(allergyValue)
+                userTypeState.setValue(userTypeValue)
+                restingHeartRateState.setValue(restingHeartRate)
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -2886,16 +3018,15 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
                 }
             },
             onClickConfirm = {
-                        ageState.postValue(ageSettingsState.value)
-                        heightFeetState.postValue(heightFeetSettingsState.value)
-                        heightInchesState.postValue(heightInchesSettingsState.value)
-                        weightState.postValue(weightSettingsState.value)
-                        sexState.postValue(sexSettingsState.value)
-                        bloodTypeState.postValue(bloodTypeSettingsState.value)
-                        allergyListState.postValue(allergyListSettingsState.value)
-                        userTypeState.postValue(userTypeSettingsState.value)
-                        restingHeartRateState.postValue(restingHeartRateSettingsState.value)
-
+                        ageState.setValue(ageSettingsState.value)
+                        heightFeetState.setValue(heightFeetSettingsState.value)
+                        heightInchesState.setValue(heightInchesSettingsState.value)
+                        weightState.setValue(weightSettingsState.value)
+                        sexState.setValue(sexSettingsState.value)
+                        bloodTypeState.setValue(bloodTypeSettingsState.value)
+                        allergyListState.setValue(allergyListSettingsState.value)
+                        userTypeState.setValue(userTypeSettingsState.value)
+                        restingHeartRateState.setValue(restingHeartRateSettingsState.value)
 
                 Log.d(TAG, "Finished saving physio state settings")
 
@@ -3299,7 +3430,24 @@ fun SettingsScreen(
             )
 
             Chip(
+                onClick = {
+                    navController.navigate("reporting_settings_screen") {
+                        popUpTo("reporting_settings_screen") { inclusive = true }
+                    }
+                },
+                enabled = true,
+                label = { Text(text = "Reporting Settings") },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
 
+            Chip(
                 onClick = {
                     enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimizationState.value)
                     enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimizationState.value)
@@ -3548,6 +3696,12 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var dynamicReportingChanged: Boolean = false
+                    var constantReportingIntervalChanged: Boolean = false
+                    var stationaryReportingIntervalChanged: Boolean = false
+                    var onFootReportingIntervalChanged: Boolean = false
+                    var vehicleReportingIntervalChanged: Boolean = false
+                    var whileAlertingReportingIntervalChanged: Boolean = false
                     var smsAlertsCheckedChanged: Boolean = false
                     var smsNumbersChanged: Boolean = false
                     var physiologicalAlertsCheckedChanged: Boolean = false
@@ -3609,6 +3763,39 @@ fun SettingsScreen(
                     if (restingHeartRate != restingHeartRateState.value) {
                         settingsChanged = true; restingHeartRateChanged = true
                         restingHeartRate = restingHeartRateState.value ?: restingHeartRate
+                    }
+
+                    if (enableDynamicReportingStrategy != enableDynamicReportingStrategySettingsState.value) {
+                        settingsChanged = true; dynamicReportingChanged = true
+                        enableDynamicReportingStrategy = enableDynamicReportingStrategySettingsState.value ?: enableDynamicReportingStrategy
+                        runBlocking {
+                            enableDynamicReportingStrategySettingsState.postValue(enableDynamicReportingStrategy)
+                        }
+                    }
+
+                    if (constantReportingInterval != constantReportingIntervalState.value) {
+                        settingsChanged = true; constantReportingIntervalChanged = true
+                        constantReportingInterval = constantReportingIntervalState.value ?: constantReportingInterval
+                    }
+
+                    if (stationaryReportingInterval != stationaryReportingIntervalState.value) {
+                        settingsChanged = true; stationaryReportingIntervalChanged = true
+                        stationaryReportingInterval = stationaryReportingIntervalState.value ?: stationaryReportingInterval
+                    }
+
+                    if (onFootReportingInterval != onFootReportingIntervalState.value) {
+                        settingsChanged = true; onFootReportingIntervalChanged = true
+                        onFootReportingInterval = onFootReportingIntervalState.value ?: onFootReportingInterval
+                    }
+
+                    if (vehicleReportingInterval != vehicleReportingIntervalState.value) {
+                        settingsChanged = true; vehicleReportingIntervalChanged = true
+                        vehicleReportingInterval = vehicleReportingIntervalState.value ?: vehicleReportingInterval
+                    }
+
+                    if (whileAlertingReportingInterval != whileAlertingReportingIntervalState.value) {
+                        settingsChanged = true; whileAlertingReportingIntervalChanged = true
+                        whileAlertingReportingInterval = whileAlertingReportingIntervalState.value ?: whileAlertingReportingInterval
                     }
 
                     if (!callsign.equals(callsignSettingsState.value)) {
@@ -3853,6 +4040,24 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
                                  dataRepository.storeRestingHeartRate(restingHeartRate)
                              }
+                             if (dynamicReportingChanged){
+                                 dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy)
+                             }
+                             if (constantReportingIntervalChanged){
+                                 dataRepository.storeConstantReportingInterval(constantReportingInterval)
+                             }
+                             if (stationaryReportingIntervalChanged){
+                                 dataRepository.storeStationaryReportingInterval(stationaryReportingInterval)
+                             }
+                             if (onFootReportingIntervalChanged){
+                                 dataRepository.storeOnFootReportingInterval(onFootReportingInterval)
+                             }
+                             if (vehicleReportingIntervalChanged){
+                                 dataRepository.storeVehicleReportingInterval(vehicleReportingInterval)
+                             }
+                             if (whileAlertingReportingIntervalChanged){
+                                 dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingInterval)
+                             }
                              if (saveBattOnWifiChanged) {
                                   Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
                                   runBlocking {
@@ -4066,13 +4271,18 @@ fun AllergyMetricPreview() {
 fun PhysioAlertsPreview() {
     PhysiologicalAlertsSetting(rememberSwipeDismissableNavController())
 }
-@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+@Preview(widthDp = 192, heightDp = 600, showBackground = true)
 @Composable
-fun HailSettingPreview() {
-    HailSetting(rememberSwipeDismissableNavController())
+fun ReportingStratPreview() {
+    ReportingStrategySettings(rememberSwipeDismissableNavController())
+}
+@Preview(widthDp = 192, heightDp = 600, showBackground = true)
+@Composable
+fun ReportingStrategyPreview() {
+    ReportingStrategyDynamicConstantSetting(rememberSwipeDismissableNavController())
 }
 @Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
 @Composable
-fun InvalidHailPreview() {
-    InvalidHailScreen(rememberSwipeDismissableNavController())
+fun ReportingIntPreview() {
+    ReportingStrategyIntervalSettings(rememberSwipeDismissableNavController(), constantReportingIntervalSettingsState, "Static Reporting Interval", "0")
 }
