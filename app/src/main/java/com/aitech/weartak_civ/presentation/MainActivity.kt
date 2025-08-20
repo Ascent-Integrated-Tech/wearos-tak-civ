@@ -181,6 +181,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocation
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.service.ActivityRecognitionService
+import com.aitech.weartak_civ.service.PassiveDataService
 import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -213,6 +214,10 @@ class MainActivity : ComponentActivity() {
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableHailService: Boolean = false
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
+
+        //Enable Global Health Events
+        var enablePassiveDataService = true
+        var enableFallDetectionService = true
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -709,6 +714,35 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startPassiveDataService(){
+            if (enablePassiveDataService){
+                if(!PassiveDataService.isRunning.get()){
+                    Log.d(TAG, "Starting PassiveDataService")
+                    mainActivity.startService(Intent(mainActivity, PassiveDataService::class.java))
+                }else{
+                    Log.d(TAG, "PassiveDataService is already running")
+                }
+            }else{
+                Log.d(TAG, "Passive Data Service is disabled (enablePassiveDataService == false)")
+            }
+        }
+
+        fun startStopPassiveDataService() {
+            if (isLicenseValid()) {
+                if (enablePassiveDataService) {
+                    startPassiveDataService()
+                } else {
+                    if (PassiveDataService.isRunning.get()) {
+                        mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
+                    }
+                }
+            } else {
+                if (PassiveDataService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
+                }
+            }
+        }
+
         fun startStopoffBodyDetectService() {
             if (isLicenseValid()) {
                 if (enablePhysiologicalServices) {
@@ -761,6 +795,7 @@ class MainActivity : ComponentActivity() {
                 startBatteryService()
                 startLocationService()
                 startMovementDetectionService()
+                startPassiveDataService()
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()
