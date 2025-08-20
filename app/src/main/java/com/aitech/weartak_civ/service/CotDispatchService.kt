@@ -28,6 +28,7 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.getValueFromJson
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
@@ -40,6 +41,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CON
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
@@ -189,7 +191,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.enableHailService
                 .collect { enable ->
-                    Log.d(TAG, "[enable] $enable")
+                    Log.d(TAG, "enableHailService: $enable")
                     if (enable) {
                         HailService.initialize(
                             appId = "com.rain.hail",
@@ -354,8 +356,9 @@ class CotDispatchService : Service() {
                 // Mostly because watch does not have GPS (e.g., indoor) and fused location at this time
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
                 // Once watch catches GPS, updates are at max 1s.
-                //Log.v(TAG, "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable")
-                //writeToLogFileLocation(logFile, "Somehow location update did not happen within the last currReportingIntervalInSecs. Sending Biometric Cot via cotDispatchRunnable")
+                val logStr = "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable"
+                Log.v(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
                 buildAndSendPhysioLocationCotMsg()
             }
             // Schedule the next run

@@ -7,7 +7,7 @@
  * in the license agreement and/or contract under which the software has been supplied.
  */
 
-package com.aitech.weartak_civ
+package com.aitech.weartak_civ.receiver
 
 import android.app.ActivityOptions
 import android.app.PendingIntent
@@ -20,7 +20,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 
 class WearTakInitOnBoot : BroadcastReceiver() {
     companion object {
-        private val TAG = "WearTAK-" + "InitOnBoot"
+        private val TAG = "WearTAK-InitOnBoot"
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {

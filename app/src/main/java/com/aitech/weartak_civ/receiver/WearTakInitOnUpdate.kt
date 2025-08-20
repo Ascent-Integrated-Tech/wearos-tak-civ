@@ -7,7 +7,7 @@
  * in the license agreement and/or contract under which the software has been supplied.
  */
 
-package com.aitech.weartak_civ
+package com.aitech.weartak_civ.receiver
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -17,7 +17,7 @@ import com.aitech.weartak_civ.Utils.startMainActivityIfNotRunning
 
 class WearTakInitOnUpdate : BroadcastReceiver() {
     companion object {
-        private val TAG = "WearTAK-" + "InitOnUpdate"
+        private val TAG = "WearTAK-InitOnUpdate"
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {

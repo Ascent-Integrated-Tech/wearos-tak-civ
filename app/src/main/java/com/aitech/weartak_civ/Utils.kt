@@ -11,11 +11,15 @@ package com.aitech.weartak_civ
 
 import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.app.AlarmManager
+import android.app.AlarmManager.AlarmClockInfo
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.Context.ALARM_SERVICE
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
@@ -23,6 +27,9 @@ import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.receiver.AlarmReceiver
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -52,7 +59,31 @@ object Utils {
     const val DEFAULT_RESTING_HR : Int = 60
     const val DEFAULT_AGE : Int = 24
     const val DEFAULT_REPORTING_INTERVAL = 60
+    const val GPS_ALARM_REQUEST_CODE = 234324243
+    const val REDUCE_ALARM_TIME_MS = 35
     val secureRandom: SecureRandom = SecureRandom()
+
+    fun runTimerJob(timeMs: Long) {
+        object : Thread() {
+            override fun run() {
+                super.run()
+                val logStr="runTimerJob called with timeout: $timeMs ms"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                startGlobalTimer(timeMs)
+            }
+        }.start()
+    }
+
+    fun startGlobalTimer(timeMs: Long) {
+        Log.d(TAG, "startGlobalTimer called with timeout: $timeMs ms")
+        val alarmIntent = Intent(mainActivity, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(mainActivity, GPS_ALARM_REQUEST_CODE, alarmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
+        val ac = AlarmClockInfo(System.currentTimeMillis() + timeMs - REDUCE_ALARM_TIME_MS, pendingIntent)
+        alarmManager.setAlarmClock(ac, pendingIntent)
+    }
 
     fun startMainActivityIfNotRunning(context: Context) {
         if (!isActivityRunning(MainActivity::class.java, context)) {

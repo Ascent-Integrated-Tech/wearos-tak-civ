@@ -29,14 +29,11 @@
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE"/>
 
-    <!--
-<uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
-    tools:ignore="ProtectedPermissions" />
-<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-<uses-permission android:name="android.permission.TURN_SCREEN_ON"
-    tools:ignore="ProtectedPermissions" />
-    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.TURN_SCREEN_ON" tools:ignore="ProtectedPermissions" />
+
     <!-- <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/> -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
@@ -371,7 +368,7 @@
             android:resource="@xml/app_restrictions" />
 
         <receiver
-            android:name=".WearTakInitOnUpdate"
+            android:name=".receiver.WearTakInitOnUpdate"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -379,14 +376,18 @@
             </intent-filter>
         </receiver>
         <receiver
-            android:name=".WearTakInitOnBoot"
+            android:name=".receiver.WearTakInitOnBoot"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".receiver.AlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
         </receiver>
 
         <activity

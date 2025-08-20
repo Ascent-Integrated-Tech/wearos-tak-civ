@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.service
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.Notification.PRIORITY_MAX
 import android.app.NotificationChannel
@@ -19,22 +20,28 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.location.Location
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.runTimerJob
+import com.aitech.weartak_civ.Utils.startGlobalTimer
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -47,21 +54,57 @@ import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.min
 
 
 class LocationService : Service() {
 
     private var locationThread: HandlerThread? = null
-    private var locationCallback: MyLocationCallback = MyLocationCallback()
+    private var periodicLocationCallback: PeriodicLocationCallback = PeriodicLocationCallback()
     private var fusedLocationProviderClient: FusedLocationProviderClient? = null
     private val binder = LocationServiceBinder()
     private var handler: Handler? = null
-    private var currentLocation: Location? = null
+
+    private lateinit var usingPeriodicGpsCallback : AtomicBoolean
+    private lateinit var mPowerManager: PowerManager
+    private var mWakeLock: PowerManager.WakeLock? = null
+    private var oneShotPrevLocationUpdateTime: Long = 0L // TODO: Only for testing/logging, should be removed in the future
+
+    private val oneShotLocationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            val location = result.lastLocation ?: return
+
+            CoroutineScope(Dispatchers.IO).launch {
+                val currTime = System.currentTimeMillis()
+                dataRepository.storeLatestLocation(location)
+                val logStr = "oneShotLocationCallback onLocationResult (prev: ${(currTime-oneShotPrevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                oneShotPrevLocationUpdateTime = currTime
+                EventBus.getDefault().post(LocationRcvd())
+            }
+            fusedLocationProviderClient?.removeLocationUpdates(this)
+            if (mWakeLock?.isHeld() ?: false) {
+                Log.d(TAG, "oneShotLocationCallback onLocationResult: releasing wakelock")
+                mWakeLock?.release()
+            }
+            mWakeLock = null
+        }
+    }
+
+    private val oneShotLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 0).apply {
+        setMaxUpdates(1)
+        setMinUpdateIntervalMillis(0)
+        setMaxUpdateAgeMillis(0) // force fresh GPS
+        setIntervalMillis(1_000)
+        setMaxUpdateDelayMillis(1_000)
+        setWaitForAccurateLocation(true)
+    }.build()
 
     override fun onCreate() {
         Log.d(TAG, "LocationService onCreate()")
+        _instance = this
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
@@ -69,16 +112,52 @@ class LocationService : Service() {
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         if(!isRunning.getAndSet(true)) {
+            startForegroundService() //Start Foreground Service
             initializeLocation()
         }
         return START_NOT_STICKY
     }
 
     private fun initializeLocation() {
-        //Start Foreground Service
-        startForegroundService()
-        //Initialize a new handler thread to start the location updates
-        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+        mPowerManager = applicationContext.getSystemService(POWER_SERVICE) as PowerManager
+        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
+        if ((ActivityCompat.checkSelfPermission(mainActivity, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
+            (ActivityCompat.checkSelfPermission(mainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
+            Log.e(TAG, "LocationService does not have one of ACCESS_FINE_LOCATION or ACCESS_COARSE_LOCATION permission. Nothing to do. Returning...")
+            return
+        }
+
+        if (CotDispatchService.currReportingIntervalInSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL) {
+            usingPeriodicGpsCallback = AtomicBoolean(true)
+            Log.d(TAG, "initializeLocation: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) using Location request/callback")
+            //Initialize a new handler thread to start the location updates
+            startPeriodicLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+        } else {
+            usingPeriodicGpsCallback = AtomicBoolean(false)
+            Log.d(TAG, "initializeLocation: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) via alarm")
+            fusedLocationProviderClient?.requestLocationUpdates(oneShotLocationRequest, oneShotLocationCallback, Looper.getMainLooper())
+            runTimerJob(CotDispatchService.currReportingIntervalInSecs * 1000L)
+        }
+    }
+
+    @SuppressLint("MissingPermission") // We have already checked this
+    fun acquireWakelockAndRequestLocation() {
+        // Start wake lock to wakeup the device
+        if (mWakeLock?.isHeld() ?: false) {
+            Log.d(TAG, "acquireWakelockAndRequestLocation: mWakelock is still held")
+            mWakeLock?.release()
+        }
+        mWakeLock = null
+
+        if (usingPeriodicGpsCallback.get()) return
+
+        //mWakeLock = mPowerManager?.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.PARTIAL_WAKE_LOCK, "id:wakeupscreen")
+        mWakeLock = mPowerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "id:gps")
+        mWakeLock?.acquire(6_000) // We wait at least 6 seconds for indoor GPS
+
+        Log.d(TAG, "Acquired wakelock and now requesting location")
+        fusedLocationProviderClient?.requestLocationUpdates(oneShotLocationRequest, oneShotLocationCallback, Looper.getMainLooper())
+        startGlobalTimer(CotDispatchService.currReportingIntervalInSecs * 1000L)
     }
 
     private fun startForegroundService() {
@@ -114,14 +193,14 @@ class LocationService : Service() {
         return channelId
     }
 
-    private fun startLocationUpdates(priority: Int, interval: Long, fastestInterval: Long) {
+    private fun startPeriodicLocationUpdates(priority: Int, interval: Long, fastestInterval: Long) {
         locationThread = HandlerThread("Location Thread")
         try {
             locationThread?.start()
             //handler = Handler(locationThread?.looper)
             handler = locationThread?.looper?.let { Handler(it) }
             if ((handler != null) && (handler?.looper?.thread?.isAlive ?: false)) {
-                handler?.post { this.createLocationRequest(priority, interval, fastestInterval)
+                handler?.post { this.createPeriodicLocationRequest(priority, interval, fastestInterval)
                 }
             }
         } catch (e: Exception) {
@@ -130,7 +209,7 @@ class LocationService : Service() {
 
     }
 
-    private fun createLocationRequest(priority: Int, interval: Long, fastestInterval: Long) {
+    private fun createPeriodicLocationRequest(priority: Int, interval: Long, fastestInterval: Long) {
         val locationRequest = LocationRequest.create()
         locationRequest.interval = interval
         locationRequest.fastestInterval = fastestInterval
@@ -145,8 +224,11 @@ class LocationService : Service() {
         }PRIORITY_HIGH_ACCURACY
          */
 
-        Log.d(TAG, "LocationRequest params: priority(${locationRequest.priority}), interval(${locationRequest.intervalMillis}), maxUpdateDelay(${locationRequest.maxUpdateDelayMillis}), " +
-                "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")
+        val logStr = "LocationRequest params: priority(${locationRequest.priority}), interval(${locationRequest.intervalMillis}), maxUpdateDelay(${locationRequest.maxUpdateDelayMillis}), " +
+                "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")"
+        Log.d(TAG, logStr)
+        writeToLogFileLocation(logFile, logStr)
+        printLocationRequest(locationRequest)
         /*
         val builder = LocationSettingsRequest.Builder()
         builder.addLocationRequest(locationRequest)
@@ -160,27 +242,41 @@ class LocationService : Service() {
          */
         Log.d(TAG, "Fine Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION)))
         Log.d(TAG, "Coarse Location Permission allowed: "+ (PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION)))
-        locationCallback = MyLocationCallback()
-        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
+        periodicLocationCallback = PeriodicLocationCallback()
         //val simpleLocationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(CotDispatchService.currReportingIntervalInSecs.toLong())).build()
-        fusedLocationProviderClient?.requestLocationUpdates(locationRequest, locationCallback, Looper.myLooper())
+        fusedLocationProviderClient?.requestLocationUpdates(locationRequest, periodicLocationCallback, Looper.myLooper())
     }
 
     private fun printLocationRequest(locReq : LocationRequest) {
-        Log.d(TAG, "locReq: $locReq, ${locReq.priority}, ${locReq.durationMillis}, ${locReq.maxUpdates}, ${locReq.intervalMillis}, ${locReq.maxUpdateDelayMillis}, ${locReq.minUpdateIntervalMillis}, ${locReq.minUpdateDistanceMeters}")
+        val logStr = "locReq: $locReq, prio=${locReq.priority}, durationMillis=${locReq.durationMillis}, fastestInterval=${locReq.fastestInterval}, " +
+                "interval=${locReq.interval}, expirationTime=${locReq.expirationTime}, isPassive=${locReq.isPassive}, isBatched=${locReq.isBatched}, maxUpdates=${locReq.maxUpdates}, " +
+                "intervalMillis=${locReq.intervalMillis}, maxUpdateDelayMillis=${locReq.maxUpdateDelayMillis}, minUpdateIntervalMillis=${locReq.minUpdateIntervalMillis}, " +
+                "minUpdateDistanceMeters=${locReq.minUpdateDistanceMeters}, granularity=${locReq.granularity}, isFastestIntervalExplicitlySet=${locReq.isFastestIntervalExplicitlySet}, " +
+                "isWaitForAccurateLocation=${locReq.isWaitForAccurateLocation}, maxUpdateAgeMillis=${locReq.maxUpdateAgeMillis}, maxWaitTime=${locReq.maxWaitTime}, " +
+                "numUpdates=${locReq.numUpdates}, smallestDisplacement=${locReq.smallestDisplacement}"
+        Log.d(TAG, logStr)
+        writeToLogFileLocation(logFile, logStr)
     }
 
     override fun onBind(intent: Intent): IBinder? {
         return binder
     }
 
-    private inner class MyLocationCallback : LocationCallback() {
+    private inner class PeriodicLocationCallback : LocationCallback() {
+        var prevLocationUpdateTime : Long = 0L // TODO: Only for testing/logging, should be removed in the future
+
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
-                dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
+                dataRepository.storeLatestLocation(location)
                 //Log.d(TAG, "Received location update: $location")
                 //writeToLogFileLocation(logFile, "Received location update: $location")
+                val currTime = System.currentTimeMillis()
+                val logStr = "periodicLocationCallback: Received location update (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                prevLocationUpdateTime = currTime
+
                 EventBus.getDefault().post(LocationRcvd())
             }
         }
@@ -191,31 +287,49 @@ class LocationService : Service() {
             get() = this@LocationService
     }
 
-    @Subscribe(threadMode = ThreadMode.ASYNC)
-    public fun onLocationUpdateRequiredEvent(locationUpdateRequired: LocationUpdateRequired) {
-        Log.d(TAG, "Received LocationUpdateRequired. Stopping and starting location updates")
-        stopLocationProvider()
-        destroyLocationThread()
-        startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+    private fun restartGpsUpdates() {
+        if (usingPeriodicGpsCallback.get()) {
+            stopPeriodicLocationUpdates()
+            destroyLocationThread()
+        } // No need to do anything if !usingPeriodicGpsCallback as we check this variable in acquireWakelockAndRequestLocation
+
+        if (CotDispatchService.currReportingIntervalInSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL) {
+            usingPeriodicGpsCallback.set(true)
+            Log.d(TAG, "restartGpsUpdates: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) using Location request/callback\")")
+            startPeriodicLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+        } else {
+            usingPeriodicGpsCallback.set(false)
+            Log.d(TAG, "restartGpsUpdates: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) via alarm")
+            if ((ActivityCompat.checkSelfPermission(mainActivity, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
+                (ActivityCompat.checkSelfPermission(mainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
+                return
+            }
+            Log.d(TAG, "Received onLocationUpdateRequiredEvent: Requesting one shot location")
+            fusedLocationProviderClient?.requestLocationUpdates(oneShotLocationRequest, oneShotLocationCallback, Looper.getMainLooper())
+            runTimerJob(CotDispatchService.currReportingIntervalInSecs * 1000L)
+        }
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
-    public fun onPowerManagerEvent(powerManagerEvent: PowerManagerEvent) {
-        //Log.d(TAG, "Received PowerManagerEvent")
+    fun onLocationUpdateRequiredEvent(locationUpdateRequired: LocationUpdateRequired) {
+        restartGpsUpdates()
+    }
+
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    fun onPowerManagerEvent(powerManagerEvent: PowerManagerEvent) {
         if (CHANGED_UPDATE_INTERVAL == powerManagerEvent.eventType) {
-            // We know that CotDispatchService.currReportingIntervalInSecs has been set already
+            // We know that CotDispatchService.currReportingIntervalInSecs has been set (and changed) already
             // Stop and start Location Updates
             Log.d(TAG, "Received PowerManagerEvent CHANGED_UPDATE_INTERVAL. Stopping and starting location updates")
-            stopLocationProvider()
-            destroyLocationThread()
-            startLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+            restartGpsUpdates()
         }
     }
     
     override fun onDestroy() {
         super.onDestroy()
         isRunning.set(false)
-        stopLocationProvider()
+        stopPeriodicLocationUpdates()
+        fusedLocationProviderClient = null
         destroyLocationThread()
         stopForeground(true)
         if (EventBus.getDefault().isRegistered(this)) {
@@ -241,18 +355,18 @@ class LocationService : Service() {
         }
     }
 
-    private fun stopLocationProvider() {
-        if (null != locationCallback) {
+    private fun stopPeriodicLocationUpdates() {
+        if (null != periodicLocationCallback) {
             if (null != fusedLocationProviderClient) {
-                fusedLocationProviderClient?.removeLocationUpdates(locationCallback)
+                fusedLocationProviderClient?.removeLocationUpdates(periodicLocationCallback)
             }
         }
-        fusedLocationProviderClient = null
     }
 
     companion object {
         private val TAG = "WearTAK-" + LocationService::class.java.simpleName
         private val LOCATION_SERVICE_NOTIFICATION_ID = 1234
+        private val MAX_PERIODIC_GPS_UPDATE_INTERVAL : Int = 10
         // TODO: remove lat, lon, hae, ce, le after removing/refactoring PassiveDataService.kt
         var lat : Double? = null
         var lon : Double? = null
@@ -262,5 +376,7 @@ class LocationService : Service() {
         //var locationUpdateIntervalSecs = 2
         //var locationUpdateFastestIntervalSecs = 1
         val isRunning : AtomicBoolean = AtomicBoolean(false)
+        @Volatile private var _instance: LocationService? = null
+        fun getInstance(): LocationService? = _instance
     }
 }
