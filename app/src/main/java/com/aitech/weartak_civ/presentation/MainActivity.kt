@@ -186,6 +186,7 @@ import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
 import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
+import com.aitech.weartak_civ.service.PassiveDataService
 import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -218,6 +219,9 @@ class MainActivity : ComponentActivity() {
         var enableHailService: Boolean = false
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableMulticastOnWifi: Boolean = true
+
+        //Enable Global Health Events
+        var enablePassiveDataService = false
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -719,6 +723,35 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startPassiveDataService(){
+            if (enablePassiveDataService){
+                if(!PassiveDataService.isRunning.get()){
+                    Log.d(TAG, "Starting PassiveDataService")
+                    mainActivity.startForegroundService(Intent(mainActivity, PassiveDataService::class.java))
+                }else{
+                    Log.d(TAG, "PassiveDataService is already running")
+                }
+            }else{
+                Log.d(TAG, "Passive Data Service is disabled (enablePassiveDataService == false)")
+            }
+        }
+
+        fun startStopPassiveDataService() {
+            if (isLicenseValid()) {
+                if (enablePassiveDataService) {
+                    startPassiveDataService()
+                } else {
+                    if (PassiveDataService.isRunning.get()) {
+                        mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
+                    }
+                }
+            } else {
+                if (PassiveDataService.isRunning.get()) {
+                    mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
+                }
+            }
+        }
+
         fun startStopoffBodyDetectService() {
             if (isLicenseValid()) {
                 if (enablePhysiologicalServices) {
@@ -771,6 +804,7 @@ class MainActivity : ComponentActivity() {
                 startActivityRecognitionService()
                 startBatteryService()
                 startLocationService()
+                //startPassiveDataService()
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()
@@ -819,6 +853,9 @@ class MainActivity : ComponentActivity() {
                 if (enableChatService && ChatService.isRunning.get()) {
                     mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
                 }
+                //if (enablePassiveDataService && PassiveDataService.isRunning.get()) {
+                //    mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
+                //}
             }
         }
     }

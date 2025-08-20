@@ -33,15 +33,20 @@ import androidx.health.services.client.HealthServices
 import androidx.health.services.client.PassiveListenerCallback
 import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
+import androidx.health.services.client.data.HealthEvent
 import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.health.services.client.getCapabilities
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_FALL_DETECTED
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_GOOGLE_SDK_FALL_DETECTED
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+import org.greenrobot.eventbus.EventBus
 
 
 class ActivityRecognitionService : Service() {
@@ -122,6 +127,7 @@ class ActivityRecognitionService : Service() {
                 val cfg = PassiveListenerConfig
                     .builder()
                     .setDataTypes(wanted)
+                    .setHealthEventTypes(setOf(HealthEvent.Type.FALL_DETECTED))
                     .build()
 
                 passiveMonitoringClient.setPassiveListenerCallback(cfg, passiveDailyListenerCallback)
@@ -195,8 +201,8 @@ class ActivityRecognitionService : Service() {
             container.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
             // DEBUG LOG: shows the cached snapshot
-            //val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
-            //Log.d(TAG, logStr)
+            val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
+            Log.d(TAG, logStr)
             //writeToLogFileLocation(logFile, logStr)
 
             // Push snapshot to repository
@@ -211,6 +217,24 @@ class ActivityRecognitionService : Service() {
                     elevationM    = cumulativeElevation
                 )
             }
+        }
+
+        override fun onHealthEventReceived(event: HealthEvent) {
+            Log.d(TAG, "HealthEvent: ${event.type} at ${event.eventTime}")
+            if (event.type == HealthEvent.Type.FALL_DETECTED) {
+                Log.w(TAG, "FALL_DETECTED @ ${event.eventTime}")
+
+                // Post Fall Emergency Event
+                EventBus.getDefault().post(
+                    CustomEmergencyEvent(
+                        category = CAT_FALL_DETECTED,
+                        description = DESC_GOOGLE_SDK_FALL_DETECTED,
+                        priority = 1,
+                        sendSms = true   // set false if you don’t want SMS
+                    )
+                )
+            }
+            super.onHealthEventReceived(event)
         }
     }
 }
