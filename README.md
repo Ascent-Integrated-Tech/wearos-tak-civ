@@ -40,7 +40,7 @@ WearTAK is a WearOS based client for a TAK Server. It is built specifically for 
 | **Presentation UI**     | `presentation/*.kt`, `tile/MainTileService.kt`, `complication/*ComplicationService.kt`                        | Activities, tiles, complications                  |
 | **Managers**            | `manager/NetworkManager.kt`, `SMSManager.kt`                                                                 | Encapsulate low-level network/SMS operations      |
 | **Repositories**        | `data/DataRepository.kt`, `data/HealthServicesRepository.kt`                                                 | Single source of truth (Kotlin Flow)              |
-| **Services – Sensors & State** | `HeartrateService.kt`, `SkinTempService.kt`, `MovementDetectionService.kt`, `OffBodyDetectService.kt`, `PassiveDataService.kt`, `BleBeaconService.kt` `ActivityRecognitionService.kt`| Collect sensor, health, and iBeacon data |
+| **Services – Sensors & State** | `HeartrateService.kt`, `SkinTempService.kt`, `ReportingIntervalStrategyService.kt`, `OffBodyDetectService.kt`, `PassiveDataService.kt`, `BleBeaconService.kt` `ActivityRecognitionService.kt`| Collect sensor, health, and iBeacon data |
 | **Services – Comms**    | `TAKConnectService.kt`, `CotDispatchService.kt`, `DittoService.kt`, `ChatService.kt`, `LicenseManager.kt`    | Transmit/receive CoT, mesh PLI, chat, licensing   |
 | **Services – Power/Safety** | `BatteryService.kt`, `PowerManagerService.kt`, `CustomAccessibilityService.kt`, `SosActivity.kt`         | Battery optimization, SOS detection, accessibility hooks |
 | **Domain Events**       | `events/*.kt` (e.g., `LocationRcvd`, `TakChatEvent`)                                                         | Typed event bus between layers                    |
@@ -56,7 +56,6 @@ flowchart LR
         ST[SkinTempService]
         AR[ActivityRecognitionService]
         BLE[BleBeaconService]
-        MOV[MovementDetectionService]
         OBD[OffBodyDetectService]
     end
 

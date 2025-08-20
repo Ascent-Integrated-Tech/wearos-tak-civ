@@ -25,7 +25,7 @@ import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
@@ -472,7 +472,7 @@ class CotDispatchService : Service() {
 
         // Inject physio data into remarks
 
-        val remarks = if (MainActivity.enablePhysiologicalServices && MainActivity.enableActivityRecognitionService) {
+        val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
             buildString {
                 append("HR:$hr;")
                 append("SknTmp:$skt;")
@@ -574,7 +574,7 @@ class CotDispatchService : Service() {
 //        return """
 //        <?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: ${skinTempStr}ºF; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$role' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>
 //        """.trimIndent()
-        val cot = if (MainActivity.enablePhysiologicalServices && MainActivity.enableActivityRecognitionService) {
+        val cot = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
             """<?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: $skinTempStr ºF; Exertion: $exertionStr; Batt: ${physioData.battery}%; Steps:${physioData.steps}; Cals:${physioData.calories.roundToInt()}; Floors:${physioData.floors.roundToInt()}; ElevGain(m):${physioData.elevationM?.roundToInt() ?: 0}</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$role' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><exert>$exertionStr</exert><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>""".trimIndent()
         } else {
             """<?xml version="1.0" encoding="UTF-8" standalone='yes'?><event version="2.0" uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'><point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' /><detail><remarks>HR: ${physioData.heartRate} bpm; SkinTemp: $skinTempStr ºF; Exertion: $exertionStr; Batt: ${physioData.battery}%</remarks><status battery='${physioData.battery}'/><contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/><__group role='$role' name='$teamValue'/><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>${physioData.heartRate}</hr><skt>$skinTempStr</skt><exert>$exertionStr</exert><bat>${physioData.battery}</bat></device></biometrics><track course='$bearingActual' speed='$speedActual'/></detail></event>""".trimIndent()
@@ -592,8 +592,14 @@ class CotDispatchService : Service() {
         alertOrCancel = event.category == ALERT_CANCELLED
         if (manualSosReceivedCategory == DESC_SOS_ALERT) {
             inManualAlertingState = true
+            serviceScope.launch {
+                dataRepository.storeIsAlerting(inManualAlertingState)
+            }
         } else {
             inManualAlertingState = false
+            serviceScope.launch {
+                dataRepository.storeIsAlerting(inManualAlertingState)
+            }
         }
 
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
@@ -1006,7 +1012,8 @@ class CotDispatchService : Service() {
     private fun sendPhsyioLocationCotMsg(location: Location?, physioData: PhysioData) {
         val cotMessage = buildConciseLocationPhysioCot(location, physioData)
         sendDataTAKServers(cotMessage, false)
-        //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"; Log.d(TAG, logString)
+        //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
+        //Log.d(TAG, logString)
         //writeToLogFileLocation(logFile, logString)
     }
 
@@ -1108,11 +1115,12 @@ class CotDispatchService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
-        Log.d(TAG, "onMessageEvent w/ msg($msg)")
         if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
             // send the "freshest" cot message with the newly updated callsign
+            Log.d(TAG, "onMessageEvent w/ msg($msg)")
             buildAndSendPhysioLocationCotMsg()
         } else if (CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED == msg) {
+            Log.d(TAG, "onMessageEvent w/ msg($msg)")
             // Check for OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT and GPS_STALE_TIME_INTERVAL_MS
             // Json could be {"bleExitHysteresisCount" : "20", "bleStaleTimeIntervalMs" : "5000", "overrideGpsWithBleExitHysteresisCount" : "30", "gpsStaleTimeInterval" : "10000" }
             CoroutineScope(Dispatchers.Main).launch {

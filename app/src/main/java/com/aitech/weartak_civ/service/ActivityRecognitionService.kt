@@ -52,6 +52,9 @@ class ActivityRecognitionService : Service() {
         private const val NOTIF_ID = 192
         private const val LOG_FILENAME = "/sdcard/Download/activity_detection.log"
         val isRunning: AtomicBoolean = AtomicBoolean(false)
+        enum class ActivityRecognized {
+            RUNNING, WALKING, TILTING, STILL, BICYCLING, IN_VEHICLE, ON_FOOT, UNKNOWN
+        }
     }
 
     //private val logFile by lazy { File(LOG_FILENAME) }
@@ -75,14 +78,11 @@ class ActivityRecognitionService : Service() {
         super.onCreate()
 
         isRunning.set(true)
-        //val logStr = "ActivityRecognitionService onCreate called"
-        //Log.d(TAG, logStr)
+        val logStr = "ActivityRecognitionService onCreate called"
+        Log.d(TAG, logStr)
         //writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
-        startForegroundServiceCompat(
-            NOTIF_ID,
-            importance = android.app.NotificationManager.IMPORTANCE_LOW
-        )
+        startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
 
         // Instead of a BroadcastReceiver, send the Intent back to this Service:
         val intent = Intent(this, ActivityRecognitionService::class.java).setAction(ACTION_RECOGNITION)
@@ -124,11 +124,10 @@ class ActivityRecognitionService : Service() {
                     .setDataTypes(wanted)
                     .build()
 
-                passiveMonitoringClient.setPassiveListenerCallback(
-                    cfg,
-                    passiveDailyListenerCallback
-                )
-                Log.i(TAG, "Registered passive listener for $wanted")
+                passiveMonitoringClient.setPassiveListenerCallback(cfg, passiveDailyListenerCallback)
+                val logStr = "Registered passive listener for $wanted"
+                Log.d(TAG, logStr)
+                //writeToLogFileLocation(logFile, logStr)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to register passive listener", t)
             }
@@ -143,27 +142,29 @@ class ActivityRecognitionService : Service() {
             val result = ActivityRecognitionResult.extractResult(intent)
             val act = result?.mostProbableActivity
             val type = act?.type ?: DetectedActivity.UNKNOWN
-            val name = when (type) {
-                DetectedActivity.RUNNING    -> "RUNNING"
-                DetectedActivity.WALKING    -> "WALKING"
-                DetectedActivity.TILTING    -> "TILTING"
-                DetectedActivity.STILL      -> "STILL"
-                DetectedActivity.ON_BICYCLE -> "BICYCLING"
-                DetectedActivity.IN_VEHICLE -> "IN_VEHICLE"
-                DetectedActivity.ON_FOOT    -> "ON_FOOT"
-                DetectedActivity.UNKNOWN    -> "UNKNOWN"
-                else                        -> "UNKNOWN"
+            val detectedActivity = when (type) {
+                DetectedActivity.RUNNING    -> ActivityRecognized.RUNNING
+                DetectedActivity.WALKING    -> ActivityRecognized.WALKING
+                DetectedActivity.TILTING    -> ActivityRecognized.TILTING
+                DetectedActivity.STILL      -> ActivityRecognized.STILL
+                DetectedActivity.ON_BICYCLE -> ActivityRecognized.BICYCLING
+                DetectedActivity.IN_VEHICLE -> ActivityRecognized.IN_VEHICLE
+                DetectedActivity.ON_FOOT    -> ActivityRecognized.ON_FOOT
+                DetectedActivity.UNKNOWN    -> ActivityRecognized.UNKNOWN
+                else                        -> ActivityRecognized.UNKNOWN
             }
-            // TODO: Need to look at confidence and do sthg if confidence is less than 50?
-            //val line = "Detected $name  confidence=${act?.confidence ?: 100}"
+            //val line = "Detected ${detectedActivity.name}  confidence=${act?.confidence ?: 100}"
             //Log.i(TAG, line)
             //writeToLogFileLocation(logFile, line)
 
-            // Persist in repo (backend-only)
-            ioScope.launch {
-                //RestingHrManager.onActivityRecognized(name)
-                repo.storeLatestActivityRecognized(name)
-                repo.storeLatestActivityConfidence(act?.confidence ?: 100)
+            // TODO: Need to look at confidence and do sthg if confidence is less than 50? Maybe store in a data class
+            if ((act?.confidence ?: 0) >= 50) {
+                // Persist in repo (backend-only)
+                ioScope.launch {
+                    //RestingHrManager.onActivityRecognized(detectedActivity.name)
+                    repo.storeLatestActivityRecognized(detectedActivity)
+                    repo.storeLatestActivityConfidence(act?.confidence ?: 100)
+                }
             }
             return START_NOT_STICKY
         }

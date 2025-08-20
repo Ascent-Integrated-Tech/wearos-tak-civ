@@ -22,7 +22,6 @@ class AlarmReceiver : BroadcastReceiver() {
         //Log.d(TAG, "onReceive broadcast")
 
         // TODO: Check request code or send some data if possible intent. For now, we assume that we just need to call LocationService
-
         LocationService.getInstance()?.acquireWakelockAndRequestLocation()
     }
 
