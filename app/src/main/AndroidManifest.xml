@@ -346,12 +346,15 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
+
         <!--
        <service
            android:name=".service.PassiveDataService"
            android:exported="true"
-           android:permission="com.google.android.wearable.healthservices.permission.PASSIVE_DATA_BINDING" />
-        -->
+           android:permission="com.google.android.wearable.healthservices.permission.PASSIVE_DATA_BINDING"
+           android:foregroundServiceType="health"/>
+           -->
+
         <uses-library
             android:name="com.google.android.wearable"
             android:required="true" />

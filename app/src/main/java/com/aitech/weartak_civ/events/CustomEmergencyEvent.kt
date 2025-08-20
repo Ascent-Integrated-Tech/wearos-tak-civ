@@ -18,5 +18,9 @@ class CustomEmergencyEvent(val category: String, val description: String, val pr
         val DESC_HIGH_HEART_RATE_ALERT = "High Heart Rate Alert"
         val DESC_LOW_HEART_RATE_ALERT = "Low Heart Rate Alert"
         val ALERT_CANCELLED = "Alert Cancelled"
+
+        //Added for Fall Detect Support
+        val CAT_FALL_DETECTED = "Fall Detected"
+        val DESC_GOOGLE_SDK_FALL_DETECTED = "Hard fall detected with no motion for 30 seconds"
     }
 }
