@@ -25,6 +25,7 @@ import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.data.DataRepository
@@ -1177,8 +1178,8 @@ class CotDispatchService : Service() {
         private const val GPS_STALE_TIME_INTERVAL_MS_JSON_KEY = "gpsStaleTimeInterval"
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
-        var reportingUpdateIntervalSecs = 10
-        var currReportingIntervalInSecs = 10
+        var reportingUpdateIntervalSecs = DEFAULT_REPORTING_INTERVAL
+        var currReportingIntervalInSecs = DEFAULT_REPORTING_INTERVAL
         lateinit var instance: CotDispatchService
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     }

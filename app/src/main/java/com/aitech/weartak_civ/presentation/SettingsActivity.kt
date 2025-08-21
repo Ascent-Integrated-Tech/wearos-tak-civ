@@ -135,6 +135,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
@@ -1093,7 +1094,7 @@ fun NewServerPage(navController: NavController) {
         var port by remember { mutableStateOf("8089") }
         var username by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
-        var reportingUpdateInterval by remember { mutableStateOf("10") }
+        var reportingUpdateInterval by remember { mutableStateOf(DEFAULT_REPORTING_INTERVAL.toString()) }
         var isP12Cert = false
         val context = LocalContext.current
         val serverSettingsChanged = remember { mutableStateOf(false) }

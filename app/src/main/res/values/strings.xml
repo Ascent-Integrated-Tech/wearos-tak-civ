@@ -223,7 +223,7 @@
     <!-- Cot Update Interval -->
     <string name="update_interval_title" translatable="false">Update Interval</string>
     <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
-    <string name="update_interval_default" translatable="false">10</string>
+    <string name="update_interval_default" translatable="false">60</string>
 
     <!-- Enable / Disable Services -->
     <string name="location_service_title" translatable="false">Enable Location Service</string>

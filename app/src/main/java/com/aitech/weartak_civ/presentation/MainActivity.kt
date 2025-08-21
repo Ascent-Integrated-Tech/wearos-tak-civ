@@ -157,6 +157,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.min
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils.DEFAULT_AGE
+import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
@@ -819,7 +820,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (minReportingInterval == 100000001) {
-                minReportingInterval = 10
+                minReportingInterval = DEFAULT_REPORTING_INTERVAL
             }
             return minReportingInterval
         }
