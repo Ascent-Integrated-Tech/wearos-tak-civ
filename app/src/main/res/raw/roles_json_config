@@ -33,13 +33,13 @@
         "roles": [
           "Assistant Chief",
           "Battalion Chief",
-          "Capt",
+          "Captain",
           "Deputy Chief",
           "District Chief",
           "Engineer",
           "Fire Chief",
           "Firefighter",
-          "LT",
+          "Lieutenant",
           "Safety Officer"
         ]
     }

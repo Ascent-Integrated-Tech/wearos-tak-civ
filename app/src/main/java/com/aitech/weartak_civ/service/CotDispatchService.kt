@@ -692,7 +692,7 @@ class CotDispatchService : Service() {
         val staleTime = dateTimeFormatter.format(calendar.time)
 
         // Marker with Time no Date.
-        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss")
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
         markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
         val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
         val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
@@ -774,7 +774,7 @@ class CotDispatchService : Service() {
         // TODO: Figure out how to actually clear it. We may just have to send the same uid and hack the staletime.
 
         // Marker with Time no Date.
-        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss")
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
         markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
         val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
         val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
