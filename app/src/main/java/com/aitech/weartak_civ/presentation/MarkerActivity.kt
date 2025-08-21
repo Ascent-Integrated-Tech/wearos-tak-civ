@@ -104,7 +104,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import androidx.wear.compose.foundation.CurvedLayout
+import androidx.wear.compose.foundation.CurvedModifier
+import androidx.wear.compose.foundation.CurvedTextStyle
 import androidx.wear.compose.foundation.RevealValue
+import androidx.wear.compose.foundation.basicCurvedText
+import androidx.wear.compose.foundation.padding
 import androidx.wear.compose.foundation.rememberRevealState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
@@ -339,6 +344,16 @@ fun LongPressProgressButtonWithInteraction(
                 endAngle = 0f,
                 strokeWidth = 7.dp
             )
+        } else {
+            CurvedLayout(modifier = Modifier.fillMaxSize()) {
+                basicCurvedText(
+                    "Hold for more",
+                    CurvedModifier.padding(4.dp),
+                    style = {
+                        CurvedTextStyle(fontSize = 12.sp, color = Color.White)
+                    },
+                )
+            }
         }
 
         IconButton(
@@ -858,8 +873,12 @@ fun SuccessfulCotSentCheck(
 fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-    val shouldShowDialog = remember { mutableStateOf(false) }
+//    val shouldShowDialog = remember { mutableStateOf(false) }
     val shouldShowConfirm = remember { mutableStateOf(false) }
+    val shouldShowClearLastDialog = remember { mutableStateOf(false) }
+    val shouldShowClearLastConfirm = remember { mutableStateOf(false) }
+    val shouldShowClearAllDialog = remember { mutableStateOf(false) }
+    val shouldShowClearAllConfirm = remember { mutableStateOf(false) }
     val removeMarker = remember {mutableStateOf(false)}
     val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
     val droppedMarkerListSetting by dataRepository
@@ -932,25 +951,25 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
         ) {
             LongPressScreen(
                 navController,
-                shouldShowDialog,
-                shouldShowConfirm,
+                shouldShowClearLastDialog,
+                shouldShowClearLastConfirm,
                 removeMarker
             )
 
             if (droppedMarkerListSetting.isNotEmpty()) {
                 ClearMarkerConfirmationDialog(
-                    shouldShowDialog,
+                    shouldShowClearLastDialog,
                     "Clear Last Marker?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType)} - " + utcToHoursMinutesSeconds(
                         droppedMarkerListSetting.last().timeDropped
                     ),
                     {
-                    Icon(
+                        Icon(
                             markerIconFromString(droppedMarkerListSetting.last().markerType),
                             modifier = Modifier.size(35.dp),
                             contentDescription = null,
                             tint = Color.Unspecified
                         )
-                    }, shouldShowConfirm,
+                    }, shouldShowClearLastConfirm,
                     {
                         // Trigger backend clear-last;
                         CoroutineScope(Dispatchers.Main).launch {
@@ -966,12 +985,13 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         }
                     }
                 )
+            }
 
-                if (shouldShowConfirm.value) {
+                if (shouldShowClearLastConfirm.value) {
 
                     LaunchedEffect(Unit) {
                         delay(2000) // Delay for 5 seconds
-                        shouldShowConfirm.value = false // Dismiss the dialog
+                        shouldShowClearLastConfirm.value = false // Dismiss the dialog
                         successBoolean.value = false
                         removeMarker.value = false
                         exitActivity()
@@ -984,7 +1004,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         tint = Color.Green
                     )
                     MarkerSuccessDialog(
-                        shouldShowConfirm,
+                        shouldShowClearLastConfirm,
                         successBoolean,
                         {Icon(
                             Icons.Rounded.Check,
@@ -996,17 +1016,13 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                     )
 
                 }
-            }
-
-
-
         }
         composable(
             "dropped_marker_screen") {
-            DroppedMarkerSetting(navController, shouldShowDialog, shouldShowConfirm)
+            DroppedMarkerSetting(navController, shouldShowClearAllDialog, shouldShowClearAllConfirm)
 
             ClearMarkerConfirmationDialog(
-                shouldShowDialog,
+                shouldShowClearAllDialog,
                 "Clear All Dropped Markers?",
                 {Icon(
                     Icons.Outlined.Delete,
@@ -1014,7 +1030,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                     contentDescription = null,
                     tint = Color.LightGray)
                 },
-                shouldShowConfirm,
+                shouldShowClearAllConfirm,
                 {
                     // Trigger backend clear-last;
                     CoroutineScope(Dispatchers.Main).launch {
@@ -1036,7 +1052,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
             )
 
             SuccessfulCotSentCheck(
-                shouldShowConfirm,
+                shouldShowClearAllConfirm,
                 takServer,
                 context,
                 {exitActivity()},
@@ -1045,7 +1061,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                 locationChecked,
                 {
                     MarkerSuccessDialog(
-                        shouldShowConfirm,
+                        shouldShowClearAllConfirm,
                         successBoolean,
                         {Icon(
                             Icons.Rounded.Check,
