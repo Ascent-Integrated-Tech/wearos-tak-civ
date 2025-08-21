@@ -25,6 +25,7 @@ import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -947,7 +948,7 @@ class CotDispatchService : Service() {
     private suspend fun getPhsyioAndPliData(): PhysioPli = withContext(Dispatchers.IO) {
         val heartRate  = dataRepository.latestHeartRate.value ?: -1
         val skinTempF  = dataRepository.latestSkinTemp.value ?: -1f
-        val exertion   = dataRepository.exertionFlow.value
+        val exertion   = calculateExertion(heartRate, dataRepository.getPhysiologicalMetricAge.first(), dataRepository.getRestingHeartRate.first())
         val battery    = dataRepository.latestBatteryPercentage.value
         val daily      = dataRepository.latestDailyMetrics.value
 

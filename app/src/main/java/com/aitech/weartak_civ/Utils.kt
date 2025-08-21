@@ -49,7 +49,7 @@ object Utils {
     private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
     const val EARTH_RADIUS = 6378137.0  // in meters
-    const val DEFAULT_RESTING_HR : Int = 70
+    const val DEFAULT_RESTING_HR : Int = 60
     const val DEFAULT_AGE : Int = 24
     val secureRandom: SecureRandom = SecureRandom()
 
@@ -367,8 +367,8 @@ object Utils {
     )
 
     object PhysioUtils {
-        private fun calculateMaxHeartRate(ageYears: Int): Int {
-            return (220 - ageYears)
+        private fun calculateMaxHeartRate(ageYears: Int): Double {
+            return (208 - 0.7 * ageYears)
         }
 
         fun calculateHeartRateReserve(maxHr: Int, restingHr: Int): Int {
@@ -380,7 +380,8 @@ object Utils {
             val mhr = calculateMaxHeartRate(ageYears)
             val hrr = mhr - restingHr
             if (hrr <= 0) return -1.0 // Cannot calculate and hence return invalid value
-            return ((currentHr - restingHr).coerceAtLeast(0)) / hrr.toDouble() // If currentHr <= restingHr, then the user is not at all exerting them selfs, hence exertion = 0
+            //Log.d(TAG, "exertion ($currentHr, $ageYears, $restingHr): ($currentHr-$restingHr)/($mhr-$restingHr)")
+            return ((currentHr - restingHr).coerceAtLeast(0)) / hrr // If currentHr <= restingHr, then the user is not at all exerting them selfs, hence exertion = 0
         }
 
         fun classifyExertion(exertion: Double): String = when {
