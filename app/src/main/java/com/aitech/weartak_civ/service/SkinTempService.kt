@@ -17,6 +17,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
@@ -46,7 +47,7 @@ class SkinTempService : Service() {
         var tempF: Float = -1f
         val skinTempLiveData = MutableLiveData<String>("N/A")
         val isRunning = AtomicBoolean(false)
-        var DISPATCH_INTERVAL_MS = 60 * 1_000L
+        var DISPATCH_INTERVAL_MS = DEFAULT_REPORTING_INTERVAL * 1_000L
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
         val LOG_FILENAME = "/sdcard/Download/skin_temp.log"
     }
