@@ -288,19 +288,19 @@
 
     <string name="physiological_metrics_resting_heart_rate_title" translatable="false">Physiological Metrics: Resting Heart Rate</string>
     <string name="physiological_metrics_resting_heart_rate_description" translatable="false">Enter Average Resting Heart Rate in BPM</string>
-    <string name="physiological_metrics_resting_heart_rate_default" translatable="false">70</string>
+    <string name="physiological_metrics_resting_heart_rate_default" translatable="false">60</string>
     <string name="physiological_metrics_age_title" translatable="false">Physiological Metrics: Age</string>
     <string name="physiological_metrics_age_description" translatable="false">Enter Age in Years</string>
-    <string name="physiological_metrics_age_default" translatable="false"></string>
+    <string name="physiological_metrics_age_default" translatable="false">24</string>
     <string name="physiological_metrics_height_feet_title" translatable="false">Physiological Metrics: Height(ft)</string>
     <string name="physiological_metrics_height_feet_description" translatable="false">Enter Height(ft)</string>
-    <string name="physiological_metrics_height_feet_default" translatable="false"></string>
+    <string name="physiological_metrics_height_feet_default" translatable="false">6</string>
     <string name="physiological_metrics_height_inches_title" translatable="false">Physiological Metrics: Height(inch)</string>
     <string name="physiological_metrics_height_inches_description" translatable="false">Enter Height(inch)</string>
-    <string name="physiological_metrics_height_inches_default" translatable="false"></string>
+    <string name="physiological_metrics_height_inches_default" translatable="false">0</string>
     <string name="physiological_metrics_weight_title" translatable="false">Physiological Metrics: Weight(lbs)</string>
     <string name="physiological_metrics_weight_description" translatable="false">Enter Weight(lbs)</string>
-    <string name="physiological_metrics_weight_default" translatable="false"></string>
+    <string name="physiological_metrics_weight_default" translatable="false">180</string>
     <string name="physiological_metrics_sex_title" translatable="false">Physiological Metrics: Sex</string>
     <string name="physiological_metrics_sex_description" translatable="false">Enter Sex</string>
     <string name="physiological_metrics_blood_type_title" translatable="false">Physiological Metrics: Blood Type</string>
