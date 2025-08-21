@@ -28,6 +28,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.DEFAULT_AGE
+import com.aitech.weartak_civ.Utils.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
@@ -594,11 +595,11 @@ class DataRepository(private val context: Context) {
 
     val reportingUpdateIntervalSecs: Flow<Int> =
         context.dataStore.data
-            .map { it[REPORTING_UPDATE_INTERVAL] ?: 60 }  // default 60 s
+            .map { it[REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL }  // default 60 s
             .distinctUntilChanged()
 
     val getReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[REPORTING_UPDATE_INTERVAL] ?: 10
+        prefs[REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
     }
 
     suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {

@@ -51,6 +51,7 @@ object Utils {
     const val EARTH_RADIUS = 6378137.0  // in meters
     const val DEFAULT_RESTING_HR : Int = 60
     const val DEFAULT_AGE : Int = 24
+    const val DEFAULT_REPORTING_INTERVAL = 60
     val secureRandom: SecureRandom = SecureRandom()
 
     fun startMainActivityIfNotRunning(context: Context) {
