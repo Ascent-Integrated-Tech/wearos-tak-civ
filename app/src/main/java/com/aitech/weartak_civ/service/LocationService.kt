@@ -30,11 +30,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -145,8 +147,11 @@ class LocationService : Service() {
         }PRIORITY_HIGH_ACCURACY
          */
 
-        Log.d(TAG, "LocationRequest params: priority(${locationRequest.priority}), interval(${locationRequest.intervalMillis}), maxUpdateDelay(${locationRequest.maxUpdateDelayMillis}), " +
-                "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")")
+        val logStr = "LocationRequest params: priority(${locationRequest.priority}), interval(${locationRequest.intervalMillis}), maxUpdateDelay(${locationRequest.maxUpdateDelayMillis}), " +
+                "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")"
+        Log.d(TAG, logStr)
+        writeToLogFileLocation(logFile, logStr)
+        printLocationRequest(locationRequest)
         /*
         val builder = LocationSettingsRequest.Builder()
         builder.addLocationRequest(locationRequest)
@@ -167,7 +172,14 @@ class LocationService : Service() {
     }
 
     private fun printLocationRequest(locReq : LocationRequest) {
-        Log.d(TAG, "locReq: $locReq, ${locReq.priority}, ${locReq.durationMillis}, ${locReq.maxUpdates}, ${locReq.intervalMillis}, ${locReq.maxUpdateDelayMillis}, ${locReq.minUpdateIntervalMillis}, ${locReq.minUpdateDistanceMeters}")
+        val logStr = "locReq: $locReq, prio=${locReq.priority}, durationMillis=${locReq.durationMillis}, fastestInterval=${locReq.fastestInterval}, " +
+        "interval=${locReq.interval}, expirationTime=${locReq.expirationTime}, isPassive=${locReq.isPassive}, isBatched=${locReq.isBatched}, maxUpdates=${locReq.maxUpdates}, " +
+        "intervalMillis=${locReq.intervalMillis}, maxUpdateDelayMillis=${locReq.maxUpdateDelayMillis}, minUpdateIntervalMillis=${locReq.minUpdateIntervalMillis}, " +
+        "minUpdateDistanceMeters=${locReq.minUpdateDistanceMeters}, granularity=${locReq.granularity}, isFastestIntervalExplicitlySet=${locReq.isFastestIntervalExplicitlySet}, " +
+        "isWaitForAccurateLocation=${locReq.isWaitForAccurateLocation}, maxUpdateAgeMillis=${locReq.maxUpdateAgeMillis}, maxWaitTime=${locReq.maxWaitTime}, " +
+        "numUpdates=${locReq.numUpdates}, smallestDisplacement=${locReq.smallestDisplacement}"
+        Log.d(TAG, logStr)
+        writeToLogFileLocation(logFile, logStr)
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -175,12 +187,20 @@ class LocationService : Service() {
     }
 
     private inner class MyLocationCallback : LocationCallback() {
+        var prevLocationUpdateTime : Long = 0L // TODO: Only for testing/logging, should be removed in the future
+
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)    // TODO: Also check if we need to run storeLatestLocation within a coroutine (lines 263-264) - I don't think we need to - this will save us some context switching cpu cycles.
                 //Log.d(TAG, "Received location update: $location")
                 //writeToLogFileLocation(logFile, "Received location update: $location")
+                val currTime = System.currentTimeMillis()
+                val logStr = "periodicLocationCallback: Received location update (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                prevLocationUpdateTime = currTime
+
                 EventBus.getDefault().post(LocationRcvd())
             }
         }

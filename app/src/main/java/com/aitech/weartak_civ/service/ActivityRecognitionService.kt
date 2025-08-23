@@ -40,6 +40,8 @@ import kotlinx.coroutines.cancel
 import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
+
 
 class ActivityRecognitionService : Service() {
     companion object {
@@ -51,7 +53,7 @@ class ActivityRecognitionService : Service() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
     }
 
-    private val logFile by lazy { File(LOG_FILENAME) }
+    //private val logFile by lazy { File(LOG_FILENAME) }
 
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private lateinit var callbackIntent: PendingIntent
