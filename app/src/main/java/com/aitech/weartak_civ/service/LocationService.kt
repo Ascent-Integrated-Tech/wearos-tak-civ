@@ -133,12 +133,23 @@ class LocationService : Service() {
     }
 
     private fun createLocationRequest(priority: Int, interval: Long, fastestInterval: Long) {
+        /*
         val locationRequest = LocationRequest.create()
         locationRequest.interval = interval
         locationRequest.fastestInterval = fastestInterval
         //locationRequest.maxWaitTime = 1000L
         //locationRequest.smallestDisplacement = 0.5f
         locationRequest.priority = priority
+
+         */
+        val locationRequest = LocationRequest.Builder(priority, 0).apply {
+            setMinUpdateIntervalMillis(0)
+            setMaxUpdateAgeMillis(0) // force fresh GPS
+            setIntervalMillis(interval)
+            setMaxUpdateDelayMillis(0)
+            setWaitForAccurateLocation(true)
+        }.build()
+
         /*
         if (getBatteryPercentage(this) < 25.0) {
             locationRequest.priority = LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
