@@ -19,7 +19,7 @@ class AlarmReceiver : BroadcastReceiver() {
     private val TAG = "WearTAK-AlarmReceiver"
 
     override fun onReceive(context: Context, intent: Intent?) {
-        Log.d(TAG, "onReceive broadcast")
+        //Log.d(TAG, "onReceive broadcast")
 
         // TODO: Check request code or send some data if possible intent. For now, we assume that we just need to call LocationService
 

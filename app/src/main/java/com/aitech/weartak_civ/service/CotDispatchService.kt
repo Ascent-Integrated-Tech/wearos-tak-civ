@@ -356,9 +356,9 @@ class CotDispatchService : Service() {
                 // Mostly because watch does not have GPS (e.g., indoor) and fused location at this time
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
                 // Once watch catches GPS, updates are at max 1s.
-                val logStr = "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable"
-                Log.v(TAG, logStr)
-                writeToLogFileLocation(logFile, logStr)
+                //val logStr = "Somehow location update did not happen within the last currReportingIntervalInSecs ($currReportingIntervalInSecs) w/ last update ${((System.currentTimeMillis()-lastLocationUpdateRcvd)/1000.0)}secs ago. Sending Biometric Cot via cotDispatchRunnable"
+                //Log.v(TAG, logStr)
+                //writeToLogFileLocation(logFile, logStr)
                 buildAndSendPhysioLocationCotMsg()
             }
             // Schedule the next run
