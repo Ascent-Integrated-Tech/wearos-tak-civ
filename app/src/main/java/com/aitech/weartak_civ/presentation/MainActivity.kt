@@ -186,6 +186,7 @@ import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -1326,8 +1327,8 @@ class MainActivity : ComponentActivity() {
         }
 
          */
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
+        val file: File? = null
+        logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
         networkManager = NetworkManager.getInstance()
         networkManager?.init()
@@ -1352,6 +1353,7 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
         validateLicense(license)
+        enableActivityRecognitionService = true
         startStopServicesLicense(context)
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work

@@ -41,6 +41,7 @@ import kotlinx.coroutines.cancel
 import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 
 class ActivityRecognitionService : Service() {
     companion object {
@@ -52,7 +53,7 @@ class ActivityRecognitionService : Service() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
     }
 
-    private val logFile by lazy { File(LOG_FILENAME) }
+    //private val logFile by lazy { File(LOG_FILENAME) }
 
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private lateinit var callbackIntent: PendingIntent
@@ -73,7 +74,9 @@ class ActivityRecognitionService : Service() {
         super.onCreate()
 
         isRunning.set(true)
-        Log.d(TAG, "ActivityRecognitionService onCreate called")
+        val logStr = "ActivityRecognitionService onCreate called"
+        Log.d(TAG, logStr)
+        writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
         startForegroundServiceCompat(
             NOTIF_ID,
@@ -153,7 +156,7 @@ class ActivityRecognitionService : Service() {
             // TODO: Need to look at confidence and do sthg if confidence is less than 50?
             val line = "Detected $name  confidence=${act?.confidence ?: 100}"
             Log.i(TAG, line)
-            //writeToLogFileLocation(logFile, line)
+            writeToLogFileLocation(logFile, line)
 
             // Persist in repo (backend-only)
             ioScope.launch {
@@ -190,7 +193,9 @@ class ActivityRecognitionService : Service() {
             container.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
             // DEBUG LOG: shows the cached snapshot
-//            writeToLogFileLocation(logFile, "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
+            val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
+            Log.d(TAG, logStr)
+            writeToLogFileLocation(logFile, logStr)
 
             // Push snapshot to repository
             scope.launch {
