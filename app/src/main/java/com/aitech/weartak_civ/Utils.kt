@@ -67,16 +67,16 @@ object Utils {
         object : Thread() {
             override fun run() {
                 super.run()
-                val logStr="runTimerJob called with timeout: $timeMs ms"
-                Log.d(TAG, logStr)
-                writeToLogFileLocation(logFile, logStr)
+                //val logStr="runTimerJob called with timeout: $timeMs ms"
+                //Log.d(TAG, logStr)
+                //writeToLogFileLocation(logFile, logStr)
                 startGlobalTimer(timeMs)
             }
         }.start()
     }
 
     fun startGlobalTimer(timeMs: Long) {
-        Log.d(TAG, "startGlobalTimer called with timeout: $timeMs ms")
+        //Log.d(TAG, "startGlobalTimer called with timeout: $timeMs ms")
         val alarmIntent = Intent(mainActivity, AlarmReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(mainActivity, GPS_ALARM_REQUEST_CODE, alarmIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
