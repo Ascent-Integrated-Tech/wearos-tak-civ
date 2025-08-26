@@ -405,8 +405,8 @@ class CotDispatchService : Service() {
                 }
             }
         } else {
-            val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
-            Log.d(TAG, logString)
+            //val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
+            //Log.d(TAG, logString)
             //writeToLogFileLocation(logFile, logString)
         }
         return BleLocationOutput(latActual, lonActual, haeActual, ceActual)

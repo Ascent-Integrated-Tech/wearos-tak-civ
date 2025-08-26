@@ -394,30 +394,9 @@
     <string name="ble_beacon_service_enabled_default" translatable="false">false</string>
 
     <!-- Localization iBeacon Configuration -->
-    <string name="localization_iBeacon_list_title" translatable="false">Localization iBeacons</string>
-    <string name="localization_iBeacon_list_description" translatable="false">List of Localization iBeacon details.</string>
+    <string name="localization_iBeacon_geojson_title" translatable="false">iBeacon GeoJSON</string>
+    <string name="localization_iBeacon_geojson_description" translatable="false">Full iBeacon dataset as GeoJSON string ({"type":"FeatureCollection","name":"Test-02","properties":{"uuid":"426c7565-4368-6172-6d42-6561636f6e74","setName":"Test-01","generatedAt":"2025-08-20T16:10:32.551Z"},"features":[{"type":"Feature","properties":{"major":1,"minor":2},"geometry":{"type":"Point","coordinates":[-87.967657,45.459174,98.5]}},{"type":"Feature","properties":{"major":3,"minor":4},"geometry":{"type":"Point","coordinates":[-87.669969,45.511368,54.3]}}]})</string>
 
-    <string name="localization_iBeacon_details_title" translatable="false">Localization iBeacon details</string>
-    <string name="localization_iBeacon_details_description" translatable="false">Enter details of the localization iBeacon: UUID, Major, Minor, lat, lon, alt</string>
-
-    <string name="localization_iBeacon_uuid_title" translatable="false">UUID</string>
-    <string name="localization_iBeacon_uuid_description" translatable="false">Enter UUID (e.g., 426c7565-4368-6172-6d42-6561636f6e73).</string>
-    <string name="localization_iBeacon_uuid_default" translatable="false">426c7565-4368-6172-6d42-6561636f6e73</string>
-
-    <string name="localization_iBeacon_major_title" translatable="false">Major Number</string>
-    <string name="localization_iBeacon_major_description" translatable="false">Enter Major Number (between 0 and 65535).</string>
-
-    <string name="localization_iBeacon_minor_title" translatable="false">Minor Number</string>
-    <string name="localization_iBeacon_minor_description" translatable="false">Enter Minor Number (between 0 and 65535).</string>
-
-    <string name="localization_iBeacon_lat_title" translatable="false">Latitude (deg)</string>
-    <string name="localization_iBeacon_lat_description" translatable="false">Enter latitude of iBeacon in degrees (between -90.0 and 90.0 inclusive).</string>
-
-    <string name="localization_iBeacon_lon_title" translatable="false">Longitude (deg)</string>
-    <string name="localization_iBeacon_lon_description" translatable="false">Enter longitude of iBeacon in degrees (between -180.0 and 180.0 inclusive).</string>
-
-    <string name="localization_iBeacon_alt_title" translatable="false">Altitude HAE (m)</string>
-    <string name="localization_iBeacon_alt_description" translatable="false">Enter Height Above Ellipsoid of iBeacon in meters.</string>
     <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
     <string name="sos_active">SOS Live</string>
     <string name="sos_alert_sent">SOS Alert SENT</string>

@@ -127,8 +127,8 @@ class BleBeaconService: Service() {
                     val minor = bleBeacon.minor
                     val id: String = "$uuid|$major|$minor"
                     val (jitteredLat, jitteredLon) = jitteredLatLon(bleBeacon.lat, bleBeacon.lon, JITTER_MAX_M)
-                    val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, (jittered: $jitteredLat, $jitteredLon), ${bleBeacon.alt})"
-                    Log.d(TAG, logString)
+                    //val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, (jittered: $jitteredLat, $jitteredLon), ${bleBeacon.alt})"
+                    //Log.d(TAG, logString)
                     //writeToLogFileLocation(logFile, logString)
                     val beacon = LocalizationBleBeacon(bleBeacon.uuid.lowercase(), bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, jitteredLat, jitteredLon, bleBeacon.alt)
                     mapLocalizationBeacons.put(id, beacon)
@@ -287,7 +287,6 @@ class BleBeaconService: Service() {
             Log.d(TAG, logString)
             //writeToLogFileLocation(logFile, logString)
         }
-
          */
     }
 
