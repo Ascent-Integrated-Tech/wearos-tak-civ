@@ -1685,52 +1685,27 @@ class MainActivity : ComponentActivity() {
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
         val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
-        val bleBeaconParcels = appRestrictions.getParcelableArray("localization_iBeacon_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the Localization iBeacons in the list.
-        val bleBeaconMutableList : MutableList<DataRepository.LocalizationBleBeaconItem> = mutableListOf()
-        if (bleBeaconParcels != null) {
-            val bleBeaconCount = bleBeaconParcels.size
-            Log.v(TAG, "=== Number of Localization iBeacons: $bleBeaconCount ===")
 
-            var uuid: String? = null
-            var major: Int = -1
-            var minor: Int = -1
-            var lat: String? = null
-            var lon: String? = null
-            var alt: String? = null
-            // Loop through each Localization iBeacon
-            for (i in bleBeaconParcels.indices) {
-                // Each element should be a Bundle representing one localization iBeacon
-                val bleBeaconBundle = bleBeaconParcels[i] as? Bundle
-                if (bleBeaconBundle != null) {
-                    Log.v(TAG, "=== Localization iBeacon [$i] ===")
-                    // Iterate through all keys in this localization iBeacon Bundle
-                    for (key in bleBeaconBundle.keySet()) {
-                        val value = bleBeaconBundle.get(key)
-                        // Format each key/value pair into a fixed-width layout for clarity.
-                        Log.v(TAG, String.format("   %-30s : %s", key, value))
-                    }
+        // NEW: GeoJSON-based iBeacon parsing (replaces parcel/bundle array)
+        val bleBeaconMutableList: MutableList<DataRepository.LocalizationBleBeaconItem> = mutableListOf()
+        val geoJsonStr = appRestrictions.getString("localization_iBeacon_geojson", null)
 
-                    uuid = bleBeaconBundle.getString("localization_iBeacon_uuid", null)
-                    major = bleBeaconBundle.getInt("localization_iBeacon_major", -1)
-                    minor = bleBeaconBundle.getInt("localization_iBeacon_minor", -1)
-                    lat = bleBeaconBundle.getString("localization_iBeacon_lat", null)
-                    lon = bleBeaconBundle.getString("localization_iBeacon_lon", null)
-                    alt = bleBeaconBundle.getString("localization_iBeacon_alt", null)
-                    //Log.d(TAG, "Beacon: $uuid $major $minor lat($lat) lon($lon) alt($alt)")
-
-                    if ((null != uuid) && (major >= 0) && (minor >= 0) && (!lat.isNullOrBlank()) && (null != lat.toDoubleOrNull()) && (!lon.isNullOrBlank()) && (null != lon.toDoubleOrNull()) && (!alt.isNullOrBlank()) && (null != alt.toDoubleOrNull())) {
-                        bleBeaconMutableList.add(DataRepository.LocalizationBleBeaconItem(uuid, major, minor,
-                            lat.toDouble(), lon.toDouble(), alt.toDouble()))
-                    } else {
-                        Log.w(TAG, "Incorrect value received: uuid($uuid), major($major), minor($minor), lat($lat), lon($lon), alt($alt)")
-                    }
-                    Log.v(TAG, "========================================")
+        if (!geoJsonStr.isNullOrBlank()) {
+            try {
+                val parsed = parseIBeaconGeoJsonToItems(geoJsonStr)
+                if (parsed.isNotEmpty()) {
+                    bleBeaconMutableList.addAll(parsed)
+                    Log.v(TAG, "=== Number of Localization iBeacons (GeoJSON): ${parsed.size} ===")
                 } else {
-                    Log.e(TAG, "Invalid localization iBeacon bundle at index $i")
+                    Log.w(TAG, "GeoJSON parsed but produced 0 iBeacons. Leaving prior list untouched.")
                 }
+            } catch (e: JsonSyntaxException) {
+                Log.e(TAG, "Failed to parse iBeacon GeoJSON (syntax): ${e.message}", e)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to parse iBeacon GeoJSON: ${t.message}", t)
             }
         } else {
-            Log.d(TAG, "localization_iBeacon_list is null or empty.")
+            Log.d(TAG, "localization_iBeacon_geojson is null or empty.")
         }
 
         // store settings persistently & send out events as necessary
@@ -2078,6 +2053,58 @@ class MainActivity : ComponentActivity() {
 
         // Log all settings to logcat
         logSettings()
+    }
+
+    /*
+     * geoJson format example:
+     *
+     *      {"type":"FeatureCollection","name":"Test-02","properties":{"uuid":"426c7565-4368-6172-6d42-6561636f6e74","setName":"Test-01","generatedAt":"2025-08-20T16:10:32.551Z"},"features":[{"type":"Feature","properties":{"major":1,"minor":2},"geometry":{"type":"Point","coordinates":[-87.967657,45.459174,98.5]}},{"type":"Feature","properties":{"major":3,"minor":4},"geometry":{"type":"Point","coordinates":[-87.669969,45.511368,54.3]}},{"type":"Feature","properties":{"major":4,"minor":5},"geometry":{"type":"Point","coordinates":[-87.799846,45.209974,52.9]}}]}
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseIBeaconGeoJsonToItems(
+        geoJson: String
+    ): List<DataRepository.LocalizationBleBeaconItem> {
+        return try {
+            val gson = Gson()
+
+            val root = gson.fromJson(geoJson, Map::class.java) as? Map<String, Any?> ?: return emptyList()
+            val collProps = (root["properties"] as? Map<String, Any?>).orEmpty()
+            val collectionUuid = (collProps["uuid"] as? String)?.lowercase()
+
+            val features = (root["features"] as? List<Map<String, Any?>>).orEmpty()
+
+            features.mapNotNull { f ->
+                val fProps = (f["properties"] as? Map<String, Any?>).orEmpty()
+                val major = (fProps["major"] as? Number)?.toInt()
+                val minor = (fProps["minor"] as? Number)?.toInt()
+
+                // UUID precedence: collection-level -> per-feature
+                val uuid = collectionUuid ?: (fProps["uuid"] as? String)?.lowercase()
+
+                val geom = (f["geometry"] as? Map<String, Any?>).orEmpty()
+                val coords = (geom["coordinates"] as? List<Any?>).orEmpty()
+
+                // GeoJSON uses [lon, lat, alt]
+                val lon = (coords.getOrNull(0) as? Number)?.toDouble()
+                val lat = (coords.getOrNull(1) as? Number)?.toDouble()
+                val alt = (coords.getOrNull(2) as? Number)?.toDouble() ?: 0.0
+
+                if (uuid == null || major == null || major < 0 || minor == null || minor < 0 || lat == null || lon == null) {
+                    null
+                } else {
+                    DataRepository.LocalizationBleBeaconItem(
+                        uuid = uuid,
+                        major = major,
+                        minor = minor,
+                        lat = lat,
+                        lon = lon,
+                        alt = alt
+                    )
+                }
+            }
+        } catch (_: Throwable) {
+            emptyList()
+        }
     }
 
     /*
