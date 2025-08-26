@@ -14,7 +14,9 @@ class EnhancedKalmanEstimator {
     private val processNoise = 0.001f // ↓ Reduced trust in model dynamics
     private val measurementNoise = 8.0f // ↑ Slightly more trust in GPS when updating
 
-    private val velocityCap = 20.0f // m/s cap for damping predictions
+    private val velocityCap = 40.0f // m/s cap for damping predictions
+
+    private val velocityJumpCap = 22.0f // m/s cap for damping predictions
 
     var onGpsUpdateRequired: (() -> Unit)? = null
 
@@ -35,17 +37,24 @@ class EnhancedKalmanEstimator {
         val cbn = computeDCM(orientation)
         val accelNav = matrixMultiply(cbn, accelBody)
 
+        // 1) remove gravity (z-up in nav frame)
+        //accelNav[2] -= 9.80665f
+
+        // --- anti-drift: dead-band tiny accelerations ---
         for (i in 0..2) {
-            // Apply basic integration with damping
+            if (kotlin.math.abs(accelNav[i]) < 0.08f) accelNav[i] = 0f
+        }
+
+        for (i in 0..2) {
+            // basic integration with damping
             state[i] += state[i + 3] * dt + 0.5f * accelNav[i] * dt.pow(2)
             state[i + 3] += accelNav[i] * dt
 
-            /*val displacement = state[i + 3] * dt + 0.5f * accelNav[i] * dt.pow(2)
-            state[i] = 0.98f * state[i] + 0.02f * (state[i] + displacement)
-            state[i + 3] += accelNav[i] * dt*/
-
-            // Clamp velocity to prevent wild drift
+            // clamp velocity to prevent wild drift
             state[i + 3] = state[i + 3].coerceIn(-velocityCap, velocityCap)
+
+            // --- anti-drift: bleed velocity toward zero when accel is zero ---
+            if (accelNav[i] == 0f) state[i + 3] *= 0.97f
         }
 
         for (i in 0..5) {
@@ -53,7 +62,7 @@ class EnhancedKalmanEstimator {
         }
 
         val drift = sqrt(state[0].pow(2) + state[1].pow(2))
-        if (drift > 50) { // ↓ Tighter drift control trigger
+        if (drift > 50) {
             onGpsUpdateRequired?.invoke()
         }
     }

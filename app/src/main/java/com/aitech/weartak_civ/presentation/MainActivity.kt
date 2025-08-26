@@ -236,6 +236,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.getMinReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
+import com.aitech.weartak_civ.service.GoogleActivityRecognition
 import com.aitech.weartak_civ.service.MovementDetectionService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
@@ -533,6 +534,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startGoogleARService(){
+            if (!GoogleActivityRecognition.isRunning.get()) {
+                Log.d(TAG, "Starting GoogleActivityRecognition")
+                mainActivity.startService(Intent(mainActivity, GoogleActivityRecognition::class.java))
+            } else {
+                Log.d(TAG, "GoogleActivityRecognition is already running")
+            }
+        }
+
         fun startStopoffBodyDetectService() {
             if (isLicenseValid()) {
                 if (enableBiometricsService) {
@@ -588,6 +598,7 @@ class MainActivity : ComponentActivity() {
                 startBatteryService()
                 startMovementDetectionService()
                 //startLocationService()
+                startGoogleARService()
                 startCotDispatchService()
                 startDittoService()
                 startPowerManagerService()

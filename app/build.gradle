@@ -92,6 +92,8 @@ android {
 }
 
 dependencies {
+    implementation libs.runtime
+
     //implementation libs.androidx.activity.compose
     dependencies {
         implementation 'com.google.code.gson:gson:2.10.1'
