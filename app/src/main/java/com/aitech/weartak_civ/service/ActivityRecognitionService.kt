@@ -80,7 +80,7 @@ class ActivityRecognitionService : Service() {
         isRunning.set(true)
         val logStr = "ActivityRecognitionService onCreate called"
         Log.d(TAG, logStr)
-        //writeToLogFileLocation(logFile, logStr)
+        writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
 
@@ -127,7 +127,7 @@ class ActivityRecognitionService : Service() {
                 passiveMonitoringClient.setPassiveListenerCallback(cfg, passiveDailyListenerCallback)
                 val logStr = "Registered passive listener for $wanted"
                 Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
+                writeToLogFileLocation(logFile, logStr)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to register passive listener", t)
             }
@@ -153,9 +153,9 @@ class ActivityRecognitionService : Service() {
                 DetectedActivity.UNKNOWN    -> ActivityRecognized.UNKNOWN
                 else                        -> ActivityRecognized.UNKNOWN
             }
-            //val line = "Detected ${detectedActivity.name}  confidence=${act?.confidence ?: 100}"
-            //Log.i(TAG, line)
-            //writeToLogFileLocation(logFile, line)
+            val line = "Detected ${detectedActivity.name}  confidence=${act?.confidence ?: 100}"
+            Log.i(TAG, line)
+            writeToLogFileLocation(logFile, line)
 
             // TODO: Need to look at confidence and do sthg if confidence is less than 50? Maybe store in a data class
             if ((act?.confidence ?: 0) >= 50) {
@@ -195,9 +195,9 @@ class ActivityRecognitionService : Service() {
             container.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
             // DEBUG LOG: shows the cached snapshot
-            //val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
-            //Log.d(TAG, logStr)
-            //writeToLogFileLocation(logFile, logStr)
+            val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
+            Log.d(TAG, logStr)
+            writeToLogFileLocation(logFile, logStr)
 
             // Push snapshot to repository
             scope.launch {

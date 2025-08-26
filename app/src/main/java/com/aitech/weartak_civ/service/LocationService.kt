@@ -69,19 +69,19 @@ class LocationService : Service() {
     private lateinit var usingPeriodicGpsCallback : AtomicBoolean
     private lateinit var mPowerManager: PowerManager
     private var mWakeLock: PowerManager.WakeLock? = null
-    //private var oneShotPrevLocationUpdateTime: Long = 0L // TODO: Only for testing/logging, should be removed in the future
+    private var oneShotPrevLocationUpdateTime: Long = 0L // TODO: Only for testing/logging, should be removed in the future
 
     private val oneShotLocationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val location = result.lastLocation ?: return
 
             CoroutineScope(Dispatchers.IO).launch {
-                //val currTime = System.currentTimeMillis()
                 dataRepository.storeLatestLocation(location)
-                //val logStr = "oneShotLocationCallback onLocationResult (prev: ${(currTime-oneShotPrevLocationUpdateTime)}): $location"
-                //Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
-                //oneShotPrevLocationUpdateTime = currTime
+                val currTime = System.currentTimeMillis()
+                val logStr = "oneShotLocationCallback onLocationResult (prev: ${(currTime-oneShotPrevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                oneShotPrevLocationUpdateTime = currTime
                 EventBus.getDefault().post(LocationRcvd())
             }
             fusedLocationProviderClient?.removeLocationUpdates(this)
@@ -227,7 +227,7 @@ class LocationService : Service() {
         val logStr = "LocationRequest params: priority(${locationRequest.priority}), interval(${locationRequest.intervalMillis}), maxUpdateDelay(${locationRequest.maxUpdateDelayMillis}), " +
                 "minUpdateInteval(${locationRequest.minUpdateIntervalMillis}), smallestDisplacement(" + locationRequest.smallestDisplacement + "), expirationTime(" + locationRequest.expirationTime + ")"
         Log.d(TAG, logStr)
-        //writeToLogFileLocation(logFile, logStr)
+        writeToLogFileLocation(logFile, logStr)
         printLocationRequest(locationRequest)
         /*
         val builder = LocationSettingsRequest.Builder()
@@ -263,7 +263,7 @@ class LocationService : Service() {
     }
 
     private inner class PeriodicLocationCallback : LocationCallback() {
-        //var prevLocationUpdateTime : Long = 0L // TODO: Only for testing/logging, should be removed in the future
+        var prevLocationUpdateTime : Long = 0L // TODO: Only for testing/logging, should be removed in the future
 
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
@@ -271,11 +271,11 @@ class LocationService : Service() {
                 dataRepository.storeLatestLocation(location)
                 //Log.d(TAG, "Received location update: $location")
                 //writeToLogFileLocation(logFile, "Received location update: $location")
-                //val currTime = System.currentTimeMillis()
-                //val logStr = "periodicLocationCallback: Received location update (prev: ${(currTime-prevLocationUpdateTime)}): $location"
-                //Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
-                //prevLocationUpdateTime = currTime
+                val currTime = System.currentTimeMillis()
+                val logStr = "periodicLocationCallback: Received location update (prev: ${(currTime-prevLocationUpdateTime)}): $location"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
+                prevLocationUpdateTime = currTime
 
                 EventBus.getDefault().post(LocationRcvd())
             }

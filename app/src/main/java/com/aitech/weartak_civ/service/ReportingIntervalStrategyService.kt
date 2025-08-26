@@ -114,11 +114,11 @@ class ReportingIntervalStrategyService : Service() {
     private suspend fun calcReportingIntervalAndSendUpdate() {
         reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { staticReportingInterval }
         dataRepository.storeReportingUpdateInterval(reportingInterval)
-        //Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
-        //            "reportingInterval=$reportingInterval w/ staticReportingInterval=$staticReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
-        //            "(activity=$latestActivity, alerting=$isAlerting, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
+        Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
+                    "reportingInterval=$reportingInterval w/ staticReportingInterval=$staticReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
+                    "(activity=$latestActivity, alerting=$isAlerting, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
         if (reportingInterval != CotDispatchService.reportingUpdateIntervalSecs) {
-            //Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
+            Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
             CotDispatchService.reportingUpdateIntervalSecs = reportingInterval
             EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, reportingInterval))
         }

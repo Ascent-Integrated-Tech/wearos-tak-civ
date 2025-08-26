@@ -64,9 +64,9 @@ object Utils {
         object : Thread() {
             override fun run() {
                 super.run()
-                //val logStr="runTimerJob called with timeout: $timeMs ms"
-                //Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
+                val logStr="runTimerJob called with timeout: $timeMs ms"
+                Log.d(TAG, logStr)
+                writeToLogFileLocation(logFile, logStr)
                 startGlobalTimer(timeMs)
             }
         }.start()
