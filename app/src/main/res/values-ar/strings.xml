@@ -115,4 +115,7 @@
     <string name="callsign_loading">Callsign Loading</string>
     <string name="invalid_license">INVALID LICENSE</string>
     <string name="sos_details_loading">SOS Details Loading</string>
+    <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
+    <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
+    <string name="high_exertion_alert_string">HIGH Exertion</string>
 </resources>

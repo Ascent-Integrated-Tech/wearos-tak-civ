@@ -458,6 +458,10 @@
     <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
     <string name="sos_complication_service" translatable="false">SOS Complication Service</string>
     <string name="status_icons_complication_service" translatable="false">Status Icons Complication Service</string>
+    <string name="physio_alert_complication_service" translatable="false">Physiological Alert Complication Service</string>
+    <string name="physio_alert_none" translatable="false">Physio Alert None</string>
+    <string name="physio_alert_warning" translatable="false">Physio Alert Warning</string>
+    <string name="physio_alert_emergency" translatable="false">Physio Alert Emergency</string>
     <string name="sos_inactive">SOS Inactive</string>
     <string name="on_off">ON/OFF</string>
     <string name="sms_recipients">SMS Recipients</string>
@@ -482,4 +486,7 @@
     <string name="callsign_loading">Callsign Loading</string>
     <string name="invalid_license">INVALID LICENSE</string>
     <string name="sos_details_loading">SOS Details Loading</string>
+    <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
+    <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
+    <string name="high_exertion_alert_string">HIGH Exertion</string>
 </resources>

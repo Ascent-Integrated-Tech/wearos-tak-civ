@@ -34,6 +34,7 @@ import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
+import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -1154,6 +1155,19 @@ class DataRepository(private val context: Context) {
             // Store in DataStore
             preferences[SMS_NUMBERS_LIST] = jsonString
         }
+    }
+
+//    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
+    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
+    val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
+
+    fun addPhysioAlertToFront(alert: Utils.PhysioAlert) {
+        _physioAlertsFlow.value = listOf(alert) + _physioAlertsFlow.value
+    }
+
+    fun removePhysioAlerts(alertStr: String) {
+        _physioAlertsFlow.value = _physioAlertsFlow.value
+            .filterNot { it.alert == alertStr }
     }
 
     val getEnablePhysiologicalAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
