@@ -1168,8 +1168,10 @@ class TAKConnectService: Service() {
                                     buffer.delete(0, endIdx + "</event>".length)
 
                                     // only forward chat messages addressed to us or “All Chat Rooms”
+                                    if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
                                     if (CotUtils.isChatMessage(rawXml)
                                         && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
+                                        Log.d(TAG, "Received Chat for me:\n$rawXml")
                                         Log.v(TAG, "Posting a tak chat message Event.")
                                         EventBus.getDefault().post(TakChatEvent(rawXml))
                                     }

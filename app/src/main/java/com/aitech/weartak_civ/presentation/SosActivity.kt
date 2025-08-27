@@ -69,9 +69,10 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.complication.SosComplicationService
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.TAG
@@ -293,7 +294,7 @@ fun SOSButtonEmergencyMessage(isAlertingLiveData: MutableLiveData<Boolean>){
         EventBus.getDefault().post(CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true))
         Log.d(MainActivity.Constants.TAG, "Manual Alert Triggered")
     } else {
-        EventBus.getDefault().post(CustomEmergencyEvent(ALERT_CANCELLED, ALERT_CANCELLED, 1, true))
+        EventBus.getDefault().post(CustomEmergencyEvent(CAT_SOS_ALERT_CANCELLED, DESC_SOS_ALERT_CANCELLED, 1, true))
         Log.d(MainActivity.Constants.TAG, "Cancel Alert Triggered")
     }
 }
