@@ -49,6 +49,7 @@ import org.xml.sax.InputSource
 import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
+import javax.xml.XMLConstants
 
 
 object Utils {
@@ -59,6 +60,10 @@ object Utils {
     const val GPS_ALARM_REQUEST_CODE = 234324243
     const val REDUCE_ALARM_TIME_MS = 35
     val secureRandom: SecureRandom = SecureRandom()
+    // Constants not present on some Android/WearOS JAXP builds:
+    private const val ACCESS_EXTERNAL_DTD    = "http://javax.xml.XMLConstants/property/accessExternalDTD"
+    private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
+
 
     fun runTimerJob(timeMs: Long) {
         object : Thread() {
@@ -499,7 +504,8 @@ object Utils {
 
         /** Is this message addressed to me or to “All Chat Rooms”? */
         fun isChatForMe(raw: String, myUid: String): Boolean {
-            return raw.contains("""to='$myUid'""")
+            return raw.contains("to=\"${MainActivity.callsign}\"")
+                    || raw.contains("""to='$myUid'""")
                     || raw.contains("""to="$myUid"""")
                     || raw.contains("""to='All Chat Rooms'""")
                     || raw.contains("""to="All Chat Rooms"""")
@@ -511,20 +517,37 @@ object Utils {
 
             // 1) Try a secure DOM parse
             val doc = try {
+                val cleaned = raw.trimStart { it <= ' ' || it == '\uFEFF' } // strip BOM/leading ws
+
                 val factory = DocumentBuilderFactory.newInstance().apply {
-                    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-                    setFeature("http://xml.org/sax/features/external-general-entities", false)
-                    setFeature("http://xml.org/sax/features/external-parameter-entities", false)
                     isNamespaceAware = true
                     isValidating = false
-                    isXIncludeAware = false
+
+                    // Secure-processing is widely supported on Android, but guard anyway
+                    try { setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true) } catch (_: Exception) {}
+
+                    // Block external DTD/Schema fetches (no-op if unsupported)
+                    try { setAttribute(ACCESS_EXTERNAL_DTD, "") } catch (_: Exception) {}
+                    try { setAttribute(ACCESS_EXTERNAL_SCHEMA, "") } catch (_: Exception) {}
+
+                    // Best-effort DOCTYPE ban: some Android impls don't recognize this feature
+                    try { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) } catch (_: Exception) {}
                 }
-                factory.newDocumentBuilder()
-                    .parse(InputSource(StringReader(raw)))
-            } catch (_: Exception) {
+
+                val builder = factory.newDocumentBuilder().apply {
+                    // Final safety net: never resolve external entities
+                    setEntityResolver { _, _ -> InputSource(StringReader("")) }
+                    // Optional: hard-fail if a DOCTYPE is present
+                    // if (cleaned.contains("<!DOCTYPE", ignoreCase = true)) throw IllegalArgumentException("DOCTYPE not allowed")
+                }
+
+                builder.parse(InputSource(StringReader(cleaned)))
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception: ${e::class.simpleName}: ${e.message}", e)
                 null
             }
 
+            Log.d(TAG, "doc\n${doc.toString()}")
             if (doc != null) {
                 val chatElems   = doc.getElementsByTagName("__chat")
                 val remarkElems = doc.getElementsByTagName("remarks")
@@ -539,7 +562,7 @@ object Utils {
                         val r     = remarkElems.item(j) as? Element ?: continue
                         val toUid = r.getAttribute("to")
                         val text  = r.textContent.trim()
-                        if (toUid == myUid || toUid == "All Chat Rooms") {
+                        if ((toUid == MainActivity.callsign) || (toUid == myUid) || (toUid == "All Chat Rooms")) {
                             rooms += ChatRoom(
                                 uid               = senderUid,
                                 title             = senderCallsign,

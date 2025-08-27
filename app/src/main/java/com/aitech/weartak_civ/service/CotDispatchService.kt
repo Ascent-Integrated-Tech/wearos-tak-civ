@@ -31,13 +31,14 @@ import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
@@ -682,7 +683,7 @@ class CotDispatchService : Service() {
         manualSosReceivedDescription = event.description
         manualSosReceivedSendSms = event.sendSms
         val currTime = System.currentTimeMillis()
-        alertOrCancel = event.category == ALERT_CANCELLED
+        alertOrCancel = event.category == CAT_SOS_ALERT_CANCELLED
         if (manualSosReceivedCategory == DESC_SOS_ALERT) {
             inManualAlertingState = true
             serviceScope.launch {
@@ -708,6 +709,86 @@ class CotDispatchService : Service() {
                 Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent ${manualSosToBeSent.get()} & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             }
         }
+    }
+
+    private fun buildEmergencyAlertChatCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+
+        // Set the current time
+        calendar.setTime(Date())
+
+        // Format and set the startTime with the currentTime
+        val startTime = dateTimeFormatter.format(calendar.time)
+        val startTimeInMs = calendar.timeInMillis
+        val emergencyCallsignDateTimeFormatter = SimpleDateFormat("MMdd_HHmmss'Z'")
+        emergencyCallsignDateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val emergencyCallsignAppendTime = emergencyCallsignDateTimeFormatter.format(calendar.time)
+        val emergencyCallsign = "${callsign}_$emergencyCallsignAppendTime"
+
+        // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
+//        calendar.add(Calendar.YEAR, 1)
+        calendar.add(Calendar.SECOND, 10)
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
+        var latActual   = location.latitude
+        var lonActual   = location.longitude
+        var haeActual   = location.altitude
+        var ceActual    = location.accuracy
+        if (ceActual.isNaN()) ceActual = 9999999.0F
+        var leActual : Float = location.verticalAccuracyMeters
+        if (leActual.isNaN()) leActual = 9999999.0F
+
+        // Ble Beacon
+        if (MainActivity.enableBleBeaconService) {
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+        }
+
+        val uid = UUID.randomUUID().toString()
+        val linkUid = MainActivity.device_uid
+        //val dstUid = "ANDROID-dfd8f500aac449de"
+        //val dstChatroom = "SIERRAPAPA-PHN2" // Callsign
+        //val dstUid = "ANDROID-5c4916b8baffaf8d"
+        //val dstChatroom = "SIERRAPAPA-PHN0" // Callsign
+        val dstUid = "TAKBOT-12345"
+        val dstChatroom = "takGPT" // Callsign
+
+        return """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='GeoChat.$linkUid.$dstUid.$uid' type='b-t-f' time='$startTime' start='$startTime' stale='$startTime' how='h-g-i-g-o' access='Undefined'>
+        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+        	<detail>
+        		<__chat parent='RootContactGroup' groupOwner='false' messageId='$uid' chatroom='$dstChatroom' id='$dstUid' senderCallsign='$callsign'>
+                    <chatgrp uid0='$linkUid' uid1='$dstUid' id='$dstUid'/>
+                </__chat>
+                <link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
+                <remarks source='$linkUid' to='$dstUid' time='$startTime'>$emergencyCategory: $emergencyDesc</remarks>
+                <marti>
+                    <dest callsign='$dstChatroom'/>
+                </marti>
+        	</detail>
+        </event>
+        """.trimIndent()
+        
+            /*
+            return """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='GeoChat.$linkUid.TAKBOT-12345.$uid' type='b-t-f' time='$startTime' start='$startTime' stale='$startTime' how='h-g-i-g-o' access='Undefined'>
+        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+        	<detail>
+        		<__chat parent='RootContactGroup' groupOwner='false' messageId='$uid' chatroom='takGPT' id='TAKBOT-12345' senderCallsign='$callsign'>
+                    <chatgrp uid0='$linkUid' uid1='TAKBOT-12345' id='TAKBOT-12345'/>
+                </__chat>
+                <link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
+                		<__serverdestination destinations='100.69.93.65:4242:tcp:$linkUid'/>
+                <remarks source='BAO.F.ATAK.$linkUid' to='TAKBOT-12345' time='$startTime'>High Heart Rate above 150 for 30 seconds</remarks>
+        	</detail>
+        </event>
+        """.trimIndent()
+
+             */
     }
 
     private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
@@ -1014,6 +1095,7 @@ class CotDispatchService : Service() {
 
             // build the CoT XML for this alert
             val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
+            val takGptChatMessage = buildEmergencyAlertChatCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
 
             // only forward to TAK if we’re connected
             if (TAKConnectService.isAnyTakConnected) {
@@ -1025,6 +1107,12 @@ class CotDispatchService : Service() {
                 }
                 manualSosToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
+                if (!takGptChatMessage.isEmpty()) {
+                    //val rawXml="<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" uid=\"GeoChat.TAKBot.Chat\" type=\"b-t-f\" how=\"h-g-i-g-o\" time=\"2025-08-27T18:12:54Z\" start=\"2025-08-27T18:12:54Z\" stale=\"2025-08-28T06:12:54Z\"><point lat=\"0.0\" lon=\"0.0\" hae=\"999999.0\" ce=\"999999.0\" le=\"999999.0\"/><detail><__chat parent=\"RootContactGroup\" messageId=\"3c5eb0a3-31f8-4a32-b6cc-6916eff3cbd1\" senderCallsign=\"takGPT\" chatroom=\"takGPT\" id=\"TAKBOT-12345\"><chatgrp id=\"WEAROS-dce34c83708172e9\" uid1=\"WEAROS-dce34c83708172e9\" uid0=\"TAKBOT-12345\"/></__chat><remarks time=\"2025-08-27T18:12:54Z\" to=\"SP-Dev\">**CONFIDENCE:** HIGH - Patient’s heart rate &gt;150 bpm sustained for 30 seconds is a clinically significant tachycardia warranting immediate assessment and intervention.**CLINICAL REASONING:**1. Sustained heart rate &gt;150 bpm suggests a tachyarrhythmia that may compromise cardiac output.2. Assess for hemodynamic stability, symptoms, and possible causes (hypovolemia, hypoxia, pain, anxiety, or arrhythmia).3. Prioritize restoring effective circulation to prevent shock or cardiac arrest.4. Interventions depend on clinical context; chemical or electrical cardioversion considered for unstable supraventricular or ventricular tachycardia with appropriate diagnosis.5. Follow MARCH priority focused on Circulation due to hemodynamic compromise risk.**PRIORITY:**Circulation is the greatest immediate threat for this scenario due to the risk of hemodynamic instability or progression to cardiac arrest from sustained high-rate tachycardia.**IMMEDIATE ACTIONS:**- Assess airway patency and respiratory effort.- Provide high-flow oxygen via non-rebreather mask or appropriate delivery device.- Establish large-bore IV access.- Perform focused history/physical to identify tachycardia etiology.- Obtain a 12-lead ECG ASAP.- If unstable (hypotension, altered LOC, chest pain, signs of shock), prepare for synchronized cardioversion.- Fluid resuscitation if hypovolemia suspected.- Consider analgesia/anxiolysis if pain or anxiety contributing.**MEDICATIONS:**- Adenosine or other antiarrhythmics only after rhythm diagnosis via ECG and following ACLS protocols.- Vasopressors/inotropes per hemodynamics if indicated.- Specific medication agents and doses depend on arrhythmia type and patient status.**If additional clinical data or diagnostics become available, recommendations can be refined.**</remarks><link relation=\"p-p\" type=\"a-f-G-U-C-I\" uid=\"TAKBOT-12345\"/><_flow-tags_ TAK-Server-7b47b67360f347689e0c580092d1c325=\"2025-08-27T18:12:54Z\"/></detail></event>"
+                    sendDataTAKServers(takGptChatMessage, true)
+                    Log.d(TAG, "Sending takGPT chat msg: $takGptChatMessage")
+                    //EventBus.getDefault().post(TakChatEvent(rawXml))
+                }
                 Log.v(TAG, "Sent emergency alert to TAK server")
             } else {
                 // push into Ditto if the service is up
