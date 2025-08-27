@@ -47,7 +47,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -80,7 +79,6 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -151,7 +149,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
@@ -159,7 +156,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocation
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.ActivityRecognitionService
@@ -185,6 +181,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.Alignment
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -192,6 +193,8 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DIS
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import com.aitech.weartak_civ.service.PassiveDataService
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -230,6 +233,9 @@ class MainActivity : ComponentActivity() {
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
         var chatComplication : String = ""
+
+        var physioAlertComplication : String = ""
+
 
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
@@ -1538,6 +1544,7 @@ class MainActivity : ComponentActivity() {
         requestSosComplicationUpdate(context)
         requestStatusIconsComplicationUpdate(context)
         requestChatComplicationUpdate(context)
+        requestPhysioComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -2396,13 +2403,16 @@ fun MainScreen(
                             .fillMaxWidth()
                             .weight(0.8f)
                     ) {
-                        HeartRate()
+                        HeartRate(context)
                     }
+                    Spacer(
+                        modifier = Modifier.height(10.dp)
+                    )
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .weight(.9f),
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -2513,10 +2523,8 @@ fun TimeWithSecondsAware(context: Context) {
         curvedRow(modifier = CurvedModifier.padding()) {
             curvedText(currentTime.format(formatter),
                 style = CurvedTextStyle())
-
         }
     }
-
 }
 
 fun findTeamIndex(teamName: String?) : Int {
@@ -2566,50 +2574,85 @@ fun displayServerDialogs(
 }
 
 @Composable
-fun HeartRate () {
+fun alertChipColors(state: Utils.AlertChipState): Color = when (state) {
+    Utils.AlertChipState.Emergency ->
+        Color.Red
+    Utils.AlertChipState.Warning   ->
+        Color.Yellow
+    Utils.AlertChipState.None      ->
+        Color.Unspecified
+}
+
+@SuppressLint("StateFlowValueCalledInComposition")
+@Composable
+fun HeartRate(context: Context) {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
+    val physioAlertsCheckedLive by enablePhysiologicalAlertsSettingState.observeAsState()
+    val alerts by dataRepository.physioAlertsFlow.collectAsState() // or collectAsStateWithLifecycle()
 
+    // Derive the chip state from the latest list
+    val chipState by remember(alerts) {
+        derivedStateOf { alerts.alertChipState(physioAlertsCheckedLive) }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(R.drawable.heart_rate),
-                contentDescription = "Contact profile picture",
-                modifier = Modifier
-                    // Set image size to 40 dp
-                    .size(14.dp)
-                    // Clip image to be shaped as a circle
-            )
-            if (physioCheckedLive == true) {
-                Text(
-                    text = " $heartRateText",
-                    textAlign = TextAlign.Start,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+        Chip(
+            border = ChipDefaults.outlinedChipBorder(alertChipColors(chipState), borderWidth = 2.dp),
+            onClick = {
+                context.startActivity(Intent(context, PhysioAlertsActivity::class.java))
+            },
+            colors =  ChipDefaults.chipColors(
+            backgroundColor = Color.Transparent,
+            contentColor = Color.White,
+        ),
+            enabled = if (physioAlertsCheckedLive == true) true else false,
+            icon = {
+                Icon(
+                    painter = if (physioAlertsCheckedLive == true) {
+                        if (alerts.isNotEmpty()) painterResource(R.drawable.warning) else painterResource(R.drawable.vector)
+                    } else painterResource(R.drawable.vector) ,
+                    contentDescription = "Favorite icon",
+                    tint = alertChipColors(chipState),
+                    modifier = Modifier.size(17.dp),
                 )
-                Text(
-                    text = stringResource(R.string.bpm),
-                    color = Color.White,
-                    fontSize = 13.sp
-                )
-            } else {
-                Text(
-                    text = " --- ",
-                    textAlign = TextAlign.Start,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
-                )
-            }
-        }
+            },
+            label = {
+                Row(modifier = Modifier
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+                ) {
+                    if (physioCheckedLive == true) {
+                        Text(
+                            text = " $heartRateText",
+                            textAlign = TextAlign.Start,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = stringResource(R.string.bpm),
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Light
+                        )
+                    } else {
+                        Text(
+                            text = " --- ",
+                            textAlign = TextAlign.Start,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                    }
+                }
+            },
+        )
     }
 }
 
@@ -2990,6 +3033,70 @@ fun MarkerDropButton(
 //            modifier = Modifier.size(30.dp)
 //        )
 //    }
+}
+
+@Composable
+fun ActivityDisabledScreen(
+    navController: NavController,
+    exitActivity: () -> Unit,
+    titleText: String,
+    description: String) {
+    WearTAKCIVTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = titleText,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(5.dp))
+            Text(
+                text = description,
+                textAlign = TextAlign.Center,
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.size(10.dp))
+            Button(
+                onClick = {
+                    navController.navigate("invalid_license_screen") {
+                        popUpTo("invalid_license_screen") { inclusive = true }
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.primary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text(
+                    text = "Go to Settings",
+                    color = Color.Black,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Button(
+                onClick = { exitActivity() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.DarkGray,
+                    contentColor = Color.White
+                ),
+                modifier = Modifier.padding(top = 2.dp)
+            ) {
+                Text(
+                    text = "Exit",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)

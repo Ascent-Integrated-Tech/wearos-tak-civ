@@ -2520,6 +2520,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         requestSosComplicationUpdate(context)
                         requestStatusIconsComplicationUpdate(context)
                         requestChatComplicationUpdate(context)
+                        requestPhysioComplicationUpdate(context)
 
                         Log.d(TAG, "Sending License for Validation.")
                     } else {
@@ -3974,6 +3975,7 @@ fun SettingsScreen(
                     if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState.value) {
                         settingsChanged = true; physiologicalAlertsCheckedChanged = true
                         enablePhysiologicalAlerts = enablePhysiologicalAlertsSettingState.value ?: enablePhysiologicalAlerts
+                        requestPhysioComplicationUpdate(context)
                         runBlocking {
                             enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
                         }

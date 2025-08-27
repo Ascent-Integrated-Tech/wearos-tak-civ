@@ -151,7 +151,13 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
         }
 
         composable("chat_disabled_screen") {
-            ChatDisabledScreen(navController, exitActivity)
+//            ChatDisabledScreen(navController, exitActivity)
+            ActivityDisabledScreen(
+                navController,
+                exitActivity,
+                "Chat Disabled",
+                "Please enable Chat in order to use this feature"
+            )
         }
 
         composable(
@@ -180,57 +186,86 @@ fun ChatScreen(
     Log.d(TAG, "TakServerSetting called")
     val context = LocalContext.current
 
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Chat Messages",
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(chatRooms) { index, room ->
-                        // room.messageList is the List<ChatMessage>
-                        val lastMessage = room.messageList.lastOrNull()
-                        val lastMessageTime = lastMessage?.timeReceived ?: 0L
-                        val lastMessageText = lastMessage?.message.orEmpty()
+    WearTakCivScreenDimensions(
+        columnContent = {
+            LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
+            itemsIndexed(chatRooms) { index, room ->
+                // room.messageList is the List<ChatMessage>
+                val lastMessage = room.messageList.lastOrNull()
+                val lastMessageTime = lastMessage?.timeReceived ?: 0L
+                val lastMessageText = lastMessage?.message.orEmpty()
 
-                        ChatCard(
-                            index = index,
-                            title = room.title,
-                            time = utcToHoursMinutes(lastMessageTime),
-                            message = lastMessageText,
-                            newMessagesPresent = room.newMessagesPresent,
-                            onClick = {
-                                navController.navigate("chat_screen_detailed/$index")
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(5.dp))
+                ChatCard(
+                    index = index,
+                    title = room.title,
+                    time = utcToHoursMinutes(lastMessageTime),
+                    message = lastMessageText,
+                    newMessagesPresent = room.newMessagesPresent,
+                    onClick = {
+                        navController.navigate("chat_screen_detailed/$index")
                     }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
+                )
+                Spacer(modifier = Modifier.height(5.dp))
             }
         }
-    }
+            Spacer(modifier = Modifier.height(10.dp))},
+        rowContent = {
+            BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
+        },
+        text = "Chat Messages"
+    )
+
+//    WearTAKCIVTheme {
+//        Box(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .background(colors.background)
+//                .padding(bottom = 16.dp, top = 15.dp)
+//                .padding(horizontal = 16.dp),
+//            contentAlignment = Alignment.Center
+//        ) {
+//            Column(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .fillMaxHeight(0.9f)
+//                    .align(Alignment.TopCenter)
+//                    .padding(bottom = 30.dp),
+//                horizontalAlignment = Alignment.CenterHorizontally
+//            ) {
+//                Text(
+//                    text = "Chat Messages",
+//                    textAlign = TextAlign.Center,
+//                    fontWeight = FontWeight.SemiBold,
+//                    modifier = Modifier.padding(7.dp)
+//                )
+//                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
+//                    itemsIndexed(chatRooms) { index, room ->
+//                        // room.messageList is the List<ChatMessage>
+//                        val lastMessage = room.messageList.lastOrNull()
+//                        val lastMessageTime = lastMessage?.timeReceived ?: 0L
+//                        val lastMessageText = lastMessage?.message.orEmpty()
+//
+//                        ChatCard(
+//                            index = index,
+//                            title = room.title,
+//                            time = utcToHoursMinutes(lastMessageTime),
+//                            message = lastMessageText,
+//                            newMessagesPresent = room.newMessagesPresent,
+//                            onClick = {
+//                                navController.navigate("chat_screen_detailed/$index")
+//                            }
+//                        )
+//                        Spacer(modifier = Modifier.height(5.dp))
+//                    }
+//                }
+//                Spacer(modifier = Modifier.height(10.dp))
+//            }
+//
+//            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+//                BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
+//            }
+//        }
+//    }
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -407,65 +442,66 @@ fun ChatMessageItem(
     )
 }
 
-@Composable
-fun ChatDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
-    WearTAKCIVTheme {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Chat Disabled",
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.size(5.dp))
-            Text(
-                text = "Please enable Chat in order to use this feature",
-                textAlign = TextAlign.Center,
-                fontSize = 14.sp
-            )
-            Spacer(modifier = Modifier.size(10.dp))
-            Button(
-                onClick = {
-                    navController.navigate("invalid_license_screen") {
-                        popUpTo("invalid_license_screen") { inclusive = true }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.primary,
-                    contentColor = Color.Black
-                )
-            ) {
-                Text(
-                    text = "Go to Settings",
-                    color = Color.Black,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-            Button(
-                onClick = { exitActivity() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.DarkGray,
-                    contentColor = Color.White
-                ),
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                Text(
-                    text = "Exit",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
+//TODO: WEAR-234: Delete this
+//@Composable
+//fun ChatDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
+//    WearTAKCIVTheme {
+//        Column(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .background(colors.background)
+//                .padding(16.dp),
+//            horizontalAlignment = Alignment.CenterHorizontally,
+//            verticalArrangement = Arrangement.Center
+//        ) {
+//            Text(
+//                text = "Chat Disabled",
+//                fontWeight = FontWeight.SemiBold,
+//                textAlign = TextAlign.Center
+//            )
+//            Spacer(modifier = Modifier.size(5.dp))
+//            Text(
+//                text = "Please enable Chat in order to use this feature",
+//                textAlign = TextAlign.Center,
+//                fontSize = 14.sp
+//            )
+//            Spacer(modifier = Modifier.size(10.dp))
+//            Button(
+//                onClick = {
+//                    navController.navigate("invalid_license_screen") {
+//                        popUpTo("invalid_license_screen") { inclusive = true }
+//                    }
+//                },
+//                colors = ButtonDefaults.buttonColors(
+//                    containerColor = colors.primary,
+//                    contentColor = Color.Black
+//                )
+//            ) {
+//                Text(
+//                    text = "Go to Settings",
+//                    color = Color.Black,
+//                    fontWeight = FontWeight.SemiBold,
+//                    textAlign = TextAlign.Center
+//                )
+//            }
+//            Button(
+//                onClick = { exitActivity() },
+//                colors = ButtonDefaults.buttonColors(
+//                    containerColor = Color.DarkGray,
+//                    contentColor = Color.White
+//                ),
+//                modifier = Modifier.padding(top = 2.dp)
+//            ) {
+//                Text(
+//                    text = "Exit",
+//                    color = Color.White,
+//                    fontWeight = FontWeight.SemiBold,
+//                    textAlign = TextAlign.Center
+//                )
+//            }
+//        }
+//    }
+//}
 
 fun utcToHoursMinutes(time: Long): String {
     val instant = Instant.ofEpochMilli(time)
@@ -496,5 +532,11 @@ fun ChatScreenDetailedPreview() {
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun ChatDisabledPreview() {
-    ChatDisabledScreen(rememberSwipeDismissableNavController(), {})
+//    ChatDisabledScreen(rememberSwipeDismissableNavController(), {})
+    ActivityDisabledScreen(
+        rememberSwipeDismissableNavController(),
+        { },
+        "Chat Disabled",
+        "Please enable Chat in order to use this feature"
+    )
 }

@@ -400,6 +400,16 @@ object Utils {
         var timeLastClosed: Long
     )
 
+    /** Minimal data models for physio alerts. */
+    enum class AlertChipState { None, Warning, Emergency }
+
+    data class PhysioAlert(
+        val alert: String,
+        val level: AlertChipState,
+        val time: Long,
+        val trigger: String
+    )
+
     object PhysioUtils {
         private fun calculateMaxHeartRate(ageYears: Int): Double {
             return (208 - 0.7 * ageYears)
