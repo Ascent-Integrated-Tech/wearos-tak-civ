@@ -18,5 +18,8 @@ class CustomEmergencyEvent(val category: String, val description: String, val pr
         val DESC_HIGH_HEART_RATE_ALERT = "High Heart Rate Alert"
         val DESC_LOW_HEART_RATE_ALERT = "Low Heart Rate Alert"
         val ALERT_CANCELLED = "Alert Cancelled"
+
+        //Added for Fall Detect Support
+        val FALL_ALLERT = "Fall Alert"
     }
 }

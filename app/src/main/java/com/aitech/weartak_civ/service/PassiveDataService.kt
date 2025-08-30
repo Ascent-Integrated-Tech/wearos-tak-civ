@@ -27,6 +27,8 @@ import androidx.health.services.client.data.HealthEvent
 import androidx.health.services.client.data.PassiveListenerConfig
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.latestHeartRate
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.FALL_ALLERT
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.service.BatteryService.Companion.batteryPercentage
@@ -41,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -130,7 +133,18 @@ class PassiveDataService : PassiveListenerService() {
         if (event.type == HealthEvent.Type.FALL_DETECTED) {
             Log.w(TAG, "FALL_DETECTED @ ${event.eventTime}")
 
-            broadcastFallDetected(event)
+            // Post Fall Emergency Event
+            EventBus.getDefault().post(
+                CustomEmergencyEvent(
+                    category = FALL_ALLERT,
+                    description = FALL_ALLERT,
+                    priority = 10,
+                    sendSms = true   // set false if you don’t want SMS
+                )
+            )
+
+            // Removed. Sending out a custom event to TAK
+            //broadcastFallDetected(event)
         }
         super.onHealthEventReceived(event)
     }
