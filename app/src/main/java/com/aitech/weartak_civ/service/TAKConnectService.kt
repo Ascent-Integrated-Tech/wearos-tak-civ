@@ -89,6 +89,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.events.TakChatEvent
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategy
 import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
@@ -1267,6 +1268,11 @@ class TAKConnectService: Service() {
                             // Send immediately
                             sendData(takServerDetail, msg, isNotPli, currTime)
                         } else {
+                            if (enableDynamicReportingStrategy) {
+                                Log.d(TAG, "enableDynamicReportingStrategy true")
+                                sendData(takServerDetail, msg, isNotPli, currTime)
+                                return
+                            }
                             if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
                                 // TODO: What about wifi optimization?
                                 //Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
