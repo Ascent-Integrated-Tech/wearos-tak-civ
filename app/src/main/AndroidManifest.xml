@@ -43,6 +43,7 @@
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="36"
         tools:replace="android:maxSdkVersion" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         tools:node="replace" />
