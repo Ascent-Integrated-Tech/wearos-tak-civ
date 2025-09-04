@@ -64,6 +64,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -105,6 +106,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -378,7 +380,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "settings_screen") {
-            SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState, context)
+            SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState, context = context)
         }
         composable(
             "callsign_screen") {
@@ -3242,8 +3244,12 @@ fun SettingsScreen(
     navController: NavController,
     callsignLiveDataState: MutableLiveData<String>,
     licenseLiveDataState: MutableLiveData<String>,
+    viewModel: ViewModel = viewModel(),
     context: Context
 ) {
+    val stringValue by viewModel.stringValue.collectAsState()
+    var stringInput by remember { mutableStateOf("") }
+
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
@@ -3258,6 +3264,27 @@ fun SettingsScreen(
     //Log.d(TAG, "SettingsScreen called")
     WearTakCivScreenDimensions(
         columnContent = {
+
+            Text(text = "Stored String Value: ${stringValue ?: "No value"}")
+            TextField(
+                value = stringInput,
+                onValueChange = { stringInput = it },
+                label = { Text("Enter String") }
+            )
+            Button(
+                onClick = {
+                    if (stringInput != stringValue) {
+                        viewModel.saveString(stringInput)
+                    } else {
+                        Log.d(TAG, "string value didnt change")
+                    }
+                }
+            ) {
+                Text("Save String to DataStore")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             CallsignRoleTeamChip(
                 "callsign_screen",
                 stringResource(R.string.callsign),
@@ -4032,7 +4059,7 @@ fun SettingsPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     var licenseState = MutableLiveData<String>("AscentLicense")
 
-    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
+    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, context = LocalContext.current)
 }
 
 @Preview(widthDp = 192, heightDp = 800, showBackground = true)

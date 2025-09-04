@@ -1289,5 +1289,19 @@ class DataRepository(private val context: Context) {
         private val BLOOD_TYPE = stringPreferencesKey("blood_type")
         private val ALLERGIES_KEY = stringPreferencesKey("allergies")
         private val USER_TYPE = stringPreferencesKey("user_type")
+        val STRING_KEY = stringPreferencesKey("string_key")
+
+        suspend fun saveStringPreferences(context: Context, key:
+        Preferences.Key<String>, value: String) {
+            context.dataStore.edit { preferences ->
+                preferences[key] = value
+            }
+        }
+        fun getStringPreferences(context: Context, key:
+        Preferences.Key<String>): Flow<String?> {
+            return context.dataStore.data.map { preferences ->
+                preferences[key]
+            }
+        }
     }
 }
