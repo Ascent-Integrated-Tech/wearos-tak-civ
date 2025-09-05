@@ -78,6 +78,7 @@ import java.security.cert.X509Certificate
 import java.util.Base64
 import java.util.Calendar
 import java.util.Date
+import java.util.Enumeration
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -931,6 +932,63 @@ class TAKConnectService: Service() {
 
          */
 
+        fun dumpKeyStoreAliases(ks: KeyStore, tag: String = TAG) {
+            try {
+                val aliases: Enumeration<String> = ks.aliases()
+                if (!aliases.hasMoreElements()) {
+                    Log.d(tag, "(keystore is empty)")
+                    return
+                }
+                while (aliases.hasMoreElements()) {
+                    val alias = aliases.nextElement()
+                    val isKey = ks.isKeyEntry(alias)
+                    val isTrustedCert = ks.isCertificateEntry(alias)
+                    val type = when {
+                        isKey -> "keyEntry"
+                        isTrustedCert -> "trustedCert"
+                        else -> "unknown"
+                    }
+                    Log.d(tag, "alias=\"$alias\" type=$type")
+
+                    if (isKey) {
+                        // For key entries you can inspect the certificate chain
+                        val chain = ks.getCertificateChain(alias)
+                        Log.d(tag, "  chain length=${chain?.size ?: 0}")
+                        chain?.forEachIndexed { idx, c ->
+                            (c as? X509Certificate)?.let { x ->
+                                logX509("$tag/$alias[$idx]", x)
+                            }
+                        }
+                    } else {
+                        // For trusted cert entries there’s a single certificate
+                        (ks.getCertificate(alias) as? X509Certificate)?.let { x ->
+                            logX509("$tag/$alias", x)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to dump keystore aliases: ${e.message}", e)
+            }
+        }
+
+        private fun logX509(tag: String, cert: X509Certificate) {
+            Log.d(tag, "  Subject: ${cert.subjectX500Principal.name}")
+            Log.d(tag, "  Issuer : ${cert.issuerX500Principal.name}")
+            Log.d(tag, "  Valid  : notBefore=${cert.notBefore}  notAfter=${cert.notAfter}")
+            Log.d(tag, "  SHA256 : ${sha256(cert.encoded)}")
+            // Uncomment if you also want SANs (may be null)
+            // val sans = try { cert.subjectAlternativeNames?.joinToString { it[1].toString() } ?: "(none)" } catch (_: Exception) { "(n/a)" }
+            // Log.d(tag, "  SANs   : $sans")
+        }
+
+        private fun sha256(bytes: ByteArray): String {
+            val md = MessageDigest.getInstance("SHA-256").digest(bytes)
+            // Android Base64
+            return android.util.Base64.encodeToString(md, android.util.Base64.NO_WRAP)
+            // If not on Android, use:
+            // return java.util.Base64.getEncoder().encodeToString(md)
+        }
+
         fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
             Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
@@ -1054,6 +1112,45 @@ class TAKConnectService: Service() {
                 }
             }
         }
+
+        fun firstKeyAlias(ks: KeyStore): String? {
+            val e = ks.aliases()
+            while (e.hasMoreElements()) {
+                val a = e.nextElement()
+                if (ks.isKeyEntry(a)) return a
+            }
+            return null
+        }
+
+        fun findRootInChain(ks: KeyStore): X509Certificate? {
+            val alias = firstKeyAlias(ks)
+            Log.d(TAG, "findRootInChain for alias=$alias")
+            val chain = ks.getCertificateChain(alias)
+                ?.map { it as X509Certificate }
+            if (null == chain) return null
+
+            // Prefer a self-signed cert (subject == issuer AND signature verifies with its own key)
+            chain.firstOrNull { isSelfSigned(it) }?.let { return it }
+
+            // Fallback: pick the cert whose issuer DN is not the subject DN of any other (top of chain)
+            val subjects = chain.map { it.subjectX500Principal.name }.toSet()
+            val candidate = chain.firstOrNull { it.issuerX500Principal.name !in subjects }
+            return candidate
+        }
+
+        private fun isSelfSigned(cert: X509Certificate): Boolean = try {
+            if (cert.subjectX500Principal != cert.issuerX500Principal) {
+                Log.d(TAG, "isSelfSigned=false")
+                false
+            } else {
+                cert.verify(cert.publicKey);
+                Log.d(TAG, "isSelfSigned=true")
+                true
+            }
+        } catch (_: Exception) {
+            Log.d(TAG, "isSelfSigned=false")
+            false
+        }
         
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             val takServer = takServerDetail.address
@@ -1062,6 +1159,8 @@ class TAKConnectService: Service() {
             if (takServerDetail.connectionStatus.getAndSet(TAK_SERVER_CONNECTING_COT_PORT) == TAK_SERVER_OBTAINED_CLIENT_CERT) {
                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                 try {
+                    Log.d(TAG, "Aliases for server $takServer")
+                    dumpKeyStoreAliases(takServerDetail.keyStore, TAG)
                     // Initialize the KeyManagerFactory with the client certificate
                     val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
                     if (takServerDetail.isP12Cert) {
@@ -1071,11 +1170,27 @@ class TAKConnectService: Service() {
                     }
 
                     // Initialize SSL Context with TrustManager
-                    val sslContext = SSLContext.getInstance("TLSv1.3")
+                    val root = findRootInChain(takServerDetail.keyStore)
+                    Log.d(TAG, "root=${root?.toString() ?: "null"}")
+                    val trustKs = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+                        load(null, null)
+                        setCertificateEntry("root", root)
+                    }
+                    val trustManagerFactory = if (null != root) {
+                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                            .apply { init(trustKs) }
+                    } else {
+                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                            .apply { init (takServerDetail.keyStore) }
+
+                    }
+                    /*
                     val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
                     trustManagerFactory.init(takServerDetail.keyStore)
-                    val trustManagers = trustManagerFactory.trustManagers
-                    val trustManager = trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
+                     */
+                    val trustManager = trustManagerFactory.trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
+
+                    val sslContext = SSLContext.getInstance("TLSv1.3")
                     if (null != trustManager) {
                         sslContext.init(keyManagerFactory.keyManagers, arrayOf(trustManager), null)
                     } else {
