@@ -1,6 +1,5 @@
 package com.aitech.weartak_civ.manager
 
-import android.content.ComponentName
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -11,11 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.complication.ConnectivityComplicationService
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.WifiSsidRcvd
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,13 +58,6 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
         checkNetworkConnected(null, null)
     }
 
-    fun requestConnectivityComplicationUpdate(context: Context) {
-        val componentName = ComponentName(context, ConnectivityComplicationService::class.java)
-
-        val requester = ComplicationDataSourceUpdateRequester.Companion.create(context, componentName)
-        requester.requestUpdateAll()
-    }
-
     fun checkNetworkConnected(network: Network?, networkCapabilities: NetworkCapabilities?) {
         //Log.d(TAG, "network (${network?.toString()}); networkCapabilities (${connectivityManager?.getNetworkCapabilities(network)?.toString()})")
         //Log.d(TAG, "activeNetwork (${connectivityManager?.activeNetwork?.toString()}); activeNetworkCapabilities (${connectivityManager?.getNetworkCapabilities(connectivityManager?.activeNetwork)?.toString()})")
@@ -85,8 +76,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 isNetworkConnected = true
                 networkInfoChanged = true
                 isNetworkConnectedLiveData.postValue(isNetworkConnected)
-                requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+                requestStatusIconsComplicationUpdate(context)
             }
 
             val currIsWifi = activeNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
@@ -104,40 +94,35 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 isWifi = currIsWifi
                 networkInfoChanged = true
                 isWifiConnectedLiveData.postValue(isWifi)
-                requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+                requestStatusIconsComplicationUpdate(context)
             }
             val currIsCellular = activeNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
             if (isCellular != currIsCellular) {
                 isCellular = currIsCellular
                 networkInfoChanged = true
                 isCellularConnectedLiveData.postValue(isCellular)
-                requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+                requestStatusIconsComplicationUpdate(context)
             }
         } else {
             if (isNetworkConnected == true) {
                 isNetworkConnected = false
                 networkInfoChanged = true
                 isNetworkConnectedLiveData.postValue(isNetworkConnected)
-                requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+                requestStatusIconsComplicationUpdate(context)
             }
 
             if (isWifi == true) {
                 isWifi = false
                 networkInfoChanged = true
                 isWifiConnectedLiveData.postValue(isWifi)
-                requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+                requestStatusIconsComplicationUpdate(context)
             }
 
             if (isCellular == true) {
                 isCellular = false
                 networkInfoChanged = true
                 isCellularConnectedLiveData.postValue(isCellular)
-                requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+                requestStatusIconsComplicationUpdate(context)
             }
         }
 

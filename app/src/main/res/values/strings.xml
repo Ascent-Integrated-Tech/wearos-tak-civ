@@ -101,12 +101,32 @@
     <string name="cell" translatable="false">Cell</string>
     <string name="wifi" translatable="false">Wifi</string>
     <string name="no_connection" translatable="false">No Connection</string>
-    <string name="not_capturing_connectivitystatuscomplication" translatable="false">not capturing connectivityStatusComplication: %1$s</string>
-    <string name="heart_rate" translatable="false">Heart Rate</string>
-    <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
     <string name="server_connected" translatable="false">Server Connected</string>
     <string name="server_connecting" translatable="false">Server Connecting</string>
     <string name="server_disconnected" translatable="false">Server Disconnected</string>
+    <string name="location_enabled" translatable="false">Location Enabled</string>
+    <string name="location_disabled" translatable="false">Location Disabled</string>
+    <string name="cell_server_connecting_location_enabled" translatable="false">Cell, Server Connecting, Location Enabled</string>
+    <string name="cell_server_connecting_location_disabled" translatable="false">Cell, Server Connecting, Location Disabled</string>
+    <string name="cell_server_connected_location_enabled" translatable="false">Cell, Server Connected, Location Enabled</string>
+    <string name="cell_server_connected_location_disabled" translatable="false">Cell, Server Connected, Location Disabled</string>
+    <string name="cell_server_disconnected_location_enabled" translatable="false">Cell, Server Disconnected, Location Enabled</string>
+    <string name="cell_server_disconnected_location_disabled" translatable="false">Cell, Server Disconnected, Location Disabled</string>
+    <string name="wifi_server_connecting_location_enabled" translatable="false">Wifi, Server Connecting, Location Enabled</string>
+    <string name="wifi_server_connecting_location_disabled" translatable="false">Wifi, Server Connecting, Location Disabled</string>
+    <string name="wifi_server_connected_location_enabled" translatable="false">Wifi, Server Connected, Location Enabled</string>
+    <string name="wifi_server_connected_location_disabled" translatable="false">Wifi, Server Connected, Location Disabled</string>
+    <string name="wifi_server_disconnected_location_enabled" translatable="false">Wifi, Server Disconnected, Location Enabled</string>
+    <string name="wifi_server_disconnected_location_disabled" translatable="false">Wifi, Server Disconnected, Location Disabled</string>
+    <string name="no_connect_server_connecting_location_enabled" translatable="false">No Connection, Server Connecting, Location Enabled</string>
+    <string name="no_connect_server_connecting_location_disabled" translatable="false">No Connection, Server Connecting, Location Disabled</string>
+    <string name="no_connect_server_disconnected_location_enabled" translatable="false">No Connection, Server Disconnected, Location Enabled</string>
+    <string name="no_connect_server_disconnected_location_disabled" translatable="false">No Connection, Server Disconnected, Location Disabled</string>
+
+    <string name="not_capturing_connectivitystatuscomplication" translatable="false">not capturing connectivityStatusComplication: %1$s</string>
+    <string name="heart_rate" translatable="false">Heart Rate</string>
+    <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
+
     <string name="chat_disabled" translatable="false">Chat Disabled</string>
     <string name="chat_enabled_no_new_messages" translatable="false">Chat enabled, no new messages</string>
     <string name="chat_enabled_new_messages" translatable="false">Chat enabled, new message(s)</string>
@@ -436,10 +456,9 @@
     <string name="sos_active">SOS Live</string>
     <string name="sos_alert_sent">SOS Alert SENT</string>
     <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
-    <string name="sos_color_complication_service" translatable="false">SOS Color Complication Service</string>
+    <string name="sos_complication_service" translatable="false">SOS Complication Service</string>
+    <string name="status_icons_complication_service" translatable="false">Status Icons Complication Service</string>
     <string name="sos_inactive">SOS Inactive</string>
-    <string name="sos_text_complication_service" translatable="false">SOS Text Complication Service</string>
-    <string name="sos_active_text_complication_service" translatable="false">SOS Active Text Complication Service</string>
     <string name="on_off">ON/OFF</string>
     <string name="sms_recipients">SMS Recipients</string>
     <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>

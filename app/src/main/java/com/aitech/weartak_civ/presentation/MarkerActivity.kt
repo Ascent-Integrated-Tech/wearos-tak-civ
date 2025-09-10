@@ -615,7 +615,7 @@ fun SwipeableMarkerChip(
 fun utcToHoursMinutesSeconds(time: Long): String {
     val instant = Instant.ofEpochMilli(time)
     val localTime = instant.atZone(ZoneId.systemDefault())
-    val formatter = DateTimeFormatter.ofPattern("hh:mm:ss a")
+    val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
     return localTime.format(formatter)
 }
 

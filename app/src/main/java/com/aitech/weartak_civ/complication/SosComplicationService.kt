@@ -24,11 +24,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIs
 import com.aitech.weartak_civ.presentation.SosActivity
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
-class SosColorComplicationService : SuspendingComplicationDataSourceService() {
+class SosComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
-        val TAG = "WearTAK-" + SosColorComplicationService::class.java.simpleName
-        var sosActiveBgComplicationData: SmallImageComplicationData? = null
-        var sosInactiveBgComplicationData: SmallImageComplicationData? = null
+        val TAG = "WearTAK-" + SosComplicationService::class.java.simpleName
+        var sosActiveComplicationData: SmallImageComplicationData? = null
+        var sosInactiveComplicationData: SmallImageComplicationData? = null
         val isAlertActive = SosActivity.isAlertingLiveData
     }
 
@@ -39,7 +39,7 @@ class SosColorComplicationService : SuspendingComplicationDataSourceService() {
         return createComplicationData(
             Icon.createWithResource(
                 applicationContext,
-                R.drawable.sosbg_inactive
+                R.drawable.sos_inactive
             ), getString(R.string.sos_inactive)
         )
     }
@@ -48,50 +48,50 @@ class SosColorComplicationService : SuspendingComplicationDataSourceService() {
         if (null == mainActivityIsInit) {
             return null
         }
-
+//TODO: Add Arabic Translation
         return when (isLicenseValid()) {
             true -> return when (isAlertActive.value) {
-                true -> when (null != sosActiveBgComplicationData) {
-                    true -> return sosActiveBgComplicationData
+                true -> when (null != sosActiveComplicationData) {
+                    true -> return sosActiveComplicationData
                     false -> {
                         Log.d(TAG, "Creating new sosActiveBgComplicationData")
-                        sosActiveBgComplicationData = createComplicationData(
+                        sosActiveComplicationData = createComplicationData(
                             Icon.createWithResource(
                                 applicationContext,
-                                R.drawable.sosbg_active
+                                R.drawable.sos_active
                             ), getString(R.string.sos_active)
                         )
-                        return sosActiveBgComplicationData
+                        return sosActiveComplicationData
                     }
                 }
 
-                false -> when (null != sosInactiveBgComplicationData) {
-                    true -> return sosInactiveBgComplicationData
+                false -> when (null != sosInactiveComplicationData) {
+                    true -> return sosInactiveComplicationData
                     false -> {
                         Log.d(TAG, "Creating new sosInactiveBgComplicationData")
-                        sosInactiveBgComplicationData = createComplicationData(
+                        sosInactiveComplicationData = createComplicationData(
                             Icon.createWithResource(
                                 applicationContext,
-                                R.drawable.sosbg_inactive
+                                R.drawable.sos_inactive
                             ), getString(R.string.sos_inactive)
                         )
-                        return sosInactiveBgComplicationData
+                        return sosInactiveComplicationData
                     }
                 }
                 else -> return null
             }
 
-            false -> when (null != sosInactiveBgComplicationData) {
-                true -> return sosInactiveBgComplicationData
+            false -> when (null != sosInactiveComplicationData) {
+                true -> return sosInactiveComplicationData
                 false -> {
                     Log.d(TAG, "Creating new sosInactiveBgComplicationData")
-                    sosInactiveBgComplicationData = createComplicationData(
+                    sosInactiveComplicationData = createComplicationData(
                         Icon.createWithResource(
                             applicationContext,
-                            R.drawable.sosbg_inactive
+                            R.drawable.sos_inactive
                         ), getString(R.string.sos_inactive)
                     )
-                    return sosInactiveBgComplicationData
+                    return sosInactiveComplicationData
                 }
             }
         }

@@ -27,7 +27,7 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class ChatComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
-        val TAG = "WearTAK-" + TakServerComplicationService::class.java.simpleName
+        val TAG = "WearTAK-" + ChatComplicationService::class.java.simpleName
         var disabledComplicationData: SmallImageComplicationData? = null
         var enabledNoMessageComplicationData: SmallImageComplicationData? = null
         var enabledNewMessageComplicationData: SmallImageComplicationData? = null

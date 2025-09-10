@@ -20,6 +20,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.RestrictionsManager
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -27,10 +28,13 @@ import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
 import android.provider.Settings.Secure
+import android.text.format.DateFormat
 import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
@@ -46,6 +50,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,10 +67,14 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonColors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -86,29 +95,78 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.getString
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
+import androidx.wear.compose.foundation.AnchorType
+import androidx.wear.compose.foundation.CurvedDirection
+import androidx.wear.compose.foundation.CurvedLayout
+import androidx.wear.compose.foundation.CurvedModifier
+import androidx.wear.compose.foundation.CurvedTextStyle
+import androidx.wear.compose.foundation.curvedRow
+import androidx.wear.compose.foundation.padding
 import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SwipeToDismissBox
 import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.curvedText
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
+import com.aitech.weartak_civ.Utils.isStringEmptyJson
+import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
+import com.aitech.weartak_civ.Utils.secureRandom
+import com.aitech.weartak_civ.complication.CallsignComplicationService
+import com.aitech.weartak_civ.complication.ChatComplicationService
+import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
+import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NEW_MESSAGE
+import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
+import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.ActivityRecognitionService
+import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BatteryService
+import com.aitech.weartak_civ.service.BleBeaconService
+import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CustomAccessibilityService
 import com.aitech.weartak_civ.service.DittoService
@@ -118,76 +176,22 @@ import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.LocationService
 import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
+import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
+import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
+import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
-import com.aitech.weartak_civ.service.ChatService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
-import android.content.RestrictionsManager
-import android.os.Handler
-import android.os.Looper
-import android.text.format.DateFormat
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.IconButtonColors
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.wear.compose.foundation.CurvedLayout
-import androidx.wear.compose.foundation.CurvedModifier
-import androidx.wear.compose.foundation.CurvedTextStyle
-import androidx.wear.compose.foundation.curvedRow
-import androidx.wear.compose.foundation.padding
-import androidx.wear.compose.material.curvedText
-import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
-import com.aitech.weartak_civ.service.BleBeaconService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.DEFAULT_AGE
-import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_RESTING_HR
-import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
-import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFromRaw
-import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
-import com.aitech.weartak_civ.Utils.isStringEmptyJson
-import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
-import com.aitech.weartak_civ.Utils.secureRandom
-import com.aitech.weartak_civ.complication.CallsignComplicationService
-import com.aitech.weartak_civ.complication.ChatComplicationService
-import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
-import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NEW_MESSAGE
-import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
-import com.aitech.weartak_civ.complication.LocationComplicationService
-import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
-import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
-import com.aitech.weartak_civ.manager.NetworkManager
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.connectivityStatusComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerStatusComplication
-import com.aitech.weartak_civ.service.ActivityRecognitionService
-import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
-import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
 import com.aitech.weartak_civ.service.PassiveDataService
-import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -1530,11 +1534,10 @@ class MainActivity : ComponentActivity() {
         restingHeartRateSettingsState.postValue(restingHeartRate)
 
         requestCallsignComplicationUpdate(context)
-        requestLocationComplicationUpdate(context)
         requestHeartRateComplicationUpdate(context)
-        requestSosColorComplicationUpdate(context)
-        requestSosTextComplicationUpdate(context)
-        requestSosActiveTextComplicationUpdate(context)
+        requestSosComplicationUpdate(context)
+        requestStatusIconsComplicationUpdate(context)
+        requestChatComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -2281,16 +2284,17 @@ fun requestCallsignComplicationUpdate(context: Context) {
     requester.requestUpdateAll()
 }
 
-fun requestLocationComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, LocationComplicationService::class.java)
+//TODO: Possibly move to chat service wherever it goes
+fun requestChatComplicationUpdate(context: Context) {
+    val componentName = ComponentName(context, ChatComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
 }
 
-//TODO: Possibly move to chat service wherever it goes
-fun requestChatComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, ChatComplicationService::class.java)
+fun requestStatusIconsComplicationUpdate(context: Context) {
+    Log.d(TAG, "requestStatusIconComplicationUpdate called")
+    val componentName = ComponentName(context, StatusIconsComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
@@ -2481,11 +2485,11 @@ fun TimeWithSecondsAware(context: Context) {
     val is24Hour = remember { DateFormat.is24HourFormat(context) }
 
     val formatter = remember(is24Hour) {
-        if (is24Hour) {
+//        if (is24Hour) {
             DateTimeFormatter.ofPattern("HH:mm:ss")
-        } else {
-            DateTimeFormatter.ofPattern("hh:mm:ss") // a = AM/PM
-        }
+//        } else {
+//            DateTimeFormatter.ofPattern("hh:mm:ss") // a = AM/PM
+//        }
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -2501,7 +2505,11 @@ fun TimeWithSecondsAware(context: Context) {
             delay(1000L)
         }
     }
-    CurvedLayout() {
+    CurvedLayout(
+        anchor = 90f,                 // bottom (6 o’clock)
+        anchorType = AnchorType.Center,
+        angularDirection = CurvedDirection.Angular.Reversed
+    ) {
         curvedRow(modifier = CurvedModifier.padding()) {
             curvedText(currentTime.format(formatter),
                 style = CurvedTextStyle())
@@ -2605,46 +2613,67 @@ fun HeartRate () {
     }
 }
 
+enum class Connectivity { CELL, WIFI, NONE }
+enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
-fun connectivityComplicationString() {
-    if (null != networkManager) {
-        networkManager?.checkNetworkConnected()
-        var networkConnectedLiveData: MutableLiveData<Boolean> =
-            NetworkManager.isNetworkConnectedLiveData
-        var cellConnectedLiveData: MutableLiveData<Boolean> =
-            NetworkManager.isCellularConnectedLiveData
+fun readConnectivity(networkManager: NetworkManager?): Connectivity {
+    if (networkManager == null) return Connectivity.NONE
+    networkManager.checkNetworkConnected()
 
-        if (networkConnectedLiveData.value == true) {
-            if (cellConnectedLiveData.value == true) {
-                connectivityStatusComplication = "cell"
-            } else {
-                connectivityStatusComplication = "wifi"
-            }
-        } else {
-            connectivityStatusComplication = "none"
-        }
-    } else {
-        connectivityStatusComplication = "none"
+    val net = NetworkManager.isNetworkConnectedLiveData.value == true
+    val cell = NetworkManager.isCellularConnectedLiveData.value == true
+
+    return when {
+        net && cell -> Connectivity.CELL
+        net && !cell -> Connectivity.WIFI
+        else -> Connectivity.NONE
     }
 }
 
-fun takServerComplicationString() {
-    if (null != takConnectService) {
-        var takServerLiveData: MutableLiveData<Boolean> =
-            TAKConnectService.isAnyTakConnectedLiveData
-        var takServerConnectingLiveData: MutableLiveData<Boolean> =
-            TAKConnectService.isAnyTakConnectingLiveData
+fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
+    if (takConnectService == null) return TakServer.DISCONNECTED
 
-        if (takServerLiveData.value == true) {
-            takServerStatusComplication = "connected"
-        } else if (takServerConnectingLiveData.value == true) {
-            takServerStatusComplication = "connecting"
-        } else if (takServerLiveData.value == false) {
-            takServerStatusComplication = "disconnected"
-        }
-    } else {
-        takServerStatusComplication = "disconnected"
+    val connected = TAKConnectService.isAnyTakConnectedLiveData.value == true
+    val connecting = TAKConnectService.isAnyTakConnectingLiveData.value == true
+
+    return when {
+        connected -> TakServer.CONNECTED
+        connecting -> TakServer.CONNECTING
+        else -> TakServer.DISCONNECTED
     }
+}
+
+fun buildComplicationString(
+    context: Context,
+    connectivity: Connectivity,
+    tak: TakServer,
+    locationEnabled: Boolean,
+    coerceImpossible: Boolean = true // optional: see note below
+): String {
+    // If you never want to show "No Connect, Server Connected", coerce it:
+    val effectiveTak = if (coerceImpossible && connectivity == Connectivity.NONE && tak == TakServer.CONNECTED) {
+        TakServer.DISCONNECTED
+    } else tak
+
+    val connLabel = when (connectivity) {
+        Connectivity.CELL -> getString(context, R.string.cell)
+        Connectivity.WIFI -> getString(context, R.string.wifi)
+        Connectivity.NONE -> getString(context, R.string.no_connection)
+    }
+    val takLabel = when (effectiveTak) {
+        TakServer.CONNECTED -> getString(context, R.string.server_connected)
+        TakServer.CONNECTING -> getString(context, R.string.server_connecting)
+        TakServer.DISCONNECTED -> getString(context, R.string.server_disconnected)
+    }
+    val locLabel = if (locationEnabled) getString(context, R.string.location_enabled) else getString(context, R.string.location_disabled)
+
+    return "$connLabel, $takLabel, $locLabel"
+}
+
+fun overallComplicationString(context: Context): String {
+    val connectivity = readConnectivity(networkManager)
+    val tak = readTakStatus(takConnectService)
+    return buildComplicationString(context, connectivity, tak, enableLocationService)
 }
 
 fun chatComplicationString() {

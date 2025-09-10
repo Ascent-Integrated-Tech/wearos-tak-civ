@@ -30,12 +30,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -53,10 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
@@ -72,9 +67,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.complication.SosActiveTextComplicationService
-import com.aitech.weartak_civ.complication.SosColorComplicationService
-import com.aitech.weartak_civ.complication.SosTextComplicationService
+import com.aitech.weartak_civ.complication.SosComplicationService
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.ALERT_CANCELLED
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
@@ -265,9 +258,7 @@ fun SuccessDialogActivity(
                     )
                     isAlerting.value = isAlerting.value != true
                     isAlerting.postValue(isAlerting.value)
-                    requestSosColorComplicationUpdate(context)
-                    requestSosTextComplicationUpdate(context)
-                    requestSosActiveTextComplicationUpdate(context)
+                    requestSosComplicationUpdate(context)
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
@@ -414,20 +405,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     }
 }
 
-fun requestSosColorComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, SosColorComplicationService::class.java)
-
-    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
-    requester.requestUpdateAll()
-}
-fun requestSosTextComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, SosTextComplicationService::class.java)
-
-    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
-    requester.requestUpdateAll()
-}
-fun requestSosActiveTextComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, SosActiveTextComplicationService::class.java)
+fun requestSosComplicationUpdate(context: Context) {
+    val componentName = ComponentName(context, SosComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
