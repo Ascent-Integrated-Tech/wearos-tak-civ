@@ -251,7 +251,6 @@ import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.requestTakServerComplicationUpdate
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.category
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categoryRolesEntryLists
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categorySettingsState
@@ -2517,9 +2516,10 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             dataRepository.storeLicense(license)
                         }
                         requestCallsignComplicationUpdate(context)
-                        requestLocationComplicationUpdate(context)
-                        requestTakServerComplicationUpdate(context)
                         requestHeartRateComplicationUpdate(context)
+                        requestSosComplicationUpdate(context)
+                        requestStatusIconsComplicationUpdate(context)
+                        requestChatComplicationUpdate(context)
 
                         Log.d(TAG, "Sending License for Validation.")
                     } else {
@@ -3877,7 +3877,7 @@ fun SettingsScreen(
                     if (enableLocationService != enableLocationServiceSettingsState.value) {
                         settingsChanged = true; locationCheckedChanged = true
                         enableLocationService = enableLocationServiceSettingsState.value ?: enableLocationService
-                        requestLocationComplicationUpdate(context)
+                        requestStatusIconsComplicationUpdate(context)
                         if (enableLocationService) {
                             Log.d(TAG, "Trying to start location service")
                             startLocationService()
