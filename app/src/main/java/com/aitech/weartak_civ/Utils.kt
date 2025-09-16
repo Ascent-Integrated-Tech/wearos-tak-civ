@@ -420,6 +420,10 @@ object Utils {
             else            -> "LIGHT"
         }
 
+        fun convertFarenheitToCelsius(f: Float): Float {
+            return (f-32) * 5/9
+        }
+
         sealed class PhysioEvent {
             data class Hr(val bpm: Int, val t: Long) : PhysioEvent()
             data class Motion(val accelRms: Double, val t: Long) : PhysioEvent()
