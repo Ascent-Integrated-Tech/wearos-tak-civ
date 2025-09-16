@@ -281,6 +281,10 @@
     <string name="hail_service_description" translatable="false">Enable or disable Hail service</string>
     <string name="hail_service_enabled_default" translatable="false">false</string>
 
+    <string name="batdok_title" translatable="false">Enable Batdok COT</string>
+    <string name="batdok_description" translatable="false">Enable or disable Batdok COT</string>
+    <string name="batdok_enabled_default" translatable="false">true</string>
+
     <string name="multicast_service_enabled_title" translatable="false">Enable Multicast</string>
     <string name="multicast_service_enabled_description" translatable="false">Enabling multicast publishes PLI CoT over UDP on Wifi LAN</string>
     <string name="multicast_service_enabled_default" translatable="false">true</string>

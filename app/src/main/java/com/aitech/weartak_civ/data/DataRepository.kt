@@ -112,6 +112,18 @@ class DataRepository(private val context: Context) {
         prefs[ENABLE_HAIL_SERVICE] ?: false
     }
 
+    suspend fun storeEnableBatdokCot(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BATDOK_COT] = enable
+        }
+    }
+
+    val getEnableBatdokCot: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BATDOK_COT] ?: true
+    }
+
+
+
     /**
      * Hail License State can be one of the four states below and controls
      * UI screens, license authentication, and activation of building
@@ -1339,6 +1351,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")
         private val ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_all_wifi_battery_optimization")
         private val ENABLE_HAIL_SERVICE = booleanPreferencesKey("enable_hail_service")
+        private val ENABLE_BATDOK_COT = booleanPreferencesKey("enable_batdok_cot")
         private val HAIL_LICENSE_INFO_JSON = stringPreferencesKey("hail_license_info_json_v1") // include suffix for forward-compat
         private val HAIL_LICENSE_STATE = stringPreferencesKey("hail_license_state")
         private val HAIL_COMBAT_ID = intPreferencesKey("hail_combat_id")

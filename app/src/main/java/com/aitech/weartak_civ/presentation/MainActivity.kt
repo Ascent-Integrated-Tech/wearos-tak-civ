@@ -191,7 +191,6 @@ import com.aitech.weartak_civ.service.SkinTempService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
-import java.io.File
 
 
 class MainActivity : ComponentActivity() {
@@ -219,6 +218,7 @@ class MainActivity : ComponentActivity() {
         var enableHailService: Boolean = false
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableMulticastOnWifi: Boolean = true
+        var enableBatdokCot: Boolean = true
 
         //Enable Global Health Events
         var enablePassiveDataService = false
@@ -1134,7 +1134,9 @@ class MainActivity : ComponentActivity() {
             enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             enableChatService = dataRepository.getEnableChatService.first()
+            // TODO: For some reason, DataRepository's enableHailService is true in onCreate of CotDispatchService even if enableHailService here is false
             enableHailService = dataRepository.getEnableHailService.first()
+            enableBatdokCot = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
 
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
@@ -1273,6 +1275,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
                     ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Batdok COT:", enableBatdokCot.toString())}
                     ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
                     ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
@@ -1757,6 +1760,7 @@ class MainActivity : ComponentActivity() {
         val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
+        val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
         val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
 
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
@@ -2038,6 +2042,7 @@ class MainActivity : ComponentActivity() {
 
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
+            dataRepository.storeEnableBatdokCot(enableBatdokCotConfigUpdate)
             dataRepository.storeEnableMulticast(enableMulticastConfigUpdate)
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
@@ -2124,6 +2129,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             enableHailService = enableHailServiceConfigUpdate
+            enableBatdokCot = enableBatdokCotConfigUpdate
             enableMulticastOnWifi = enableMulticastConfigUpdate
 
             enableSmsForAlerts = enableSmsForAlertsConfigUpdate

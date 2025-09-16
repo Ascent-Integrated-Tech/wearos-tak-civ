@@ -103,6 +103,13 @@
         android:defaultValue="@string/hail_service_enabled_default" />
 
     <restriction
+        android:key="batdok_enabled"
+        android:restrictionType="bool"
+        android:title="@string/batdok_title"
+        android:description="@string/batdok_description"
+        android:defaultValue="@string/batdok_enabled_default" />
+
+    <restriction
         android:key="multicast_service_enabled"
         android:restrictionType="bool"
         android:title="@string/multicast_service_enabled_title"
