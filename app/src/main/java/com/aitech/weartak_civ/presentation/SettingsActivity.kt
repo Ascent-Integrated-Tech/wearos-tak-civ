@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.presentation
 
 import android.annotation.SuppressLint
+import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -18,10 +19,13 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
+import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +51,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -89,6 +94,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -113,6 +119,7 @@ import androidx.wear.compose.foundation.rememberRevealState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
+import androidx.wear.compose.material.CompactButton
 import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
@@ -133,6 +140,8 @@ import androidx.wear.compose.material.rememberPickerState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import androidx.wear.input.RemoteInputIntentHelper
+import androidx.wear.input.wearableExtender
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
@@ -585,7 +594,8 @@ fun GenericOutlinedTextField(
         maxLines = 1,
         label = { Text(text = label, color = colors.primary) },
         placeholder = { Text(text = placeholder, color = colors.primary) },
-        textStyle = TextStyle(color = colors.primary)
+        textStyle = TextStyle(color = colors.primary),
+
     )
     return textFieldValue
 }
@@ -676,8 +686,8 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
 //                )
 //            )
 //        }
-        var textField = GenericOutlinedTextField(callsignLiveDataState, stringResource(R.string.callsign), stringResource(R.string.callsign))
-
+//        var textField = GenericOutlinedTextField(callsignLiveDataState, stringResource(R.string.callsign), stringResource(R.string.callsign))
+       var textField =  TextInput(callsignLiveDataState)
 //        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
 //        OutlinedTextField(
 //            value = callsignTextFieldValue,
@@ -700,7 +710,7 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
                     }
                 },
                 onClickConfirm = {
-                    callsignLiveDataState.postValue(textField.text)
+                    callsignLiveDataState.postValue(textField)
                     Log.d(TAG, "Settings saved with callsign: ${callsignLiveDataState.value}")
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
@@ -710,6 +720,55 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
                 })
         }
     }
+}
+
+@Composable
+fun TextInput(
+liveDataState: MutableLiveData<String>,
+): String {
+    val defaultText = liveDataState.value
+    var userInput by remember { mutableStateOf(defaultText ?: "null") }
+    val inputTextKey = "input_text"
+
+    val remoteInputs: List<RemoteInput> = listOf(
+        RemoteInput.Builder(inputTextKey)
+            .setLabel(stringResource(id = R.string.heart_rate))
+            .wearableExtender {
+                setEmojisAllowed(true)
+                setInputActionType(EditorInfo.IME_ACTION_DONE)
+            }.build(),
+    )
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        it.data?.let { data ->
+            val results: Bundle = RemoteInput.getResultsFromIntent(data)
+            val newInputText: CharSequence? = results.getCharSequence(inputTextKey)
+            userInput = newInputText?.toString() ?: ""
+        }
+    }
+
+    val intent: Intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
+    RemoteInputIntentHelper.putRemoteInputsExtra(intent, remoteInputs)
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(0.75f)) {
+            Text(text = userInput, Modifier.weight(1f))
+            CompactButton(
+                onClick = { launcher.launch(intent) },
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = ""
+                )
+            }
+        }
+    }
+return userInput
 }
 
 @Composable
