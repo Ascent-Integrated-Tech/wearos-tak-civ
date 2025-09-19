@@ -104,24 +104,29 @@ class ModifiedMadgwickFilter(
         dt: Float?
     ) {
         val samplePeriod = dt ?: defaultSamplePeriod
-        
+
+        //Log.d("Madgwick", "🔄 Update start: dt=${"%.4f".format(samplePeriod)}s, gyro=[${gyroscope.joinToString()}], accel=[${accelerometer.joinToString()}], mag=[${magnetometer.joinToString()}]")
+
         // NEW: IMU inputs sanity check
         val ax = accelerometer[0]; val ay = accelerometer[1]; val az = accelerometer[2]
         val gx = gyroscope[0]; val gy = gyroscope[1]; val gz = gyroscope[2]
         
         if (!ax.isFinite() || !ay.isFinite() || !az.isFinite() ||
             !gx.isFinite() || !gy.isFinite() || !gz.isFinite() || samplePeriod <= 0f) {
-            Log.w("Madgwick", "Bad IMU sample: finite=${ax.isFinite() && ay.isFinite() && az.isFinite()}, dt=$samplePeriod")
+            //Log.w("Madgwick", "Bad IMU sample: finite=${ax.isFinite() && ay.isFinite() && az.isFinite()}, dt=$samplePeriod")
             return
         }
         
         // NEW: Spike detector
         val gyroAbs = maxOf(abs(gx), abs(gy), abs(gz))
-        if (gyroAbs > 20f) Log.w("Madgwick", "⚠️ Gyro spike ${"%.1f".format(gyroAbs)} rad/s")
+        //if (gyroAbs > 20f) Log.w("Madgwick", "⚠️ Gyro spike ${"%.1f".format(gyroAbs)} rad/s")
 
         // --- Magnetometer reliability gating (based on RAW magnitude in µT) ---
         val magRawNorm = fastNorm(magnetometer)
-        magWeight = if (magRawNorm in MAG_FIELD_MIN_UT..MAG_FIELD_MAX_UT) 1.0f else 0.0f
+        //magWeight = if (magRawNorm in MAG_FIELD_MIN_UT..MAG_FIELD_MAX_UT) 1.0f else 0.0f
+
+        // TEMP: very wide band just to test
+        magWeight = if (magRawNorm in 5f..5000f) 1f else 0f
 
         // Normalize accelerometer and magnetometer measurements for the LM objective
         val normalizedAccel = normalize(accelerometer)
@@ -135,11 +140,55 @@ class ModifiedMadgwickFilter(
             applyLowPassFilter(normalizedMag)
         }
 
+        // Directional mag gating (scale-agnostic): use cosine similarity
+        // predict body-frame mag by rotating nav reference into body with current q
+        val predictedBodyMag = rotateVector(q /* body->nav */, MAGNETIC_REFERENCE)
+        val dotBM = (predictedBodyMag[0]*filteredMagnetometer[0]
+                + predictedBodyMag[1]*filteredMagnetometer[1]
+                + predictedBodyMag[2]*filteredMagnetometer[2])
+        val cosSim = dotBM.coerceIn(-1f, 1f)               // -1..1
+        val fit = (cosSim + 1f) * 0.5f                     // 0..1
+        val weightFromFit = fit * fit                      // emphasize good alignment
+
+        // very loose magnitude sanity to reject garbage, regardless of units
+        //val magRawNorm = fastNorm(magnetometer)
+        val magOk = magRawNorm in 5f..5000f
+
+        magWeight = if (magOk) weightFromFit else 0f
+
+
         // Orientation estimate from accel+mag via LM (mag rows scaled by magWeight)
         val (qEst, lmImproved) = estimateOrientationLM(normalizedAccel, filteredMagnetometer)
 
         // Orientation estimate from gyroscope integration
         val qGyro = integrateGyroscope(gyroscope, samplePeriod)
+
+        // compute LM error now: sum of squared residuals (acc + mag, mag rows scaled by magWeight)
+        run {
+            val err = calculateErrorVector(qEst, normalize(magnetometer), filteredMagnetometer, magWeight)
+            var lmError = 0f; for (e in err) lmError += e*e  // SSE
+
+            val eEst  = quatToEulerDeg(qEst)
+            val eGyro = quatToEulerDeg(qGyro)
+            val muDynamic = mu * (0.5f + 0.5f * magWeight)  // same as below
+
+            /*Log.d("Madgwick", "↔️ LM vs Gyro | " +
+                    "qEst=[${qEst.joinToString(","){ "%.4f".format(it) }}] " +
+                    "eEst=(r=${"%.2f".format(eEst[0])}, p=${"%.2f".format(eEst[1])}, y=${"%.2f".format(eEst[2])}) | " +
+                    "qGyro=[${qGyro.joinToString(","){ "%.4f".format(it) }}] " +
+                    "eGyro=(r=${"%.2f".format(eGyro[0])}, p=${"%.2f".format(eGyro[1])}, y=${"%.2f".format(eGyro[2])}) | " +
+                    "magW=${"%.2f".format(magWeight)} μd=${"%.2f".format(muDynamic)} λ=${"%.3g".format(currentLambda)} " +
+                    "LMerr=${"%.3e".format(lmError)} imp=$lmImproved")*/
+        }
+
+        val eEst = quatToEulerDeg(qEst)
+        val eGyro = quatToEulerDeg(qGyro)
+        /*Log.d("Madgwick", "↔️ LM vs Gyro: " +
+                "qEst=[${qEst.joinToString(","){ "%.4f".format(it) }}], " +
+                "eEst=(r=${"%.2f".format(eEst[0])}, p=${"%.2f".format(eEst[1])}, y=${"%.2f".format(eEst[2])}) | " +
+                "qGyro=[${qGyro.joinToString(","){ "%.4f".format(it) }}], " +
+                "eGyro=(r=${"%.2f".format(eGyro[0])}, p=${"%.2f".format(eGyro[1])}, y=${"%.2f".format(eGyro[2])})")*/
+
 
         // Fuse with SLERP (bias toward qEst by mu, but temper if mag is unreliable)
         val muDynamic = mu * (0.5f + 0.5f * magWeight) // reduce influence when magWeight==0
@@ -168,6 +217,10 @@ class ModifiedMadgwickFilter(
 
         // Update gyroscope bias estimate using the difference between the two estimates
         updateGyroscopeBias(qEst, qGyro, samplePeriod)
+
+        val euler = getEulerAnglesDegrees()
+        //Log.d("Madgwick", "✅ Update done: q=[${q.joinToString()}], roll=${"%.2f".format(euler[0])}, pitch=${"%.2f".format(euler[1])}, yaw=${"%.2f".format(euler[2])}, magWeight=$magWeight")
+
     }
 
     fun getQuaternion(): FloatArray = q.copyOf()
@@ -228,6 +281,23 @@ class ModifiedMadgwickFilter(
         magLpfInitialized = false
         previousError = Float.MAX_VALUE
         currentLambda = lambda
+    }
+
+    // Compact snapshot for logging (no behavior change)
+    data class AhrsLog(
+        val qw: Float, val qx: Float, val qy: Float, val qz: Float,
+        val rollDeg: Float, val pitchDeg: Float, val yawDeg: Float,
+        val magWeight: Float
+    )
+
+    fun snapshotForLogging(): AhrsLog {
+        val q = getQuaternion()
+        val e = getEulerAnglesDegrees()
+        return AhrsLog(
+            qw = q[0], qx = q[1], qy = q[2], qz = q[3],
+            rollDeg = e[0], pitchDeg = e[1], yawDeg = e[2],
+            magWeight = getMagWeight()
+        )
     }
 
     fun setParameters(
@@ -615,6 +685,27 @@ class ModifiedMadgwickFilter(
         }
         return g
     }
+
+    private fun quatToEulerDeg(q: FloatArray): FloatArray {
+        val qw = q[0]; val qx = q[1]; val qy = q[2]; val qz = q[3]
+        val sinr_cosp = 2.0f * (qw * qx + qy * qz)
+        val cosr_cosp = 1.0f - 2.0f * (qx * qx + qy * qy)
+        val roll = atan2(sinr_cosp, cosr_cosp)
+
+        val sinp = 2.0f * (qw * qy - qz * qx)
+        val pitch = asin(clamp(sinp, -1.0f, 1.0f))
+
+        val siny_cosp = 2.0f * (qw * qz + qx * qy)
+        val cosy_cosp = 1.0f - 2.0f * (qy * qy + qz * qz)
+        val yaw = atan2(siny_cosp, cosy_cosp)
+
+        return floatArrayOf(
+            Math.toDegrees(roll.toDouble()).toFloat(),
+            Math.toDegrees(pitch.toDouble()).toFloat(),
+            Math.toDegrees(yaw.toDouble()).toFloat()
+        )
+    }
+
 
     /**
      * Validate quaternion for proper normalization and range

@@ -3,6 +3,9 @@ package com.aitech.weartak_civ.algorithm
 import kotlin.math.*
 import android.util.Log
 
+private const val GPS_TAG = "GPS_REFIX"
+private const val GPS_REFIX_TAG = "GPS_REFIX"
+
 /**
  * Extended Kalman Filter for 6-DOF Pose Estimation with IMU Bias Compensation
  *
@@ -42,8 +45,6 @@ class ExtendedKalmanFilter(
         const val GPS_MEASUREMENT_DIM = 7  // GPS: position (x,y,z), velocity (vx,vy,vz), heading
         const val MAGNETOMETER_MEASUREMENT_DIM = 1  // Magnetometer: heading only
         const val CONTROL_DIM = 9      // IMU: ax, ay, az, ωx, ωy, ωz, mx, my, mz
-
-
 
         // WGS84 ellipsoid parameters
         const val EARTH_RADIUS = 6378137.0 // meters
@@ -85,6 +86,16 @@ class ExtendedKalmanFilter(
         // Logging constants
         const val TAG = "EKF"
         const val DEBUG_LOGS = false
+
+        // Lightweight helper (no side effects)
+        /*private fun logGpsRefix(origin: String, reason: String, details: String = "") {
+            try {
+                android.util.Log.w(
+                    GPS_REFIX_TAG,
+                    "origin=$origin reason=$reason${if (details.isNotBlank()) " $details" else ""}"
+                )
+            } catch (_: Throwable) { /* ignore */ }
+        }*/
     }
 
     // MEKF layout (nominal state outside the error vector):
@@ -538,9 +549,9 @@ class ExtendedKalmanFilter(
         val dt = rawDt.coerceIn(MIN_SAMPLING_TIME, MAX_SAMPLING_TIME)
         
         // NEW: dt clamp + quaternion norm logging
-        Log.d(TAG, "predict(): raw dt=${"%.4f".format(rawDt)} s, clamped=${"%.4f".format(dt)} s")
+        //Log.d(TAG, "predict(): raw dt=${"%.4f".format(rawDt)} s, clamped=${"%.4f".format(dt)} s")
         val qn = sqrt(state[9]*state[9] + state[10]*state[10] + state[11]*state[11] + state[12]*state[12])
-        if (abs(qn - 1.0) > 1e-3) Log.w(TAG, "⚠️ Quaternion norm off by ${"%.3e".format(qn-1.0)} before renorm")
+        if (abs(qn - 1.0) > 1e-3) //Log.w(TAG, "⚠️ Quaternion norm off by ${"%.3e".format(qn-1.0)} before renorm")
 
         // Update state transition Jacobian
         updateStateTransitionJacobian(dt)
@@ -570,7 +581,7 @@ class ExtendedKalmanFilter(
 
         // --- EKF health & recovery ---
         if (!sanitizeStateAndCovariance()) {
-            Log.w(TAG, "Predict: state invalid → rollback/reset")
+            //Log.w(TAG, "Predict: state invalid → rollback/reset")
             if (!restoreIfBad("predict")) {
                 // lastGood didn't exist → soft reset to the current reference origin
                 resetFromLatLon(referenceLat, referenceLon, referenceAlt, accuracyM = 10.0, zeroVelocity = true, forceResetBiases = false)
@@ -607,7 +618,7 @@ class ExtendedKalmanFilter(
         val gyroMag = sqrt(omegaX*omegaX + omegaY*omegaY + omegaZ*omegaZ)
         
         if (!bodyMag.isFinite() || bodyMag > 30.0 || (bodyMag > 18.0 && gyroMag < 0.05)) {
-            Log.w(TAG,"Predict: accel spike (|a|=$bodyMag, |ω|=$gyroMag) → skip step")
+            //Log.w(TAG,"Predict: accel spike (|a|=$bodyMag, |ω|=$gyroMag) → skip step")
             // Return skip result - covariance inflation handled in predict()
             return PredictResult(state, true)
         }
@@ -655,11 +666,11 @@ class ExtendedKalmanFilter(
 
         // Debug: Log bias compensation details when there are issues
         if (DEBUG_LOGS && (abs(ax) > 8.0 || abs(ay) > 8.0 || abs(az) > 8.0)) { // Only log when IMU is active
-            Log.d(TAG, "🔍 Bias Compensation Debug:")
-            Log.d(TAG, "   Raw IMU: ax=${String.format("%.6f", ax)}, ay=${String.format("%.6f", ay)}, az=${String.format("%.6f", az)}")
-            Log.d(TAG, "   Accel bias: bx=${String.format("%.6f", accelBiasX)}, by=${String.format("%.6f", accelBiasY)}, bz=${String.format("%.6f", accelBiasZ)}")
-            Log.d(TAG, "   Corrected accel: ax=${String.format("%.6f", correctedAx)}, ay=${String.format("%.6f", correctedAy)}, az=${String.format("%.6f", correctedAz)}")
-            Log.d(TAG, "   Calibration status: accel=${accelBiasesCalibrated}, initial=${initialCalibrationPerformed}")
+            //Log.d(TAG, "🔍 Bias Compensation Debug:")
+            //Log.d(TAG, "   Raw IMU: ax=${String.format("%.6f", ax)}, ay=${String.format("%.6f", ay)}, az=${String.format("%.6f", az)}")
+            //Log.d(TAG, "   Accel bias: bx=${String.format("%.6f", accelBiasX)}, by=${String.format("%.6f", accelBiasY)}, bz=${String.format("%.6f", accelBiasZ)}")
+            //Log.d(TAG, "   Corrected accel: ax=${String.format("%.6f", correctedAx)}, ay=${String.format("%.6f", correctedAy)}, az=${String.format("%.6f", correctedAz)}")
+            //Log.d(TAG, "   Calibration status: accel=${accelBiasesCalibrated}, initial=${initialCalibrationPerformed}")
             
             // ADDITIONAL DEBUG: Show if biases have changed from initial values (now 0.0)
             val initialBiasX = 0.0
@@ -668,7 +679,7 @@ class ExtendedKalmanFilter(
             val biasChangedX = abs(accelBiasX - initialBiasX) > 0.1
             val biasChangedY = abs(accelBiasY - initialBiasY) > 0.1
             val biasChangedZ = abs(accelBiasZ - initialBiasZ) > 0.1
-            Log.d(TAG, "   Bias changes: X=${if (biasChangedX) "✅" else "❌"}, Y=${if (biasChangedY) "✅" else "❌"}, Z=${if (biasChangedZ) "✅" else "❌"}")
+            //Log.d(TAG, "   Bias changes: X=${if (biasChangedX) "✅" else "❌"}, Y=${if (biasChangedY) "✅" else "❌"}, Z=${if (biasChangedZ) "✅" else "❌"}")
         }
 
         // Transform acceleration from body to navigation frame using EKF nominal quaternion (post attitude update)
@@ -678,22 +689,22 @@ class ExtendedKalmanFilter(
 
         // Debug: Log quaternion and rotation when there's significant IMU activity
         if (DEBUG_LOGS && sqrt(ax*ax + ay*ay + az*az) > 8.0) { // Only log when IMU is active
-            Log.d(TAG, "🧭 Madgwick Quaternion Debug:")
-            Log.d(TAG, "   Madgwick Quaternion: qw=${String.format("%.3f", qwM)}, qx=${String.format("%.3f", qxM)}, qy=${String.format("%.3f", qyM)}, qz=${String.format("%.3f", qzM)}")
-            Log.d(TAG, "   Raw accel: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
-            Log.d(TAG, "   Accel bias: bx=${String.format("%.3f", accelBiasX)}, by=${String.format("%.3f", accelBiasY)}, bz=${String.format("%.3f", accelBiasZ)}")
-            Log.d(TAG, "   Corrected accel: ax=${String.format("%.3f", correctedAx)}, ay=${String.format("%.3f", correctedAy)}, az=${String.format("%.3f", correctedAz)}")
-            Log.d(TAG, "   Nav accel: ax=${String.format("%.3f", accelNav[0])}, ay=${String.format("%.3f", accelNav[1])}, az=${String.format("%.3f", accelNav[2])}")
-            Log.d(TAG, "   Gyro bias: bx=${String.format("%.6f", gyroBiasX)}, by=${String.format("%.6f", gyroBiasY)}, bz=${String.format("%.6f", gyroBiasZ)}")
-            Log.d(TAG, "   Corrected omega: ωx=${String.format("%.3f", correctedOmegaX)}, ωy=${String.format("%.3f", correctedOmegaY)}, ωz=${String.format("%.3f", correctedOmegaZ)}")
-            Log.d(TAG, "   Magnetometer: mx=${String.format("%.3f", mx)}, my=${String.format("%.3f", my)}, mz=${String.format("%.3f", mz)}")
+            //Log.d(TAG, "🧭 Madgwick Quaternion Debug:")
+            //Log.d(TAG, "   Madgwick Quaternion: qw=${String.format("%.3f", qwM)}, qx=${String.format("%.3f", qxM)}, qy=${String.format("%.3f", qyM)}, qz=${String.format("%.3f", qzM)}")
+            //Log.d(TAG, "   Raw accel: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
+            //Log.d(TAG, "   Accel bias: bx=${String.format("%.3f", accelBiasX)}, by=${String.format("%.3f", accelBiasY)}, bz=${String.format("%.3f", accelBiasZ)}")
+            //Log.d(TAG, "   Corrected accel: ax=${String.format("%.3f", correctedAx)}, ay=${String.format("%.3f", correctedAy)}, az=${String.format("%.3f", correctedAz)}")
+            //Log.d(TAG, "   Nav accel: ax=${String.format("%.3f", accelNav[0])}, ay=${String.format("%.3f", accelNav[1])}, az=${String.format("%.3f", accelNav[2])}")
+            //Log.d(TAG, "   Gyro bias: bx=${String.format("%.6f", gyroBiasX)}, by=${String.format("%.6f", gyroBiasY)}, bz=${String.format("%.6f", gyroBiasZ)}")
+            //Log.d(TAG, "   Corrected omega: ωx=${String.format("%.3f", correctedOmegaX)}, ωy=${String.format("%.3f", correctedOmegaY)}, ωz=${String.format("%.3f", correctedOmegaZ)}")
+            //Log.d(TAG, "   Magnetometer: mx=${String.format("%.3f", mx)}, my=${String.format("%.3f", my)}, mz=${String.format("%.3f", mz)}")
             
             // Log bias uncertainty for monitoring convergence
             val biasUncertainty = getGyroscopeBiasUncertainty()
-            Log.d(TAG, "   Gyro bias uncertainty: σbx=${String.format("%.6f", biasUncertainty.first)}, σby=${String.format("%.6f", biasUncertainty.second)}, σbz=${String.format("%.6f", biasUncertainty.third)}")
+            //Log.d(TAG, "   Gyro bias uncertainty: σbx=${String.format("%.6f", biasUncertainty.first)}, σby=${String.format("%.6f", biasUncertainty.second)}, σbz=${String.format("%.6f", biasUncertainty.third)}")
             
             val accelBiasUncertainty = getAccelerometerBiasUncertainty()
-            Log.d(TAG, "   Accel bias uncertainty: σbx=${String.format("%.3f", accelBiasUncertainty.first)}, σby=${String.format("%.3f", accelBiasUncertainty.second)}, σbz=${String.format("%.3f", accelBiasUncertainty.third)}")
+            //Log.d(TAG, "   Accel bias uncertainty: σbx=${String.format("%.3f", accelBiasUncertainty.first)}, σby=${String.format("%.3f", accelBiasUncertainty.second)}, σbz=${String.format("%.3f", accelBiasUncertainty.third)}")
         }
 
         // Gravity subtraction (since IMU accel includes gravity)
@@ -723,17 +734,17 @@ class ExtendedKalmanFilter(
 
         // Debug: Log gravity subtraction details when there are issues
         if (DEBUG_LOGS && abs(accelNav[2]) > 8.0) { // Only log when vertical acceleration is significant
-            Log.d(TAG, "🔍 Gravity Compensation Debug:")
-            Log.d(TAG, "   Nav accel: ax=${String.format("%.6f", accelNav[0])}, ay=${String.format("%.6f", accelNav[1])}, az=${String.format("%.6f", accelNav[2])}")
-            Log.d(TAG, "   Gravity vector: gx=${String.format("%.6f", gravityVector[0])}, gy=${String.format("%.6f", gravityVector[1])}, gz=${String.format("%.6f", gravityVector[2])}")
-            Log.d(TAG, "   Corrected accel: ax=${String.format("%.6f", accelCorrected[0])}, ay=${String.format("%.6f", accelCorrected[1])}, az=${String.format("%.6f", accelCorrected[2])}")
-            Log.d(TAG, "   Gravity residual: ${String.format("%.6f", gravityResidual)}")
+            //Log.d(TAG, "🔍 Gravity Compensation Debug:")
+            //Log.d(TAG, "   Nav accel: ax=${String.format("%.6f", accelNav[0])}, ay=${String.format("%.6f", accelNav[1])}, az=${String.format("%.6f", accelNav[2])}")
+            //Log.d(TAG, "   Gravity vector: gx=${String.format("%.6f", gravityVector[0])}, gy=${String.format("%.6f", gravityVector[1])}, gz=${String.format("%.6f", gravityVector[2])}")
+            //Log.d(TAG, "   Corrected accel: ax=${String.format("%.6f", accelCorrected[0])}, ay=${String.format("%.6f", accelCorrected[1])}, az=${String.format("%.6f", accelCorrected[2])}")
+            //Log.d(TAG, "   Gravity residual: ${String.format("%.6f", gravityResidual)}")
         }
 
         // Additional validation: check if vertical acceleration is reasonable
         // When stationary, vertical acceleration should be very small
         if (abs(accelCorrected[2]) > 2.0) { // More than 2 m/s² vertical acceleration is suspicious
-            if (DEBUG_LOGS) Log.w(TAG, "⚠️ Suspicious vertical acceleration: ${String.format("%.3f", accelCorrected[2])} m/s²")
+            if (DEBUG_LOGS) //Log.w(TAG, "⚠️ Suspicious vertical acceleration: ${String.format("%.3f", accelCorrected[2])} m/s²")
             // Apply damping to vertical acceleration to prevent drift
             accelCorrected[2] *= 0.1 // Reduce vertical acceleration by 90%
         }
@@ -741,11 +752,11 @@ class ExtendedKalmanFilter(
         // Debug: Log gravity subtraction when there are issues
         if (!gravitySubtractionValid) {
             if (DEBUG_LOGS) {
-                Log.w(TAG, "⚠️ Gravity subtraction validation failed:")
-                Log.w(TAG, "   Raw IMU: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
-                Log.w(TAG, "   Rotated: ax=${String.format("%.3f", accelNav[0])}, ay=${String.format("%.3f", accelNav[1])}, az=${String.format("%.3f", accelNav[2])}")
-                Log.w(TAG, "   Corrected: ax=${String.format("%.3f", accelCorrected[0])}, ay=${String.format("%.3f", accelCorrected[1])}, az=${String.format("%.3f", accelCorrected[2])}")
-                Log.w(TAG, "   Gravity residual: ${String.format("%.3f", gravityResidual)}")
+                //Log.w(TAG, "⚠️ Gravity subtraction validation failed:")
+                //Log.w(TAG, "   Raw IMU: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
+                //Log.w(TAG, "   Rotated: ax=${String.format("%.3f", accelNav[0])}, ay=${String.format("%.3f", accelNav[1])}, az=${String.format("%.3f", accelNav[2])}")
+                //Log.w(TAG, "   Corrected: ax=${String.format("%.3f", accelCorrected[0])}, ay=${String.format("%.3f", accelCorrected[1])}, az=${String.format("%.3f", accelCorrected[2])}")
+                //Log.w(TAG, "   Gravity residual: ${String.format("%.3f", gravityResidual)}")
             }
         }
 
@@ -782,9 +793,9 @@ class ExtendedKalmanFilter(
 
         // Debug: Log movement detection for troubleshooting
         if (DEBUG_LOGS && movementMagnitude > 0.05) { // Only log when there's some activity
-            Log.d(TAG, "🔍 Movement Detection: magnitude=${String.format("%.3f", movementMagnitude)} m/s², threshold=${movementThreshold}, isMoving=$isMoving")
-            Log.d(TAG, "   Raw IMU: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
-            Log.d(TAG, "   Corrected: ax=${String.format("%.3f", accelCorrected[0])}, ay=${String.format("%.3f", accelCorrected[1])}, az=${String.format("%.3f", accelCorrected[2])}")
+            //Log.d(TAG, "🔍 Movement Detection: magnitude=${String.format("%.3f", movementMagnitude)} m/s², threshold=${movementThreshold}, isMoving=$isMoving")
+            //Log.d(TAG, "   Raw IMU: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
+            //Log.d(TAG, "   Corrected: ax=${String.format("%.3f", accelCorrected[0])}, ay=${String.format("%.3f", accelCorrected[1])}, az=${String.format("%.3f", accelCorrected[2])}")
         }
 
         // CRITICAL FIX: Calibration moved to AFTER bias prediction to prevent overwriting
@@ -811,18 +822,18 @@ class ExtendedKalmanFilter(
         // Apply velocity damping to prevent unrealistic values
         // Vertical velocity should be very small for wearable devices
         if (abs(predictedState[5]) > 5.0) { // Vertical velocity > 5 m/s is unrealistic
-            if (DEBUG_LOGS) Log.w(TAG, "⚠️ Damping unrealistic vertical velocity: ${String.format("%.3f", predictedState[5])} m/s")
+            if (DEBUG_LOGS) //Log.w(TAG, "⚠️ Damping unrealistic vertical velocity: ${String.format("%.3f", predictedState[5])} m/s")
             predictedState[5] *= 0.1 // Reduce by 90%
         }
         
         // Horizontal velocity damping (less aggressive)
         if (abs(predictedState[3]) > 10.0) { // Horizontal velocity > 10 m/s is unrealistic
-            if (DEBUG_LOGS) Log.w(TAG, "⚠️ Damping unrealistic horizontal velocity X: ${String.format("%.3f", predictedState[3])} m/s")
+            if (DEBUG_LOGS) //Log.w(TAG, "⚠️ Damping unrealistic horizontal velocity X: ${String.format("%.3f", predictedState[3])} m/s")
             predictedState[3] *= 0.5 // Reduce by 50%
         }
         
         if (abs(predictedState[4]) > 10.0) { // Horizontal velocity > 10 m/s is unrealistic
-            if (DEBUG_LOGS) Log.w(TAG, "⚠️ Damping unrealistic horizontal velocity Y: ${String.format("%.3f", predictedState[4])} m/s")
+            if (DEBUG_LOGS) //Log.w(TAG, "⚠️ Damping unrealistic horizontal velocity Y: ${String.format("%.3f", predictedState[4])} m/s")
             predictedState[4] *= 0.5 // Reduce by 50%
         }
 
@@ -866,10 +877,15 @@ class ExtendedKalmanFilter(
                 predictedState[5] = pz * factor
                 
                 if (DEBUG_LOGS && factor < 0.9) {
-                    Log.d(TAG, "🔄 Velocity dampened by factor ${String.format("%.2f", factor)}: vx=${String.format("%.3f", predictedState[3])}, vy=${String.format("%.3f", predictedState[4])}, vz=${String.format("%.3f", predictedState[5])}")
+                    //Log.d(TAG, "🔄 Velocity dampened by factor ${String.format("%.2f", factor)}: vx=${String.format("%.3f", predictedState[3])}, vy=${String.format("%.3f", predictedState[4])}, vz=${String.format("%.3f", predictedState[5])}")
                 }
             }
         }
+
+        predictedState[9] = state[9]
+        predictedState[10] = state[10]
+        predictedState[11] = state[11]
+        predictedState[12] = state[12]
 
         return PredictResult(predictedState, false)
     }
@@ -900,16 +916,16 @@ class ExtendedKalmanFilter(
         
         // Debug: Log calibration status
         if (DEBUG_LOGS) {
-            Log.d(TAG, "🔧 CALIBRATION DEBUG: samples=${accelCalibrationBuffer.size}, stationary=$isStationary")
-            Log.d(TAG, "   Accel mag: ${String.format("%.3f", accelMagnitude)} m/s², expected: ${String.format("%.3f", expectedAccelMagnitude)} m/s²")
-            Log.d(TAG, "   Accel error: ${String.format("%.3f", accelMagnitudeError)} m/s², threshold: 3.0 m/s²")
-            Log.d(TAG, "   Gyro mag: ${String.format("%.6f", gyroMagnitude)} rad/s, threshold: 0.1 rad/s")
-            Log.d(TAG, "   Current biases: X=${String.format("%.3f", currentAccelBiasX)}, Y=${String.format("%.3f", currentAccelBiasY)}, Z=${String.format("%.3f", currentAccelBiasZ)}")
-            Log.d(TAG, "   Raw IMU: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
+            //Log.d(TAG, "🔧 CALIBRATION DEBUG: samples=${accelCalibrationBuffer.size}, stationary=$isStationary")
+            //Log.d(TAG, "   Accel mag: ${String.format("%.3f", accelMagnitude)} m/s², expected: ${String.format("%.3f", expectedAccelMagnitude)} m/s²")
+            //Log.d(TAG, "   Accel error: ${String.format("%.3f", accelMagnitudeError)} m/s², threshold: 3.0 m/s²")
+            //Log.d(TAG, "   Gyro mag: ${String.format("%.6f", gyroMagnitude)} rad/s, threshold: 0.1 rad/s")
+            //Log.d(TAG, "   Current biases: X=${String.format("%.3f", currentAccelBiasX)}, Y=${String.format("%.3f", currentAccelBiasY)}, Z=${String.format("%.3f", currentAccelBiasZ)}")
+            //Log.d(TAG, "   Raw IMU: ax=${String.format("%.3f", ax)}, ay=${String.format("%.3f", ay)}, az=${String.format("%.3f", az)}")
         }
         
         if (isStationary) {
-            if (DEBUG_LOGS) Log.d(TAG, "🔧 Device appears stationary - adding to calibration buffer")
+            if (DEBUG_LOGS) //Log.d(TAG, "🔧 Device appears stationary - adding to calibration buffer")
             // Add to calibration buffer
             accelCalibrationBuffer.add(Triple(ax, ay, az))
             gyroCalibrationBuffer.add(Triple(omegaX, omegaY, omegaZ))
@@ -920,24 +936,24 @@ class ExtendedKalmanFilter(
                 gyroCalibrationBuffer.removeAt(0)
             }
             
-            if (DEBUG_LOGS) Log.d(TAG, "🔧 Buffer size: ${accelCalibrationBuffer.size}/${STATIC_CALIBRATION_MIN_SAMPLES}")
+            if (DEBUG_LOGS) //Log.d(TAG, "🔧 Buffer size: ${accelCalibrationBuffer.size}/${STATIC_CALIBRATION_MIN_SAMPLES}")
             
             // Check if we have enough samples and time has passed
             if (accelCalibrationBuffer.size >= STATIC_CALIBRATION_MIN_SAMPLES && 
                 currentTime - lastCalibrationTime > STATIC_CALIBRATION_WINDOW * 1000) {
                 
-                if (DEBUG_LOGS) Log.d(TAG, "🔧 PERFORMING static calibration with ${accelCalibrationBuffer.size} samples")
+                if (DEBUG_LOGS) //Log.d(TAG, "🔧 PERFORMING static calibration with ${accelCalibrationBuffer.size} samples")
                 performStaticCalibration(force = true)
                 lastCalibrationTime = currentTime
                 initialCalibrationPerformed = true
             }
         } else {
-            if (DEBUG_LOGS) Log.d(TAG, "🔧 Device NOT stationary - accel_error=${String.format("%.3f", accelMagnitudeError)}, gyro=${String.format("%.6f", gyroMagnitude)}")
+            if (DEBUG_LOGS) //Log.d(TAG, "🔧 Device NOT stationary - accel_error=${String.format("%.3f", accelMagnitudeError)}, gyro=${String.format("%.6f", gyroMagnitude)}")
             // CRITICAL FIX: Don't clear buffers immediately - allow some tolerance
             // Only clear if device is clearly moving (high acceleration or rotation)
             if (accelMagnitude > 15.0 || gyroMagnitude > 0.5) {
                 if (accelCalibrationBuffer.isNotEmpty()) {
-                    if (DEBUG_LOGS) Log.d(TAG, "🔧 Clearing calibration buffers - device clearly moving")
+                    if (DEBUG_LOGS) //Log.d(TAG, "🔧 Clearing calibration buffers - device clearly moving")
                     accelCalibrationBuffer.clear()
                     gyroCalibrationBuffer.clear()
                 }
@@ -946,7 +962,7 @@ class ExtendedKalmanFilter(
         
         // CRITICAL FIX: Force initial calibration much earlier and more aggressively
         if (!initialCalibrationPerformed && accelCalibrationBuffer.size >= 5) {  // Reduced from 10 to 5
-            if (DEBUG_LOGS) Log.d(TAG, "🔧 FORCING initial calibration with ${accelCalibrationBuffer.size} samples")
+            if (DEBUG_LOGS) //Log.d(TAG, "🔧 FORCING initial calibration with ${accelCalibrationBuffer.size} samples")
             performStaticCalibration(force = true)
             lastCalibrationTime = currentTime
             initialCalibrationPerformed = true
@@ -956,7 +972,7 @@ class ExtendedKalmanFilter(
         if (initialCalibrationPerformed && accelCalibrationBuffer.size >= 3) {
             val biasMagnitude = sqrt(currentAccelBiasX*currentAccelBiasX + currentAccelBiasY*currentAccelBiasY + currentAccelBiasZ*currentAccelBiasZ)
             if (biasMagnitude > 5.0) {  // If biases are very large, recalibrate
-                if (DEBUG_LOGS) Log.d(TAG, "🔧 Large biases detected (${String.format("%.3f", biasMagnitude)} m/s²), forcing recalibration")
+                if (DEBUG_LOGS) //Log.d(TAG, "🔧 Large biases detected (${String.format("%.3f", biasMagnitude)} m/s²), forcing recalibration")
                 performStaticCalibration(force = true)
                 lastCalibrationTime = currentTime
             }
@@ -1029,13 +1045,13 @@ class ExtendedKalmanFilter(
         accelBiasesCalibrated = true
         
         if (DEBUG_LOGS) {
-            Log.d(TAG, "🔧 CORRECTED Static Calibration Complete:")
-            Log.d(TAG, "   Raw averages: ax=${String.format("%.3f", avgAx)}, ay=${String.format("%.3f", avgAy)}, az=${String.format("%.3f", avgAz)}")
-            Log.d(TAG, "   Device orientation: qw=${String.format("%.4f", qw)}, qx=${String.format("%.4f", qx)}, qy=${String.format("%.4f", qy)}, qz=${String.format("%.4f", qz)}")
-            Log.d(TAG, "   Expected specific force in body frame: ax=${String.format("%.3f", expectedFbody[0])}, ay=${String.format("%.3f", expectedFbody[1])}, az=${String.format("%.3f", expectedFbody[2])}")
-            Log.d(TAG, "   CORRECTED Accel biases: bx=${String.format("%.3f", accelBiasX)}, by=${String.format("%.3f", accelBiasY)}, bz=${String.format("%.3f", accelBiasZ)}")
-            Log.d(TAG, "   Gyro biases: bx=${String.format("%.6f", gyroBiasX)}, by=${String.format("%.6f", gyroBiasY)}, bz=${String.format("%.6f", gyroBiasZ)}")
-            Log.d(TAG, "   Uncertainty reduced to: ${String.format("%.3f", reducedUncertainty)}")
+            //Log.d(TAG, "🔧 CORRECTED Static Calibration Complete:")
+            //Log.d(TAG, "   Raw averages: ax=${String.format("%.3f", avgAx)}, ay=${String.format("%.3f", avgAy)}, az=${String.format("%.3f", avgAz)}")
+            //Log.d(TAG, "   Device orientation: qw=${String.format("%.4f", qw)}, qx=${String.format("%.4f", qx)}, qy=${String.format("%.4f", qy)}, qz=${String.format("%.4f", qz)}")
+            //Log.d(TAG, "   Expected specific force in body frame: ax=${String.format("%.3f", expectedFbody[0])}, ay=${String.format("%.3f", expectedFbody[1])}, az=${String.format("%.3f", expectedFbody[2])}")
+            //Log.d(TAG, "   CORRECTED Accel biases: bx=${String.format("%.3f", accelBiasX)}, by=${String.format("%.3f", accelBiasY)}, bz=${String.format("%.3f", accelBiasZ)}")
+            //Log.d(TAG, "   Gyro biases: bx=${String.format("%.6f", gyroBiasX)}, by=${String.format("%.6f", gyroBiasY)}, bz=${String.format("%.6f", gyroBiasZ)}")
+            //Log.d(TAG, "   Uncertainty reduced to: ${String.format("%.3f", reducedUncertainty)}")
         }
         
         // Clear buffers after calibration
@@ -1081,7 +1097,7 @@ class ExtendedKalmanFilter(
      */
     fun setGpsHeadingMinSpeed(mps: Double) {
         gpsHeadingMinSpeedMps = mps.coerceAtLeast(0.0)
-        if (DEBUG_LOGS) Log.d(TAG, "🔧 gpsHeadingMinSpeedMps set to ${"%.2f".format(gpsHeadingMinSpeedMps)} m/s")
+        //if (DEBUG_LOGS) Log.d(TAG, "🔧 gpsHeadingMinSpeedMps set to ${"%.2f".format(gpsHeadingMinSpeedMps)} m/s")
     }
 
     /**
@@ -1130,80 +1146,61 @@ class ExtendedKalmanFilter(
      */
     fun update(gpsData: DoubleArray) {
         require(gpsData.size == GPS_MEASUREMENT_DIM) { "gpsData must be length 7" }
-        
-        // Convert GPS position to local coordinates
+
+        // Position → ENU
         val localPosition = geodeticToLocal(gpsData[0], gpsData[1], gpsData[2])
 
-        // NEW: GPS measurement vector logging
-        Log.d(TAG, "update(): GPS meas ENU (m) pos=(${localPosition.first}, ${localPosition.second}, ${localPosition.third}), " +
-              "vel=(${gpsData[3]}, ${gpsData[4]}, ${gpsData[5]}), heading=${Math.toDegrees(gpsData[6])}°")
-
-        // Create GPS measurement vector (7 elements: position, velocity, heading)
-        val measurement = doubleArrayOf(
-            localPosition.first, localPosition.second, localPosition.third, // x, y, z
-            gpsData[3], gpsData[4], gpsData[5],                           // vx, vy, vz
-            gpsData[6]                                                     // heading (rad) - GPS course over ground
+        // Predicted yaw from current state (used whether we trust GPS heading or not)
+        val yawPred = atan2(
+            2.0 * (state[9] * state[12] + state[10] * state[11]),
+            1.0 - 2.0 * (state[11] * state[11] + state[12] * state[12])
         )
 
-        // Update GPS measurement Jacobian
+        // Build measurement
+        val measurement = doubleArrayOf(
+            localPosition.first, localPosition.second, localPosition.third,
+            gpsData[3], gpsData[4], gpsData[5],
+            gpsData[6] // may be NaN; we will sanitize below
+        )
+
+        // H for GPS
         updateGPSMeasurementJacobian()
 
-        // Gate GPS heading update: zero out H row when speed too low
-        val useHeading = shouldUseGpsHeading(gpsData[3], gpsData[4])
+        // Decide if we’ll use heading
+        val headingFinite = measurement[6].isFinite()
+        val speedOk = shouldUseGpsHeading(gpsData[3], gpsData[4])
+        val useHeading = headingFinite && speedOk
+
         if (!useHeading) {
-            disableGpsHeadingRow()      // leaves R[6,6] untouched (good)
-        } else {
-            // keep heading Jacobian from updateGPSMeasurementJacobian()
-            // and keep gpsMeasurementNoiseCov[6][6] at its normal value
+            // Disable yaw row in H *and* make its innovation exactly zero
+            disableGpsHeadingRow()
+            measurement[6] = yawPred
         }
 
-        // Calculate GPS Kalman gain and S matrix for innovation gating
-        val kalmanGain = calculateGPSKalmanGain() ?: return  // skip bad update, keep prior
-        
-        // Calculate S matrix for innovation gating
+        val K = calculateGPSKalmanGain() ?: return
         val S = calculateGPSInnovationCovariance()
 
-        // Update state
         val innovation = calculateGPSInnovation(measurement)
-        
-        // Innovation gating: drop outliers cleanly using χ² threshold for 7D
+
+        // χ² gate (7D); robust to the sanitized yaw component
         val innovNorm = calculateInnovationNorm(innovation, S)
-        val passed = passGate(innovation, S, 18.5)  // lenient (≈99%): ~18.5 for df=7
-        
-        // NEW: Innovation gating logging
-        Log.d(TAG, "update(): gate pass=$passed, innov_norm=${"%.2f".format(innovNorm)}")
-        
-        if (!passed) {
-            if (DEBUG_LOGS) Log.w(TAG, "GPS innovation gated out (χ² > 18.5)")
-            return
-        }
-        
-        updateState(kalmanGain, innovation)
+        val passed = passGate(innovation, S, 18.5)
+        //Log.d(TAG, "update(): gate pass=$passed, innov_norm=${"%.2f".format(innovNorm)}")
+        if (!passed) return
 
-        // Update covariance with Joseph form
-        updateGPSCovariance(kalmanGain)
-
-        // Normalize quaternion
+        updateState(K, innovation)
+        updateGPSCovariance(K)
         normalizeQuaternion()
-
-        // Update GPS timestamp
         lastGpsUpdateMs = System.currentTimeMillis()
-        
-        // NEW: Post-update σ logging
-        val sigma = getHorizontalPositionStdMeters()
-        Log.d(TAG, "update(): post-update horiz σ=${"%.2f".format(sigma)} m")
-        
-        // --- EKF health & recovery ---
+
         if (!sanitizeStateAndCovariance()) {
-            Log.w(TAG, "GPS update: state invalid → rollback/reset")
             if (!restoreIfBad("gps_update")) {
-                resetFromLatLon(referenceLat, referenceLon, referenceAlt, accuracyM = 10.0, zeroVelocity = true, forceResetBiases = false)
+                resetFromLatLon(referenceLat, referenceLon, referenceAlt, 10.0, true, false)
             }
-        } else {
-            snapshotIfGood()
-        }
+        } else snapshotIfGood()
     }
-    
+
+
     /**
      * Update step with magnetometer heading measurement
      * This provides absolute heading correction to prevent gyroscope drift
@@ -1244,20 +1241,20 @@ class ExtendedKalmanFilter(
                 + matrixMultiply(magnetometerMeasurementJacobian,
                                  matrixMultiply(covariance, matrixTranspose(magnetometerMeasurementJacobian)))[0][0])
         if (s.isFinite() && (innovation[0]*innovation[0] / s) < 9.0) {
-        updateState(K, innovation)
-        updateMagnetometerCovariance(K)
-        normalizeQuaternion()
-        lastMagnetometerUpdate = now
-        magnetometerHeading = magHeading
-        
+            updateState(K, innovation)
+            updateMagnetometerCovariance(K)
+            normalizeQuaternion()
+            lastMagnetometerUpdate = now
+            magnetometerHeading = magHeading
+
             // --- EKF health & recovery ---
             if (!sanitizeStateAndCovariance()) {
-                Log.w(TAG,"Mag update: state invalid → rollback/reset")
+                //Log.w(TAG,"Mag update: state invalid → rollback/reset")
                 if (!restoreIfBad("mag_update")) {
                     resetFromLatLon(referenceLat, referenceLon, referenceAlt, 10.0, true, false)
                 }
             } else {
-        snapshotIfGood()
+                snapshotIfGood()
             }
         }
     }
@@ -1308,7 +1305,7 @@ class ExtendedKalmanFilter(
         // Check if any critical states are NaN and trigger immediate reset if needed
         val criticalStates = listOf(state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7], state[8])
         if (criticalStates.any { !it.isFinite() }) {
-            Log.e(TAG, "CRITICAL: NaN detected in getSafePoseOrReset() - triggering immediate reset")
+            //Log.e(TAG, "CRITICAL: NaN detected in getSafePoseOrReset() - triggering immediate reset")
             immediateResetOnNaN()
         }
         
@@ -1355,6 +1352,7 @@ class ExtendedKalmanFilter(
     fun getPose(): PoseEstimate = getCurrentPose()
 
     // Utility methods for coordinate transformations
+    // Local frame is ENU: x=dLonMeters (east), y=dLatMeters (north), z=dAlt (up).
     private fun geodeticToLocal(lat: Double, lon: Double, alt: Double): Triple<Double, Double, Double> {
         val dLat = lat - referenceLat
         val dLon = lon - referenceLon
@@ -1544,11 +1542,11 @@ class ExtendedKalmanFilter(
         for (i in 0 until STATE_DIM) {
             if (predictedCov[i][i] > maxCovariance) {
                 predictedCov[i][i] = maxCovariance
-                if (DEBUG_LOGS) Log.w(TAG, "⚠️ Covariance explosion prevented: P[$i][$i] clamped to $maxCovariance")
+                //if (DEBUG_LOGS) Log.w(TAG, "⚠️ Covariance explosion prevented: P[$i][$i] clamped to $maxCovariance")
             }
             if (predictedCov[i][i] < minCovariance) {
                 predictedCov[i][i] = minCovariance
-                if (DEBUG_LOGS) Log.w(TAG, "⚠️ Covariance too small: P[$i][$i] padded to $minCovariance")
+                //if (DEBUG_LOGS) Log.w(TAG, "⚠️ Covariance too small: P[$i][$i] padded to $minCovariance")
             }
         }
 
@@ -1580,7 +1578,7 @@ class ExtendedKalmanFilter(
         // Guard the 1×1 S inversion with safe bail-out
         val s = S[0][0]
         if (!s.isFinite() || s <= 1e-12) {
-            if (DEBUG_LOGS) Log.w(TAG, "Mag S ill-conditioned; skipping update")
+            if (DEBUG_LOGS) //Log.w(TAG, "Mag S ill-conditioned; skipping update")
             return null
         }
         val sInv = 1.0 / s
@@ -1600,33 +1598,29 @@ class ExtendedKalmanFilter(
     }
 
     private fun calculateGPSInnovation(measurement: DoubleArray): DoubleArray {
-        // Predicted measurement for GPS (7D)
         val predictedMeasurement = DoubleArray(GPS_MEASUREMENT_DIM)
-
-        // Position
+        // pos
         predictedMeasurement[0] = state[0]
         predictedMeasurement[1] = state[1]
         predictedMeasurement[2] = state[2]
-
-        // Velocity
+        // vel
         predictedMeasurement[3] = state[3]
         predictedMeasurement[4] = state[4]
         predictedMeasurement[5] = state[5]
-
-        // Heading (yaw from quaternion)
+        // yaw
         predictedMeasurement[6] = atan2(
             2.0 * (state[9] * state[12] + state[10] * state[11]),
             1.0 - 2.0 * (state[11] * state[11] + state[12] * state[12])
         )
 
-        // Innovation = measurement - predicted
         val innovation = DoubleArray(GPS_MEASUREMENT_DIM)
         for (i in 0 until GPS_MEASUREMENT_DIM - 1) {
             innovation[i] = measurement[i] - predictedMeasurement[i]
         }
-        // Wrap heading innovation to [-π, π]
-        innovation[6] = wrapPi(measurement[6] - predictedMeasurement[6])
-
+        // If H yaw row was zeroed, caller already set measurement[6]=predicted yaw.
+        // Still, guard against accidental NaN:
+        val dyaw = measurement[6] - predictedMeasurement[6]
+        innovation[6] = if (dyaw.isFinite()) wrapPi(dyaw) else 0.0
         return innovation
     }
     
@@ -1656,13 +1650,13 @@ class ExtendedKalmanFilter(
         // x = x + K * innovation
         val correction = matrixVectorMultiply(kalmanGain, innovation)
         if (!correction.all { it.isFinite() }) {
-            Log.w(TAG, "Non-finite correction; update skipped")
+            //Log.w(TAG, "Non-finite correction; update skipped")
             return
         }
         for (i in 0 until STATE_DIM) {
             val v = state[i] + correction[i]
             if (!v.isFinite()) { 
-                Log.w(TAG,"Correction makes NaN; skipped")
+                //Log.w(TAG,"Correction makes NaN; skipped")
                 return 
             }
             state[i] = v
@@ -1981,7 +1975,7 @@ class ExtendedKalmanFilter(
         state[4] *= factor  // vy
         state[5] *= factor  // vz
         
-        if (DEBUG_LOGS) Log.d(TAG, "Velocity dampened by factor ${String.format("%.2f", factor)}: vx=${String.format("%.3f", state[3])}, vy=${String.format("%.3f", state[4])}, vz=${String.format("%.3f", state[5])}")
+        //if (DEBUG_LOGS) Log.d(TAG, "Velocity dampened by factor ${String.format("%.2f", factor)}: vx=${String.format("%.3f", state[3])}, vy=${String.format("%.3f", state[4])}, vz=${String.format("%.3f", state[5])}")
     }
     
     /**
@@ -2000,7 +1994,7 @@ class ExtendedKalmanFilter(
         covariance[14][14] = GYRO_BIAS_INITIAL_UNCERTAINTY * GYRO_BIAS_INITIAL_UNCERTAINTY
         covariance[15][15] = GYRO_BIAS_INITIAL_UNCERTAINTY * GYRO_BIAS_INITIAL_UNCERTAINTY
         
-        if (DEBUG_LOGS) Log.d(TAG, "🔧 Gyroscope biases manually set: bx=${String.format("%.6f", biasX)}, by=${String.format("%.6f", biasY)}, bz=${String.format("%.6f", biasZ)}")
+        //if (DEBUG_LOGS) Log.d(TAG, "🔧 Gyroscope biases manually set: bx=${String.format("%.6f", biasX)}, by=${String.format("%.6f", biasY)}, bz=${String.format("%.6f", biasZ)}")
     }
     
     /**
@@ -2019,7 +2013,7 @@ class ExtendedKalmanFilter(
         covariance[17][17] = ACCEL_BIAS_INITIAL_UNCERTAINTY * ACCEL_BIAS_INITIAL_UNCERTAINTY
         covariance[18][18] = ACCEL_BIAS_INITIAL_UNCERTAINTY * ACCEL_BIAS_INITIAL_UNCERTAINTY
         
-        if (DEBUG_LOGS) Log.d(TAG, "🔧 Accelerometer biases manually set: bx=${String.format("%.3f", biasX)}, by=${String.format("%.3f", biasY)}, bz=${String.format("%.3f", biasZ)}")
+        //if (DEBUG_LOGS) Log.d(TAG, "🔧 Accelerometer biases manually set: bx=${String.format("%.3f", biasX)}, by=${String.format("%.3f", biasY)}, bz=${String.format("%.3f", biasZ)}")
     }
 
     /**
@@ -2052,7 +2046,7 @@ class ExtendedKalmanFilter(
         gpsMeasurementNoiseCov[6][6] = GPS_HEADING_NOISE_STD_RAD * GPS_HEADING_NOISE_STD_RAD
 
         magnetometerMeasurementNoiseCov[0][0] = r
-        Log.d(TAG, "🎯 Noise parameters updated: process=$processNoiseStd, measurement=$measurementNoiseStd")
+        //Log.d(TAG, "🎯 Noise parameters updated: process=$processNoiseStd, measurement=$measurementNoiseStd")
     }
     
     /**
@@ -2073,7 +2067,7 @@ class ExtendedKalmanFilter(
         // CRITICAL: Never output NaN uncertainty values
         // Check if covariance matrix is healthy before computing uncertainties
         if (!covariance.allFinite()) {
-            Log.e("ExtendedKalmanFilter", "CRITICAL: NaN detected in covariance matrix - triggering immediate reset")
+            //Log.e("ExtendedKalmanFilter", "CRITICAL: NaN detected in covariance matrix - triggering immediate reset")
             immediateResetOnNaN()
             // Return safe default uncertainties after reset
         return StateUncertainty(
@@ -2132,7 +2126,7 @@ class ExtendedKalmanFilter(
      */
     fun forceCalibration(ax: Double, ay: Double, az: Double, 
                         omegaX: Double, omegaY: Double, omegaZ: Double) {
-        if (DEBUG_LOGS) Log.d(TAG, "🔧 FORCING immediate calibration with current IMU data")
+        if (DEBUG_LOGS) //Log.d(TAG, "🔧 FORCING immediate calibration with current IMU data")
         
         // Clear existing buffers and add current reading
         accelCalibrationBuffer.clear()
@@ -2151,8 +2145,8 @@ class ExtendedKalmanFilter(
         accelBiasesCalibrated = true
         
         if (DEBUG_LOGS) {
-            Log.d(TAG, "🔧 Forced calibration completed")
-            Log.d(TAG, "   New biases: X=${String.format("%.3f", state[16])}, Y=${String.format("%.3f", state[17])}, Z=${String.format("%.3f", state[18])}")
+            //Log.d(TAG, "🔧 Forced calibration completed")
+            //Log.d(TAG, "   New biases: X=${String.format("%.3f", state[16])}, Y=${String.format("%.3f", state[17])}, Z=${String.format("%.3f", state[18])}")
         }
     }
 
@@ -2188,10 +2182,10 @@ class ExtendedKalmanFilter(
         if (s != null) {
             state = s.state.copyOf()
             covariance = s.cov.map { it.copyOf() }.toTypedArray()
-            Log.w(TAG, "⚠️ EKF non-finite detected in $tag → rolled back to last good snapshot.")
+            //Log.w(TAG, "⚠️ EKF non-finite detected in $tag → rolled back to last good snapshot.")
         } else {
             resetEkfToDefaults()
-            Log.w(TAG, "⚠️ EKF non-finite detected in $tag → hard reset (no snapshot).")
+            //Log.w(TAG, "⚠️ EKF non-finite detected in $tag → hard reset (no snapshot).")
         }
         return true
     }
@@ -2235,7 +2229,7 @@ class ExtendedKalmanFilter(
             } catch (_: Exception) {}
             jitter *= 10.0
         }
-                    Log.w(TAG, "$tag: ill-conditioned S; skipping update")
+                    //Log.w(TAG, "$tag: ill-conditioned S; skipping update")
         return null
     }
 
@@ -2254,25 +2248,25 @@ class ExtendedKalmanFilter(
         
         // Check state vector
         if (!state.allOk()) {
-            Log.w(TAG, "State vector contains non-finite values")
+            //Log.w(TAG, "State vector contains non-finite values")
             needsReset = true
         }
         
         // Try to repair P first instead of immediately resetting
         val repaired = covariance.repairDiagonalIfNeeded(1e-9)
-        if (repaired && DEBUG_LOGS) Log.w(TAG, "P diagonal repaired in sanitize()")
+        //if (repaired && DEBUG_LOGS) Log.w(TAG, "P diagonal repaired in sanitize()")
         
         // If anything is still non-finite, that's fatal → reset
         val anyNonFiniteDiag = (0 until STATE_DIM).any { !covariance[it][it].isFinite() }
         if (anyNonFiniteDiag) {
-            Log.w(TAG, "Covariance still non-finite after repair")
+            //Log.w(TAG, "Covariance still non-finite after repair")
             needsReset = true
         }
         
         // Check quaternion normalization - correct indices 9-12
         val n2 = state[9] * state[9] + state[10] * state[10] + state[11] * state[11] + state[12] * state[12]
         if (!n2.isFinite() || n2 < 1e-12) {
-            Log.w(TAG, "Quaternion normalization unhealthy: n2=$n2")
+            //Log.w(TAG, "Quaternion normalization unhealthy: n2=$n2")
             needsReset = true
         } else if (kotlin.math.abs(kotlin.math.sqrt(n2) - 1.0) > QUATERNION_NORM_TOLERANCE) {
             // Renormalize quaternion
@@ -2281,17 +2275,17 @@ class ExtendedKalmanFilter(
             state[10] *= inv
             state[11] *= inv
             state[12] *= inv
-            Log.w(TAG, "Quaternion renormalized from n2=$n2")
+            //Log.w(TAG, "Quaternion renormalized from n2=$n2")
         }
         
         // Check biases
         if (!clampBiases()) {
-            Log.w(TAG, "Biases clamped to safe values")
+            //Log.w(TAG, "Biases clamped to safe values")
             // do NOT set needsReset here - clamping is recovery, not failure
         }
         
         if (needsReset) {
-            Log.w(TAG, "State sanitization failed, triggering reset")
+            //Log.w(TAG, "State sanitization failed, triggering reset")
             healthy = false
             return false
         }
@@ -2330,7 +2324,7 @@ class ExtendedKalmanFilter(
      */
     fun poseOrNull(): PoseEstimate? {
         if (!isStateFinite()) {
-            Log.w(TAG, "EKF not safe - returning null pose")
+            //Log.w(TAG, "EKF not safe - returning null pose")
             return null
         }
         return getCurrentPose()
@@ -2407,7 +2401,7 @@ class ExtendedKalmanFilter(
      */
     fun resetFromLatLon(lat: Double, lon: Double, alt: Double, accuracyM: Double? = null, 
                         zeroVelocity: Boolean = true, forceResetBiases: Boolean = true) {
-        Log.i(TAG, "Resetting EKF from lat=$lat, lon=$lon, alt=$alt")
+        //Log.i(TAG, "Resetting EKF from lat=$lat, lon=$lon, alt=$alt")
         
         // Set origin if not set
         if (originLatDeg == null) {
@@ -2417,7 +2411,7 @@ class ExtendedKalmanFilter(
             referenceLat = lat
             referenceLon = lon
             referenceAlt = alt
-            Log.i(TAG, "Set origin: lat=$originLatDeg, lon=$originLonDeg, alt=$originAltM")
+            //Log.i(TAG, "Set origin: lat=$originLatDeg, lon=$originLonDeg, alt=$originAltM")
         }
         
         // Convert to ENU coordinates using geodeticToLocal
@@ -2467,7 +2461,7 @@ class ExtendedKalmanFilter(
         // Important: snapshot immediately after reset to avoid immediate rollbacks
         snapshotIfGood()
         
-        Log.i(TAG, "EKF reset complete")
+        //Log.i(TAG, "EKF reset complete")
     }
 
     /**
@@ -2479,6 +2473,67 @@ class ExtendedKalmanFilter(
         val acceleration: Triple<Double, Double, Double>,  // ax, ay, az
         val orientation: FloatArray                        // quaternion [w, x, y, z]
     )
+
+    // Snapshot for pose logging (geodetic + ENU + orientation)
+    data class LogSnapshot(
+        val lat: Double,
+        val lon: Double,
+        val alt: Double,
+        val enuX: Double,
+        val enuY: Double,
+        val enuZ: Double,
+        val vE: Double,
+        val vN: Double,
+        val vU: Double,
+        val qw: Float, val qx: Float, val qy: Float, val qz: Float,
+        val rollDeg: Double, val pitchDeg: Double, val yawDeg: Double,
+        val frame: String = "ENU"
+    )
+
+    // Safe public getters for logging
+    fun getEnuPosition(): Triple<Double, Double, Double> = Triple(state[0], state[1], state[2])
+    fun getEnuVelocity(): Triple<Double, Double, Double> = Triple(state[3], state[4], state[5])
+    fun getQuaternionWxyz(): FloatArray = floatArrayOf(
+        state[9].toFloat(), state[10].toFloat(), state[11].toFloat(), state[12].toFloat()
+    )
+
+    // Euler helper (radians→degrees; ENU convention)
+    private fun eulerFromQuatDegrees(qw: Double, qx: Double, qy: Double, qz: Double): Triple<Double, Double, Double> {
+        val sinr_cosp = 2.0 * (qw*qx + qy*qz)
+        val cosr_cosp = 1.0 - 2.0 * (qx*qx + qy*qy)
+        val roll = Math.toDegrees(kotlin.math.atan2(sinr_cosp, cosr_cosp))
+        val sinp = 2.0 * (qw*qy - qz*qx)
+        val pitch = Math.toDegrees(kotlin.math.asin(sinp.coerceIn(-1.0, 1.0)))
+        val siny_cosp = 2.0 * (qw*qz + qx*qy)
+        val cosy_cosp = 1.0 - 2.0 * (qy*qy + qz*qz)
+        val yaw = Math.toDegrees(kotlin.math.atan2(siny_cosp, cosy_cosp))
+        return Triple(roll, pitch, yaw)
+    }
+
+    // Build a snapshot of current EKF state for logging
+    fun snapshotForLogging(): LogSnapshot {
+        // ENU pose/vel from state (x=east, y=north, z=up)
+        val x = state[0]; val y = state[1]; val z = state[2]
+        val vx = state[3]; val vy = state[4]; val vz = state[5]
+
+        // Geodetic from local (uses existing converters)
+        val geo = localToGeodetic(x, y, z)
+
+        // Orientation (normalize defensively)
+        val q = floatArrayOf(state[9].toFloat(), state[10].toFloat(), state[11].toFloat(), state[12].toFloat())
+        val qn = kotlin.math.sqrt((q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).toDouble()).takeIf { it > 0 } ?: 1.0
+        val qw = (q[0]/qn).toFloat(); val qx = (q[1]/qn).toFloat(); val qy = (q[2]/qn).toFloat(); val qz = (q[3]/qn).toFloat()
+        val (rollDeg, pitchDeg, yawDeg) = eulerFromQuatDegrees(qw.toDouble(), qx.toDouble(), qy.toDouble(), qz.toDouble())
+
+        return LogSnapshot(
+            lat = geo.first, lon = geo.second, alt = geo.third,
+            enuX = x, enuY = y, enuZ = z,
+            vE = vx, vN = vy, vU = vz,
+            qw = qw, qx = qx, qy = qy, qz = qz,
+            rollDeg = rollDeg, pitchDeg = pitchDeg, yawDeg = yawDeg,
+            frame = "ENU"
+        )
+    }
 
     // Add after the resetFromLatLon function
 
@@ -2568,7 +2623,7 @@ class ExtendedKalmanFilter(
             state[16] *= scale  // accel bias X
             state[17] *= scale  // accel bias Y
             state[18] *= scale  // accel bias Z
-            Log.w(TAG, "Accelerometer bias clamped from ${accelBiasNorm}m/s² to 2.0m/s²")
+            //Log.w(TAG, "Accelerometer bias clamped from ${accelBiasNorm}m/s² to 2.0m/s²")
             clamped = true
         }
         
@@ -2579,7 +2634,7 @@ class ExtendedKalmanFilter(
             state[13] *= scale  // gyro bias X
             state[14] *= scale  // gyro bias Y
             state[15] *= scale  // gyro bias Z
-            Log.w(TAG, "Gyroscope bias clamped from ${gyroBiasNorm}rad/s to 0.1rad/s")
+            //Log.w(TAG, "Gyroscope bias clamped from ${gyroBiasNorm}rad/s to 0.1rad/s")
             clamped = true
         }
         
@@ -2613,17 +2668,17 @@ class ExtendedKalmanFilter(
      * Uses lastGood point if available, otherwise soft reset to reference origin
      */
     fun immediateResetOnNaN() {
-        Log.w(TAG, "Immediate EKF reset requested due to NaN detection")
+        //Log.w(TAG, "Immediate EKF reset requested due to NaN detection")
         
         if (lastGood != null) {
             // Restore from last good snapshot
             state = lastGood!!.state.copyOf()
             covariance = lastGood!!.cov.map { it.copyOf() }.toTypedArray()
-            Log.i(TAG, "EKF reset from last good snapshot")
+            //Log.i(TAG, "EKF reset from last good snapshot")
         } else {
             // Soft reset to reference origin
             resetFromLatLon(referenceLat, referenceLon, referenceAlt, accuracyM = 10.0, zeroVelocity = true, forceResetBiases = false)
-            Log.i(TAG, "EKF soft reset to reference origin")
+            //Log.i(TAG, "EKF soft reset to reference origin")
         }
         
         // Reset health status and timestamp
@@ -2776,9 +2831,22 @@ class ExtendedKalmanFilter(
     // ---------- GPS GATING FIX ----------
     fun isGPSUpdateNeeded(): Boolean {
         val sigmaPos = predictedPositionSigma() // sqrt of diag(covariance_p)
-        val tooUncertain = sigmaPos > 50.0 // gpsSigmaThresholdMeters
+        val tooUncertain = sigmaPos > 500.0 // gpsSigmaThresholdMeters
         val tooOld = (System.currentTimeMillis() - lastGpsUpdateMs) > 300000L // maxGpsSilenceMs = 5min
-        return tooUncertain || tooOld
+        
+        if (tooUncertain) {
+            /*logGpsRefix("ExtendedKalmanFilter.isGPSUpdateNeeded",
+                        "EKF_FLAG_UNCERTAINTY",
+                        "sigma=${"%.1f".format(sigmaPos)} threshold=500.0")*/
+            return true
+        }
+        if (tooOld) {
+            /*logGpsRefix("ExtendedKalmanFilter.isGPSUpdateNeeded",
+                        "EKF_FLAG_AGE",
+                        "ageMs=${System.currentTimeMillis() - lastGpsUpdateMs} maxAgeMs=300000")*/
+            return true
+        }
+        return false
     }
 
     private fun predictedPositionSigma(): Double {
