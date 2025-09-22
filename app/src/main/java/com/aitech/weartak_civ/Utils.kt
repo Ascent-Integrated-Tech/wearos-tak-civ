@@ -554,6 +554,10 @@ object Utils {
         val level: AlertChipState,
         val time: Long,
         val trigger: String
+	)
+    data class ChatResponse (
+        val shortenedText: String,
+        val longText: String
     )
 
     object LocationUtils {

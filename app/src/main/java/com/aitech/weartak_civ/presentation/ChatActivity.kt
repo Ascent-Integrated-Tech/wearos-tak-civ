@@ -23,39 +23,76 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldColors
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposeCompilerApi
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.material.CardDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.Colors
 import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
@@ -67,20 +104,52 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.ChatMessage
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.sampleMessages
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.sampleRooms
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.Long
+import kotlin.String
 
 class ChatActivity : ComponentActivity() {
     companion object {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
         lateinit var dataRepository: DataRepository
+        val sampleRooms = listOf(Utils.ChatRoom(
+                "0",
+                "Test Channel",
+                listOf(
+                    ChatMessage( "This is a message from atak", "0", "ATAK-Tab", 1L),
+                    ChatMessage( "This is a message from wearos", "0", "WEAROS-02", 2L),
+                    ChatMessage( "This is a message from your watch", "1", "WEAROS-01", 3L),
+                    ),
+                false,
+                0L,
+                0L))
+        val sampleMessages = Utils.ChatRoom(
+            "0",
+            "Test Channel",
+            listOf(
+                ChatMessage( "This is a message from atak", "0", "ATAK-Tab", 1L),
+                ChatMessage( "This is a message from wearos", "0", "WEAROS-02", 2L),
+                ChatMessage( "This is a message from your watch", "1", "WEAROS-01", 3L),
+            ),
+            false,
+            0L,
+            0L)
+        var reply = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -148,14 +217,13 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
             ChatScreen(navController, exitActivity, chatRooms)
         }
 
+        composable("chat_reply_screen")
+        {
+            ChatReplyScreen(navController)
+        }
+
         composable("chat_disabled_screen") {
-//            ChatDisabledScreen(navController, exitActivity)
-            ActivityDisabledScreen(
-                navController,
-                exitActivity,
-                "Chat Disabled",
-                "Please enable Chat in order to use this feature"
-            )
+            ChatDisabledScreen(navController, exitActivity)
         }
 
         composable(
@@ -181,89 +249,65 @@ fun ChatScreen(
     exitActivity: () -> Unit,
     chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
 ) {
-    Log.d(TAG, "TakServerSetting called")
+    Log.d(TAG, "Chat called")
     val context = LocalContext.current
 
-    WearTakCivScreenDimensions(
-        columnContent = {
-            LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
-            itemsIndexed(chatRooms) { index, room ->
-                // room.messageList is the List<ChatMessage>
-                val lastMessage = room.messageList.lastOrNull()
-                val lastMessageTime = lastMessage?.timeReceived ?: 0L
-                val lastMessageText = lastMessage?.message.orEmpty()
+    val rooms = sampleRooms
 
-                ChatCard(
-                    index = index,
-                    title = room.title,
-                    time = utcToHoursMinutes(lastMessageTime),
-                    message = lastMessageText,
-                    newMessagesPresent = room.newMessagesPresent,
-                    onClick = {
-                        navController.navigate("chat_screen_detailed/$index")
-                    }
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Chat Messages",
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
                 )
-                Spacer(modifier = Modifier.height(5.dp))
+                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
+                    itemsIndexed(
+                        //TODO: WEAR-180: Change back when finished
+                        //chatRooms
+                        rooms) { index, room ->
+                        // room.messageList is the List<ChatMessage>
+                        val lastMessage = room.messageList.lastOrNull()
+                        val lastMessageTime = lastMessage?.timeReceived ?: 0L
+                        val lastMessageText = lastMessage?.message.orEmpty()
+
+                        ChatCard(
+                            index = index,
+                            title = room.title,
+                            time = utcToHoursMinutes(lastMessageTime),
+                            message = lastMessageText,
+                            newMessagesPresent = room.newMessagesPresent,
+                            onClick = {
+                                navController.navigate("chat_screen_detailed/$index")
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(5.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
             }
         }
-            Spacer(modifier = Modifier.height(10.dp))},
-        rowContent = {
-            BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
-        },
-        text = "Chat Messages"
-    )
-
-//    WearTAKCIVTheme {
-//        Box(
-//            modifier = Modifier
-//                .fillMaxSize()
-//                .background(colors.background)
-//                .padding(bottom = 16.dp, top = 15.dp)
-//                .padding(horizontal = 16.dp),
-//            contentAlignment = Alignment.Center
-//        ) {
-//            Column(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .fillMaxHeight(0.9f)
-//                    .align(Alignment.TopCenter)
-//                    .padding(bottom = 30.dp),
-//                horizontalAlignment = Alignment.CenterHorizontally
-//            ) {
-//                Text(
-//                    text = "Chat Messages",
-//                    textAlign = TextAlign.Center,
-//                    fontWeight = FontWeight.SemiBold,
-//                    modifier = Modifier.padding(7.dp)
-//                )
-//                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
-//                    itemsIndexed(chatRooms) { index, room ->
-//                        // room.messageList is the List<ChatMessage>
-//                        val lastMessage = room.messageList.lastOrNull()
-//                        val lastMessageTime = lastMessage?.timeReceived ?: 0L
-//                        val lastMessageText = lastMessage?.message.orEmpty()
-//
-//                        ChatCard(
-//                            index = index,
-//                            title = room.title,
-//                            time = utcToHoursMinutes(lastMessageTime),
-//                            message = lastMessageText,
-//                            newMessagesPresent = room.newMessagesPresent,
-//                            onClick = {
-//                                navController.navigate("chat_screen_detailed/$index")
-//                            }
-//                        )
-//                        Spacer(modifier = Modifier.height(5.dp))
-//                    }
-//                }
-//                Spacer(modifier = Modifier.height(10.dp))
-//            }
-//
-//            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-//                BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
-//            }
-//        }
-//    }
+    }
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -302,12 +346,12 @@ fun ChatCard(
         },
         time = { Text(text = time, fontSize = 12.sp) },
         backgroundPainter = if (newMessagesPresent) CardDefaults.cardBackgroundPainter(
-            startBackgroundColor = MaterialTheme.colors.primary
+            startBackgroundColor = colors.primary
                 .copy(alpha = 0.60f)
-                .compositeOver(MaterialTheme.colors.background),
-            endBackgroundColor = MaterialTheme.colors.onSurfaceVariant
+                .compositeOver(colors.background),
+            endBackgroundColor = colors.onSurfaceVariant
                 .copy(alpha = 0.20f)
-                .compositeOver(MaterialTheme.colors.background),
+                .compositeOver(colors.background),
         ) else CardDefaults.cardBackgroundPainter()
     ) {
         if (newMessagesPresent) {
@@ -335,10 +379,17 @@ fun ChatScreenDetailed(
     chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
 ) {
     WearTAKCIVTheme {
-        val room = chatRooms.getOrNull(index)
+        //TODO: WEAR-180: Change back when finished
+//        val room = chatRooms.getOrNull(index)
+//        val chatRoomTitle = room?.title.orEmpty()
+//        val messageList = room?.messageList.orEmpty()
+//        val roomId = room?.uid
+        val room = sampleMessages
         val chatRoomTitle = room?.title.orEmpty()
         val messageList = room?.messageList.orEmpty()
         val roomId = room?.uid
+        val replyMessage by reply.observeAsState(initial = "")
+
 
         // Mark this room as read when entering detail
         LaunchedEffect(key1 = index) {
@@ -390,8 +441,67 @@ fun ChatScreenDetailed(
                         ChatMessageItem(
                             time = utcToHoursMinutes(chatMsg.timeReceived),
                             callsign = chatMsg.callsign,
-                            message = chatMsg.message
+                            message = chatMsg.message,
+                            uid= chatMsg.uid
                         )
+                    }
+                    item {
+                        Row(
+                            verticalAlignment= Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .padding(horizontal = 10.dp)
+                                .padding(top = 5.dp)
+                        ) {
+                            Chip(
+                                onClick = { navController.navigate("chat_reply_screen") {
+                                    popUpTo("chat_reply_screen") { inclusive = true }
+                                }},
+                                enabled = true,
+                                modifier = if (replyMessage.isEmpty()) {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .weight(.8F)
+                                        .height(30.dp)
+                                } else {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .weight(.8F)
+                                        .defaultMinSize(minHeight = 30.dp)
+                                        .wrapContentHeight()
+                                },
+                                label = {
+                                    Text(
+                                        text = replyMessage,
+                                        fontSize  = 12.sp,
+                                        maxLines = 3,
+                                        fontWeight = FontWeight.Normal,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                colors = ChipDefaults.chipColors(
+                                    backgroundColor = Color.DarkGray,
+                                    contentColor = Color.White,
+                                    secondaryContentColor = Color.LightGray
+                                ),
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            IconButton(
+                                onClick = { /* TODO WEAR-180: Add send functionality */},
+                                modifier = Modifier
+                                    .size(35.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = Color.Black,
+                                    containerColor = colors.primary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Close icon",
+                                    tint = Color.Black
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -412,19 +522,22 @@ fun ChatMessageItem(
     time: String,
     callsign: String,
     message: String,
+    uid: String
 ) {
     Chip(
         onClick = { /* no-op */ },
         enabled = true,
         modifier = Modifier.fillMaxWidth(),
-        colors = ChipDefaults.outlinedChipColors(),
+        colors = ChipDefaults.outlinedChipColors(
+            contentColor = if (uid == device_uid) Color.Green else  colors.primary
+        ),
         label = {
             Text(
                 text = "$callsign - $time",
                 maxLines = 1,
                 fontSize = 12.sp,
-                textAlign = TextAlign.Start,
-                fontWeight = FontWeight.Light,
+                textAlign = if (uid == device_uid) TextAlign.End else TextAlign.Start,
+                fontWeight = FontWeight.Normal,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -433,73 +546,191 @@ fun ChatMessageItem(
             Text(
                 text = message,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
+                color = Color.White,
+                textAlign = if (uid == device_uid) TextAlign.End else TextAlign.Start,
                 modifier = Modifier.fillMaxWidth()
             )
         },
     )
 }
+@Composable
+fun ChatReplyScreen(navController: NavController) {
+//    val textBox = remember { mutableStateOf("") }
+    var replyTextFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                reply.value ?: "null"
+            )
+        )
+    }
+    WearTakCivScreenDimensions(
+        columnContent = {
+            Row(
+                modifier = Modifier.padding(bottom=5.dp),
+                verticalAlignment= Alignment.CenterVertically,
+                ) {
+                TextField(
+                    value = replyTextFieldValue,
+                    onValueChange = {
+                        replyTextFieldValue = it
+                    },
+                    placeholder = { Text("") },
+                    modifier = if (replyTextFieldValue.text.isEmpty()) {
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(.8F)
+                            .height(30.dp)
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(.8F)
+                            .defaultMinSize(minHeight = 30.dp)
+                            .wrapContentHeight()
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.DarkGray,
+                        unfocusedContainerColor = Color.DarkGray,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        unfocusedTextColor = Color.White,
+                        focusedTextColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(50), // pill shape like Chip
+                    maxLines = 3,
 
-//TODO: WEAR-234: Delete this
-//@Composable
-//fun ChatDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
-//    WearTAKCIVTheme {
-//        Column(
-//            modifier = Modifier
-//                .fillMaxSize()
-//                .background(colors.background)
-//                .padding(16.dp),
-//            horizontalAlignment = Alignment.CenterHorizontally,
-//            verticalArrangement = Arrangement.Center
-//        ) {
-//            Text(
-//                text = "Chat Disabled",
-//                fontWeight = FontWeight.SemiBold,
-//                textAlign = TextAlign.Center
-//            )
-//            Spacer(modifier = Modifier.size(5.dp))
-//            Text(
-//                text = "Please enable Chat in order to use this feature",
-//                textAlign = TextAlign.Center,
-//                fontSize = 14.sp
-//            )
-//            Spacer(modifier = Modifier.size(10.dp))
-//            Button(
-//                onClick = {
-//                    navController.navigate("invalid_license_screen") {
-//                        popUpTo("invalid_license_screen") { inclusive = true }
-//                    }
-//                },
-//                colors = ButtonDefaults.buttonColors(
-//                    containerColor = colors.primary,
-//                    contentColor = Color.Black
-//                )
-//            ) {
-//                Text(
-//                    text = "Go to Settings",
-//                    color = Color.Black,
-//                    fontWeight = FontWeight.SemiBold,
-//                    textAlign = TextAlign.Center
-//                )
-//            }
-//            Button(
-//                onClick = { exitActivity() },
-//                colors = ButtonDefaults.buttonColors(
-//                    containerColor = Color.DarkGray,
-//                    contentColor = Color.White
-//                ),
-//                modifier = Modifier.padding(top = 2.dp)
-//            ) {
-//                Text(
-//                    text = "Exit",
-//                    color = Color.White,
-//                    fontWeight = FontWeight.SemiBold,
-//                    textAlign = TextAlign.Center
-//                )
-//            }
-//        }
-//    }
-//}
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                IconButton(
+                    onClick = {
+                        if (replyTextFieldValue.text.isNotEmpty()) {
+                            val newText = replyTextFieldValue.text.dropLast(1)
+                            replyTextFieldValue = replyTextFieldValue.copy(
+                                text = newText,
+                                selection = TextRange(newText.length) // keep cursor at the end
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .size(35.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = Color.Black,
+                        containerColor = Color.Unspecified
+                    )
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.backspace),
+                        contentDescription = "Close icon",
+                        tint = colors.primary,
+                        modifier = Modifier.size(25.dp)
+                    )
+                }
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.height(100.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                items(quickReplyOptions) { replyOption ->
+                    Button(
+                        onClick = {  replyTextFieldValue = TextFieldValue(
+                            text = replyTextFieldValue.text + " " + replyOption.longText,
+                            selection = TextRange((replyTextFieldValue.text +  " " + replyOption.longText).length)
+                        )},
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.DarkGray,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(size = 10.dp)
+                    ) {
+                        Text(
+                            text = replyOption.shortenedText,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                }
+            }
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    navController.popBackStack()
+                },
+            onClickConfirm = {
+                reply.postValue(replyTextFieldValue.text)
+                navController.popBackStack()
+            }
+            )
+        },
+        text = ""
+    )
+
+}
+
+@Composable
+fun ChatDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
+    WearTAKCIVTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Chat Disabled",
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(5.dp))
+            Text(
+                text = "Please enable Chat in order to use this feature",
+                textAlign = TextAlign.Center,
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.size(10.dp))
+            Button(
+                onClick = {
+                    navController.navigate("invalid_license_screen") {
+                        popUpTo("invalid_license_screen") { inclusive = true }
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.primary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text(
+                    text = "Go to Settings",
+                    color = Color.Black,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Button(
+                onClick = { exitActivity() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.DarkGray,
+                    contentColor = Color.White
+                ),
+                modifier = Modifier.padding(top = 2.dp)
+            ) {
+                Text(
+                    text = "Exit",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
 
 fun utcToHoursMinutes(time: Long): String {
     val instant = Instant.ofEpochMilli(time)
@@ -527,14 +758,14 @@ fun ChatScreenDetailedPreview() {
     ChatScreenDetailed(rememberSwipeDismissableNavController(), 0, emptyList())
 }
 
+@Preview(widthDp = 192, heightDp = 400, showBackground = true)
+@Composable
+fun ChatReplyPreview() {
+    ChatReplyScreen(rememberSwipeDismissableNavController())
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun ChatDisabledPreview() {
-//    ChatDisabledScreen(rememberSwipeDismissableNavController(), {})
-    ActivityDisabledScreen(
-        rememberSwipeDismissableNavController(),
-        { },
-        "Chat Disabled",
-        "Please enable Chat in order to use this feature"
-    )
+    ChatDisabledScreen(rememberSwipeDismissableNavController(), {})
 }

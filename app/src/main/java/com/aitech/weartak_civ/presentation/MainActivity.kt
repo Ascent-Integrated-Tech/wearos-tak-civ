@@ -253,6 +253,12 @@ class MainActivity : ComponentActivity() {
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
+        var quickReplyOptions: List<Utils.ChatResponse> = listOf(
+            Utils.ChatResponse("RGR", "Roger"),
+            Utils.ChatResponse("NEG", "Negative"),
+            Utils.ChatResponse("Obj", "Objective"),
+            Utils.ChatResponse("nPos", "In Position")
+        )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -972,7 +978,9 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "MainActivity onCreate(): Start...")
         mainActivity = this
         mainActivityIsInit = this
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+//        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        //TODO: WEAR-180: CHANGE BACK when finished
+        device_uid = "1"
 
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
