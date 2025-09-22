@@ -455,44 +455,6 @@ class MovementDetectionService : Service(), SensorEventListener {
     /**
      * Update GPS update intervals based on activity type
      */
-    private fun updateGPSUpdateIntervals(activity: MovementState) {
-        val interval = when (activity) {
-            MovementState.STILL -> 300000L      // 5 minutes when stationary
-            MovementState.WALKING -> 300000L    // 2 minutes when walking
-            MovementState.RUNNING -> 300000L     // 1 minute when running
-            MovementState.CYCLING -> 300000L     // 45 seconds when cycling
-            MovementState.DRIVING -> 300000L     // 30 seconds when driving
-            MovementState.UNKNOWN -> 300000L    // 3 minutes when unknown
-        }
-        
-        gpsUpdateInterval = interval
-        //Log.d(TAG, "GPS update interval set to ${interval/1000}s for $activity")
-    }
-
-    // ---------- ACTIVITY-BASED VELOCITY MANAGEMENT ----------
-    
-    // Helper functions for adaptive velocity management based on Google Activity Recognition
-    private fun getVelocityResetThreshold(activity: MovementState): Int {
-        return when (activity) {
-            MovementState.STILL -> 20      // ~2 seconds for stationary
-            MovementState.WALKING -> 30    // ~3 seconds for walking
-            MovementState.RUNNING -> 15    // ~1.5 seconds for running
-            MovementState.CYCLING -> 25    // ~2.5 seconds for cycling
-            MovementState.DRIVING -> 50    // ~5 seconds for driving
-            MovementState.UNKNOWN -> 30    // ~3 seconds for unknown
-        }
-    }
-
-    private fun getAggressiveVelocityResetThreshold(activity: MovementState): Int {
-        return when (activity) {
-            MovementState.STILL -> 10      // ~1 second for stationary
-            MovementState.WALKING -> 20    // ~2 seconds for walking
-            MovementState.RUNNING -> 10    // ~1 second for running
-            MovementState.CYCLING -> 15    // ~1.5 seconds for cycling
-            MovementState.DRIVING -> 25    // ~2.5 seconds for driving
-            MovementState.UNKNOWN -> 20    // ~2 seconds for unknown
-        }
-    }
 
     // ---- EKF profile model and catalog (uses only knobs already exposed by EKF) ----
     private data class EkfProfile(
@@ -508,14 +470,14 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     private object ActivityProfiles {
         // ON_FOOT treated like stationary
-        val STILL      = EkfProfile("STILL",    0.28, Double.POSITIVE_INFINITY, 0.20, 2, true,  0.75f, 500f)
-        val ON_FOOT    = EkfProfile("STILL",    0.28, 1.20,                      0.30, 1, true,  0.65f, 500f)
+        val STILL      = EkfProfile("STILL",    0.28, Double.POSITIVE_INFINITY, 0.05, 4, true,  0.75f, 500f)
+        val ON_FOOT    = EkfProfile("STILL",    0.28, 1.20,                      0.30, 3, true,  0.65f, 500f)
         val WALKING    = EkfProfile("WALKING",  0.35, 1.00,                      0.90, 0, false, 0.55f, 500f)
         val RUNNING    = EkfProfile("RUNNING",  0.40, 1.50,                      1.00, 0, false, 0.45f, 500f)
         val ON_BICYCLE = EkfProfile("DRIVING",  0.43, 2.00,                      1.00, 0, false, 0.35f, 500f)
         val IN_VEHICLE = EkfProfile("DRIVING",  0.48, 3.00,                      1.00, 0, false, 0.15f, 500f)
         val TILTING    = EkfProfile("WALKING",  0.40, 1.00,                      0.60, 0, true,  0.40f, 500f)
-        val UNKNOWN    = EkfProfile("WALKING",  0.38, 1.00,                      0.80, 1, true, 0.50f, 500f)
+        val UNKNOWN    = EkfProfile("WALKING",  0.38, 1.00,                      0.80, 3, true, 0.50f, 500f)
 
         fun forType(type: Int): EkfProfile = when (type) {
             com.google.android.gms.location.DetectedActivity.STILL       -> STILL
@@ -529,13 +491,6 @@ class MovementDetectionService : Service(), SensorEventListener {
             else                                                         -> UNKNOWN
         }
     }
-
-    // ---- No-op extensions; real EKF members (if present) take precedence ----
-    private fun ExtendedKalmanFilter.adaptNoiseByState(mode: String, magWeight: Float, gyroAbs: Float) { /* no-op if not implemented */ }
-    private fun ExtendedKalmanFilter.dampenVelocity(factor: Double) { /* no-op if not implemented */ }
-    private fun ExtendedKalmanFilter.zuptUpdate() { /* no-op if not implemented */ }
-    private fun ExtendedKalmanFilter.zaruUpdate(v: DoubleArray) { /* no-op if not implemented */ }
-    private fun ExtendedKalmanFilter.setGpsHeadingMinSpeed(mps: Double) { /* no-op if not implemented */ }
 
     // ---- Profile helper functions ----
     private fun currentSpeedMps(): Double {
@@ -601,187 +556,6 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var lastImuUpdateTime = System.currentTimeMillis() // Initialize to current time to prevent immediate IMU update
     private val imuUpdateInterval = 50L // 50ms for 20Hz IMU updates
     private var latestImuTimestampNs: Long = 0L  // Sensor timestamp for EKF predict
-    
-
-    
-    /*override fun onSensorChanged(event: SensorEvent?) {
-        event?.let { sensorEvent ->
-            val currentTime = System.currentTimeMillis()
-            
-            // Log all sensor events for debugging
-            ////Log.v(TAG, "🔍 Sensor event: type=${sensorEvent.sensor.stringType}, accuracy=${sensorEvent.accuracy}, timestamp=${sensorEvent.timestamp}")
-            
-            // Rate limiting for sensor updates
-            val timeSinceLastUpdate = currentTime - lastSensorUpdateTime
-            if (timeSinceLastUpdate < sensorUpdateInterval) {
-                ////Log.v(TAG, "⏳ Rate limited: ${timeSinceLastUpdate}ms < ${sensorUpdateInterval}ms, skipping sensor type: ${sensorEvent.sensor.stringType}")
-                return
-            }
-            lastSensorUpdateTime = currentTime
-            ////Log.v(TAG, "✅ Rate limit passed: ${timeSinceLastUpdate}ms >= ${sensorUpdateInterval}ms, processing sensor type: ${sensorEvent.sensor.stringType}")
-            
-            // Check AR fallback before processing sensors
-            //checkArFallback()
-            
-            // Check if we need to request a GPS fix (time, distance, EKF quality)
-            // Rate limit GPS checks to prevent excessive requests
-            if (currentTime - lastGpsCheckTime >= gpsCheckInterval) {
-                //checkGpsFixNeeded()
-                lastGpsCheckTime = currentTime
-            } else {
-                ////Log.v(TAG, "⏳ GPS check rate limited: ${currentTime - lastGpsCheckTime}ms < ${gpsCheckInterval}ms")
-            }
-            
-            when (sensorEvent.sensor.type) {
-                Sensor.TYPE_ACCELEROMETER -> {
-                    ////Log.d(TAG, "📱 Processing accelerometer data")
-                    //processAccelerometerData(sensorEvent)
-                    ////Log.d(TAG, "✅ Accelerometer processing completed")
-
-                }
-                Sensor.TYPE_LINEAR_ACCELERATION -> {
-                    val ax = event.values[0]
-                    val ay = event.values[1]
-                    val az = event.values[2]
-                    val tsNs = event.timestamp   // nanoseconds since boot
-
-                    //Log.d(TAG, "📱 Linear Accel: ts=$tsNs, ax=$ax, ay=$ay, az=$az")
-                }
-                Sensor.TYPE_GYROSCOPE -> {
-                    ////Log.d(TAG, "🔄 Processing gyroscope data")
-                    //processGyroscopeData(sensorEvent)
-                    ////Log.d(TAG, "✅ Gyroscope processing completed")
-                }
-                Sensor.TYPE_MAGNETIC_FIELD -> {
-                    ////Log.d(TAG, "🧲 Processing magnetometer data")
-                    //processMagnetometerData(sensorEvent)
-                    ////Log.d(TAG, "✅ Magnetometer processing completed")
-                }
-                Sensor.TYPE_PRESSURE -> {
-                    ////Log.d(TAG, "🌡️ Processing pressure data")
-                    //processPressureData(sensorEvent)
-                    ////Log.d(TAG, "✅ Pressure processing completed")
-                }
-
-            else -> {
-                    //Log.v(TAG, "🔍 Unhandled sensor type: ${sensorEvent.sensor.stringType}")
-                }
-            }
-            
-                // Try to update EKF with buffered IMU data (GPS fix required)
-            if (hasGpsFix) {
-                ////Log.d(TAG, "🎯 GPS fix available, attempting EKF update")
-                //tryUpdateEKFWithBufferedData()
-            } else {
-                //Log.v(TAG, "⏳ No GPS fix yet, skipping EKF update")
-            }
-        }
-
-        /*
-        if (event == null) return
-
-        // --- IMU buffers + timestamps (ns) ---
-        // (Keep these as class fields if you want across calls; shown here for clarity)
-        // latestAccelData: FloatArray?
-        // latestGyroData: FloatArray?
-        // latestMagData: FloatArray?
-        // private var accTsNs: Long = 0L
-        // private var gyrTsNs: Long = 0L
-        // private var magTsNs: Long = 0L
-        // private var lastLoggedTsNs: Long = 0L
-        // private var imuLogLastGpsReqMs: Long = 0L
-
-        when (event.sensor.type) {
-            Sensor.TYPE_ACCELEROMETER -> {
-                latestAccelData = event.values.clone()
-                accTsNs = event.timestamp
-            }
-            Sensor.TYPE_GYROSCOPE -> {
-                latestGyroData = event.values.clone()
-                gyrTsNs = event.timestamp
-            }
-            Sensor.TYPE_MAGNETIC_FIELD -> {
-                latestMagData = event.values.clone()
-                magTsNs = event.timestamp
-            }
-            else -> return
-        }
-
-        // Only log when we have all three streams at least once
-        if (latestAccelData == null || latestGyroData == null || latestMagData == null) return
-
-        // Choose a representative timestamp (ns) for this fused IMU sample
-        val tsNs = maxOf(accTsNs, gyrTsNs, magTsNs)
-        if (tsNs <= lastLoggedTsNs) return  // ensure strictly increasing logs
-
-        // (Optional) basic de-skew guard: require the three timestamps to be close
-        val minTs = minOf(accTsNs, gyrTsNs, magTsNs)
-        val skewNs = tsNs - minTs
-        // If sensors are registered with different rates, loosen this threshold
-        val maxAllowedSkewNs = 25_000_000L // 25 ms
-        if (skewNs > maxAllowedSkewNs) {
-            // Wait for the slower stream to catch up
-            return
-        }
-
-        // Build CSV line: ts, ax, ay, az, gx, gy, gz, mx, my, mz
-        val a = latestAccelData!!
-        val g = latestGyroData!!
-        val m = latestMagData!!
-
-        // Write to the existing movement .txt file
-        // Keep high precision but avoid scientific notation where possible
-        writeMovementLine(
-            String.format(
-                Locale.US,
-                "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
-                tsNs,
-                a[0], a[1], a[2],
-                g[0], g[1], g[2],
-                m[0], m[1], m[2]
-            )
-        )
-
-        lastLoggedTsNs = tsNs
-
-        // Request a GPS point-of-reference roughly every 10 seconds
-        val nowMs = System.currentTimeMillis()
-        if (nowMs - imuLogLastGpsReqMs >= 10_000L) {
-            // Single GPS line will be handled by your existing onLocationUpdate/logGpsTxt
-            logRefixTxt(reason = "IMU_LOG_TIMER", details = "periodic_gps_reference")
-            requestGpsFix("IMU_LOG_TIMER")
-            imuLogLastGpsReqMs = nowMs
-        }
-        */
-
-    }*/
-
-    /*override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null) return
-
-        val tsNs = event.timestamp  // nanoseconds since boot
-
-        when (event.sensor.type) {
-            Sensor.TYPE_ACCELEROMETER -> {
-                //Log.d(TAG, "ACCEL ts=$tsNs, ax=${event.values[0]}, ay=${event.values[1]}, az=${event.values[2]}")
-            }
-            Sensor.TYPE_LINEAR_ACCELERATION -> {
-                //Log.d(TAG, "LINACC ts=$tsNs, lax=${event.values[0]}, lay=${event.values[1]}, laz=${event.values[2]}")
-            }
-            Sensor.TYPE_GYROSCOPE -> {
-                ////Log.d(TAG, "GYRO ts=$tsNs, gx=${event.values[0]}, gy=${event.values[1]}, gz=${event.values[2]}")
-            }
-            Sensor.TYPE_MAGNETIC_FIELD -> {
-                ////Log.d(TAG, "MAG ts=$tsNs, mx=${event.values[0]}, my=${event.values[1]}, mz=${event.values[2]}")
-            }
-            Sensor.TYPE_PRESSURE -> {
-                ////Log.d(TAG, "PRESS ts=$tsNs, p=${event.values[0]}")
-            }
-            else -> {
-                //Log.v(TAG, "Unhandled sensor type: ${event.sensor.stringType}")
-            }
-        }
-    }*/
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null) return
@@ -1252,9 +1026,18 @@ class MovementDetectionService : Service(), SensorEventListener {
             // Log all available sensors for debugging
             val allSensors = sensorManager?.getSensorList(Sensor.TYPE_ALL)
             //Log.d(TAG, "🔍 All available sensors: ${allSensors?.size ?: 0}")
-            allSensors?.forEach { sensor ->
-                //Log.d(TAG, "🔍 Sensor: ${sensor.name} (${sensor.stringType})")
-            }
+            /*allSensors?.forEach { sensor ->
+                val sensorId = try {
+                    sensor.id
+                } catch (e: Exception) {
+                    -1  // fallback if running on lower API
+                }
+
+                Log.d(
+                    TAG,
+                    "🔍 Sensor: id=$sensorId, type=${sensor.type}, name=${sensor.name}, vendor=${sensor.vendor}, version=${sensor.version}"
+                )
+            }*/
             
         } catch (e: Exception) {
             //Log.e(TAG, "❌ Error registering sensors: ${e.message}", e)
