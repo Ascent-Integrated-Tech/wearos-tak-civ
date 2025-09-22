@@ -65,9 +65,9 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.HIGH_EXERTION_ALERT
-import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
-import com.aitech.weartak_civ.LOW_HEART_RATE_ALERT
+import com.aitech.weartak_civ.DESC_HIGH_EXERTION_ALERT
+import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
+import com.aitech.weartak_civ.DESC_LOW_HEART_RATE_ALERT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.complication.PhysioAlertComplicationService
@@ -207,9 +207,9 @@ fun AlertsScreen(
                         colors = ChipDefaults.outlinedChipColors(),
                         icon = {
                             Icon(
-                                painter = if (alert.alert == HIGH_HEART_RATE_ALERT) painterResource(R.drawable.high_hr_icon)
-                                else if (alert.alert == LOW_HEART_RATE_ALERT) painterResource(R.drawable.low_hr_icon)
-                                else if (alert.alert == HIGH_EXERTION_ALERT) painterResource(R.drawable.high_exertion_icon)
+                                painter = if (alert.alert == DESC_HIGH_HEART_RATE_ALERT) painterResource(R.drawable.high_hr_icon)
+                                else if (alert.alert == DESC_LOW_HEART_RATE_ALERT) painterResource(R.drawable.low_hr_icon)
+                                else if (alert.alert == DESC_HIGH_EXERTION_ALERT) painterResource(R.drawable.high_exertion_icon)
                                 else painterResource(R.drawable.heart_rate),
                                 contentDescription = "Favorite icon",
                                 tint = if (alert.level == Utils.AlertChipState.Emergency)Color.Red

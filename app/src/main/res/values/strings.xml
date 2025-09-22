@@ -128,7 +128,7 @@
     <string name="heart_rate" translatable="true">Heart Rate</string>
     <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
 
-    <string name="chat_disabled" translatable="false">Chat Disabled</string>
+    <string name="chat_disabled" translatable="true">Chat Disabled</string>
     <string name="chat_enabled_no_new_messages" translatable="false">Chat enabled, no new messages</string>
     <string name="chat_enabled_new_messages" translatable="false">Chat enabled, new message(s)</string>
     <string name="not_capturing_takserverstatuscomplication" translatable="false">not capturing takServerStatusComplication: %1$s</string>
@@ -522,4 +522,14 @@
     <string name="skin_temp">Skin Temp</string>
     <string name="current_metrics">Current Metrics</string>
     <string name="bluetooth">Bluetooth</string>
+    <string name="please_enable_chat_in_order_to_use_this_feature">Please enable Chat in order to use this feature</string>
+    <string name="go_to_settings">Go to Settings</string>
+    <string name="exit">Exit</string>
+    <string name="chat_messages">Chat Messages</string>
+    <string name="hostile">Hostile</string>
+    <string name="friendly">Friendly</string>
+    <string name="unknown">Unknown</string>
+    <string name="neutral">Neutral</string>
+    <string name="error_sending_no_endpoints_or_location">Error: No outbound endpoints connected OR location not available</string>
+    <string name="error_sending_no_endpoints">Error: No outbound endpoints connected</string>
 </resources>

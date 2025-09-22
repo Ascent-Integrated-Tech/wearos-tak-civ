@@ -28,10 +28,6 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.PhysioData
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_HIGH_HEART_RATE_ALERT_CLEAR
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
@@ -77,28 +73,32 @@ class CotDispatchService : Service() {
     private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private lateinit var dataRepository: DataRepository
     private var lastLocationUpdateRcvd: Long = 0L
-    //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
-    private val ioScope = CoroutineScope(Dispatchers.IO)
-    //    private val markerDropToBeSent = AtomicBoolean(false)
-//    private var markerDropReceivedTime: Long = 0L
-    private val manualSosToBeSent = AtomicBoolean(false)
-    private var manualSosReceivedTime: Long = 0L
-    private var manualSosReceivedCategory: String = ""
-    private var manualSosReceivedDescription: String  = ""
-    private var manualSosReceivedSendSms: Boolean = false
+
+    data class CustomEmergencyAlertWithAddedState(
+        var smsSent: Boolean = false,
+        val alert: DataRepository.CustomEmergencyAlert
+    )
+
+    private val manualAlertMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.CustomEmergencyAlert>()
+    private val pendingManualAlertQueue = ArrayDeque<CustomEmergencyAlertWithAddedState>()
+
+    private val physioAndAutoGenAlertMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.CustomEmergencyAlert>()
+    private val pendingPhysioAndAutoGenAlertQueue = ArrayDeque<CustomEmergencyAlertWithAddedState>()
+
     private var iconSetPath: String = ""
     private var markerType: String = ""
-    private var cancelSosAlert = false
-    private var inManualAlertingState = false
-    private var sosAlertUid: String = ""
+    // TODO Senni: should MarkerSnapshot be nullable below
+    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
+    private val pendingMarkerDropQueue = ArrayDeque<DataRepository.MarkerDropRequest>()
 
-    private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+
     private var combatId: Int = 0
 
     // Acquire DataRepository from a global or singleton reference
-    private lateinit var dataRepository: DataRepository
 
     private var sentBatteryWarnChatMsg = false
     private var sentBatteryAlertChatMsg = false
@@ -120,40 +120,42 @@ class CotDispatchService : Service() {
         return START_NOT_STICKY
     }
 
-    @Volatile private var lastLicenseState: HailService.HailLicenseStates = HailService.HailLicenseStates.INVALID
-
-    private var gateCtr = 0
-    private fun lgGate(msg: String) = Log.d(TAG, "[gate#${++gateCtr}] $msg")
-
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "CotDispatchService onCreate()")
         isRunning.set(true)
+        instance = this
+        dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
+
         startForegroundServiceCompat(
             notificationId = COT_DISPATCH_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
         )
 
-        instance = this
-        dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
-
-        startDispatchScheduler()
         CoroutineScope(Dispatchers.Main).launch {
             setValuesFromCustomDeveloperConfig()
         }
-
-        startBatteryAlerts()
-        //startWearTakDebugAlerts()
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
 
+        startDispatchScheduler()
+
+        startBatteryAlerts()
+        //startWearTakDebugAlerts()
+
         collectHailFlows()
+
+        // TODO Senni: combine both and change name almightyReportingIntervalSecs
         collectReportingIntervalSecs()
         startReportingIntervalRepoBridge()
 
         startMarkerPipelines()
+
+        startManualAlertPipelines()
+
+        startPhysioAndAutoGenAlertPipelines()
     }
 
     /* Expose the companion object CotDispatchService.currReportingIntervalSecs to the flow
@@ -185,15 +187,24 @@ class CotDispatchService : Service() {
     }
 
     private fun startBatteryAlerts() {
-        serviceScope.launch(Dispatchers.IO) {
+        serviceScope.launch {
             dataRepository.latestBatteryPercentage
                 .filterNotNull()
                 .collect { batt ->
                     val batteryAlertsEnabled = dataRepository.getEnableBatteryAlerts.first()
-                    val charging = dataRepository.chargingState.value
                     if (!batteryAlertsEnabled) return@collect
-                    if (charging) return@collect
 
+                    val charging = dataRepository.chargingState.value
+                    if (charging) {
+                        if (batt > MainActivity.battAlertPercent) {
+                            sentBatteryAlertChatMsg = false
+                        } else if (batt > MainActivity.battWarnPercent) {
+                            sentBatteryWarnChatMsg = false
+                        }
+                        return@collect
+                    }
+
+                    // TODO Senni: Check where we send mullitcast??
                     val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first() || companionAppAvailable())
 
                     if (endpointsToSendTo) {
@@ -206,7 +217,6 @@ class CotDispatchService : Service() {
                                     val msgText =
                                         "Watch Battery Warning: ${MainActivity.callsign} battery less than " +
                                                 "${MainActivity.battWarnPercent}% (actual=$batt%)"
-
                                     // 1. Build snapshot (roomUid/title can be whatever your TAK chat expects)
                                     val chatSnap = dataRepository.snapshotChatEvent(
                                         roomUid = "All Chat Rooms",
@@ -214,12 +224,12 @@ class CotDispatchService : Service() {
                                         message = msgText
                                     )
 
+                                    // TODO Senni: We need to add this and below (!sentBatteryAlertChatMsg) as being sent to "All Chat Rooms"
                                     if (chatSnap != null) {
                                         // 2. Build CoT XML from snapshot
                                         val chatCot = buildChatCotFromSnapshot(chatSnap)
-                                        sendDataTAKServers(chatCot, true)
                                         Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
-
+                                        sendDataTAKServers(chatCot, true)
                                         if (companionAppAvailable()) {
                                             capRepo.enqueueChatSnapshotForBle(chatSnap)
                                         }
@@ -234,7 +244,6 @@ class CotDispatchService : Service() {
                                     val msgText =
                                         "Battery ALERT: ${MainActivity.callsign} battery less than " +
                                                 "${MainActivity.battAlertPercent}% (actual=$batt%)"
-
                                     val chatSnap = dataRepository.snapshotChatEvent(
                                         roomUid = "All Chat Rooms",
                                         roomTitle = "All Chat Rooms",
@@ -243,9 +252,11 @@ class CotDispatchService : Service() {
 
                                     if (chatSnap != null) {
                                         val chatCot = buildChatCotFromSnapshot(chatSnap)
-                                        sendDataTAKServers(chatCot, true)
                                         Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
-                                        capRepo.enqueueChatSnapshotForBle(chatSnap)
+                                        sendDataTAKServers(chatCot, true)
+                                        if (companionAppAvailable()) {
+                                            capRepo.enqueueChatSnapshotForBle(chatSnap)
+                                        }
 
                                         sentBatteryAlertChatMsg = true
                                     } else {
@@ -263,7 +274,7 @@ class CotDispatchService : Service() {
     }
 
     private fun startWearTakDebugAlerts() {
-        serviceScope.launch(Dispatchers.IO) {
+        serviceScope.launch {
             dataRepository.getEnableWearTakDevMode
                 .filterNotNull()
                 .collect { enabled ->
@@ -298,6 +309,269 @@ class CotDispatchService : Service() {
         }
     }
 
+    private fun startManualAlertPipelines() {
+        startAddManualAlertCollector()
+        startClearManualAlertCollector()
+    }
+
+    private fun readyToSendAlertEvents(): Boolean {
+        val loc = dataRepository.latestLocation.value
+        // If no location at all, i.e., loc is null, we still send out as these are alerts; ELS
+        // But if location is stale, we don't immediately send out but wait for fresh location
+        val send = if (null == loc) true else (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
+        Log.d(TAG, "loc: ${if (null == loc) "null" else "NOT null"}; FRESH: ${(System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS}, ${(System.currentTimeMillis() - lastLocationUpdateRcvd) / 1000.0} s ago")
+        return (dataRepository.anyEndpointConnected.value && send)
+    }
+
+    private fun startAddManualAlertCollector() {
+        serviceScope.launch {
+            dataRepository.addManualAlert.collect { req ->
+                Log.i(TAG, "Received req to add manual alert: $req")
+                val manualAlert = DataRepository.CustomEmergencyAlert(uuid = UUID.randomUUID().toString(), alertState = DataRepository.AlertState.ALERT, category = req.category, description = req.description, priority = 1, sendSms = true, timeMillis = req.timeMillis, enqueuedToBeSent = false)
+                val manualAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = manualAlert)
+                manualAlertMap[manualAlert.uuid] = manualAlert
+                if (readyToSendAlertEvents()) {
+                    sendAllManualAlerts(manualAlertWithState)
+                } else {
+                    if (dataRepository.anyEndpointConnected.value) {
+                        EventBus.getDefault().post(LocationUpdateRequired())
+                    }
+                    enqueueManualAlertAndUpdateUI(manualAlertWithState)
+                }
+            }
+        }
+    }
+
+    private suspend fun sendPendingManualAlerts(): Boolean {
+        var sentAll = true
+        // First send all pending manual alerts (so that earliest event is sent first) and then send the current latest 'manualAlert'
+        Log.i(TAG, "pendingManualAlertQueue.size=${pendingManualAlertQueue.size}")
+        while (pendingManualAlertQueue.isNotEmpty()) {
+            val alertWithAddedState = pendingManualAlertQueue.first()
+            Log.i(TAG, "Trying to send pending manual alert: $alertWithAddedState")
+            if (sendEmergencyAlert(alertWithAddedState)) {
+                pendingManualAlertQueue.removeFirst()
+                if (alertWithAddedState.alert.alertState == DataRepository.AlertState.ALERT) {
+                    dataRepository.changeManualAlertEnqueueStatusUid(alertWithAddedState.alert.uuid, false)
+                } else {
+                    dataRepository.removeManualAlertByUid(alertWithAddedState.alert.uuid)
+                }
+            } else {
+                sentAll = false
+                break
+            }
+        }
+        return sentAll
+    }
+    private suspend fun sendAllManualAlerts(manualAlertWithState: CustomEmergencyAlertWithAddedState?) {
+        val sentPendingAlerts = sendPendingManualAlerts()
+
+        if (null == manualAlertWithState) return
+
+        if (sentPendingAlerts) {
+            if (sendEmergencyAlert(manualAlertWithState)) {
+                if (manualAlertWithState.alert.alertState == DataRepository.AlertState.ALERT) {
+                    dataRepository.appendManualAlert(manualAlertWithState.alert)
+                } else {
+                    dataRepository.removeManualAlertByUid(manualAlertWithState.alert.uuid)
+                }
+            } else {
+                enqueueManualAlertAndUpdateUI(manualAlertWithState)
+            }
+        } else {
+            enqueueManualAlertAndUpdateUI(manualAlertWithState)
+        }
+    }
+
+    private suspend fun enqueueManualAlertAndUpdateUI(manualAlertWithState: CustomEmergencyAlertWithAddedState) {
+        val pendingManualAlert = manualAlertWithState.alert.copy(enqueuedToBeSent = true)
+        val pendingManualAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = manualAlertWithState.smsSent, alert = pendingManualAlert)
+        Log.i(TAG, "===> adding to pendingManualAlertQueue=$pendingManualAlert...")
+        pendingManualAlertQueue.addLast(pendingManualAlertWithState)
+        Log.i(TAG, "===> updating UI...")
+        if (pendingManualAlert.alertState == DataRepository.AlertState.ALERT) {
+            dataRepository.appendManualAlert(pendingManualAlert)
+        } else {
+            dataRepository.changeManualAlertToClearAndEnqueueStatusUid(pendingManualAlert.uuid, true)
+        }
+    }
+
+    private fun startClearManualAlertCollector() {
+        serviceScope.launch {
+            dataRepository.clearManualAlert.collect { req ->
+                Log.i(TAG, "Received req to clear manual alert: $req")
+                when (req) {
+                    is DataRepository.ClearRequest.Specific -> handleClearManualAlertUid(req.uid)
+                    DataRepository.ClearRequest.Last -> {
+                        val manualAlerts = dataRepository.manualAlertList.value.filter { it.alertState == DataRepository.AlertState.ALERT }
+                        if (manualAlerts.isNotEmpty()) {
+                            val last = manualAlerts.maxByOrNull { it.timeMillis }
+                            if (last != null) {
+                                Log.i(TAG, "Clearing last manual alert: $last")
+                                handleClearManualAlertUid(last.uuid)
+                            }
+                        }
+                    }
+                    DataRepository.ClearRequest.All -> handleClearManualAlertAll()
+                }
+            }
+        }
+    }
+
+    private suspend fun handleClearManualAlertUid(uid: String) {
+        val manualAlert = manualAlertMap[uid]
+        if (null == manualAlert) return
+
+        val manualAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = manualAlert.copy(alertState = DataRepository.AlertState.CANCEL))
+        // TODO Senni: Do we need latest location for clear event
+        if (readyToSendAlertEvents()) {
+            sendAllManualAlerts(manualAlertClearWithState)
+        } else {
+            if (dataRepository.anyEndpointConnected.value) {
+                EventBus.getDefault().post(LocationUpdateRequired())
+            }
+            enqueueManualAlertAndUpdateUI(manualAlertClearWithState)
+        }
+        manualAlertMap.remove(uid)
+    }
+
+    private suspend fun handleClearManualAlertAll() {
+        val manualAlerts = dataRepository.manualAlertList.value.filter { it.alertState == DataRepository.AlertState.ALERT }
+        if (manualAlerts.isNotEmpty()) {
+            val uids = manualAlerts.map { it.uuid }
+            uids.forEach { uid ->
+                handleClearManualAlertUid(uid)
+            }
+        }
+    }
+
+    private fun startPhysioAndAutoGenAlertPipelines() {
+        startAddPhysioAndAutoGenAlertCollector()
+        startClearPhysioAndAutoGenAlertCollector()
+    }
+
+    private fun startAddPhysioAndAutoGenAlertCollector() {
+        serviceScope.launch {
+            dataRepository.addPhysioAndAutoGenAlert.collect { req ->
+                Log.i(TAG, "Received req to add physio and auto generated alert: $req")
+                val physioAndAutoGenAlert = DataRepository.CustomEmergencyAlert(uuid = req.uuid, alertState = DataRepository.AlertState.ALERT, category = req.category, description = req.description, priority = req.priority, sendSms = req.sendSms, timeMillis = req.timeMillis, enqueuedToBeSent = false)
+                val physioAndAutoGenAlertAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert)
+                physioAndAutoGenAlertMap[physioAndAutoGenAlert.uuid] = physioAndAutoGenAlert
+                if (readyToSendAlertEvents()) {
+                    sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertAlertWithState)
+                } else {
+                    if (dataRepository.anyEndpointConnected.value) {
+                        EventBus.getDefault().post(LocationUpdateRequired())
+                    }
+                    enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
+                }
+            }
+        }
+    }
+
+    private suspend fun sendPendingPhysioAndAutoGenAlerts(): Boolean {
+        var sentAll = true
+        Log.i(TAG, "pendingPhysioAndAutoGenAlertQueue.size=${pendingPhysioAndAutoGenAlertQueue.size}")
+        while (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) {
+            val alertWithAddedState = pendingPhysioAndAutoGenAlertQueue.first()
+            Log.i(TAG, "Trying to send pending physio and auto gen alert: $alertWithAddedState")
+            if (sendEmergencyAlert(alertWithAddedState)) {
+                pendingPhysioAndAutoGenAlertQueue.removeFirst()
+                if (alertWithAddedState.alert.alertState == DataRepository.AlertState.ALERT) {
+                    dataRepository.changePhysioAndAutoGenAlertToClearAndEnqueueStatusUid(alertWithAddedState.alert.uuid, false)
+                } else {
+                    dataRepository.removePhysioAndAutoGenAlertByUid(alertWithAddedState.alert.uuid)
+                }
+            } else {
+                sentAll = false
+                break
+            }
+        }
+        return sentAll
+    }
+    private suspend fun sendAllPhysioAndAutoGenAlerts(alertWithState: CustomEmergencyAlertWithAddedState?) {
+        // First send all pending physio and auto gen alerts (so that earliest event is sent first) and then send the current latest 'physioAndAutoGenAlert'
+        val sentPendingAlerts = sendPendingPhysioAndAutoGenAlerts()
+
+        if (null == alertWithState) return
+
+        if (sentPendingAlerts) {
+            if (sendEmergencyAlert(alertWithState)) {
+                if (alertWithState.alert.alertState == DataRepository.AlertState.ALERT) {
+                    dataRepository.appendPhysioAndAutoGenAlert(alertWithState.alert)
+                } else {
+                    dataRepository.removePhysioAndAutoGenAlertByUid(alertWithState.alert.uuid)
+                }
+            } else {
+                enqueuePhysioAndAutoGenAlertAndUpdateUI(alertWithState)
+            }
+        } else {
+            enqueuePhysioAndAutoGenAlertAndUpdateUI(alertWithState)
+        }
+    }
+
+    private suspend fun enqueuePhysioAndAutoGenAlertAndUpdateUI(alertWithState: CustomEmergencyAlertWithAddedState) {
+        val pendingAlert = alertWithState.alert.copy(enqueuedToBeSent = true)
+        val pendingAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = alertWithState.smsSent, alert = pendingAlert)
+        Log.i(TAG, "===> adding to pendingPhysioAndAutoGenAlertQueue=$pendingAlert...")
+        pendingPhysioAndAutoGenAlertQueue.addLast(pendingAlertWithState)
+        Log.i(TAG, "===> updating UI...")
+        if (pendingAlert.alertState == DataRepository.AlertState.ALERT) {
+            dataRepository.appendPhysioAndAutoGenAlert(pendingAlert)
+        } else {
+            dataRepository.changePhysioAndAutoGenAlertToClearAndEnqueueStatusUid(pendingAlert.uuid, true)
+        }
+    }
+
+    private fun startClearPhysioAndAutoGenAlertCollector() {
+        serviceScope.launch {
+            dataRepository.clearPhysioAndAutoGenAlert.collect { req ->
+                Log.i(TAG, "Received req to clear physio or auto gen alert: $req")
+                when (req) {
+                    is DataRepository.ClearRequest.Specific -> handleClearPhysioAndAutoGenAlertUid(req.uid)
+                    DataRepository.ClearRequest.Last -> {
+                        val physioAndAutoGenAlerts = dataRepository.physioAndAutoGenAlertList.value.filter { it.alertState == DataRepository.AlertState.ALERT }
+                        if (physioAndAutoGenAlerts.isNotEmpty()) {
+                            val last = physioAndAutoGenAlerts.maxByOrNull { it.timeMillis }
+                            if (last != null) {
+                                Log.i(TAG, "Clearing last physio or auto gen alert: $last")
+                                handleClearPhysioAndAutoGenAlertUid(last.uuid)
+                            }
+                        }
+                    }
+                    DataRepository.ClearRequest.All -> handleClearPhysioAndAutoGenAlertAll()
+                }
+            }
+        }
+    }
+
+    private suspend fun handleClearPhysioAndAutoGenAlertUid(uid: String) {
+        val physioAndAutoGenAlert = physioAndAutoGenAlertMap[uid]
+        if (null == physioAndAutoGenAlert) return
+
+        val physioAndAutoGenAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert.copy(alertState = DataRepository.AlertState.CANCEL))
+        // TODO Senni: Do we need latest location for clear event
+        if (readyToSendAlertEvents()) {
+            sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertClearWithState)
+        } else {
+            if (dataRepository.anyEndpointConnected.value) {
+                EventBus.getDefault().post(LocationUpdateRequired())
+            }
+            enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertClearWithState)
+        }
+        physioAndAutoGenAlertMap.remove(uid)
+    }
+
+    private suspend fun handleClearPhysioAndAutoGenAlertAll() {
+        val physioAndAutoGenAlerts = dataRepository.physioAndAutoGenAlertList.value.filter { it.alertState == DataRepository.AlertState.ALERT }
+        if (physioAndAutoGenAlerts.isNotEmpty()) {
+            val uids = physioAndAutoGenAlerts.map { it.uuid }
+            uids.forEach { uid ->
+                handleClearPhysioAndAutoGenAlertUid(uid)
+            }
+        }
+    }
+
     private fun buildChatCotFromSnapshot(chat: DataRepository.ChatEventSnapshot): String {
         // Rebuild an android.location.Location from snapshot, if needed.
         val locSnapshot = chat.location
@@ -319,21 +593,22 @@ class CotDispatchService : Service() {
     }
 
     private fun startMarkerPipelines() {
-        startDropCollector()
-        startClearCollector()
-        startDropListCollector()
+        startMarkerDropCollector()
+        startMarkerClearCollector()
+        startMarkerDropListCollector()
     }
 
-    private fun startDropCollector() {
-        serviceScope.launch(Dispatchers.IO) {
-            dataRepository.dropRequests.collect { req ->
+    private fun startMarkerDropCollector() {
+        serviceScope.launch {
+            dataRepository.markerDropRequests.collect { req ->
                 Log.i(TAG, "Received drop request...")
-                val loc = dataRepository.latestLocation.value
-                if (sendMarkerReady()) {
-                    sendDropNow(req , loc!!)
+                if (readyToSendMarkerEvents()) {
+                    sendMarkerDropNow(req)
                     sendPendingMarkerDrops()
                 } else {
-                    EventBus.getDefault().post(LocationUpdateRequired())
+                    if (dataRepository.anyEndpointConnected.value) {
+                        EventBus.getDefault().post(LocationUpdateRequired())
+                    }
                     enqueueDrop(req)
                 }
             }
@@ -341,14 +616,15 @@ class CotDispatchService : Service() {
     }
 
     // TODO: I think we can only send the marker cot message once we have established connection and sent atleast one PLI message. The queue doesn't seem to flush and send to server on reconnects. Needs more work. MVP works.
-    private fun sendMarkerReady(): Boolean {
+    private fun readyToSendMarkerEvents(): Boolean {
         val loc = dataRepository.latestLocation.value
-        val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL
+        val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
+        // TODO Senni: Check how anyEndpointConnected is set
         return (dataRepository.anyEndpointConnected.value && (null != loc) && fresh)
     }
 
-    private fun startDropListCollector() {
-        serviceScope.launch(Dispatchers.IO) {
+    private fun startMarkerDropListCollector() {
+        serviceScope.launch {
             dataRepository.droppedMarkerList.collect { list ->
                 logMarkerDropList(list)
             }
@@ -369,24 +645,20 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun startClearCollector() {
-        serviceScope.launch(Dispatchers.IO) {
-            dataRepository.clearRequests.collect { req ->
+    private fun startMarkerClearCollector() {
+        serviceScope.launch {
+            dataRepository.clearMarkerRequests.collect { req ->
                 when (req) {
-                    is DataRepository.ClearRequest.Specific -> handleClearUid(req.uid)
+                    is DataRepository.ClearRequest.Specific -> handleClearMarkerUid(req.uid)
                     DataRepository.ClearRequest.Last -> {
                         val last = dataRepository.droppedMarkerList.value.maxByOrNull { it.timeDropped }
-                        if (last != null) handleClearUid(last.uid)
+                        if (last != null) handleClearMarkerUid(last.uid)
                     }
-                    DataRepository.ClearRequest.All -> handleClearAll()
+                    DataRepository.ClearRequest.All -> handleClearMarkerAll()
                 }
             }
         }
     }
-
-    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
-
-    private val pendingDropQueue = ArrayDeque<DataRepository.DropRequest>()
 
     private fun startDispatchScheduler() {
         Log.v(TAG, "Starting the dispatch scheduler")
@@ -603,12 +875,13 @@ class CotDispatchService : Service() {
         value: Number?,
         format: String,
         invalidString: String = "N/A",
+        negIsInvalid: Boolean = true,
         zeroIsInvalid: Boolean = true
     ): String {
         if (value == null) return invalidString
 
         val v = value.toDouble()
-        if (v < 0.0) return invalidString
+        if (negIsInvalid && v < 0.0) return invalidString
         if (zeroIsInvalid && v == 0.0) return invalidString
 
         val s = String.format(format, v)
@@ -623,7 +896,7 @@ class CotDispatchService : Service() {
         }
     }
 
-    private suspend fun buildPliCot(snapshot: DataRepository.PliSnapshot): String {
+    private fun buildPliCot(snapshot: DataRepository.PliSnapshot): String {
         val timeSnap     = snapshot.time
 
         val physSnap     = snapshot.physioData
@@ -648,34 +921,28 @@ class CotDispatchService : Service() {
         // Pull out physio values
         val uid         = sysSnap.deviceId
         val hr          = rectifiedIntToString(physSnap.data.heartRateBpm)
-        val skt         = rectifiedFormattedNumber(physSnap.data.skinTempF, "%.1f", zeroIsInvalid = true)
-        val exert       = rectifiedFormattedNumber(physSnap.data.exertion, "%.2f", zeroIsInvalid = true)
+        val skt         = rectifiedFormattedNumber(physSnap.data.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
+        val exert       = rectifiedFormattedNumber(physSnap.data.exertion, "%.2f", zeroIsInvalid = false)
         val bat         = sysSnap.batteryPercent
-        val steps       = dailyMetrics?.steps
-        val calories    = dailyMetrics?.calories
-        val floors      = dailyMetrics?.floors
-        val elevationM  = dailyMetrics?.elevationM
+        val steps       = dailyMetrics?.steps ?: 0L
+        val calories    = dailyMetrics?.calories ?: 0.0
+        val floors      = dailyMetrics?.floors ?: 0.0
+        val elevationM  = dailyMetrics?.elevationM ?: 0.0
         val age         = physSnap.data.ageYears
 
         // Inject physio data into remarks
         val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
-            /*
-            var activity : ActivityRecognized = ActivityRecognized.UNKNOWN
-            runBlocking {
-                activity = dataRepository.latestActivityRecognized.value
-            }
-
-             */
             buildString {
                 append("HR:$hr;")
                 append("SknTmp:$skt;")
                 append("Exert:$exert;")
                 append("Bat:${bat ?: -1}%;")
                 append("Steps:$steps;")
-                append("Cals:${calories?.roundToInt()};")
-                append("Floors:${floors?.roundToInt()};")
-                append("ElevGain(m):${elevationM?.roundToInt() ?: 0}")
-                //append(";Act:${activity.name}($currReportingIntervalInSecs)")
+                append("Cals:${calories.roundToInt()};")
+                append("Floors:${floors.roundToInt()};")
+                append("ElevGain(m):${elevationM.roundToInt()}")
+                // Line below is for debug only:
+                //append(";Act:${dataRepository.latestActivityRecognized.value.name}($actualReportingIntervalSecs)")
             }
         } else {
             buildString {
@@ -748,6 +1015,8 @@ class CotDispatchService : Service() {
         return cot
     }
 
+    private var gateCtr = 0
+    private fun lgGate(msg: String) = Log.d(TAG, "[gate#${++gateCtr}] $msg")
 
     private fun collectHailFlows() {
         serviceScope.launch {
@@ -811,10 +1080,10 @@ class CotDispatchService : Service() {
                 hail.setSkinTemp(physioData.skinTempF?.toInt()?.toShort() ?: 0)
                 hail.setWeight(physioData.weightKg?.toShort() ?: -1)
                 hail.setAge(physioData.ageYears?.toByte() ?: -1)
-                if (inManualAlertingState) {
-                    hail.setMedevent(true)
-                } else {
+                if (manualAlertMap.isEmpty()) {
                     hail.setMedevent(false)
+                } else {
+                    hail.setMedevent(true)
                 }
             }
 
@@ -834,12 +1103,12 @@ class CotDispatchService : Service() {
     }
 
     /*
-    /*
      * Full GeoJSON sent to ESRI:
      * { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "WEAROS_cffb09973cda1813", "properties": { "timeutc": "2025-05-14T19:21:51.401Z", "staletimeutc": "2025-05-14T19:27:57.401Z", "callsign": "SIERRAPAPA-WTC-1", "role": "Engine 1 - Firefighter", "color": "orange", "phone": "+13014058648", "model": "WEAROS", "device": "Samsung Galaxy Watch 7", "hae": 161.3000030517578, "horizaccuracy": 12.191, "vertaccuracy": 1.9328669, "heading": 359.3, "speed": 1.3, "batt": 17, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch 7 (44mm)", "isworn": true, "hr": 78, "hribi": -1, "hrv": -1, "skintemp": -1, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": -1, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": 17 } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ -87.6590724, 41.8870087 ] } } ] }
      * Compact GeoJSON sent to ESRI:
      * { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "WEAROS_cffb09973cda1813", "properties": { "timeutc": "2025-05-17T19:21:51.401Z", "staletimeutc": "2025-05-17T19:27:57.401Z", "callsign": "SIERRAPAPA-WTC-1", "role": "Engine 1 - Firefighter", "color": "orange", "phone": "+13014058648", "model": "WEAROS", "device": "Samsung Galaxy Watch 7", "hae": 161.3000030517578, "horizaccuracy": 12.191, "vertaccuracy": 1.9328669, "heading": 359.3, "speed": 1.3, "batt": 17, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch 7 (44mm)", "isworn": true, "hr": 78 } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ -87.6590724, 41.8870087 ] } } ] }
     */
+    /*
     private fun buildVerboseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
@@ -865,6 +1134,12 @@ class CotDispatchService : Service() {
         if (leActual.isNaN() == true) leActual = 9999999.0F
         val bearingActual = location?.bearing ?: 0.0F
         val speedActual = location?.speed ?: 0.0F
+
+        // Ble Beacon
+        if (MainActivity.enableBleBeaconService == true) {
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+        }
 
         val uid = MainActivity.device_uid
         val skinTempStr = String.format("%.2f", physioData.skinTemp).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
@@ -916,78 +1191,6 @@ class CotDispatchService : Service() {
     }
     */
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
-        manualSosReceivedCategory = event.category
-        manualSosReceivedDescription = event.description
-        manualSosReceivedSendSms = event.sendSms
-        val currTime = System.currentTimeMillis()
-
-        cancelSosAlert = event.category == CAT_SOS_ALERT_CANCELLED
-//        val action = if (event.category == CAT_SOS_ALERT_CANCELLED) {
-//            DataRepository.AlertState.CANCEL
-//        } else {
-//            DataRepository.AlertState.ALERT
-//        }
-        val action = when (event.category) {
-            CAT_HIGH_HEART_RATE_ALERT_CLEAR -> DataRepository.AlertState.CANCEL
-            CAT_SOS_ALERT_CANCELLED -> DataRepository.AlertState.CANCEL
-            else -> DataRepository.AlertState.ALERT
-        }
-
-        if (manualSosReceivedCategory == DESC_SOS_ALERT) {
-            inManualAlertingState = true
-            serviceScope.launch {
-                dataRepository.storeIsAlerting(inManualAlertingState)
-            }
-        } else {
-            inManualAlertingState = false
-            serviceScope.launch {
-                dataRepository.storeIsAlerting(inManualAlertingState)
-            }
-        }
-
-        if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
-            Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-            manualSosReceivedTime = currTime
-            serviceScope.launch {
-                sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, action)
-            }
-        } else {
-            if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
-                Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-                manualSosReceivedTime = currTime
-
-                val pending = PendingEmergency(
-                    category = event.category,
-                    description = event.description,
-                    sendSms = event.sendSms,
-                    action = action
-                )
-
-                if (isPhysioThread(event.category)) {
-                    pendingPhysioEmergency = pending   // overwrite with latest physio
-                } else {
-                    pendingManualEmergency = pending   // overwrite with latest manual
-                }
-
-                EventBus.getDefault().post(LocationUpdateRequired())
-
-                EventBus.getDefault().post(LocationUpdateRequired())
-
-            } else {
-                Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent ${manualSosToBeSent.get()} & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-            }
-        }
-    }
-
-    private data class PendingEmergency(
-        val category: String,
-        val description: String,
-        val sendSms: Boolean,
-        val action: DataRepository.AlertState
-    )
-
     private fun buildChatCotMessage(location: Location, chatMsg: String, dstUid: String, dstChatroom: String): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
@@ -995,6 +1198,7 @@ class CotDispatchService : Service() {
         // Set the current time
         calendar.setTime(Date())
 
+        // TODO Senni: why emergency in emergencyCallsignDateTimeFormatter and others
         // Format and set the startTime with the currentTime
         val startTime = dateTimeFormatter.format(calendar.time)
         val startTimeInMs = calendar.timeInMillis
@@ -1017,6 +1221,7 @@ class CotDispatchService : Service() {
         var leActual : Float = location.verticalAccuracyMeters
         if (leActual.isNaN()) leActual = 9999999.0F
 
+        // TODO Senni: We should use the LocationSnapshot here or enable below
 //        // Ble Beacon
 //        if (MainActivity.enableBleBeaconService) {
 //            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
@@ -1025,10 +1230,6 @@ class CotDispatchService : Service() {
 
         val uid = UUID.randomUUID().toString()
         val linkUid = MainActivity.device_uid
-        //val dstUid = "ANDROID-dfd8f500aac449de"
-        //val dstChatroom = "SIERRAPAPA-PHN2" // Callsign
-        //val dstUid = "ANDROID-5c4916b8baffaf8d"
-        //val dstChatroom = "SIERRAPAPA-PHN0" // Callsign
         //val dstUid = "TAKBOT-12345"
         //val dstChatroom = "takGPT" // Callsign
         //val dstUid = "All Chat Rooms"
@@ -1124,9 +1325,7 @@ class CotDispatchService : Service() {
     }
 */
 
-    private fun buildEmergencyAlertCotMessage(
-        snapshot: DataRepository.EmergencyEventSnapshot
-    ): String {
+    private fun buildEmergencyAlertCotMessage(snapshot: DataRepository.EmergencyEventSnapshot): String {
         val uid        = snapshot.uid
         val alertState = snapshot.alertState
         val loc        = snapshot.location
@@ -1137,11 +1336,13 @@ class CotDispatchService : Service() {
         val linkUid    = sys.deviceId
 
         // Location fields from LocationSnapshot
-        val latActual = loc.lat
-        val lonActual = loc.lon
-        val haeActual = loc.hae
-        val ceActual  = loc.ce
-        val leActual  = loc.le
+        val latActual = loc?.lat ?: 0.0
+        val lonActual = loc?.lon ?: 0.0
+        val haeActual = loc?.hae ?: 0.0
+        var ceActual  = loc?.ce ?: 9999999.0F
+        var leActual  = loc?.le ?: 9999999.0F
+        if (ceActual.isNaN()) ceActual = 9999999.0F
+        if (leActual.isNaN()) leActual = 9999999.0F
 
         // Use snapshot time instead of rebuilding Calendar
         val startTime = time.startCot
@@ -1167,8 +1368,8 @@ class CotDispatchService : Service() {
         	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
         	<detail>
         		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
-        		<contact callsign='$emergencyCallsign&#10;${snapshot.category}'/>
-        		<emergency type='${snapshot.description}'>$callsign</emergency>
+        		<contact callsign='$emergencyCallsign&#10;${snapshot.category}: ${snapshot.description}'/>
+        		<emergency type='${snapshot.category}: ${snapshot.description}'>$callsign</emergency>
                 <usericon iconsetpath='911 Alert'/>
                 <color argb='-1'/>
         	</detail>
@@ -1188,9 +1389,8 @@ class CotDispatchService : Service() {
     private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot?): String {
         val uid         = ms?.uid
         val markerType  = ms?.markerType?.type
+        val markerRemark = ms?.remark
         val battery     = ms?.system?.batteryPercent
-
-        val hr          = rectifiedIntToString(ms?.physio?.data?.heartRateBpm)
 
         val startTime   = ms?.time?.startCot
         val staleTime   = ms?.time?.staleCot
@@ -1207,8 +1407,10 @@ class CotDispatchService : Service() {
         val lat   = loc?.lat
         val lon   = loc?.lon
         val hae   = loc?.hae
-        val ce    = loc?.ce ?: 9999999.0F
-        val le    = loc?.le ?: 9999999.0F
+        var ce    = loc?.ce ?: 9999999.0F
+        var le    = loc?.le ?: 9999999.0F
+        if (ce.isNaN()) ce = 9999999.0F
+        if (le.isNaN()) le = 9999999.0F
 
         val linkUid = MainActivity.device_uid
 
@@ -1222,7 +1424,7 @@ class CotDispatchService : Service() {
                 <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
                 <usericon iconsetpath="$iconSetPath"/>
-                <remarks>HeartRate: $hr bpm; Battery Level: $battery%</remarks>
+                <remarks>$markerRemark</remarks> 
                 <contact callsign="$markerCallsign_Time"/>
             </detail>
         </event>
@@ -1320,6 +1522,7 @@ class CotDispatchService : Service() {
 
         return clearedSnapshot
     }
+
     private fun buildClearMarkerCotMessage(snapshot: DataRepository.MarkerSnapshot?): String {
         if (snapshot == null) return ""
 
@@ -1390,7 +1593,7 @@ class CotDispatchService : Service() {
         return enabled && ready
     }
 
-    private suspend fun handleClearUid(uid: String) {
+    private suspend fun handleClearMarkerUid(uid: String) {
         val snapshot = markerDropMap[uid]  // may be null for very old markers
         // TODO: How do we inject clearing via stale time flip?
         if (snapshot == null) return
@@ -1413,19 +1616,19 @@ class CotDispatchService : Service() {
         if (!sent) return
 
         Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${snapshot?.markerType?.type}")
-        dataRepository.removeByUid(uid)
+        dataRepository.removeMarkerByUid(uid)
         markerDropMap.remove(uid)
     }
 
-    private suspend fun handleClearAll() {
+    private suspend fun handleClearMarkerAll() {
         val uids = dataRepository.droppedMarkerList.value.map { it.uid }
-        uids.forEach { handleClearUid(it) }
+        uids.forEach { handleClearMarkerUid(it) }
     }
 
 /*
     // Used by the Location Updates EventBus
     private fun sendMarkerCotMessage() {
-        serviceScope.launch(Dispatchers.IO) {
+        serviceScope.launch {
             // 1) Grab latest location; if null, take note & bail out
             val loc = dataRepository.latestLocation.value
             if (loc == null) {
@@ -1477,7 +1680,7 @@ class CotDispatchService : Service() {
     }
 /*
     private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertState: DataRepository.AlertState) {
-        serviceScope.launch(Dispatchers.IO) {
+        serviceScope.launch {
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
             if ((MainActivity.enableSmsForAlerts) && sendSms) {
@@ -1538,58 +1741,44 @@ class CotDispatchService : Service() {
     }
 */
 
-    private fun sendEmergencyAlertCotMessage(
-        emergencyCategory: String,
-        emergencyDesc: String,
-        sendSms: Boolean,
-        alertState: DataRepository.AlertState
-    ) {
-        serviceScope.launch(Dispatchers.IO) {
-
-            // SMS first (doesn’t depend on location)
-            if (MainActivity.enableSmsForAlerts && sendSms) {
-                SMSManager.sendSMSMessage(numbers = smsNumbersList, description = emergencyDesc)
-            }
-
-            val snapshot = dataRepository.snapshotEmergencyEvent(
-                category    = emergencyCategory,
-                description = emergencyDesc,
-                sendSms     = sendSms,
-                alertState  = alertState
-            )
-
-            if (snapshot == null) {
-                Log.w(TAG, "Skipping emergency alert: no usable location or no previous UID for cancel")
-                manualSosToBeSent.set(true)
-                return@launch
-            }
-
-            val xml = buildEmergencyAlertCotMessage(snapshot)
-
-            // TAK / Ditto / multicast routing unchanged, just using `cotMessage`
-            var sent = false
-            if (companionAppAvailable()) {
-                Log.i(TAG, "Send Marker payload via BLE ...")
-                capRepo.enqueueEmergencySnapshotForBle(snapshot)
-                sent = true
-            }
-            if (dataRepository.getEnableMulticast.first()) {
-                sendMulticastDatagram(xml)
-                sent = true
-            }
-            if (DittoService.isRunning.get()) {
-                EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
-                sent = true
-            }
-            if (TAKConnectService.isAnyTakConnected) {
-                sendDataTAKServers(xml, true)
-                sent = true
-            }
-
-            manualSosToBeSent.set(!sent)
-            if (!sent) return@launch
-
+    private suspend fun sendEmergencyAlert(alertWithSmsSentState: CustomEmergencyAlertWithAddedState): Boolean {
+        val alert = alertWithSmsSentState.alert
+        // SMS first (doesn’t depend on location)
+        if (MainActivity.enableSmsForAlerts && alert.sendSms && !alertWithSmsSentState.smsSent) {
+            SMSManager.sendSMSMessage(numbers = smsNumbersList, description = "${alert.category}: ${alert.description}")
+            alertWithSmsSentState.smsSent = true
         }
+
+        val snapshot = dataRepository.snapshotEmergencyEvent(alert)
+        val xml = buildEmergencyAlertCotMessage(snapshot)
+
+        // TAK / Ditto / multicast routing unchanged, just using `cotMessage`
+        var sent = false
+        if (companionAppAvailable()) {
+            Log.i(TAG, "Send Marker payload via BLE ...")
+            capRepo.enqueueEmergencySnapshotForBle(snapshot)
+            sent = true
+        }
+        if (dataRepository.getEnableMulticast.first()) {
+            sendMulticastDatagram(xml)
+            sent = true
+        }
+        if (DittoService.isRunning.get()) {
+            EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
+            sent = true
+        }
+        if (TAKConnectService.isAnyTakConnected) {
+            sendDataTAKServers(xml, true)
+            sent = true
+        }
+
+        if (sent) {
+            Log.i(TAG, "sendEmergencyAlert: Sent alert: $alertWithSmsSentState")
+        } else {
+            Log.i(TAG, "sendEmergencyAlert: Could NOT send alert: $alertWithSmsSentState")
+        }
+
+        return sent
     }
 
     fun buildAndSendPhysioLocationCotMsg() {
@@ -1609,16 +1798,10 @@ class CotDispatchService : Service() {
                 capRepo.enqueuePliSnapshotForBle(snapshot)
             }
 
+            // TODO Senni: check for flag??
+            // if (dataRepository.getEnableMulticast.first()) { sendMulticastDatagram(xml) }. TODO Senni: What is the diff between
             NetworkUtils.MulticastPublisher.send(xml) // always multicast
         }
-    }
-
-    @Volatile private var pendingManualEmergency: PendingEmergency? = null
-    @Volatile private var pendingPhysioEmergency: PendingEmergency? = null
-
-    private fun isPhysioThread(category: String): Boolean {
-        return category == CustomEmergencyEvent.CAT_Biometric ||
-                category == CustomEmergencyEvent.CAT_HIGH_HEART_RATE_ALERT_CLEAR
     }
 
 //    @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -1644,38 +1827,25 @@ class CotDispatchService : Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
-
-        // Flush pending Manual emergency (if any)
-        val manual = pendingManualEmergency
-        if (manual != null) {
-            Log.d(TAG, "onLocationRcvdEvent flushing pending MANUAL emergency")
-            pendingManualEmergency = null
-            sendEmergencyAlertCotMessage(
-                manual.category,
-                manual.description,
-                manual.sendSms,
-                manual.action
-            )
-        }
-
-        // Flush pending Physio emergency (if any)
-        val physio = pendingPhysioEmergency
-        if (physio != null) {
-            Log.d(TAG, "onLocationRcvdEvent flushing pending PHYSIO emergency")
-            pendingPhysioEmergency = null
-            sendEmergencyAlertCotMessage(
-                physio.category,
-                physio.description,
-                physio.sendSms,
-                physio.action
-            )
-        }
-
+        Log.i(TAG, "onLocationRcvdEvent called")
         lastLocationUpdateRcvd = System.currentTimeMillis()
+        if (readyToSendAlertEvents()) {
+            // Flush pending Manual emergency (if any)
+            if (pendingManualAlertQueue.isNotEmpty()) {
+                serviceScope.launch {
+                    sendAllManualAlerts(null)
+                }
+            }
+            // Flush pending Physio emergency (if any)
+            if (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) {
+                serviceScope.launch {
+                    sendAllPhysioAndAutoGenAlerts(null)
+                }
+            }
+        }
 
-        serviceScope.launch {
-            if (pendingDropQueue.isNotEmpty() && sendMarkerReady()) {
-                // TODO: Need to take care of situation if no TAK server is connected
+        if (pendingMarkerDropQueue.isNotEmpty() && readyToSendMarkerEvents()) {
+            serviceScope.launch {
                 sendPendingMarkerDrops()
             }
         }
@@ -1683,29 +1853,27 @@ class CotDispatchService : Service() {
         buildAndSendPhysioLocationCotMsg()
     }
 
-    private fun enqueueDrop(req: DataRepository.DropRequest) {
+    private fun enqueueDrop(req: DataRepository.MarkerDropRequest) {
         Log.i(TAG, "===> adding to the marker drop queue ...")
-        pendingDropQueue.addLast(req)
+        pendingMarkerDropQueue.addLast(req)
     }
 
     private fun sendPendingMarkerDrops() {
-        serviceScope.launch(Dispatchers.IO) {
-            val loc = dataRepository.latestLocation.value ?: return@launch
-            while (pendingDropQueue.isNotEmpty()) {
-                Log.i(TAG, "===> removing ${pendingDropQueue.first().markerType} from time ${(pendingDropQueue.first().timeMillis)}...")
-                val req = pendingDropQueue.removeFirst()
-                sendDropNow(req, loc)
+        serviceScope.launch {
+            while (pendingMarkerDropQueue.isNotEmpty()) {
+                Log.i(TAG, "===> removing ${pendingMarkerDropQueue.first().markerType} from time ${(pendingMarkerDropQueue.first().timeMillis)}...")
+                val req = pendingMarkerDropQueue.removeFirst()
+                sendMarkerDropNow(req)
             }
         }
     }
 
-    private suspend fun sendDropNow(req: DataRepository.DropRequest, loc: Location) {
+    private suspend fun sendMarkerDropNow(req: DataRepository.MarkerDropRequest) {
 
         val snapshot = dataRepository.snapshotMarker(req)
 
         Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot?.markerType?.type} ]")
         val xml = buildMarkerCotMessage(snapshot)
-        sendMulticastDatagram(xml)
 
         var sent = false
         if (companionAppAvailable()) {
@@ -1734,7 +1902,7 @@ class CotDispatchService : Service() {
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, timeDropped = req.timeMillis)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, remark = snapshot.remark, timeDropped = req.timeMillis)
         )
     }
 
@@ -1797,7 +1965,7 @@ class CotDispatchService : Service() {
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         // Time interval within which GPS is considered "fresh"
         // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed
-        private const val FRESH_GPS_INTERVAL = 3_000L
+        private const val FRESH_GPS_INTERVAL_MILLIS = 3_000L
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
         var GPS_STALE_TIME_INTERVAL_MS = 10_000L
         var OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT = 30
@@ -1805,6 +1973,7 @@ class CotDispatchService : Service() {
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
 
+        // TODO Senni: Reconcile all reporting intervals below
         private val _actualReportingIntervalSecsFlow =
             MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
         val actualReportingIntervalSecsFlow: StateFlow<Int> =

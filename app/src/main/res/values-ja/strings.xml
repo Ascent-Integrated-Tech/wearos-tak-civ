@@ -99,7 +99,7 @@
     <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
     <string name="physiological_settings">Physiological Settings</string>
     <string name="physiological_monitoring">Physiological Monitoring</string>
-    <string name="chat">Chat</string>
+    <string name="chat">マゼンタ</string>
     <string name="physiological_alerts">Physiological Alerts</string>
     <string name="physiological_user_metrics">Physiological User Metrics</string>
     <string name="age">Age</string>
@@ -140,4 +140,15 @@
     <string name="battery_alerts">Battery Alerts</string>
     <string name="compass_disabled">Compass Disabled</string>
     <string name="bluetooth">Bluetooth</string>
+    <string name="please_enable_chat_in_order_to_use_this_feature">マゼンタ</string>
+    <string name="go_to_settings">マゼンタ</string>
+    <string name="exit">マゼンタ</string>
+    <string name="chat_messages">マゼンタ</string>
+    <string name="chat_disabled">マゼンタ</string>
+    <string name="hostile">Hostile</string>
+    <string name="friendly">Friendly</string>
+    <string name="unknown">Unknown</string>
+    <string name="neutral">Neutral</string>
+    <string name="error_sending_no_endpoints_or_location">Error: No outbound endpoints connected OR location not available</string>
+    <string name="error_sending_no_endpoints">Error: No outbound endpoints connected</string>
 </resources>

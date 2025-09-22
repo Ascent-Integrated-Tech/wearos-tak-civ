@@ -24,14 +24,12 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_Biometric
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_HIGH_HEART_RATE_ALERT
+import com.aitech.weartak_civ.CAT_PHYSIOLOGICAL_ALERT
+import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
@@ -54,6 +52,7 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 class HeartrateService: Service() {
@@ -68,6 +67,7 @@ class HeartrateService: Service() {
     var highAlertNumSecs : Int = 30
     var hrValuesEvictingQ : EvictingQueue<Int>? = null
     var highAlertSent : Boolean = false
+    var highHrAlertUid : String = ""
     var lowAlertThreshold : Int = 40
 
     private var userAge: Int? = null
@@ -263,24 +263,29 @@ class HeartrateService: Service() {
                     //Log.d(TAG, "${(hrValuesEvictingQ?.filter { it >= highAlertThreshold })?.size ?: 0}")
                     val numAboveThreshold = (hrValuesEvictingQ?.filter { it >= highAlertThreshold })?.size ?: 0
                     if (numAboveThreshold >= highAlertNumSecs) {
-                        Log.d(TAG, "All values >= $highAlertThreshold")
+                        //Log.i(TAG, "All values >= $highAlertThreshold")
                         if (!highAlertSent) {
-                            val hrAlertDesc = "$DESC_HIGH_HEART_RATE_ALERT: Heartrate above $highAlertThreshold bpm for $highAlertNumSecs seconds"
-                            Log.d(TAG, "Sending alert: ($hrAlertDesc)")
-                            EventBus.getDefault().post(CustomEmergencyEvent(CAT_Biometric, hrAlertDesc, 1, true))
                             scope.launch {
-                                sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Emergency, System.currentTimeMillis(), ""))
+                                val hrAlertDesc = "$DESC_HIGH_HEART_RATE_ALERT: Heartrate above $highAlertThreshold bpm for $highAlertNumSecs seconds"
+                                Log.d(TAG, "Sending alert: ($CAT_PHYSIOLOGICAL_ALERT: $hrAlertDesc)")
+                                highHrAlertUid = UUID.randomUUID().toString()
+                                val timeMillis = System.currentTimeMillis()
+                                sharedRepository.addPhysioAndAutoGenAlertRequest(highHrAlertUid, CAT_PHYSIOLOGICAL_ALERT, hrAlertDesc, 1, true, timeMillis)
+                                sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Emergency, timeMillis, ""))
                                 requestPhysioComplicationUpdate(applicationContext)
+                                highAlertSent = true
                             }
-                            highAlertSent = true
                         }
                     } else {
-                        highAlertSent = false
-                        if (numAboveThreshold == 0) {
-                            // TODO: Store all alerts with UID and clear them
-                            scope.launch {
-                                sharedRepository.removePhysioAlerts(HIGH_HEART_RATE_ALERT)
-                                requestPhysioComplicationUpdate(applicationContext)
+                        if (highAlertSent) {
+                            if (numAboveThreshold == 0) {
+                                scope.launch {
+                                    Log.d(TAG, "Sending clear high heart rate alert for uid=$highHrAlertUid")
+                                    sharedRepository.clearPhysioAndAutoGenAlertRequestUid(highHrAlertUid)
+                                    sharedRepository.removePhysioAlerts(com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT)
+                                    requestPhysioComplicationUpdate(applicationContext)
+                                    highAlertSent = false
+                                }
                             }
                         }
                     }
