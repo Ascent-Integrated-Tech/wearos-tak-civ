@@ -26,9 +26,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,6 +87,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
@@ -671,6 +674,7 @@ fun CallsignRoleTeamChip(
 
 @Composable
 fun CallsignSetting(navController: NavController, callsignLiveDataState: MutableLiveData<String>) {
+   var textField: String = ""
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -679,6 +683,10 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
+        Column{
+            Text("Callsign", modifier = Modifier.padding(bottom = 5.dp))
+            textField =  TextInput(callsignLiveDataState)
+        }
 //        var callsignTextFieldValue by remember {
 //            mutableStateOf(
 //                TextFieldValue(
@@ -687,7 +695,6 @@ fun CallsignSetting(navController: NavController, callsignLiveDataState: Mutable
 //            )
 //        }
 //        var textField = GenericOutlinedTextField(callsignLiveDataState, stringResource(R.string.callsign), stringResource(R.string.callsign))
-       var textField =  TextInput(callsignLiveDataState)
 //        Log.d(TAG, "callsignTextFieldValue=" + callsignTextFieldValue.text)
 //        OutlinedTextField(
 //            value = callsignTextFieldValue,
@@ -751,22 +758,15 @@ liveDataState: MutableLiveData<String>,
 
     val intent: Intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
     RemoteInputIntentHelper.putRemoteInputsExtra(intent, remoteInputs)
-
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .border(BorderStroke(2.dp, Color.White), shape = RoundedCornerShape(10.dp))
+            .clickable(onClick = {launcher.launch(intent)})
+            .padding(vertical = 20.dp, horizontal = 36.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth(0.75f)) {
-            Text(text = userInput, Modifier.weight(1f))
-            CompactButton(
-                onClick = { launcher.launch(intent) },
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = ""
-                )
-            }
-        }
+        Text(text = userInput, )
+
     }
 return userInput
 }
