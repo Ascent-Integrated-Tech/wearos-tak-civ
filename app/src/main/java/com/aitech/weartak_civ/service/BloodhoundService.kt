@@ -75,7 +75,7 @@ class BloodhoundService: Service() {
     private fun collectLocation() {
         scope.launch {
             repo.latestLocation.collect { loc ->
-                Log.i(TAG, "Location Updated")
+                //Log.i(TAG, "Location Updated")
                 if (loc != null) {
                     currLoc = loc
                     val map = bhRepo.bloodhoundMap.value

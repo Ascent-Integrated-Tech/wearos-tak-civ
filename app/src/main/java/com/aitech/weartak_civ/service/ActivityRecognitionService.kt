@@ -37,16 +37,15 @@ import androidx.health.services.client.data.HealthEvent
 import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.health.services.client.getCapabilities
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_FALL_DETECTED
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_GOOGLE_SDK_FALL_DETECTED
+import com.aitech.weartak_civ.CAT_FALL_DETECTED
+import com.aitech.weartak_civ.DESC_GOOGLE_SDK_FALL_DETECTED
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
-import org.greenrobot.eventbus.EventBus
+import java.util.UUID
 
 
 class ActivityRecognitionService : Service() {
@@ -225,14 +224,10 @@ class ActivityRecognitionService : Service() {
                 Log.w(TAG, "FALL_DETECTED @ ${event.eventTime}")
 
                 // Post Fall Emergency Event
-                EventBus.getDefault().post(
-                    CustomEmergencyEvent(
-                        category = CAT_FALL_DETECTED,
-                        description = DESC_GOOGLE_SDK_FALL_DETECTED,
-                        priority = 1,
-                        sendSms = true   // set false if you don’t want SMS
-                    )
-                )
+                scope.launch {
+                    // TODO: There is no CLEAR event & do we want a separate flow for fall detect & we are not addPhysioAlertToFront
+                    repo.addPhysioAndAutoGenAlertRequest(UUID.randomUUID().toString(), CAT_FALL_DETECTED, DESC_GOOGLE_SDK_FALL_DETECTED, 1, true, System.currentTimeMillis() )
+                }
             }
             super.onHealthEventReceived(event)
         }

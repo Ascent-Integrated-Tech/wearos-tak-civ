@@ -48,7 +48,6 @@ class SosComplicationService : SuspendingComplicationDataSourceService() {
         if (null == mainActivityIsInit) {
             return null
         }
-//TODO: Add Arabic Translation
         return when (isLicenseValid()) {
             true -> return when (isAlertActive.value) {
                 true -> when (null != sosActiveComplicationData) {
