@@ -82,9 +82,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BatteryService
@@ -329,9 +326,6 @@ class DataRepository(private val context: Context) {
     private val _latestActivityRecognized = MutableStateFlow<ActivityRecognized>(ActivityRecognized.UNKNOWN)
     val latestActivityRecognized: StateFlow<ActivityRecognized> = _latestActivityRecognized
 
-    private val _isAlerting = MutableStateFlow<Boolean>(false)
-    val isAlerting : StateFlow<Boolean> = _isAlerting
-
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
@@ -540,9 +534,11 @@ class DataRepository(private val context: Context) {
         var ceActual    = baseLoc.accuracy
         var leActual    = baseLoc.verticalAccuracyMeters
 
+        // TODO Senni: Do we need 2 lines below as it is checked in buildPliCot
         if (ceActual.isNaN()) ceActual = 9999999.0f
         if (leActual.isNaN()) leActual = 9999999.0f
 
+        // TODO Senni: Check mapLocationAgainstClosestBleBeacon and if we set leActual too...
         // Apply BLE-beacon override if enabled
         if (getEnableBleBeaconService.first()) {
             val bleOutput = Utils.LocationUtils.mapLocationAgainstClosestBleBeacon(baseLoc)
@@ -684,6 +680,7 @@ class DataRepository(private val context: Context) {
         )
     }
 
+    // TODO Senni: Change name of SystemSnapshot and SystemStates
     data class SystemSnapshot(
         val timeMillis: Long,       // When the snapshot was taken
         val batteryPercent: Int?,   // nullable because sensors can fail or race
@@ -717,6 +714,7 @@ class DataRepository(private val context: Context) {
     data class MarkerSnapshot(
         val uid: String,
         val markerType: MarkerType,
+        val remark: String,
         val iconSetPath: String?,
         val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
@@ -724,7 +722,7 @@ class DataRepository(private val context: Context) {
         val system: SystemSnapshot
     )
 
-    suspend fun snapshotMarker(req: DropRequest): MarkerSnapshot? {
+    suspend fun snapshotMarker(req: MarkerDropRequest): MarkerSnapshot? {
         val loc = snapshotLocation() ?: return null
         val timeSnapshot = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
@@ -737,6 +735,7 @@ class DataRepository(private val context: Context) {
         return MarkerSnapshot(
             uid = UUID.randomUUID().toString(),
             markerType = req.markerType,
+            remark = req.remark,
             iconSetPath = req.markerType.icon,
             loc = loc,
             time = timeSnapshot,
@@ -755,61 +754,32 @@ class DataRepository(private val context: Context) {
         val alertState: AlertState,          // ALERT or CANCEL
         val category: String,
         val description: String,
+        val priority: Int,
         val sendSms: Boolean,
-
         val time: Utils.CotEventTimeSnapshot,
-        val location: LocationSnapshot,
+        val location: LocationSnapshot?,
         val physio: PhysioSnapshot?,
         val system: SystemSnapshot
     )
 
-    private var sosAlertUid: String? = null
-    private var highHrAlertUid: String? = null
-
-    private fun isHighHrThread(category: String, description: String): Boolean {
-        return (category == CustomEmergencyEvent.CAT_Biometric &&
-                description == CustomEmergencyEvent.DESC_HIGH_HEART_RATE_ALERT) ||
-                (category == CustomEmergencyEvent.CAT_HIGH_HEART_RATE_ALERT_CLEAR)
-    }
-
-    suspend fun snapshotEmergencyEvent(
-        category: String,
-        description: String,
-        sendSms: Boolean,
-        alertState: AlertState
-    ): EmergencyEventSnapshot? {
-        val loc = latestLocation.value
-        if (loc == null) {
-            // Let caller decide what to do (set manualSosToBeSent, etc.)
-            return null
-        }
-
-        // UID logic: new for ALERT, reuse for CANCEL
-        val useHighHrUid = isHighHrThread(category, description)
-
-        val uid = if (alertState == AlertState.ALERT) {
-            val fresh = UUID.randomUUID().toString()
-            if (useHighHrUid) highHrAlertUid = fresh else sosAlertUid = fresh
-            fresh
-        } else {
-            (if (useHighHrUid) highHrAlertUid else sosAlertUid) ?: return null
-        }
-
+    suspend fun snapshotEmergencyEvent(alert: CustomEmergencyAlert): EmergencyEventSnapshot {
+        // TODO Check if we should use alert.timeMillis
         val timeSnap = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
             staleOffset = Utils.TimeOffset(minutes = 15) // or whatever SOS stale you want
         )
 
-        val locSnap = snapshotLocation() ?: return null
+        val locSnap = snapshotLocation()
         val systemSnap = snapshotSystem()
         val physioSnap = snapshotPhysio()
 
         return EmergencyEventSnapshot(
-            uid         = uid,
-            alertState  = alertState,
-            category    = category,
-            description = description,
-            sendSms     = sendSms,
+            uid         = alert.uuid,
+            alertState  = alert.alertState,
+            category    = alert.category,
+            description = alert.description,
+            priority    = alert.priority,
+            sendSms     = alert.sendSms,
             time        = timeSnap,
             location    = locSnap,
             physio      = physioSnap,
@@ -839,30 +809,168 @@ class DataRepository(private val context: Context) {
         )
     }
 
-    private suspend fun postCustomEmergencyEvent(event: CustomEmergencyEvent) {
-        _customEmergencyEvent.emit(event)
+    // This is the data class for both physio alerts and manual alerts that the backend adds to and clears.
+    // This is a custom TAK emergency (911) alert as we change the description of the 911 alert sent to TAK
+    data class CustomEmergencyAlert(
+        val uuid: String,
+        val alertState: AlertState,
+        val category: String,
+        val description: String,
+        val priority : Int,
+        val sendSms: Boolean,
+        val timeMillis: Long,
+        val enqueuedToBeSent: Boolean,
+    )
+
+    // UI reads manualAlertList to display manual alerts sent out
+    private val _manualAlertList = MutableStateFlow<List<CustomEmergencyAlert>>(emptyList())
+    val manualAlertList: StateFlow<List<CustomEmergencyAlert>> = _manualAlertList
+    // TODO Senni: should we change isAlerting to account for physioAndAutoGenAlertList
+    val isAlerting: StateFlow<Boolean> =
+        manualAlertList
+            .map { alertList ->
+                alertList.isNotEmpty() && alertList.any { it.alertState == AlertState.ALERT }
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = false
+            )
+
+    // Backend-only use
+    suspend fun appendManualAlert(item: CustomEmergencyAlert) {
+        _manualAlertList.emit(_manualAlertList.value + item)
     }
 
-    private fun removeCustomEmergencyEvent(eventUid: CustomEmergencyEvent) {
-
+    suspend fun changeManualAlertEnqueueStatusUid(uid: String, enqueuedToBeSent: Boolean) {
+        val updatedAlerts = _manualAlertList.value.map {
+            if (it.uuid == uid) {
+                it.copy(enqueuedToBeSent = enqueuedToBeSent)
+            } else { it }
+        }
+        _manualAlertList.emit(updatedAlerts)
     }
 
-    private suspend fun activateSos() {
-        val event = CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true)
-        postCustomEmergencyEvent(event)
+    suspend fun changeManualAlertToClearAndEnqueueStatusUid(uid: String, enqueuedToBeSent: Boolean) {
+        val updatedAlerts = _manualAlertList.value.map {
+            if (it.uuid == uid) {
+                it.copy(alertState = AlertState.CANCEL, enqueuedToBeSent = enqueuedToBeSent)
+            } else { it }
+        }
+        _manualAlertList.emit(updatedAlerts)
     }
 
-    private suspend fun deActivateSos() {
-        val event = CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true)
-        postCustomEmergencyEvent(event)
+    suspend fun removeManualAlertByUid(uid: String) {
+        _manualAlertList.emit(_manualAlertList.value.filterNot { it.uuid == uid })
     }
 
-    private val _customEmergencyEvent = MutableSharedFlow<CustomEmergencyEvent>(extraBufferCapacity = 64)
-    val customEmergencyEvent: SharedFlow<CustomEmergencyEvent> = _customEmergencyEvent
+    // This is used by UI to request to clear SOS and Markers (UI --> Backend)
+    // Also used by backend to automatically clear physio alerts
+    sealed interface ClearRequest {
+        data class Specific(val uid: String) : ClearRequest
+        data object Last : ClearRequest
+        data object All : ClearRequest
+    }
 
+    // UI to request addition of manual custom emergency alerts (UI --> backend)
+    data class ManualAlertRequest(
+        val alertState: AlertState = AlertState.ALERT,
+        val category: String,
+        val description: String,
+        val timeMillis: Long
+    )
+
+    private val _addManualAlert = MutableSharedFlow<ManualAlertRequest>(extraBufferCapacity = 64)
+    val addManualAlert: SharedFlow<ManualAlertRequest> = _addManualAlert
+
+    private val _clearManualAlert = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
+    val clearManualAlert: SharedFlow<ClearRequest> = _clearManualAlert
+
+        suspend fun addManualAlertRequest(alertState: AlertState, category: String, description: String, timeMillis: Long) {
+        _addManualAlert.emit(ManualAlertRequest(alertState, category, description, timeMillis))
+    }
+
+    suspend fun clearManualAlertRequestUid(uid: String) {
+        _clearManualAlert.emit(ClearRequest.Specific(uid))
+    }
+
+    suspend fun clearManualAlertRequestLast() {
+        _clearManualAlert.emit(ClearRequest.Last)
+    }
+
+    suspend fun clearManualAlertRequestAll() {
+        _clearManualAlert.emit(ClearRequest.All)
+    }
+
+    private val _physioAndAutoGenAlertList = MutableStateFlow<List<CustomEmergencyAlert>>(emptyList())
+    val physioAndAutoGenAlertList: StateFlow<List<CustomEmergencyAlert>> = _physioAndAutoGenAlertList
+
+    // Backend-only use
+    suspend fun appendPhysioAndAutoGenAlert(item: CustomEmergencyAlert) {
+        _physioAndAutoGenAlertList.emit(_physioAndAutoGenAlertList.value + item)
+    }
+
+    suspend fun changePhysioAndAutoGenAlertEnqueueStatusUid(uid: String, enqueuedToBeSent: Boolean) {
+        val updatedAlerts = _physioAndAutoGenAlertList.value.map {
+            if (it.uuid == uid) {
+                it.copy(enqueuedToBeSent = enqueuedToBeSent)
+            } else { it }
+        }
+        _physioAndAutoGenAlertList.emit(updatedAlerts)
+    }
+
+    suspend fun changePhysioAndAutoGenAlertToClearAndEnqueueStatusUid(uid: String, enqueuedToBeSent: Boolean) {
+        val updatedAlerts = _physioAndAutoGenAlertList.value.map {
+            if (it.uuid == uid) {
+                it.copy(alertState = AlertState.CANCEL, enqueuedToBeSent = enqueuedToBeSent)
+            } else { it }
+        }
+        _physioAndAutoGenAlertList.emit(updatedAlerts)
+    }
+
+    suspend fun removePhysioAndAutoGenAlertByUid(uid: String) {
+        _physioAndAutoGenAlertList.emit(_physioAndAutoGenAlertList.value.filterNot { it.uuid == uid })
+    }
+
+    // TODO Senni: can combine PhysioAndAutoGenAlertRequest and ManualAlertRequest
+    data class PhysioAndAutoGenAlertRequest(
+        val uuid: String,
+        val alertState: AlertState = AlertState.ALERT,
+        val category: String,
+        val description: String,
+        val priority: Int,
+        val sendSms: Boolean,
+        val timeMillis: Long
+    )
+
+    private val _addPhysioAndAutoGenAlert = MutableSharedFlow<PhysioAndAutoGenAlertRequest>(extraBufferCapacity = 64)
+    val addPhysioAndAutoGenAlert: SharedFlow<PhysioAndAutoGenAlertRequest> = _addPhysioAndAutoGenAlert
+
+    private val _clearPhysioAndAutoGenAlert = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
+    val clearPhysioAndAutoGenAlert: SharedFlow<ClearRequest> = _clearPhysioAndAutoGenAlert
+
+    suspend fun addPhysioAndAutoGenAlertRequest(uid: String, category: String, description: String, priority: Int, sendSms: Boolean, timeMillis: Long) {
+        _addPhysioAndAutoGenAlert.emit(PhysioAndAutoGenAlertRequest(uid, AlertState.ALERT, category, description, priority, sendSms, timeMillis))
+    }
+
+    suspend fun clearPhysioAndAutoGenAlertRequestUid(uid: String) {
+        _clearPhysioAndAutoGenAlert.emit(ClearRequest.Specific(uid))
+    }
+
+    suspend fun clearPhysioAndAutoGenAlertRequestLast() {
+        _clearPhysioAndAutoGenAlert.emit(ClearRequest.Last)
+    }
+
+    suspend fun clearPhysioAndAutoGenAlertRequestAll() {
+        _clearPhysioAndAutoGenAlert.emit(ClearRequest.All)
+    }
+
+
+    // Backend-only use for markers
     data class DroppedMarker(
         val uid: String,
         val markerType: String,
+        val remark: String,
         val timeDropped: Long
     )
 
@@ -874,7 +982,7 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.emit(_droppedMarkerList.value + item)
     }
 
-    suspend fun removeByUid(uid: String) {
+    suspend fun removeMarkerByUid(uid: String) {
         _droppedMarkerList.emit(_droppedMarkerList.value.filterNot { it.uid == uid })
     }
 
@@ -903,37 +1011,32 @@ class DataRepository(private val context: Context) {
     }
 
     // --- request flows (UI -> backend) ---
-    data class DropRequest(
+    data class MarkerDropRequest(
         val markerType: MarkerType,
+        val remark: String,
         val timeMillis: Long
     )
 
-    sealed interface ClearRequest {
-        data class Specific(val uid: String) : ClearRequest
-        data object Last : ClearRequest
-        data object All : ClearRequest
-    }
+    private val _markerDropRequests = MutableSharedFlow<MarkerDropRequest>(extraBufferCapacity = 64)
+    val markerDropRequests: SharedFlow<MarkerDropRequest> = _markerDropRequests
 
-    private val _dropRequests = MutableSharedFlow<DropRequest>(extraBufferCapacity = 64)
-    val dropRequests: SharedFlow<DropRequest> = _dropRequests
-
-    private val _clearRequests = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
-    val clearRequests: SharedFlow<ClearRequest> = _clearRequests
+    private val _clearMarkerRequests = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
+    val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
 
     // UI-facing API
-    suspend fun requestMarkerDrop(markerType: MarkerType, timeMillis: Long) =
-        _dropRequests.emit(DropRequest(markerType, timeMillis))
+    suspend fun requestMarkerDrop(markerType: MarkerType, remark: String, timeMillis: Long) =
+        _markerDropRequests.emit(MarkerDropRequest(markerType, remark, timeMillis))
 
-    suspend fun requestMarkerDrop(markerTypeRaw: String, timeMillis: Long): Boolean {
+    suspend fun requestMarkerDrop(markerTypeRaw: String, remark: String, timeMillis: Long): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _dropRequests.emit(DropRequest(parsed, timeMillis))
+        _markerDropRequests.emit(MarkerDropRequest(parsed, remark, timeMillis))
         return true
     }
 
     suspend fun requestClearSpecific(uid: String) =
-        _clearRequests.emit(ClearRequest.Specific(uid))
-    suspend fun requestClearLast() = _clearRequests.emit(ClearRequest.Last)
-    suspend fun requestClearAll() = _clearRequests.emit(ClearRequest.All)
+        _clearMarkerRequests.emit(ClearRequest.Specific(uid))
+    suspend fun requestClearLast() = _clearMarkerRequests.emit(ClearRequest.Last)
+    suspend fun requestClearAll() = _clearMarkerRequests.emit(ClearRequest.All)
 
     suspend fun storeLatestHeartRate(heartRate: Int) {
         _latestHeartRate.emit(heartRate)
@@ -945,10 +1048,6 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeLatestActivityConfidence(confidence: Int) {
         _latestActivityConfidence.emit(confidence)
-    }
-
-    suspend fun storeIsAlerting(alerting: Boolean) {
-        _isAlerting.emit(alerting)
     }
 
     suspend fun storeLatestSkinTemp(skinTemp: Float) {

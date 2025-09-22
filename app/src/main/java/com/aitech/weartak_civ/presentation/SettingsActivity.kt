@@ -2238,7 +2238,7 @@ fun NumericEntryPage(
                 },
                 onClickConfirm = {
                     metricSettingState.setValue(metricTextFieldValue.text.toInt())
-                    Log.d(TAG, "Settings State saved with bpm threshold: ${metricSettingState.value}")
+                    Log.d(TAG, "Settings State saved with numeric entry threshold: ${metricSettingState.value}")
                     navController.navigate(route) {
                         popUpTo((route)) {
                             inclusive = true

@@ -33,7 +33,6 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
-import android.provider.Settings.Secure
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.Display
@@ -253,6 +252,13 @@ class MainActivity : ComponentActivity() {
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
+        // TODO Senni: Use MC and dataRepo; Can remove this finally.
+        var quickReplyOptions: List<Utils.TextSelectionButton> = listOf(
+            Utils.TextSelectionButton("RGR", "Roger"),
+            Utils.TextSelectionButton("NEG", "Negative"),
+            Utils.TextSelectionButton("Obj", "Objective"),
+            Utils.TextSelectionButton("nPos", "In Position")
+        )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -967,12 +973,13 @@ class MainActivity : ComponentActivity() {
          */
     }
 
+    @SuppressLint("HardwareIds")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "MainActivity onCreate(): Start...")
         mainActivity = this
         mainActivityIsInit = this
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        device_uid = "WEAROS_" + Settings.Secure.getString(this.getContentResolver(), Settings.Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
@@ -2736,24 +2743,12 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
             contentColor = if (isAlertingLiveData == true) Color.White else Color.Red
         )
     ) {
-        if (isAlertingLiveData == true) {
-            Text (
-                sosLiveText,
-                fontSize = if (sosLiveText.length <= 15) 17.sp else 15.sp,
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 1,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = Color.White,
-            )
-        } else {
-            Text(
-                sosText,
-                fontSize = if (sosText.length <= 10) 25.sp else 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
+        Icon(
+            painterResource(R.drawable.tak_alert_icon),
+            modifier = Modifier.size(35.dp),
+            contentDescription = null,
+            tint = Color.White
+        )
     }
 }
 @Composable
@@ -2982,7 +2977,7 @@ fun ActivityDisabledScreen(
                 )
             ) {
                 Text(
-                    text = "Go to Settings",
+                    text = stringResource(R.string.go_to_settings),
                     color = Color.Black,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
@@ -2997,7 +2992,7 @@ fun ActivityDisabledScreen(
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Text(
-                    text = "Exit",
+                    text = stringResource(R.string.exit),
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center

@@ -55,8 +55,22 @@ const val DEFAULT_DOCKED_REPORTING_INTERVAL_SECS = 15 * 60 // 15 min * 60 secs =
 
 const val DEFAULT_BATT_WARNING_PERCENTAGE = 50
 const val DEFAULT_BATT_ALERT_PERCENTAGE = 25
-const val HIGH_HEART_RATE_ALERT = "HIGH Heart Rate"
-const val LOW_HEART_RATE_ALERT = "LOW Heart Rate"
-const val HIGH_EXERTION_ALERT = "HIGH Exertion"
+
+const val CAT_MANUAL_ALERT = "Manual Alert"
+const val DESC_SOS_ALERT = "Manual Alert Pressed by User"
+
+const val CAT_PHYSIOLOGICAL_ALERT = "Physiological Alert"
+const val DESC_HIGH_HEART_RATE_ALERT = "HIGH Heart Rate"
+const val DESC_LOW_HEART_RATE_ALERT = "LOW Heart Rate"
+const val DESC_HIGH_EXERTION_ALERT = "HIGH Exertion"
+
+const val CAT_FALL_DETECTED = "Fall Detected"
+const val DESC_GOOGLE_SDK_FALL_DETECTED = "Hard fall detected with no motion for 30 seconds"
+
+// TODO Senni: This should be an enum in MarkerActivity.kt. No other service/activity uses this??
+const val MARKER_HOSTILE = "Hostile"
+const val MARKER_FRIENDLY = "Friendly"
+const val MARKER_UNKNOWN = "Unknown"
+const val MARKER_NEUTRAL = "Neutral"
 
 

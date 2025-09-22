@@ -140,4 +140,15 @@
     <string name="current_metrics">Current Metrics</string>
     <string name="heart_rate">Herzfrequenz</string>
     <string name="bluetooth">Bluetooth</string>
+    <string name="please_enable_chat_in_order_to_use_this_feature">Please enable Chat in order to use this feature</string>
+    <string name="go_to_settings">Go to Settings</string>
+    <string name="exit">Exit</string>
+    <string name="chat_messages">Chat Messages</string>
+    <string name="chat_disabled">Chat Disabled</string>
+    <string name="hostile">Hostile</string>
+    <string name="friendly">Friendly</string>
+    <string name="unknown">Unknown</string>
+    <string name="neutral">Neutral</string>
+    <string name="error_sending_no_endpoints_or_location">Error: No outbound endpoints connected OR location not available</string>
+    <string name="error_sending_no_endpoints">Error: No outbound endpoints connected</string>
 </resources>
