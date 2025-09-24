@@ -38,7 +38,6 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
-import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
@@ -48,6 +47,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaconUpdateTime
@@ -122,6 +122,7 @@ class CotDispatchService : Service() {
             CoroutineScope(Dispatchers.Main).launch {
                 setValuesFromCustomDeveloperConfig()
             }
+            startBatteryAlerts()
         }
         return START_NOT_STICKY
     }
@@ -252,6 +253,69 @@ class CotDispatchService : Service() {
         }
 
         startMarkerPipelines()
+    }
+
+    private var sentBatteryWarnChatMsg = false
+    private var sentBatteryAlertChatMsg = false
+
+    private fun startBatteryAlerts() {
+        // TODO: We should only send this when the device is NOT charging... And change to CEP rule
+        serviceScope.launch(Dispatchers.IO) {
+            dataRepository.latestBatteryPercentage.collect { batt ->
+                if ((null != batt) && TAKConnectService.isAnyTakConnected) {
+                    if (batt <= MainActivity.battWarnPercent) {
+                        Log.d(TAG, "battery: $batt")
+                        if (batt > MainActivity.battAlertPercent) {
+                            if (!sentBatteryWarnChatMsg) {
+                                Log.d(TAG, "battery: $batt")
+                                val loc = //dataRepository.latestLocation.value ?:
+                                Location("manual").apply {
+                                    latitude = 0.0
+                                    longitude = 0.0
+                                    altitude = 0.0
+                                    accuracy = 999999.0f
+                                    verticalAccuracyMeters = 999999.0f
+                                    time = System.currentTimeMillis()
+                                }
+                                val chatMessage = buildChatCotMessage(
+                                    loc,
+                                    "Battery Warning: ${MainActivity.callsign} battery less than ${MainActivity.battWarnPercent}% (actual=$batt%)",
+                                    "All Chat Rooms",
+                                    "All Chat Rooms"
+                                )
+                                sentBatteryWarnChatMsg = true
+                                sendDataTAKServers(chatMessage, true)
+                                Log.d(TAG, "Sending chat msg to 'All Chat Rooms': $chatMessage")
+                            }
+                        } else {
+                            if (!sentBatteryAlertChatMsg) {
+                                val loc = dataRepository.latestLocation.value ?:
+                                Location("manual").apply {
+                                    latitude = 0.0
+                                    longitude = 0.0
+                                    altitude = 0.0
+                                    accuracy = 999999.0f
+                                    verticalAccuracyMeters = 999999.0f
+                                    time = System.currentTimeMillis()
+                                }
+                                val chatMessage = buildChatCotMessage(
+                                    loc,
+                                    "Battery ALERT: ${MainActivity.callsign} battery less than $${MainActivity.battAlertPercent}% (actual=$batt%)",
+                                    "All Chat Rooms",
+                                    "All Chat Rooms"
+                                )
+                                sentBatteryAlertChatMsg = true
+                                sendDataTAKServers(chatMessage, true)
+                                Log.d(TAG, "Sending chat msg to 'All Chat Rooms': $chatMessage")
+                            }
+                        }
+                    } else {
+                        sentBatteryWarnChatMsg = false
+                        sentBatteryAlertChatMsg = false
+                    }
+                }
+            }
+        }
     }
 
     private fun startMarkerPipelines() {
@@ -476,6 +540,13 @@ class CotDispatchService : Service() {
         // Inject physio data into remarks
 
         val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+            /*
+            var activity : ActivityRecognized = ActivityRecognized.UNKNOWN
+            runBlocking {
+                activity = dataRepository.latestActivityRecognized.value
+            }
+
+             */
             buildString {
                 append("HR:$hr;")
                 append("SknTmp:$skt;")
@@ -485,6 +556,7 @@ class CotDispatchService : Service() {
                 append("Cals:${calories.roundToInt()};")
                 append("Floors:${floors.roundToInt()};")
                 append("ElevGain(m):${elevationM?.roundToInt() ?: 0}")
+                //append(";Act:${activity.name}($currReportingIntervalInSecs)")
             }
         } else {
             buildString {
@@ -711,7 +783,7 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildEmergencyAlertChatCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
+    private fun buildChatCotMessage(location: Location, chatMsg: String, dstUid: String, dstChatroom: String): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -752,8 +824,17 @@ class CotDispatchService : Service() {
         //val dstChatroom = "SIERRAPAPA-PHN2" // Callsign
         //val dstUid = "ANDROID-5c4916b8baffaf8d"
         //val dstChatroom = "SIERRAPAPA-PHN0" // Callsign
-        val dstUid = "TAKBOT-12345"
-        val dstChatroom = "takGPT" // Callsign
+        //val dstUid = "TAKBOT-12345"
+        //val dstChatroom = "takGPT" // Callsign
+        //val dstUid = "All Chat Rooms"
+        //val dstChatroom = "All Chat Rooms" // Callsign
+        val martiDetails = if (dstUid.equals("All Chat Rooms")) {
+            ""
+        } else {
+            """
+            <marti> <dest callsign='$dstChatroom'/> </marti>
+            """.trimIndent()
+        }
 
         return """
         <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
@@ -764,31 +845,11 @@ class CotDispatchService : Service() {
                     <chatgrp uid0='$linkUid' uid1='$dstUid' id='$dstUid'/>
                 </__chat>
                 <link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
-                <remarks source='$linkUid' to='$dstUid' time='$startTime'>$emergencyCategory: $emergencyDesc</remarks>
-                <marti>
-                    <dest callsign='$dstChatroom'/>
-                </marti>
+                <remarks source='$linkUid' to='$dstUid' time='$startTime'>$chatMsg</remarks>
+                $martiDetails
         	</detail>
         </event>
         """.trimIndent()
-        
-            /*
-            return """
-        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
-        <event version='2.0' uid='GeoChat.$linkUid.TAKBOT-12345.$uid' type='b-t-f' time='$startTime' start='$startTime' stale='$startTime' how='h-g-i-g-o' access='Undefined'>
-        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
-        	<detail>
-        		<__chat parent='RootContactGroup' groupOwner='false' messageId='$uid' chatroom='takGPT' id='TAKBOT-12345' senderCallsign='$callsign'>
-                    <chatgrp uid0='$linkUid' uid1='TAKBOT-12345' id='TAKBOT-12345'/>
-                </__chat>
-                <link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
-                		<__serverdestination destinations='100.69.93.65:4242:tcp:$linkUid'/>
-                <remarks source='BAO.F.ATAK.$linkUid' to='TAKBOT-12345' time='$startTime'>High Heart Rate above 150 for 30 seconds</remarks>
-        	</detail>
-        </event>
-        """.trimIndent()
-
-             */
     }
 
     private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
@@ -1095,7 +1156,7 @@ class CotDispatchService : Service() {
 
             // build the CoT XML for this alert
             val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
-            val takGptChatMessage = buildEmergencyAlertChatCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
+            val takGptChatMessage = buildChatCotMessage(loc, "$emergencyCategory: $emergencyDesc", "TAKBOT-12345","takGPT")
 
             // only forward to TAK if we’re connected
             if (TAKConnectService.isAnyTakConnected) {

@@ -186,6 +186,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
+import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -263,6 +265,8 @@ class MainActivity : ComponentActivity() {
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
 
+        var battWarnPercent = DEFAULT_BATT_WARNING_PERCENTAGE
+        var battAlertPercent = DEFAULT_BATT_ALERT_PERCENTAGE
         var ageValue = DEFAULT_AGE
         val ageState = MutableLiveData<Int>(DEFAULT_AGE)
         val ageSettingsState = MutableLiveData<Int>(DEFAULT_AGE)
@@ -1198,6 +1202,9 @@ class MainActivity : ComponentActivity() {
             dittoAppId = dataRepository.getDittoAppId.first()
             dittoAuthToken = dataRepository.getDittoAuthToken.first()
 
+            battWarnPercent = dataRepository.getBatteryWarnPercentage.first()
+            battAlertPercent = dataRepository.getBatteryAlertPercentage.first()
+
             ageValue = dataRepository.getPhysiologicalMetricAge.first()
             heightFeetValue = dataRepository.getPhysiologicalMetricHeightFeet.first()
             heightInchesValue = dataRepository.getPhysiologicalMetricHeightInches.first()
@@ -1290,6 +1297,8 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
+                    ${String.format("%-25s %-30s", "Battery Warn Percentage:", battWarnPercent.toString())}
+                    ${String.format("%-25s %-30s", "Battery Alert Percentage:", battAlertPercent.toString())}
                     ${String.format("%-25s %-30s", "Enable BleBeacon:", enableBleBeaconService.toString())}
                     
                     === === Ble Beacons === ===
@@ -1794,6 +1803,8 @@ class MainActivity : ComponentActivity() {
             .filter { it.isNotEmpty() } // Remove any empty values
             .map { DataRepository.SmsNumber(it) } // Map each SSID to a WifiSsidItem
 
+        val battWarnPercentConfigUpdate = appRestrictions.getInt("batt_warn_percent", battWarnPercent)
+        val battAlertPercentConfigUpdate = appRestrictions.getInt("batt_alert_percent", battAlertPercent)
         val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
 
         val physiologicalMetricsRestingHeartRateConfigUpdate = appRestrictions.getInt("physiological_metrics_resting_heart_rate", restingHeartRate)
@@ -2056,6 +2067,8 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableMulticast(enableMulticastConfigUpdate)
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
+            dataRepository.storeBatteryWarnPercentage(battWarnPercentConfigUpdate)
+            dataRepository.storeBatteryAlertPercentage(battAlertPercentConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
             dataRepository.storeRestingHeartRate(physiologicalMetricsRestingHeartRateConfigUpdate)
             dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
@@ -2144,6 +2157,8 @@ class MainActivity : ComponentActivity() {
 
             enableSmsForAlerts = enableSmsForAlertsConfigUpdate
             smsNumbersList = smsNumbersListConfigUpdate
+            battWarnPercent = battWarnPercentConfigUpdate
+            battAlertPercent = battAlertPercentConfigUpdate
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
                 enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")

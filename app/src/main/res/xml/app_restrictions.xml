@@ -131,6 +131,19 @@
         android:defaultValue="@string/enable_sms_numbers_comma_separated_default"/>
 
     <restriction
+        android:key="batt_warn_percent"
+        android:restrictionType="integer"
+        android:title="@string/batt_warn_percent_title"
+        android:description="@string/batt_warn_percent_description"
+        android:defaultValue="@string/batt_warn_percent_default"/>
+    <restriction
+        android:key="batt_alert_percent"
+        android:restrictionType="integer"
+        android:title="@string/batt_alert_percent_title"
+        android:description="@string/batt_alert_percent_description"
+        android:defaultValue="@string/batt_alert_percent_default"/>
+
+    <restriction
         android:key="enable_physiological_alerts"
         android:restrictionType="bool"
         android:title="@string/enable_physiological_alerts_title"
