@@ -25,7 +25,6 @@ import java.net.DatagramPacket
 import java.net.InetAddress
 import java.net.MulticastSocket
 
-
 object NetworkUtils {
     private const val TAG = "WearTAK-NetworkUtils"
 

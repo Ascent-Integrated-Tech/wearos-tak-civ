@@ -17,13 +17,11 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -48,10 +46,11 @@ class SkinTempService : Service() {
         var tempF: Float = -1f
         val skinTempLiveData = MutableLiveData<String>("N/A")
         val isRunning = AtomicBoolean(false)
-        var DISPATCH_INTERVAL_MS = DEFAULT_REPORTING_INTERVAL * 1_000L
+        var DISPATCH_INTERVAL_MS = 60 * 1_000L
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
-        val LOG_FILENAME = "/sdcard/Download/skin_temp.log"
+        val LOG_FILENAME = "skin_temp.log"
     }
+
 
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
@@ -80,7 +79,11 @@ class SkinTempService : Service() {
 //        )
     }
 
-    //private val logFile: File by lazy { File(LOG_FILENAME) }
+    private val logFile: File by lazy {
+        File(filesDir, LOG_FILENAME).apply {
+            if (!exists()) parentFile?.mkdirs()
+        }
+    }
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
@@ -88,19 +91,19 @@ class SkinTempService : Service() {
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
                 startSkinTracker()     // only kick off if worn
-                scheduleNextReading()  //
+                scheduleNextReading()
             }
         }
 
         override fun onConnectionFailed(e: HealthTrackerException) {
-            Log.e(TAG, "HealthPlatform connection failed", e)
+            Log.e(TAG, "SkinTempService onConnectionFailed(): HealthPlatform connection failed", e)
             if (e.hasResolution()) {
-                try { e.resolve(null) } catch (ex: Exception) { Log.e(TAG, "Resolution failed", ex) }
+                try { e.resolve(null) } catch (ex: Exception) { Log.e(TAG, "SkinTempService Resolution failed", ex) }
             }
         }
 
         override fun onConnectionEnded() {
-            Log.w(TAG, "HealthPlatform DISCONNECTED")
+            Log.w(TAG, "SkinTempService onConnectionEnded(): HealthPlatform DISCONNECTED")
             // Clean up when disconnected
             stopSkinTracker(true)
         }
@@ -118,13 +121,14 @@ class SkinTempService : Service() {
 
                 if (status >= 0) {
                     val objectTemp = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE)
-                    //val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
+                    val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
                     tempF = objectTemp.toFahrenheit()
-                    //Log.i(TAG, "Skin Temp: ${"%.1f".format(tempF)}°F; Ambient Temp: ${ambientTemp.toFahrenheit()}")
+                    Log.i(TAG, "SkinTempService T= ${"%.1f".format(tempF)}°F")
 
-                    //val logLine = "SkinTemp status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
-                    //            "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
-                    //writeToLogFileLocation(logFile, logLine)
+                    val logLine =
+                        "SkinTempService status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
+                                "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
+                    writeToLogFileLocation(logFile, logLine)
                 } else {
                     tempF = -1f
                     skinTempLiveData.postValue("N/A")
@@ -145,19 +149,22 @@ class SkinTempService : Service() {
         fun Float.toFahrenheit(): Float = this * 9f/5f + 32f
 
         override fun onError(error: HealthTracker.TrackerError) {
-            Log.e(TAG, "Tracker error: $error")
+            Log.e(TAG, "SkinTempService HealthTracker.TrackerError: $error")
         }
+
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "SkinTempService onCreate")
+        Log.d(TAG, "SkinTempService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
 
         CoroutineScope(Dispatchers.IO).launch{
             sharedRepo.reportingUpdateIntervalSecs.collect { secs ->
                 val newIntervalMs = (secs * 1_000L).coerceAtLeast(MIN_SKIN_TEMP_INTERVAL_MS)
                 if (newIntervalMs != DISPATCH_INTERVAL_MS) {
-                    //writeToLogFileLocation(logFile, "Dispatch Interval Changed from ${DISPATCH_INTERVAL_MS/1000}s to ${newIntervalMs/1000}s"); Log.i(TAG, "Reporting interval updated -> $secs s")
+//                    writeToLogFileLocation(logFile, "Dispatch Interval Changed from ${DISPATCH_INTERVAL_MS/1000}s to ${newIntervalMs/1000}s"); Log.i(TAG, "Reporting interval updated -> $secs s")
                     DISPATCH_INTERVAL_MS = newIntervalMs
 
                     if (deviceWorn) {
@@ -177,12 +184,6 @@ class SkinTempService : Service() {
         healthService = HealthTrackingService(connectionListener, applicationContext)
         healthService.connectService()
 
-        // Promote to foreground to avoid being killed
-        startForegroundServiceCompat(
-            NOTIF_ID,
-            importance = android.app.NotificationManager.IMPORTANCE_LOW
-        )
-
         // Listen for wrist wear state changes
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -190,24 +191,14 @@ class SkinTempService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "Service onStartCommand, isRunning=${isRunning.get()}")
-        //writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
-        if (!isRunning.getAndSet(true)) {
-            deviceWorn = sharedRepo.latestIsDeviceWorn.value ?: false
-
-            if (deviceWorn && ::skinTracker.isInitialized) {
-                startSkinTracker()
-                scheduleNextReading()
-            }
-
-        }
+        Log.d(TAG, "SkinTempService OnStartCommand()")
+        writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "Service onDestroy")
-
+        Log.d(TAG, "SkinTempService onDestroy()")
         isRunning.set(false)
         deviceWorn = false
         if (EventBus.getDefault().isRegistered(this)) {
@@ -216,10 +207,9 @@ class SkinTempService : Service() {
 
         // Ensure listener is removed and thread stopped
         stopSkinTracker(true)
-
         healthService.disconnectService()
         handlerThread.quitSafely()
-
+        stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -236,14 +226,11 @@ class SkinTempService : Service() {
             deviceWorn = true
             startSkinTracker()    // immediate snapshot
             scheduleNextReading()
-            //writeToLogFileLocation(logFile, "deviceWorn=true.")
+            writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
-            CoroutineScope(Dispatchers.IO).launch {
-                sharedRepo.storeLatestSkinTemp(-1.00F)
-            }
             stopSkinTracker(true)     // shut it down
-            //writeToLogFileLocation(logFile, "deviceWorn=false.")
+            writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
 

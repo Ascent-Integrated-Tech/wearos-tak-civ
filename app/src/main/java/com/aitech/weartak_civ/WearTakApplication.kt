@@ -17,7 +17,9 @@
 package com.aitech.weartak_civ
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
+import com.aitech.weartak_civ.data.DataRepository
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -25,14 +27,23 @@ import live.ditto.android.DefaultAndroidDittoDependencies
 
 class WearTakApplication : Application() {
 
+    lateinit var repo: DataRepository; private set
+
     companion object {
         val TAG = "WearTAK-Applicaton"
-    }
 
+    }
 
     override fun onCreate() {
         super.onCreate()
-        Log.v(TAG, "WearTakApplication created")
+        repo = DataRepository(applicationContext)
+        AppCtx.init(this)
+        Log.i(TAG, "WearTakApplication Created")
     }
 
+    object AppCtx {
+        @Volatile private var _app: Application? = null
+        val app: Application get() = _app ?: error("AppCtx not initialized")
+        fun init(a: Application) { _app = a }
+    }
 }

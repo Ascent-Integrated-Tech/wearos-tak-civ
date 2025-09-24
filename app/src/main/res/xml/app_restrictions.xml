@@ -68,6 +68,13 @@
         android:defaultValue="@string/physiological_services_enabled_default" />
 
     <restriction
+        android:key="heartrate_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/heartrate_service_title"
+        android:description="@string/heartrate_service_description"
+        android:defaultValue="@string/heartrate_service_enabled_default" />
+
+    <restriction
         android:key="activity_recognition_service_enabled"
         android:restrictionType="bool"
         android:title="@string/activity_recognition_service_title"

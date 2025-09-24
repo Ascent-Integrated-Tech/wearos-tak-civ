@@ -57,30 +57,30 @@ class ReportingIntervalStrategyService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "ReportingIntervalStrategyService onCreate()")
+        isRunning.getAndSet(true)
+        startForegroundServiceCompat(REPORTING_INTERVAL_STRATEGY_SERVICE_NOTIFICATION_ID, importance = NotificationManager.IMPORTANCE_LOW)
         dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
+        initializeVariables()
+        startEnableDynamicStrategyCollector()
+        startDynamicReportingIntervalCollector()
+        startConstantReportingIntervalCollector()
+        startIsAlertingCollector()
+        startActivityCollector()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            startForegroundServiceCompat(REPORTING_INTERVAL_STRATEGY_SERVICE_NOTIFICATION_ID, importance = NotificationManager.IMPORTANCE_LOW)
-            Log.d(TAG, "ReportingIntervalStrategyService onStartCommand called")
-            initializeVariables()
-            startEnableDynamicStrategyCollector()
-            startDynamicReportingIntervalCollector()
-            startConstantReportingIntervalCollector()
-            startIsAlertingCollector()
-            startActivityCollector()
-        }
+        Log.i(TAG, "ReportingIntervalStrategyService onStartCommand()")
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.i(TAG, "ReportingIntervalStrategyService onDestroy()")
         isRunning.set(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         // TODO: should we serviceJob.cancel()
         serviceScope.cancel()
-        Log.d(TAG, "ReportingIntervalStrategyService destroyed")
     }
 
     private fun initializeVariables() {

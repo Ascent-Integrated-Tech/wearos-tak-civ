@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ.manager
 
 import android.content.Context
@@ -28,7 +37,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     val wifiNetwork: StateFlow<Network?> = _wifiNetwork.asStateFlow()
 
     fun init() {
-        Log.d(TAG, "init called")
+        Log.d(TAG, "Initializing NetworkManager")
         mainActivity = MainActivity.Constants.getActivity()
         connectivityManager = mainActivity?.applicationContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val networkRequest = NetworkRequest.Builder()
@@ -200,7 +209,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
-        Log.d(TAG, "onCapabilitiesChanged called")
+//        Log.d(TAG, "onCapabilitiesChanged called")
         //writeToLogFileLocation(logFile, "onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
     }
