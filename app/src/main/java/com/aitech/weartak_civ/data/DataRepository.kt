@@ -28,13 +28,14 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
+import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
-import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.service.ChatService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -1200,6 +1201,26 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getBatteryWarnPercentage : Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[BATT_WARN_PERCENT] ?: DEFAULT_BATT_WARNING_PERCENTAGE
+    }
+
+    suspend fun storeBatteryWarnPercentage(percent: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[BATT_WARN_PERCENT] = percent
+        }
+    }
+
+    val getBatteryAlertPercentage : Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[BATT_ALERT_PERCENT] ?: DEFAULT_BATT_ALERT_PERCENTAGE
+    }
+
+    suspend fun storeBatteryAlertPercentage(percent: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[BATT_ALERT_PERCENT] = percent
+        }
+    }
+
     val getPhysiologicalMetricAge: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[AGE] ?: DEFAULT_AGE
     }
@@ -1388,6 +1409,8 @@ class DataRepository(private val context: Context) {
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
+        private val BATT_WARN_PERCENT = intPreferencesKey("batt_warn_percent")
+        private val BATT_ALERT_PERCENT = intPreferencesKey("batt_alert_percent")
         private val AGE = intPreferencesKey("age")
         private val HEIGHT_FEET = intPreferencesKey("height_feet")
         private val HEIGHT_INCHES = intPreferencesKey("height_inches")

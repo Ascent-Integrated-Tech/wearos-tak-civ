@@ -353,6 +353,13 @@
     <string name="enable_sms_numbers_comma_separated_description" translatable="false">Comma separated list of SMS numbers that alerts will be sent to.</string>
     <string name="enable_sms_numbers_comma_separated_default" translatable="false"></string>
 
+    <string name="batt_warn_percent_title" translatable="false">Battery Warning (%)</string>
+    <string name="batt_warn_percent_description" translatable="false">Enter battery percentage at which a warning is sent to "All Chat Rooms"</string>
+    <string name="batt_warn_percent_default" translatable="false">50</string>
+    <string name="batt_alert_percent_title" translatable="false">Battery Alert (%)</string>
+    <string name="batt_alert_percent_description" translatable="false">Enter battery percentage at which an alert is sent to "All Chat Rooms"</string>
+    <string name="batt_alert_percent_default" translatable="false">25</string>
+
     <string name="enable_physiological_alerts_title" translatable="false">Enable Physiological Alerts</string>
     <string name="enable_physiological_alerts_description" translatable="false">Boolean that determines if physiological alerts will be enabled.</string>
     <string name="enable_physiological_alerts_default" translatable="false">false</string>

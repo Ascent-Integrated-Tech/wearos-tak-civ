@@ -517,8 +517,8 @@ object Utils {
             return raw.contains("to=\"${MainActivity.callsign}\"")
                     || raw.contains("""to='$myUid'""")
                     || raw.contains("""to="$myUid"""")
-                    || raw.contains("""to='All Chat Rooms'""")
-                    || raw.contains("""to="All Chat Rooms"""")
+                    || (raw.contains("""to='All Chat Rooms'""") && !(raw.contains("""senderCallsign="${MainActivity.callsign}"""") || raw.contains("""senderCallsign='${MainActivity.callsign}'""")))
+                    || (raw.contains("""to="All Chat Rooms"""") && !(raw.contains("""senderCallsign="${MainActivity.callsign}"""") || raw.contains("""senderCallsign='${MainActivity.callsign}'""")))
         }
 
         /** DOM‐plus‐regex hybrid parser for extracting ChatRooms. */
