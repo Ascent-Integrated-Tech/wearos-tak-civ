@@ -23,6 +23,7 @@ import android.content.Context.ALARM_SERVICE
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
@@ -49,7 +50,6 @@ import org.xml.sax.InputSource
 import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
-import javax.xml.XMLConstants
 
 
 object Utils {
@@ -115,6 +115,13 @@ object Utils {
     fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {
         return list1.size == list2.size && list1.toSet() == list2.toSet()
 	}
+
+    // Managed config uses this to determine if an app restriction is configured or not.
+    fun Bundle.getNullableBoolean(key: String): Boolean? =
+        if (this.containsKey(key)) this.getBoolean(key) else null
+
+    private fun Bundle.getNullableString(key: String): String? =
+        if (this.containsKey(key)) this.getString(key) else null
 
     /**
      * Starts this Service in the foreground, creating a notification channel

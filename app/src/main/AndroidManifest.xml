@@ -223,10 +223,17 @@
                 android:resource="@drawable/tile_preview" />
         </service>
         <service
+            android:name=".service.ReactiveServiceManager"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.ReportingIntervalStrategyService"
             android:enabled="true"
             android:exported="true"
-            android:foregroundServiceType="health">
+            android:foregroundServiceType="health"
+            tools:ignore="MissingClass">
         </service>
         <service
             android:name=".service.TAKConnectService"

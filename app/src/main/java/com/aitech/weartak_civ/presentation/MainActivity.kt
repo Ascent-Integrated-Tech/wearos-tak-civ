@@ -200,12 +200,23 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiolo
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
+import com.aitech.weartak_civ.service.ReactiveServiceManager
+import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
+import com.aitech.weartak_civ.Utils.getNullableBoolean
+import com.aitech.weartak_civ.WearTakApplication
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.util.EnumMap
+import kotlin.math.min
 
 
 class MainActivity : ComponentActivity() {
 
     companion object Constants {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         const val EVENT_SEND_DELAY_MS = 1000L
         const val MOVEMENT_DETECTION_SERVICE_START_DELAY = 20_000L
         lateinit var mainActivity : MainActivity
@@ -218,6 +229,7 @@ class MainActivity : ComponentActivity() {
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = true
         var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(true)
+        var enableHeartrateService : Boolean = true
         var enableActivityRecognitionService: Boolean = false
         var enableSkinTempService: Boolean = true
         var enableDittoService : Boolean = false
@@ -394,486 +406,29 @@ class MainActivity : ComponentActivity() {
             return mainActivity
         }
 
-        fun startStopSkinTempService() {
-            if (isLicenseValid()) {
-                if (enableSkinTempService) {
-                    startSkinTempService()
-                } else {
-                    if (SkinTempService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-                }
+        fun startReactiveServiceManager(context: Context) {
+            val intent = Intent(context, ReactiveServiceManager::class.java)
+            if (!ReactiveServiceManager.isRunning.get()) {
+                Log.i(TAG, "MainActivity startReactiveServiceManager(): Starting ReactiveServiceManager")
+                ContextCompat.startForegroundService(context, intent)
             } else {
-                if (SkinTempService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
+                Log.i(
+                    TAG,
+                    "MainActivity startReactiveServiceManager(): ReactiveManager is already Running!"
+                )
             }
         }
 
-        fun startSkinTempService() {
-            if (!enablePhysiologicalServices) {
-                Log.i(TAG, "Physiological Services are disabled, not invoking skin temp service")
-                if (SkinTempService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-                return
-            }
-            if (enableSkinTempService) {
-                if ((ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS_BACKGROUND
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.ACTIVITY_RECOGNITION
-                    ) != PackageManager.PERMISSION_GRANTED)
-                ) {
-                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking SkinTempService")
-                } else {
-                    if (!SkinTempService.isRunning.get()) {
-                        Log.d(TAG, "Starting SkinTempService")
-                        mainActivity.startService(
-                            Intent(
-                                mainActivity,
-                                SkinTempService::class.java
-                            )
-                        )
-                    } else {
-                        Log.d(TAG, "SkinTempService is already running." )
-                    }
-                }
-            }  else {
-                Log.d(TAG, "SkinTempService is disabled. Not starting SkinTempService")
-            }
-        }
-
-        fun startStopActivityRecognitionService() {
-            if (isLicenseValid()) {
-                if (enableActivityRecognitionService || enableDynamicReportingStrategy) {
-                    startActivityRecognitionService()
-                } else {
-                    if (ActivityRecognitionService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-                }
+        fun stopReactiveServiceManager(context: Context) {
+            val intent = Intent(context, ReactiveServiceManager::class.java)
+            if (ReactiveServiceManager.isRunning.get()) {
+                Log.i(TAG, "MainActivity stopReactiveServiceManager(): Stopping ReactiveServiceManager")
+                context.stopService(intent)
             } else {
-                if (ActivityRecognitionService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-            }
-        }
-
-        fun startActivityRecognitionService() {
-            if (!enablePhysiologicalServices) {
-                Log.i(TAG, "Physiological Services are disabled, not invoking activity recognition service")
-                if (ActivityRecognitionService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-                return
-            }
-            if (enableActivityRecognitionService || enableDynamicReportingStrategy) {
-                if ((ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS_BACKGROUND
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.ACTIVITY_RECOGNITION
-                    ) != PackageManager.PERMISSION_GRANTED)
-                ) {
-                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking ActivityRecognitionService")
-                } else {
-                    if (!ActivityRecognitionService.isRunning.get()) {
-                        Log.d(TAG, "Starting ActivityRecognitionService")
-                        mainActivity.startService(
-                            Intent(
-                                mainActivity,
-                                ActivityRecognitionService::class.java
-                            )
-                        )
-                    } else {
-                        Log.d(TAG, "ActivityRecognitionService is already running." )
-                    }
-                }
-            }  else {
-                Log.d(TAG, "ActivityRecognitionService is disabled. Not starting ActivityRecognitionService")
-            }
-        }
-
-        fun startStopHeartrateService() {
-            if (isLicenseValid()) {
-                if (enablePhysiologicalServices) {
-                    startHeartrateService()
-                } else {
-                    if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                }
-            } else {
-                if (HeartrateService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-            }
-        }
-
-        fun startHeartrateService() {
-            if (enablePhysiologicalServices) {
-                if ((ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS
-                    ) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(
-                        mainActivity.applicationContext,
-                        Manifest.permission.BODY_SENSORS_BACKGROUND
-                    ) != PackageManager.PERMISSION_GRANTED)
-                ) {
-                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking HeartRateService")
-                } else {
-                    if (!HeartrateService.isRunning.get()) {
-                        Log.d(TAG, "Starting HeartRateService")
-                        mainActivity.startService(
-                            Intent(
-                                mainActivity,
-                                HeartrateService::class.java
-                            )
-                        )
-                    } else {
-                        Log.d(TAG, "HeartRateService is already running." )
-                    }
-                }
-            }  else {
-                Log.d(TAG, "Physiological Services are disabled. Not starting HeartRateService")
-            }
-        }
-        private fun hasGps(): Boolean = mainActivity.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS)
-
-        fun startStopTAKConnectService() {
-            if (isLicenseValid()) {
-                startTAKConnectService()
-            } else {
-                if (TAKConnectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-            }
-        }
-
-        fun restartTAKConnectService() {
-            Log.d(TAG, "Restarting TAK Connect Service")
-            mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-            mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
-        }
-
-        fun startTAKConnectService() {
-            if (!TAKConnectService.isRunning.get()) {
-                Log.d(TAG, "Starting TAKConnectService")
-                mainActivity.startForegroundService(Intent(mainActivity, TAKConnectService::class.java))
-            } else {
-                Log.d(TAG, "TAKConnectService is already running.")
-            }
-        }
-
-        fun startStopChatService() {
-            if (isLicenseValid()) {
-                if (enableChatService) {
-                    startChatService()
-                } else {
-                    if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-                }
-            } else {
-                if (ChatService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-            }
-        }
-
-        fun startChatService() {
-            if (enableChatService) {
-                if (!ChatService.isRunning.get()) {
-                    Log.d(TAG, "Starting ChatService")
-                    mainActivity.startForegroundService(Intent(mainActivity, ChatService::class.java))
-                } else {
-                    Log.w(TAG, "ChatService is already running.")
-                }
-            }
-        }
-
-        fun startStopDittoService() {
-            if (isLicenseValid()) {
-                if (enableDittoService) {
-                    startDittoService()
-                } else {
-                    if (DittoService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                }
-            } else {
-                if (DittoService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-            }
-        }
-
-        fun startDittoService() {
-            if ((ActivityCompat.checkSelfPermission(
-                mainActivity.applicationContext,
-                Manifest.permission.NEARBY_WIFI_DEVICES
-            ) != PackageManager.PERMISSION_GRANTED) && (ActivityCompat.checkSelfPermission(
-                mainActivity.applicationContext,
-                Manifest.permission.BLUETOOTH
-            ) != PackageManager.PERMISSION_GRANTED))
-            {
-                Log.d(TAG, "Missing Nearby WiFi permissions or Bluetooth. So NOT invoking DittoService")
-//                ActivityCompat.requestPermissions(this, Manifest.permission.BLUETOOTH)
-            } else {
-                if (enableDittoService) {
-                    if (!DittoService.isRunning.get()) {
-                        Log.d(TAG, "Starting DittoService")
-                        mainActivity.startForegroundService(Intent(mainActivity, DittoService::class.java))
-                    } else {
-                        Log.d(TAG, "DittoService is already running")
-                    }
-                } else {
-                    Log.d(TAG, "DittoService is disabled")
-                }
-            }
-        }
-
-        fun startStopLocationService() {
-            if (isLicenseValid()) {
-                if (enableLocationService) {
-                    startLocationService()
-                } else {
-                    if (LocationService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                }
-            } else {
-                if (LocationService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-            }
-        }
-
-        fun startLocationService() {
-            if ((ActivityCompat.checkSelfPermission(
-                    mainActivity.applicationContext,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                ) != PackageManager.PERMISSION_GRANTED) &&
-                (ActivityCompat.checkSelfPermission(
-                    mainActivity.applicationContext,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ) != PackageManager.PERMISSION_GRANTED)
-            ) {
-                Log.d(TAG, "Don't have permissions. So NOT invoking requestLocationUpdates")
-            } else {
-                if (enableLocationService) {
-                    if (!LocationService.isRunning.get()) {
-                        Log.d(TAG, "Starting LocationService")
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            mainActivity.startForegroundService(Intent(mainActivity, LocationService::class.java))
-                        } else {
-                            mainActivity.startService(Intent(mainActivity, LocationService::class.java))
-                        }
-                    } else {
-                        Log.d(TAG, "LocationService is already running")
-                    }
-                } else {
-                    Log.d(TAG, "enableLocationService is false. So NOT starting location service")
-                }
-            }
-        }
-
-        fun startStopBleBeaconService() {
-            if (isLicenseValid()) {
-                if (enableBleBeaconService) {
-                    startBleBeaconService()
-                } else {
-                    if (BleBeaconService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
-                }
-            } else {
-                if (BleBeaconService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
-            }
-        }
-
-        fun startBleBeaconService() {
-            if ((ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.ACCESS_FINE_LOCATION)
-                        != PackageManager.PERMISSION_GRANTED) &&
-                (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BLUETOOTH_SCAN)
-                        != PackageManager.PERMISSION_GRANTED) &&
-                (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                        != PackageManager.PERMISSION_GRANTED)) {
-                Log.d(TAG, "Don't have permissions. So NOT starting BleBeaconService")
-            } else {
-                if (enableBleBeaconService) {
-                    if (!BleBeaconService.isRunning.get()) {
-                        Log.d(TAG, "Starting BleBeaconService")
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            mainActivity.startForegroundService(Intent(mainActivity, BleBeaconService::class.java))
-                        } else {
-                            mainActivity.startService(Intent(mainActivity, BleBeaconService::class.java))
-                        }
-                    } else {
-                        Log.d(TAG, "BleBeaconService is already running")
-                    }
-                } else {
-                    Log.d(TAG, "BleBeaconService is disabled")
-                }
-            }
-        }
-
-        fun startPowerManagerService() {
-            if (!PowerManagerService.isRunning.get()) {
-                Log.d(TAG, "Starting PowerManagerService")
-                mainActivity.startForegroundService(Intent(mainActivity, PowerManagerService::class.java))
-            } else {
-                Log.d(TAG, "PowerManagerService is already running")
-            }
-        }
-
-        fun startBatteryService() {
-            if (!BatteryService.isRunning.get()) {
-                Log.d(TAG, "Starting BatteryService")
-                mainActivity.startForegroundService(Intent(mainActivity, BatteryService::class.java))
-            } else {
-                Log.d(TAG, "BatteryService is already running")
-            }
-        }
-
-        fun startCotDispatchService() {
-            if (!CotDispatchService.isRunning.get()) {
-                Log.d(TAG, "Starting CotDispatchService")
-                mainActivity.startService(Intent(mainActivity, CotDispatchService::class.java))
-            } else {
-                Log.d(TAG, "CotDispatchService is already running")
-            }
-        }
-
-        fun startReportingIntervalStrategyService() {
-            if (!ReportingIntervalStrategyService.isRunning.get()) {
-                Log.d(TAG, "Starting ReportingIntervalStrategyService")
-                mainActivity.startService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
-            } else {
-                Log.d(TAG, "ReportingIntervalStrategyService is already running")
-            }
-        }
-
-        fun startPassiveDataService(){
-            if (enablePassiveDataService){
-                if(!PassiveDataService.isRunning.get()){
-                    Log.d(TAG, "Starting PassiveDataService")
-                    mainActivity.startForegroundService(Intent(mainActivity, PassiveDataService::class.java))
-                }else{
-                    Log.d(TAG, "PassiveDataService is already running")
-                }
-            }else{
-                Log.d(TAG, "Passive Data Service is disabled (enablePassiveDataService == false)")
-            }
-        }
-
-        fun startStopPassiveDataService() {
-            if (isLicenseValid()) {
-                if (enablePassiveDataService) {
-                    startPassiveDataService()
-                } else {
-                    if (PassiveDataService.isRunning.get()) {
-                        mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
-                    }
-                }
-            } else {
-                if (PassiveDataService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
-                }
-            }
-        }
-
-        fun startStopoffBodyDetectService() {
-            if (isLicenseValid()) {
-                if (enablePhysiologicalServices) {
-                    startOffBodyDetectService()
-                } else {
-                    Log.d(TAG, "startStopoffBodyDetectService OffBodyDetectService stop called")
-                    if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-                }
-            } else {
-                Log.d(TAG, "startStopoffBodyDetectService OffBodyDetectService stop called")
-                if (OffBodyDetectService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-            }
-        }
-
-        fun startOffBodyDetectService() {
-            if (enablePhysiologicalServices) {
-                if ((ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BODY_SENSORS) != PackageManager.PERMISSION_GRANTED) &&
-                    (ActivityCompat.checkSelfPermission(mainActivity.applicationContext, Manifest.permission.BODY_SENSORS_BACKGROUND) != PackageManager.PERMISSION_GRANTED)) {
-                    Log.d(TAG, "Don't have permissions to start body sensors in background. So NOT invoking OffBodyDetectService")
-                } else {
-                    if (!OffBodyDetectService.isRunning.get()) {
-                        Log.d(TAG, "Starting OffBodyDetectService")
-                        mainActivity.startService(
-                            Intent(
-                                mainActivity,
-                                OffBodyDetectService::class.java
-                            )
-                        )
-                    } else {
-                        Log.d(TAG, "OffBodyDetectService is already running." )
-                    }
-                }
-            }  else {
-                Log.d(TAG, "Physiological Services are disabled. Not starting OffBodyDetectService")
-            }
-        }
-
-
-        fun startStopServicesLicense(context: Context) {
-            if (isLicenseValid()) {
-                Log.d(TAG, """
-                        ===   Application Services Info   ===
-                        =====================================
-                        """.trimIndent())
-                startTAKConnectService()
-                startReportingIntervalStrategyService()
-                startOffBodyDetectService()
-                startHeartrateService()
-                startSkinTempService()
-                startActivityRecognitionService()
-                startBatteryService()
-                startLocationService()
-                //startPassiveDataService()
-                startCotDispatchService()
-                startDittoService()
-                startPowerManagerService()
-                startBleBeaconService()
-                startChatService()
-            } else {
-                Log.d(TAG, """
-                            ===   Application Services Info   ===                                
-                            """.trimIndent())
-                if (TAKConnectService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-                }
-                if (ReportingIntervalStrategyService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
-                }
-                if (OffBodyDetectService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-                }
-                if (HeartrateService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                }
-                if (SkinTempService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-                }
-                if (ActivityRecognitionService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-                }
-                if (BatteryService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
-                }
-                if (LocationService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                }
-                if (CotDispatchService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
-                }
-                if (enableDittoService && DittoService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                }
-                if (PowerManagerService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
-                }
-                if (BleBeaconService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
-				}
-                if (enableChatService && ChatService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-                }
-                //if (enablePassiveDataService && PassiveDataService.isRunning.get()) {
-                //    mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
-                //}
+                Log.i(TAG, "MainActivity stopReactiveServiceManager(): ReactiveServiceManager is not Running!")
             }
         }
     }
-
 
     val callsignState = MutableLiveData<String>("")
     val licenseState = MutableLiveData<String>("")
@@ -931,91 +486,41 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action})")
+        Log.i(TAG, "MainActivity onNewIntent(): categories = (${intent.categories}), action = (${intent.action})")
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d(TAG, "MainActivity onPause called")
-        /*
-        if (OffBodyDetectService.isRunning.get()) {
-            Log.d(TAG, "Stopping OffBodyDetectService onPause")
-            mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-        }
-        if (HeartrateService.isRunning.get()) {
-            Log.d(TAG, "Stopping HeartrateService onPause")
-            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-        }
-
-         */
+        Log.i(TAG, "MainActivity onPause()")
     }
 
     override fun onRestart() {
         super.onRestart()
-        Log.d(TAG, "MainActivity onRestart called")
+        Log.i(TAG, "MainActivity onRestart()")
     }
 
     override fun onStart() {
         super.onStart()
-        Log.d(TAG, "MainActivity onStart called")
+        try { registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED)) } catch (_: Exception) {}
+        Log.i(TAG, "MainActivity onStart()")
     }
 
     override fun onStop() {
         super.onStop()
-        Log.d(TAG, "MainActivity onStop called")
+        Log.i(TAG, "MainActivity onStop()")
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d(TAG, "MainActivity onResume called")
-
-        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startHeartrateService();startSkinTempService();startActivityRecognitionService() }, 1500L)
+        Log.i(TAG, "MainActivity onResume()")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "MainActivity onDestroy called")
-        /*
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this)
-        }
-
-         */
-        mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
-        mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
-        mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
-        if (enablePhysiologicalServices) {
-            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-            mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-            mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-        }
-        mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-        if (enableLocationService) {
-            mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-        }
-        mainActivity.stopService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
-        mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-        if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
-
+        Log.d(TAG, "MainActivity onDestroy()")
+        stopReactiveServiceManager(applicationContext)
         networkManager?.deInit()
-
-        unregisterReceiver(restrictionReceiver)
-
-        /*
-        // Unregister the callback.
-        runBlocking {
-            measureClient.unregisterMeasureCallbackAsync(
-                DataType.Companion.HEART_RATE_BPM,
-                heartRateCallback
-            )
-        }
-        lifecycleScope.launch {
-            healthServicesRepository.unregisterForHeartRateData()
-        }
-
-         */
-
-        //fusedLocationClient?.removeLocationUpdates(locationCallback)
+        try { unregisterReceiver(restrictionReceiver) } catch (_: Exception) {}
     }
 
     fun printSensorDetails(context: Context?) {
@@ -1107,7 +612,6 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "About to init category and role")
             initCategoryAndRole()
 
-            // … rest of your initSettings()
         } catch (e: Exception) {
             Log.e(TAG, "Uncaught error in initCategoryAndRoleAndCatogoryRolesList(): ${e.message}", e)
             // At this point you can either rethrow or fall back to a minimal safe state:
@@ -1117,7 +621,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun initSettings() {
+    fun seedVariablesFromRepo() {
         // This function reads in data from dataRepository and sets MainActivity settings (except those for UI settings screens) as well as other service settings
         runBlocking {
             Log.d(TAG, """=== === Initializing Settings === === ===""".trimIndent())
@@ -1127,7 +631,7 @@ class MainActivity : ComponentActivity() {
             if (callsign.equals("")) {
                 callsign = "WEAROS-" + (secureRandom.nextInt(9999)+1).toString()
                 dataRepository.storeCallsign(callsign)
-                Log.v(TAG, "First install --> Assigning a random callsign: $callsign")
+                Log.v(TAG, "MainActivity seedVariablesFromRepo(): First install --> Assigning a random callsign: $callsign")
             }
 
             // what are the teams I can be?
@@ -1144,6 +648,7 @@ class MainActivity : ComponentActivity() {
 
             enableLocationService = dataRepository.getEnableLocationService.first()
             enablePhysiologicalServices = dataRepository.getEnablePhysiologicalServices.first()
+            enableHeartrateService = dataRepository.getEnableHeartRateService.first()
             enableActivityRecognitionService = dataRepository.getEnableActivityRecognitionService.first()
             enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
@@ -1215,11 +720,12 @@ class MainActivity : ComponentActivity() {
             userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
             restingHeartRate = dataRepository.getRestingHeartRate.first()
 
-            Log.d(TAG, "============= Done Initializing Settings ===============")
+//            Log.i(TAG, "MainActivity seedVariablesFromRepo(): End")
         }
     }
 
     private fun logSettings() {
+        seedVariablesFromRepo()
         var logOutput = """
                     === === Configuration Settings === ===
                     ${String.format("%-25s %-30s", "[Settings]", "[Value]")}
@@ -1350,17 +856,17 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
+        Log.d(TAG, "=== === ===  Permissions  === === ===)")
         if (missingPermissions.isNotEmpty()) {
-            Log.d(TAG, """
-                === === ===  Permissions  === === ===
-                Missing: $missingPermissions
+            Log.d(TAG,
+                """Missing: $missingPermissions
+                =====================================
                 """.trimIndent()
             )
             requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
             //refreshPermissions()
         } else {
             Log.d(TAG, """
-                === === ===  Permissions  === === ===
                 All Permissions already granted.
                 =====================================
                 """.trimIndent()
@@ -1383,25 +889,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "MainActivity onCreate called")
+        Log.i(TAG, "MainActivity onCreate(): Start...")
         mainActivity = this
         mainActivityIsInit = this
-        //device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
-        device_uid = "WEAROS-" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
-        dataRepository = DataRepository(this)
-        initSettings()
-        logSettings()
+        dataRepository = (context.applicationContext as WearTakApplication).repo
+
+        seedVariablesFromRepo()
         refreshUI(context)
 
         restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
-        // Register BroadcastReceiver to listen for changes
         restrictionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                Log.d(TAG, "onReceive Broadcast: ${intent?.action}")
                 if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
-                    Log.d(TAG, "Managed Configurations Updated")
+                    Log.i(TAG, "MainActivity onCreate() restrictionReceiver: Received new Managed Configurations from Knox")
                     handleManagedConfigUpdate(false)
                 }
             }
@@ -1409,16 +912,6 @@ class MainActivity : ComponentActivity() {
         registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED))
         // Handle the initial configuration when the app starts
         handleManagedConfigUpdate(true)
-
-//        Log.d(TAG, "Device UID is $device_uid")
-        /*
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this)
-        }
-
-         */
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
         networkManager = NetworkManager.getInstance()
         networkManager?.init()
@@ -1443,13 +936,13 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
         validateLicense(license)
-        startStopServicesLicense(context)
+        startReactiveServiceManager(applicationContext)
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
-        Log.d(TAG, "isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
+//        Log.d(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
         if (!isAccessibilityServiceEnabled) {
-            Log.d(TAG, "isAccessibilityServiceEnabled false and trying to open Accessibility Settings")
+            Log.w(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled=false. trying to open Accessibility Settings")
             /*
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1483,10 +976,11 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "NOT Able to set ACCESSIBILITY_ENABLED to 1")
         }
          */
+        Log.i(TAG, "MainActivity onCreate(): End.")
     }
 
     private fun refreshUI(context: Context) {
-        Log.v(TAG, "=== === Refreshing UI  === === ")
+        Log.d(TAG, "=== === Refreshing UI  === === ")
         callsignState.postValue(callsign)
         callsignSettingsState.postValue(callsign)
         teamState.postValue(team) // liveData used by UI
@@ -1634,7 +1128,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
-        Log.v(TAG, " === === Handling Managed Config Update ===")
+        Log.v(TAG, "=== === Handling Managed Config Update (calledOnCreate: $calledOnCreate) ===")
+        seedVariablesFromRepo()
 
         val context = mainActivity.applicationContext
         val appRestrictions = restrictionsManager.applicationRestrictions
@@ -1677,7 +1172,6 @@ class MainActivity : ComponentActivity() {
         val prevLicenseIsValid = isLicenseValid()
         // Get the new settings from the restrictions manager or null, so that we only change dataRepository if there are changes
         license = appRestrictions.getString("license_key", license)
-
         val teamsNames = appRestrictions.getString("custom_teams_names", null)
         val teamsColors = appRestrictions.getString("custom_teams_colors", null)
         val categoryRolesJsonStr = appRestrictions.getString("custom_roles", null)
@@ -1772,21 +1266,104 @@ class MainActivity : ComponentActivity() {
             .filter { it.isNotEmpty() } // Remove any empty values
             .map { DataRepository.WifiSsidItem(it) } // Map each SSID to a WifiSsidItem
 
-        val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
-        val enablePhysiologicalServicesConfigUpdate = appRestrictions.getBoolean("physiological_services_enabled", enablePhysiologicalServices)
-        val enableActivityRecognitionServiceConfigUpdate = appRestrictions.getBoolean("activity_recognition_service_enabled", enableActivityRecognitionService)
-        val enableSkinTempServiceConfigUpdate = appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
-        val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
-        val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        /*
+         *  Maps are used for debugging the status of all the Services.
+         *   - knoxMap gives us the Knox Manage config value for each restriction.
+         *        Null means it is unconfigured.
+         *   - localMap gives the local companion object that we fall back to.
+         *        This will be deprecated, but useful for the time being.
+         *   - CfgUpdateMap gives use Boolean that is stored persistently in the
+         *        data repository. If Knox is null, fall back on the companion object,
+         *        which we recently obtained from persistent store in seedVariablesFromRepo()
+         *
+         *    Note that unconfigurable services will always be null (e.g. TakConnectService, CotDispatch).
+         */
+
+        val knoxMap      = EnumMap<ServiceType, Boolean?>(ServiceType::class.java)
+        val localMap     = EnumMap<ServiceType, Boolean?>(ServiceType::class.java)
+        val cfgUpdateMap = EnumMap<ServiceType, Boolean?>(ServiceType::class.java)
+
+        knoxMap[ServiceType.LOCATION] = appRestrictions.getNullableBoolean("location_service_enabled")
+        knoxMap[ServiceType.PHYSIO] =  appRestrictions.getNullableBoolean("physiological_services_enabled")
+        knoxMap[ServiceType.HEART_RATE] = appRestrictions.getNullableBoolean("heartrate_service_enabled")
+        knoxMap[ServiceType.ACTIVITY_RECOGNITION] = appRestrictions.getNullableBoolean("activity_recognition_service_enabled")
+        knoxMap[ServiceType.SKIN_TEMP] = appRestrictions.getNullableBoolean("skin_temp_service_enabled")
+        knoxMap[ServiceType.DITTO] = appRestrictions.getNullableBoolean("ditto_service_enabled")
+        knoxMap[ServiceType.CHAT] = appRestrictions.getNullableBoolean("chat_service_enabled")
+        knoxMap[ServiceType.BLE_BEACON] = appRestrictions.getNullableBoolean("ble_beacon_service_enabled")
+        knoxMap[ServiceType.HAIL]       = appRestrictions.getNullableBoolean("hail_service_enabled")
+        knoxMap[ServiceType.TAK_CONNECT]           = null
+        knoxMap[ServiceType.COT_DISPATCH]          = null
+        knoxMap[ServiceType.MOVEMENT_DETECTION]    = null
+        knoxMap[ServiceType.BATTERY]               = null
+        knoxMap[ServiceType.POWER_MGR]             = null
+
+        runBlocking {
+            dataRepository.updateDebugStageRemoteKnox(knoxMap)
+        }
+
+        localMap[ServiceType.LOCATION]   = enableLocationService
+        localMap[ServiceType.PHYSIO]     = enablePhysiologicalServices
+        localMap[ServiceType.HEART_RATE] = enableHeartrateService
+        localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActivityRecognitionService
+        localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
+        localMap[ServiceType.DITTO]      = enableDittoService
+        localMap[ServiceType.CHAT]       = enableChatService
+        localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
+        localMap[ServiceType.HAIL]        = enableHailService
+        localMap[ServiceType.TAK_CONNECT]           = null
+        localMap[ServiceType.COT_DISPATCH]          = null
+        localMap[ServiceType.MOVEMENT_DETECTION]    = null
+        localMap[ServiceType.BATTERY]               = null
+        localMap[ServiceType.POWER_MGR]             = null
+
+        runBlocking {
+            dataRepository.updateDebugStageLocalPersisted(localMap)
+        }
+
+        val enableLocationServiceConfigUpdate =
+            appRestrictions.getBoolean("location_service_enabled", enableLocationService)
+        val enablePhysiologicalServicesConfigUpdate =
+            appRestrictions.getBoolean("physiological_service_enabled", enablePhysiologicalServices)
+        val enableHeartrateServiceConfigUpdate =
+            appRestrictions.getBoolean("heartrate_service_enabled", enableHeartrateService)
+        val enableActivityRecognitionServiceConfigUpdate =
+            appRestrictions.getBoolean("activity_recognition_service_enabled", enableActivityRecognitionService)
+        val enableSkinTempServiceConfigUpdate =
+            appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
+        val enableDittoServiceConfigUpdate =
+            appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+        val enableChatServiceConfigUpdate =
+            appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        val enableBleBeaconServiceConfigUpdate =
+            appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
         val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
         val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
+
+        cfgUpdateMap[ServiceType.LOCATION] = enableLocationServiceConfigUpdate
+        cfgUpdateMap[ServiceType.PHYSIO]   = enablePhysiologicalServicesConfigUpdate
+        cfgUpdateMap[ServiceType.HEART_RATE] = enableHeartrateServiceConfigUpdate
+        cfgUpdateMap[ServiceType.ACTIVITY_RECOGNITION] = enableActivityRecognitionServiceConfigUpdate
+        cfgUpdateMap[ServiceType.SKIN_TEMP] = enableSkinTempServiceConfigUpdate
+        cfgUpdateMap[ServiceType.DITTO] = enableDittoServiceConfigUpdate
+        cfgUpdateMap[ServiceType.CHAT] = enableChatServiceConfigUpdate
+        cfgUpdateMap[ServiceType.BLE_BEACON] = enableBleBeaconServiceConfigUpdate
+        cfgUpdateMap[ServiceType.HAIL]       = enableHailServiceConfigUpdate
+        cfgUpdateMap[ServiceType.TAK_CONNECT]           = null
+        cfgUpdateMap[ServiceType.COT_DISPATCH]          = null
+        cfgUpdateMap[ServiceType.MOVEMENT_DETECTION]    = null
+        cfgUpdateMap[ServiceType.BATTERY]               = null
+        cfgUpdateMap[ServiceType.POWER_MGR]             = null
+
+        runBlocking {
+            dataRepository.updateDebugStageConfigUpdate(cfgUpdateMap)
+        }
 
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
-        Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
         val constantReportingIntervalConfigUpdate = appRestrictions.getInt("constant_reporting_interval", constantReportingInterval)
@@ -1821,8 +1398,6 @@ class MainActivity : ComponentActivity() {
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
-        val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
-
         // NEW: GeoJSON-based iBeacon parsing (replaces parcel/bundle array)
         val bleBeaconMutableList: MutableList<DataRepository.LocalizationBleBeaconItem> = mutableListOf()
         val geoJsonStr = appRestrictions.getString("localization_iBeacon_geojson", null)
@@ -1842,7 +1417,7 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Failed to parse iBeacon GeoJSON: ${t.message}", t)
             }
         } else {
-            Log.d(TAG, "localization_iBeacon_geojson is null or empty.")
+//            Log.d(TAG, "localization_iBeacon_list is null or empty.")
         }
 
         // store settings persistently & send out events as necessary
@@ -1853,7 +1428,10 @@ class MainActivity : ComponentActivity() {
             if (enableWifiBatteryOptimization != enableWifiBatteryOptimizationConfigUpdate) {
                 enableWifiBatteryOptimization = enableWifiBatteryOptimizationConfigUpdate
                 dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
-                Log.d(TAG, "enableWifiBatteryOptimization changed to $enableWifiBatteryOptimization")
+                Log.d(
+                    TAG,
+                    "enableWifiBatteryOptimization changed to $enableWifiBatteryOptimization"
+                )
                 changed = true
             }
             if (enableAllWifiBatteryOptimization != enableAllWifiBatteryOptimizationConfigUpdate) {
@@ -1861,25 +1439,32 @@ class MainActivity : ComponentActivity() {
                 dataRepository.storeEnableAllWifiBatteryOptimization(
                     enableAllWifiBatteryOptimization
                 )
-                Log.d(TAG, "enableAllWifiBatteryOptimization changed to $enableAllWifiBatteryOptimization")
+                Log.d(
+                    TAG,
+                    "enableAllWifiBatteryOptimization changed to $enableAllWifiBatteryOptimization"
+                )
                 changed = true
             }
             if (wifiSsidList != wifiOptimizationSsidList) {
-                Log.d(TAG, "MC wifiSsidList($wifiOptimizationSsidList), wifiSsidList($wifiSsidList)")
+                Log.d(
+                    TAG,
+                    "MC wifiSsidList($wifiOptimizationSsidList), wifiSsidList($wifiSsidList)"
+                )
                 wifiSsidList = wifiOptimizationSsidList
                 dataRepository.storeWifiSsidList(wifiSsidList)
                 changed = true
             }
             if (changed) {
                 // Send PowerManager Event only if there is a change in wifi optimization settings
-                EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+                EventBus.getDefault()
+                    .post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
             }
 
             if (categoryRolesJsonStr != null) {
                 // 1. Prepare a Gson instance and the List<RoleCategoryEntry> type token
                 val gson = Gson()
                 val listType = object : TypeToken<List<CategoryRolesEntry>>() {}.type
-                lateinit var entries : List<CategoryRolesEntry>
+                lateinit var entries: List<CategoryRolesEntry>
 
                 try {
                     // 2. Parse the managed‐config JSON into your model class
@@ -1893,13 +1478,13 @@ class MainActivity : ComponentActivity() {
                     Log.w(TAG, "Failed to parse managed‐config JSON, falling back", e)
 
                     // 4. Fallback to last‐stored in DataStore or to raw‐resource defaults
-                        val fallback = dataRepository.getCategoryRolesList.first()
-                        entries = if (fallback.isNotEmpty()) {
-                            fallback
-                        } else {
-                            applicationContext.defaultRoleCategoryEntriesFromRaw()
-                        }
-                        dataRepository.storeCategoryRolesList(entries)
+                    val fallback = dataRepository.getCategoryRolesList.first()
+                    entries = if (fallback.isNotEmpty()) {
+                        fallback
+                    } else {
+                        applicationContext.defaultRoleCategoryEntriesFromRaw()
+                    }
+                    dataRepository.storeCategoryRolesList(entries)
                 }
                 initCategoryAndRoleAndCategoryRolesList(entries)
             }
@@ -1907,8 +1492,12 @@ class MainActivity : ComponentActivity() {
             if ((null != teamsNames) && (null != teamsColors)) {
                 Log.v(TAG, "teamsNames: $teamsNames")
                 Log.v(TAG, "teamsColors: $teamsColors")
-                if (null != teamsNames) { dataRepository.storeTeamNames(teamsNames) }
-                if (null != teamsColors) { dataRepository.storeTeamColors(teamsColors) }
+                if (null != teamsNames) {
+                    dataRepository.storeTeamNames(teamsNames)
+                }
+                if (null != teamsColors) {
+                    dataRepository.storeTeamColors(teamsColors)
+                }
                 initTeamEntriesValuesList(teamsNames.split(","), teamsColors.split(","))
                 initTeamAndTeamValue()
             }
@@ -1925,13 +1514,23 @@ class MainActivity : ComponentActivity() {
                         val takServer = takServerList.get(i)
                         // Server already present
                         if (takServerConfig != takServer) {
-                            Log.d(TAG, "takServerListConfig.get($i).toString(): ${takServerListConfig.get(i).toString()}")
+                            Log.d(
+                                TAG,
+                                "takServerListConfig.get($i).toString(): ${
+                                    takServerListConfig.get(i).toString()
+                                }"
+                            )
                             changed = true
                             dataRepository.updateTakServerItem(i, takServerListConfig.get(i))
                             if (takServerConnDetailsChanged(takServer, takServerConfig)) {
-                                Log.d(TAG, "takServerListConfig.get($i) connection details has changed. Sending SERVER_DETAILS_CHANGED")
+                                Log.d(
+                                    TAG,
+                                    "takServerListConfig.get($i) connection details has changed. Sending SERVER_DETAILS_CHANGED"
+                                )
                                 // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
-                                handler.postDelayed({ EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, i)) }, EVENT_SEND_DELAY_MS)
+                                handler.postDelayed({
+                                    EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, i))
+                                }, EVENT_SEND_DELAY_MS)
                             }
                         }
                     } else {
@@ -1939,7 +1538,9 @@ class MainActivity : ComponentActivity() {
                         Log.d(TAG, "Additional server($i) added. Sending SERVER_ADDED")
                         dataRepository.addTakServerItem(takServerListConfig.get(i))
 
-                        handler.postDelayed({ EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i)) }, EVENT_SEND_DELAY_MS)
+                        handler.postDelayed({
+                            EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i))
+                        }, EVENT_SEND_DELAY_MS)
                     }
                 }
                 if (changed) {
@@ -1948,7 +1549,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         val mutableTakServerList = takServerList.toMutableList()
                         for (i in takServerListConfig.indices) {
-                            mutableTakServerList.set(i,takServerListConfig.get(i))
+                            mutableTakServerList.set(i, takServerListConfig.get(i))
                         }
                         takServerList = mutableTakServerList.toList()
                         Log.d(TAG, "takServerList: ${takServerList}")
@@ -1979,11 +1580,15 @@ class MainActivity : ComponentActivity() {
             }
             if ((0 != tabletCommandReportingIntervalConfigUpdate) && (tabletCommandReportingUpdateInterval != tabletCommandReportingIntervalConfigUpdate)) {
                 tabletCommandReportingUpdateInterval = tabletCommandReportingIntervalConfigUpdate
-                dataRepository.storeTabletCommandReportingUpdateInterval(tabletCommandReportingIntervalConfigUpdate)
+                dataRepository.storeTabletCommandReportingUpdateInterval(
+                    tabletCommandReportingIntervalConfigUpdate
+                )
             }
             if (enableTabletCommandEndpointConfigUpdate != enableTabletCommandEndpoint) {
                 enableTabletCommandEndpoint = enableTabletCommandEndpointConfigUpdate
-                dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpointConfigUpdate)
+                dataRepository.storeEnableTabletCommandEndpoint(
+                    enableTabletCommandEndpointConfigUpdate
+                )
             }
 
             if (enableTakEndpointConfigUpdate != enableTakEndpoint) {
@@ -2004,7 +1609,8 @@ class MainActivity : ComponentActivity() {
                             (bleBeaconUpdate.minor != locBleBeacon.minor) ||
                             (bleBeaconUpdate.lat != locBleBeacon.lat) ||
                             (bleBeaconUpdate.lon != locBleBeacon.lon) ||
-                            (bleBeaconUpdate.alt != locBleBeacon.alt)) {
+                            (bleBeaconUpdate.alt != locBleBeacon.alt)
+                        ) {
                             changed = true
                             break
                         }
@@ -2013,7 +1619,9 @@ class MainActivity : ComponentActivity() {
                 if (true == changed) {
                     localizationBleBeaconItemList = bleBeaconMutableList.toList()
                     dataRepository.storeLocalizationBleBeaconList(localizationBleBeaconItemList)
-                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(LOCALIZATION_BEACONS_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        EventBus.getDefault().post(MessageEvent(LOCALIZATION_BEACONS_CHANGED, 0))
+                    }, EVENT_SEND_DELAY_MS)
                 }
             }
 
@@ -2033,7 +1641,10 @@ class MainActivity : ComponentActivity() {
 
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServicesConfigUpdate)
-            dataRepository.storeEnableActivityRecognitionService(enableActivityRecognitionServiceConfigUpdate)
+            dataRepository.storeEnableHeartRateService(enableHeartrateServiceConfigUpdate)
+            dataRepository.storeEnableActivityRecognitionService(
+                enableActivityRecognitionServiceConfigUpdate
+            )
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
@@ -2043,7 +1654,9 @@ class MainActivity : ComponentActivity() {
             }
             if (whileAlertingReportingInterval != whileAlertingReportingIntervalConfigUpdate) {
                 whileAlertingReportingInterval = whileAlertingReportingIntervalConfigUpdate
-                dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingIntervalConfigUpdate)
+                dataRepository.storeWhileAlertingReportingInterval(
+                    whileAlertingReportingIntervalConfigUpdate
+                )
             }
             if (onFootReportingInterval != onFootReportingIntervalConfigUpdate) {
                 onFootReportingInterval = onFootReportingIntervalConfigUpdate
@@ -2055,10 +1668,14 @@ class MainActivity : ComponentActivity() {
             }
             if (stationaryReportingInterval != stationaryReportingIntervalConfigUpdate) {
                 stationaryReportingInterval = stationaryReportingIntervalConfigUpdate
-                dataRepository.storeStationaryReportingInterval(stationaryReportingIntervalConfigUpdate)
+                dataRepository.storeStationaryReportingInterval(
+                    stationaryReportingIntervalConfigUpdate
+                )
             }
             if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
-                dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
+                dataRepository.storeEnableDynamicReportingStrategy(
+                    enableDynamicReportingStrategyConfigUpdate
+                )
             }
 
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
@@ -2072,18 +1689,28 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
             dataRepository.storeRestingHeartRate(physiologicalMetricsRestingHeartRateConfigUpdate)
             dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricHeightFeet(physiologicalMetricsHeightFeetServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricHeightInches(physiologicalMetricsHeightInchesServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricWeight(physiologicalMetricsWeightServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricHeightFeet(
+                physiologicalMetricsHeightFeetServiceConfigUpdate
+            )
+            dataRepository.storePhysiologicalMetricHeightInches(
+                physiologicalMetricsHeightInchesServiceConfigUpdate
+            )
+            dataRepository.storePhysiologicalMetricWeight(
+                physiologicalMetricsWeightServiceConfigUpdate
+            )
             dataRepository.storePhysiologicalMetricSex(physiologicalMetricsSexServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricBloodType(physiologicalMetricsBloodTypeServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricBloodType(
+                physiologicalMetricsBloodTypeServiceConfigUpdate
+            )
             if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
                 dataRepository.storePhysiologicalMetricAllergyList(
                     physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
                         DataRepository.AllergyItem(name = str)
                     } ?: listOf(DataRepository.AllergyItem("N/A")))
             }
-            dataRepository.storePhysiologicalMetricUserType(physiologicalMetricsUserTypeServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricUserType(
+                physiologicalMetricsUserTypeServiceConfigUpdate
+            )
 
             dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
             dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
@@ -2091,64 +1718,68 @@ class MainActivity : ComponentActivity() {
             if (!isStringEmptyJson(configJson)) {
                 // Currently don't check for any changes but just post to dataRepository
                 dataRepository.storeCustomDeveloperConfigJson(configJson)
-                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault()
+                        .post(MessageEvent(CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED, 0))
+                }, EVENT_SEND_DELAY_MS)
             }
 
             // At the end, enable / disable services and then enable/disable based on license
             if (enableLocationServiceConfigUpdate != enableLocationService) {
                 enableLocationService = enableLocationServiceConfigUpdate
                 Log.d(TAG, "enableLocationService=$enableLocationService")
-                if (!calledOnCreate) startStopLocationService()
+                if (!calledOnCreate) dataRepository.storeEnableLocationService(enableLocationService)
             }
             if (enablePhysiologicalServicesConfigUpdate != enablePhysiologicalServices) {
                 enablePhysiologicalServices = enablePhysiologicalServicesConfigUpdate
                 Log.d(TAG, "enablePhysiologicalServices=$enablePhysiologicalServices")
                 if (!calledOnCreate) {
-                    startStopHeartrateService()
-                    if (enableSkinTempServiceConfigUpdate == enableSkinTempService) {
-                        startStopSkinTempService()
-                    }
-                    if ((enableActivityRecognitionServiceConfigUpdate == enableActivityRecognitionService) &&
-                        (enableDynamicReportingStrategy == enableDynamicReportingStrategyConfigUpdate)) {
-                        startStopActivityRecognitionService()
-                    }
+                    dataRepository.storeEnablePhysioServices(enablePhysiologicalServices)
                 }
             }
-            var activityRecognitionServiceChanged = false
+            if (enableHeartrateServiceConfigUpdate != enableHeartrateService) {
+                enableHeartrateService = enableHeartrateServiceConfigUpdate
+                Log.d(TAG, "enableHeartRateService=$enableHeartrateService")
+                if (!calledOnCreate) {
+                    dataRepository.storeEnableHeartRateService(enableHeartrateService)
+                }
+            }
             if (enableActivityRecognitionServiceConfigUpdate != enableActivityRecognitionService) {
                 enableActivityRecognitionService = enableActivityRecognitionServiceConfigUpdate
-                activityRecognitionServiceChanged = true
-            }
-            var dynamicReportStrategyChanged = false
-            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
-                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
-                dynamicReportStrategyChanged = true
-            }
-            if (activityRecognitionServiceChanged || dynamicReportStrategyChanged) {
-                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService and enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
-                if (!calledOnCreate) startStopActivityRecognitionService()
+                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService")
+                if (!calledOnCreate) dataRepository.storeEnableActivityRecognitionService(
+                    enableActivityRecognitionService
+                )
             }
             if (enableSkinTempServiceConfigUpdate != enableSkinTempService) {
                 enableSkinTempService = enableSkinTempServiceConfigUpdate
                 Log.d(TAG, "enableSkinTempService=$enableSkinTempService")
-                if (!calledOnCreate) startStopSkinTempService()
+                if (!calledOnCreate) dataRepository.storeEnableSkinTempService(enableSkinTempService)
             }
             if (enableDittoServiceConfigUpdate != enableDittoService) {
                 enableDittoService = enableDittoServiceConfigUpdate
                 Log.d(TAG, "enableDittoService=$enableDittoService")
-                if (!calledOnCreate) startStopDittoService()
+                if (!calledOnCreate) dataRepository.storeEnableDittoService(enableDittoService)
             }
             if (enableBleBeaconServiceConfigUpdate != enableBleBeaconService) {
                 enableBleBeaconService = enableBleBeaconServiceConfigUpdate
                 Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
-                if (!calledOnCreate) startStopBleBeaconService()
+                if (!calledOnCreate) dataRepository.storeEnableBleBeaconService(
+                    enableBleBeaconService
+                )
+            }
+            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
+                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
+                Log.d(TAG, "enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
+                if (!calledOnCreate) dataRepository.getEnableMovementDetectionService.emit(
+                    enableDynamicReportingStrategy
+                )
             }
             if (enableChatServiceConfigUpdate != enableChatService) {
                 enableChatService = enableChatServiceConfigUpdate
                 Log.d(TAG, "enableChatService=$enableChatService")
                 if (!calledOnCreate) {
-                    startStopChatService()
-                    restartTAKConnectService()
+                    dataRepository.storeEnableChatService(enableChatService)
                 }
             }
             enableHailService = enableHailServiceConfigUpdate
@@ -2162,69 +1793,119 @@ class MainActivity : ComponentActivity() {
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
                 enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
-                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault().post(
+                        MessageEvent(
+                            PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED,
+                            if (enablePhysiologicalAlerts) {
+                                1
+                            } else {
+                                0
+                            }
+                        )
+                    )
+                }, EVENT_SEND_DELAY_MS)
             }
             if (restingHeartRate != physiologicalMetricsRestingHeartRateConfigUpdate) {
-                Log.d(TAG, "Changed detected restingHeartRate(prev=$restingHeartRate, curr=$physiologicalMetricsRestingHeartRateConfigUpdate")
+                Log.d(
+                    TAG,
+                    "Changed detected restingHeartRate(prev=$restingHeartRate, curr=$physiologicalMetricsRestingHeartRateConfigUpdate"
+                )
                 restingHeartRate = physiologicalMetricsRestingHeartRateConfigUpdate
             }
             if (ageValue != physiologicalMetricsAgeServiceConfigUpdate) {
-                Log.d(TAG, "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)"
+                )
                 ageValue = physiologicalMetricsAgeServiceConfigUpdate
             }
             if (heightFeetValue != physiologicalMetricsHeightFeetServiceConfigUpdate) {
-                Log.d(TAG, "Change detected heightFeetValue(prev=$heightFeetValue, curr=$physiologicalMetricsHeightFeetServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected heightFeetValue(prev=$heightFeetValue, curr=$physiologicalMetricsHeightFeetServiceConfigUpdate)"
+                )
                 heightFeetValue = physiologicalMetricsHeightFeetServiceConfigUpdate
             }
             if (heightInchesValue != physiologicalMetricsHeightInchesServiceConfigUpdate) {
-                Log.d(TAG, "Change detected heightInchesValue(prev=$heightInchesValue, curr=$physiologicalMetricsHeightInchesServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected heightInchesValue(prev=$heightInchesValue, curr=$physiologicalMetricsHeightInchesServiceConfigUpdate)"
+                )
                 heightInchesValue = physiologicalMetricsHeightInchesServiceConfigUpdate
             }
             if (weightValue != physiologicalMetricsWeightServiceConfigUpdate) {
-                Log.d(TAG, "Change detected weightValue(prev=$weightValue, curr=$physiologicalMetricsWeightServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected weightValue(prev=$weightValue, curr=$physiologicalMetricsWeightServiceConfigUpdate)"
+                )
                 weightValue = physiologicalMetricsWeightServiceConfigUpdate
             }
             if (sexValue != physiologicalMetricsSexServiceConfigUpdate) {
-                Log.d(TAG, "Change detected sexValue(prev=$sexValue, curr=$physiologicalMetricsSexServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected sexValue(prev=$sexValue, curr=$physiologicalMetricsSexServiceConfigUpdate)"
+                )
                 sexValue = physiologicalMetricsSexServiceConfigUpdate
             }
             if (bloodTypeValue != physiologicalMetricsBloodTypeServiceConfigUpdate) {
-                Log.d(TAG, "Change detected bloodTypeValue(prev=$bloodTypeValue, curr=$physiologicalMetricsBloodTypeServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected bloodTypeValue(prev=$bloodTypeValue, curr=$physiologicalMetricsBloodTypeServiceConfigUpdate)"
+                )
                 bloodTypeValue = physiologicalMetricsBloodTypeServiceConfigUpdate
             }
             if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
-                val allergyListConfigUpdate = physiologicalMetricsAllergiesServiceConfigUpdate.map { str -> DataRepository.AllergyItem(name = str) } ?: listOf(DataRepository.AllergyItem("N/A"))
+                val allergyListConfigUpdate =
+                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
+                        DataRepository.AllergyItem(name = str)
+                    } ?: listOf(DataRepository.AllergyItem("N/A"))
                 if (!listEqualsIgnoreOrder(allergyList, allergyListConfigUpdate)) {
-                    Log.d(TAG, "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)")
+                    Log.d(
+                        TAG,
+                        "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)"
+                    )
                     allergyList = allergyListConfigUpdate
                 }
 
             }
             if (userTypeValue != physiologicalMetricsUserTypeServiceConfigUpdate) {
-                Log.d(TAG, "Change detected userTypeValue(prev=$userTypeValue, curr=$physiologicalMetricsUserTypeServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected userTypeValue(prev=$userTypeValue, curr=$physiologicalMetricsUserTypeServiceConfigUpdate)"
+                )
                 userTypeValue = physiologicalMetricsUserTypeServiceConfigUpdate
             }
 
             if ((hrHighAlertBpmThreshold != hrHighAlertBpmThresholdConfigUpdate) || (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdConfigUpdate)) {
-                Log.d(TAG, "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)"
+                )
                 hrHighAlertBpmThreshold = hrHighAlertBpmThresholdConfigUpdate
                 hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdConfigUpdate
-                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
-            }
-
-            if (!calledOnCreate) {
-                if (prevLicenseIsValid != isLicenseValid()) {
-                    Log.d(TAG, "isLicenseValid=${isLicenseValid()}: Going to startStopServicesLicense")
-                    startStopServicesLicense(context)
-                }
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault().post(
+                        MessageEvent(
+                            HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {
+                                1
+                            } else {
+                                0
+                            }
+                        )
+                    )
+                }, EVENT_SEND_DELAY_MS)
             }
         }
+
+
         // ui needs to be refreshed with new settings changes
         refreshUI(context)
 
         // Log all settings to logcat
-        logSettings()
+        //logSettings()
     }
+
 
     /*
      * geoJson format example:

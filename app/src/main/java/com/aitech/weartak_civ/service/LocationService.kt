@@ -33,6 +33,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.runTimerJob
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.startGlobalTimer
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.LocationRcvd
@@ -56,6 +57,7 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
+import kotlin.text.set
 
 
 class LocationService : Service() {
@@ -103,18 +105,25 @@ class LocationService : Service() {
     }.build()
 
     override fun onCreate() {
+        super.onCreate()
+        isRunning.set(true)
         Log.d(TAG, "LocationService onCreate()")
+
+        startForegroundServiceCompat(
+            notificationId = LOCATION_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
         _instance = this
+
+        initializeLocation()
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if(!isRunning.getAndSet(true)) {
-            startForegroundService() //Start Foreground Service
-            initializeLocation()
-        }
         return START_NOT_STICKY
     }
 
@@ -169,11 +178,11 @@ class LocationService : Service() {
 
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
-                .setSmallIcon(R.drawable.splash_icon)
-                .setContentText("WearTAK-CIV location service running")
-                .setPriority(PRIORITY_MAX)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .build()
+            .setSmallIcon(R.drawable.splash_icon)
+            .setContentText("WearTAK-CIV location service running")
+            .setPriority(PRIORITY_MAX)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .build()
         try {
             startForeground(LOCATION_SERVICE_NOTIFICATION_ID, notification)
         } catch (e: NullPointerException) {
@@ -324,7 +333,7 @@ class LocationService : Service() {
             restartGpsUpdates()
         }
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning.set(false)

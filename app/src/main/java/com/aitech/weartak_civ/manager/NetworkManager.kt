@@ -28,7 +28,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     val wifiNetwork: StateFlow<Network?> = _wifiNetwork.asStateFlow()
 
     fun init() {
-        Log.d(TAG, "init called")
+        Log.d(TAG, "Initializing NetworkManager")
         mainActivity = MainActivity.Constants.getActivity()
         connectivityManager = mainActivity?.applicationContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val networkRequest = NetworkRequest.Builder()
@@ -200,7 +200,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
-        Log.d(TAG, "onCapabilitiesChanged called")
+//        Log.d(TAG, "onCapabilitiesChanged called")
         //writeToLogFileLocation(logFile, "onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
     }

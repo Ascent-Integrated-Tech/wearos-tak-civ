@@ -37,6 +37,7 @@ import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.service.ChatService
+import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +54,13 @@ import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import java.util.EnumMap
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.iterator
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -96,18 +104,14 @@ class DataRepository(private val context: Context) {
     // ======== ======== HAIL SECTION START ======== ========
 
     /**
-     * Hail Service is controlled by the User (or in managed configs), this gate
+     * Hail Service is controlled by the User (or in Knox mgd configs), this gate
      * initiates hail licensing and injection of data into a Hail Cot Detail, given
      * the license is valid.
      */
-    private val _enableHailService = MutableStateFlow<Boolean>(false)
-    val enableHailService: StateFlow<Boolean> = _enableHailService
-
     suspend fun storeEnableHailService(enable: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_HAIL_SERVICE] = enable
         }
-        _enableHailService.emit(enable)
     }
 
     val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -138,7 +142,7 @@ class DataRepository(private val context: Context) {
      *         EXPIRED,
      *         INVALID
      *     }
-    **/
+     **/
     private fun String.toHailStateOr(default: HailLicenseStates): HailLicenseStates =
         runCatching { enumValueOf<HailLicenseStates>(this) }.getOrElse { default }
 
@@ -220,9 +224,9 @@ class DataRepository(private val context: Context) {
     }
 
     /**
-     * A live stream of the saved license info.
-     * Every time the stored value changes, this will emit the new value.
-     * Emits null if there is nothing saved.
+     * A live stream of the saved hail license info.
+     * Every time the persistently stored value changes, this will emit
+     * the new value. Emits null if there is nothing saved.
      */
     val hailLicenseInfoFlow: Flow<HailService.HailLicenseInfo?> =
         context.dataStore.data.map { prefs ->
@@ -243,17 +247,29 @@ class DataRepository(private val context: Context) {
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = null
         )
+
+    /**
+     * buildHailDetail is the final gate for Hail Service activation.
+     * ReactiveServiceManager controls this gate, and the CotDispatchService
+     * checks against it. Once true, the CotDispatchService constructs
+     * the Hail Detail (via the Hail SDK APIs) and injects it into each
+     * PLI CoT. The device will then show up on the Hail Plugin in ATAK.
+     */
+    val buildHailDetail: StateFlow<Boolean> =
+        combine(getEnableHailService, hailLicenseState) { enable, state ->
+            enable && (state == HailLicenseStates.VALID ||
+                    state == HailLicenseStates.SOFT_EXPIRED)
+        }
+        .distinctUntilChanged()
+        .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
+
     // ======== ======== HAIL SECTION END ======== ==========
 
     // ======== ======== Multicast SECTION Start ======== ==========
-    private val _enableMulticast = MutableStateFlow<Boolean>(true)
-    val enableMulticast: StateFlow<Boolean> = _enableMulticast
-
     suspend fun storeEnableMulticast(enable: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_MULTICAST] = enable
         }
-        _enableHailService.emit(enable)
     }
 
     val getEnableMulticast: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -270,8 +286,8 @@ class DataRepository(private val context: Context) {
     private val _isAlerting = MutableStateFlow<Boolean>(false)
     val isAlerting : StateFlow<Boolean> = _isAlerting
 
-    private val _latestHeartRate = MutableStateFlow<Int>(-1)
-    val latestHeartRate: StateFlow<Int> = _latestHeartRate
+    private val _latestHeartRate = MutableStateFlow<Int?>(null)
+    val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
     private val _restingHeartRate = MutableStateFlow<Int>(DEFAULT_RESTING_HR)
     val restingHeartRate: StateFlow<Int> = _restingHeartRate
@@ -287,6 +303,129 @@ class DataRepository(private val context: Context) {
 
     private val _latestIsDeviceWorn = MutableStateFlow<Boolean>(false)
     val latestIsDeviceWorn: StateFlow<Boolean> = _latestIsDeviceWorn
+
+    // Enable Service Flow Toggles
+    // --- Desired state (on/off intent) ---
+    private val _serviceStateFlow =
+        MutableStateFlow(EnumMap<ReactiveServiceManager.ServiceType, Boolean>(ReactiveServiceManager.ServiceType::class.java))
+
+    val serviceStateFlow: StateFlow<EnumMap<ReactiveServiceManager.ServiceType, Boolean>> =
+        _serviceStateFlow.asStateFlow()
+
+    suspend fun updateServicesStateFlow(map: EnumMap<ReactiveServiceManager.ServiceType, Boolean>) {
+        _serviceStateFlow.emit(map)
+    }
+
+    // --- Service States Debugging Tools ----
+    private val _serviceDebugStateFlow =
+        MutableStateFlow(EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>(
+            ReactiveServiceManager.ServiceType::class.java
+        ))
+
+    val serviceDebugStateFlow: StateFlow<EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>> =
+        _serviceDebugStateFlow.asStateFlow()
+
+    // Merge helpers: update only one stage without losing the others
+    suspend fun updateDebugStageRemoteKnox(knoxMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean?>) {
+        val current = _serviceDebugStateFlow.value.toMutableMap()
+        for ((t, v) in knoxMap) {
+            val prev = current[t]
+            current[t] = ReactiveServiceManager.ServiceDebugState(
+                type = t,
+                remoteKnox = v,
+                localCompanion = prev?.localCompanion,
+                configUpdate = prev?.configUpdate,
+                desired = prev?.desired ?: false,
+                running = prev?.running ?: false
+            )
+        }
+        _serviceDebugStateFlow.emit(EnumMap(current))
+    }
+
+    suspend fun updateDebugStageLocalPersisted(localMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean?>) {
+        val current = _serviceDebugStateFlow.value.toMutableMap()
+        for ((t, v) in localMap) {
+            val prev = current[t]
+            current[t] = ReactiveServiceManager.ServiceDebugState(
+                type = t,
+                remoteKnox = prev?.remoteKnox,
+                localCompanion = v,
+                configUpdate = prev?.configUpdate,
+                desired = prev?.desired ?: false,
+                running = prev?.running ?: false
+            )
+        }
+        _serviceDebugStateFlow.emit(EnumMap(current))
+    }
+
+    suspend fun updateDebugStageConfigUpdate(configMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean?>) {
+        val current = _serviceDebugStateFlow.value.toMutableMap()
+        for ((t, v) in configMap) {
+            val prev = current[t]
+            current[t] = ReactiveServiceManager.ServiceDebugState(
+                type = t,
+                remoteKnox = prev?.remoteKnox,
+                localCompanion = prev?.localCompanion,
+                configUpdate = v,
+                desired = prev?.desired ?: false,
+                running = prev?.running ?: false
+            )
+        }
+        _serviceDebugStateFlow.emit(EnumMap(current))
+    }
+
+    suspend fun updateDebugStageDesired(desiredMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean>) {
+        val current = _serviceDebugStateFlow.value.toMutableMap()
+        for ((t, v) in desiredMap) {
+            val prev = current[t]
+            current[t] = ReactiveServiceManager.ServiceDebugState(
+                type = t,
+                remoteKnox = prev?.remoteKnox,
+                localCompanion = prev?.localCompanion,
+                configUpdate = prev?.configUpdate,
+                desired = v,
+                running = prev?.running ?: false
+            )
+        }
+        _serviceDebugStateFlow.emit(EnumMap(current))
+    }
+
+    suspend fun updateDebugStageRunning(runningMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean>) {
+        val current = _serviceDebugStateFlow.value.toMutableMap()
+        for ((t, v) in runningMap) {
+            val prev = current[t]
+            current[t] = ReactiveServiceManager.ServiceDebugState(
+                type = t,
+                remoteKnox = prev?.remoteKnox,
+                localCompanion = prev?.localCompanion,
+                configUpdate = prev?.configUpdate,
+                desired = prev?.desired ?: false,
+                running = v
+            )
+        }
+        _serviceDebugStateFlow.emit(EnumMap(current))
+    }
+
+    // -------- End of Service State Debugging ----------
+
+    private val _getEnableTakConnectService = MutableStateFlow<Boolean>(true)
+    var getEnableTakConnectService: MutableStateFlow<Boolean> = _getEnableTakConnectService
+
+    private val _getEnableCotDispatchService = MutableStateFlow<Boolean>(true)
+    var getEnableCotDispatchService: MutableStateFlow<Boolean> = _getEnableCotDispatchService
+
+    private val _getEnableMovementDetectionService = MutableStateFlow<Boolean>(true)
+    var getEnableMovementDetectionService: MutableStateFlow<Boolean> = _getEnableMovementDetectionService
+
+    private val _getEnableBatteryService = MutableStateFlow<Boolean>(true)
+    var getEnableBatteryService: MutableStateFlow<Boolean> = _getEnableBatteryService
+
+    private val _getEnablePowerManagerService = MutableStateFlow<Boolean>(true)
+    var getEnablePowerManagerService: MutableStateFlow<Boolean> = _getEnablePowerManagerService
+
+    private val _getEnableOffBodyDetectService = MutableStateFlow<Boolean>(true)
+    var getEnableOffBodyDetectService: MutableStateFlow<Boolean> = _getEnableOffBodyDetectService
+
 
     @Entity(tableName = "daily_health_metrics")
     data class DailyHealthMetrics(
@@ -374,6 +513,7 @@ class DataRepository(private val context: Context) {
         _dropRequests.emit(DropRequest(parsed, timeMillis))
         return true
     }
+
     suspend fun requestClearSpecific(uid: String) =
         _clearRequests.emit(ClearRequest.Specific(uid))
     suspend fun requestClearLast() = _clearRequests.emit(ClearRequest.Last)
@@ -512,6 +652,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeLicense(license: String) {
+        Log.i(TAG, " ********************* storeLicense Called changing from ${getLicense.first()} → $license")
         context.dataStore.edit { prefs ->
             prefs[LICENSE] = license
         }
@@ -567,17 +708,6 @@ class DataRepository(private val context: Context) {
         }
     }
 
-//    val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-//        prefs[ENABLE_HAIL_SERVICE] ?: true
-//    }
-//
-//    suspend fun storeEnableHailService(enableHailService: Boolean) {
-//        context.dataStore.edit { prefs ->
-//            prefs[ENABLE_HAIL_SERVICE] = enableHailService
-//        }
-//    }
-
-
     val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: false
     }
@@ -595,6 +725,25 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableSkinTempService(enableSkinTempService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_SKIN_TEMP_SERVICE] = enableSkinTempService
+        }
+    }
+
+    val getEnableHeartRateService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_HEART_RATE_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableHeartRateService(enableHeartRateService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_HEART_RATE_SERVICE] = enableHeartRateService
+        }
+    }
+
+    suspend fun storeEnablePhysioServices(enablePhysioService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_PHYSIOLOGICAL_SERVICES]    = enablePhysioService
+//            prefs[ENABLE_SKIN_TEMP_SERVICE]  = enablePhysioService
+//            prefs[ENABLE_HEART_RATE_SERVICE] = enablePhysioService
+//            prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] = enablePhysioService
         }
     }
 
@@ -991,7 +1140,6 @@ class DataRepository(private val context: Context) {
         }
     }
 
-
     val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_BLE_BEACON_SERVICE] ?: false
     }
@@ -1378,7 +1526,8 @@ class DataRepository(private val context: Context) {
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_PHYSIOLOGICAL_SERVICES = booleanPreferencesKey("enable_physiological_services")
         private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
-        private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_activity_recognition_service")
+        private val ENABLE_HEART_RATE_SERVICE = booleanPreferencesKey("enable_heart_rate_service")
+        private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

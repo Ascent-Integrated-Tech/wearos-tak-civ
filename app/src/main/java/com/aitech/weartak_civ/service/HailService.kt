@@ -11,6 +11,7 @@ import com.rain.hail.sdk.licensing.LicensingManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -21,7 +22,7 @@ import java.util.UUID
 object HailService {
     val TAG = "WearTAK-HailService"
     val hailScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val initialized = java.util.concurrent.atomic.AtomicBoolean(false)
+    val initialized = java.util.concurrent.atomic.AtomicBoolean(false)
     private fun repo() = MainActivity.dataRepository
     private var checkCtr = 0
     private fun logCheck(phase: String) = Log.d(TAG, "[check#${++checkCtr}] $phase")
@@ -47,6 +48,7 @@ object HailService {
         if (!initialized.compareAndSet(false, true)) {
             Log.i(TAG, "initialized() ignored: already initialized")
         }
+
         LicensingManager.initialize(appId, context, deviceUid)  // per SDK
         Log.i(TAG, "initialize(appId=$appId, ctx=${context.applicationContext.javaClass.simpleName}, deviceUid=$deviceUid)")
         hailScope.launch {
@@ -200,7 +202,7 @@ object HailService {
 
         LicensingManager.checkLicense(object : ILicenseServiceCallbacks {
             override fun onLicenseValid() {
-                Log.i(TAG, "License VALID (licensed=${LicensingManager.isLicensed()}, soft=${LicensingManager.isLicenseSoftExpired()}, hard=${LicensingManager.isLicenseExpired()})")
+                Log.i(TAG, "Hail Service License =======> VALID | (licensed=${LicensingManager.isLicensed()}, soft=${LicensingManager.isLicenseSoftExpired()}, hard=${LicensingManager.isLicenseExpired()})")
                 state = if (LicensingManager.isLicenseSoftExpired()) {
                     HailLicenseStates.SOFT_EXPIRED
                 } else {
@@ -218,7 +220,7 @@ object HailService {
                 onChanged?.invoke()
             }
             override fun onLicenseInvalid() {
-                Log.w(TAG, " =======> License INVALID")
+                Log.w(TAG, "Hail Service License =======> INVALID")
                 updateHailLicenseState(HailLicenseStates.INVALID)
                 onChanged?.invoke()
             }
