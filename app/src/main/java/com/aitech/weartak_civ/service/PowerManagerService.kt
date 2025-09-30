@@ -9,20 +9,14 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.graphics.Color
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
@@ -49,17 +43,23 @@ class PowerManagerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "PowerManagerService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            POWERMANAGER_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+
+        startPowerManagerThread()
+
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        Log.d(TAG, "PowerManager onStartCommand called w/ isRunning=$isRunning")
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-            startPowerManagerThread()
-        }
+        Log.d(TAG, "PowerManagerService onStartCommand()")
         return START_NOT_STICKY
     }
 
@@ -69,9 +69,9 @@ class PowerManagerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (isRunning.getAndSet(false)) {
-            stopForeground(true)
-        }
+        Log.d(TAG, "PowerManagerService onDestroy()")
+        isRunning.set(false)
+        stopForeground(STOP_FOREGROUND_DETACH)
         stopPowerManagerThread()
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -79,41 +79,8 @@ class PowerManagerService : Service() {
         Log.d(TAG, "PowerManager Service destroyed")
     }
 
-    private fun startForegroundService() {
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "PowerManager Service"
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV power manager service running")
-            .setPriority(Context.BIND_WAIVE_PRIORITY)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        try {
-            startForeground(POWERMANAGER_SERVICE_NOTIFICATION_ID, notification)
-        } catch (e: NullPointerException) {
-            Log.e(TAG, "Failed to set PowerManager ForegroundService", e )
-        }
-    }
-
-    private fun createNotificationChannel(): String {
-        val channelId = "PowerManager_Service"
-        val channelName = "PowerManager Foreground Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_HIGH
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
-    }
-
     private fun stopPowerManagerThread() {
-        Log.v(TAG, "Stopping the power manager thread")
+        Log.v(TAG, "PowerManagerService stopPowerManagerThread()")
         powerManagerHandler?.removeCallbacks(initialPowerManagerStartRunnable)
         powerManagerThread?.quitSafely()
         powerManagerThread = null
@@ -121,7 +88,7 @@ class PowerManagerService : Service() {
     }
 
     private fun startPowerManagerThread() {
-        Log.v(TAG, "Starting the power manager thread")
+        Log.v(TAG, "PowerManagerService startPowerManagerThread()")
         powerManagerThread = HandlerThread("PowerManagerThread")
         powerManagerThread?.start()
         powerManagerHandler = powerManagerThread?.looper?.let { Handler(it) }
@@ -135,7 +102,7 @@ class PowerManagerService : Service() {
         val msg = messageEvent.message
         if (UPDATE_INTERVAL_CHANGED == msg) {
             val updateInterval = messageEvent.addlIntInfo
-            Log.d(TAG, "Received MessageEvent UPDATE_INTERVAL_CHANGED w/ update interval ($updateInterval)")
+            Log.d(TAG, "PowerManagerService onMessageEvent: UPDATE_INTERVAL_CHANGED -> update interval=($updateInterval)")
             if (initialStartDelayDone.get()) {
                 runBlocking {
                     dynamicUpdates(NetworkManager.isNetworkConnected, isWifiToInt(NetworkManager.isWifi), NetworkManager.connectedWifiSsid,
@@ -144,7 +111,7 @@ class PowerManagerService : Service() {
             }
         } else if (OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED == msg) {
             // TODO: Note we can get this message even if no details have changed (from handleManagedConfigUpdate). Check that all is good
-            Log.d(TAG, "Received MessageEvent OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED")
+            Log.d(TAG, "PowerManagerService onMessageEvent: OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED")
             if (initialStartDelayDone.get()) {
                 runBlocking {
                     dynamicUpdates(NetworkManager.isNetworkConnected, isWifiToInt(NetworkManager.isWifi), NetworkManager.connectedWifiSsid,
@@ -157,7 +124,7 @@ class PowerManagerService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onWifiSsidRcvd(wifiSsidRcvd: WifiSsidRcvd) {
         val ssid = wifiSsidRcvd.ssid
-        Log.d(TAG, "Received wifiSsidRcvd w/ $ssid")
+        Log.d(TAG, "PowerManagerService onWifiSsidRcvd: ssid= $ssid")
         if (initialStartDelayDone.get()) {
             runBlocking {
                 dynamicUpdates(NetworkManager.isNetworkConnected, isWifiToInt(NetworkManager.isWifi), ssid,
@@ -172,7 +139,7 @@ class PowerManagerService : Service() {
     // Hence there is no need to keep nw connected state.
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onNwConnEvent(nwConnEvent: NwConnEvent) {
-        Log.d(TAG, "Received nwConnEvent (${nwConnEvent.isConn}, ${nwConnEvent.transport})")
+        Log.d(TAG, "PowerManagerService onNwConnEvent: (${nwConnEvent.isConn}, ${nwConnEvent.transport})")
         if (initialStartDelayDone.get()) {
             runBlocking {
                 dynamicUpdates(nwConnEvent.isConn, nwConnEvent.transport, NetworkManager.connectedWifiSsid,
@@ -186,7 +153,7 @@ class PowerManagerService : Service() {
     private fun dynamicUpdates(nwConnected: Boolean, nwTransport: Int, connWifiSsid : String?,
                                enableWifiPowerOptim: Boolean, enablePowerOptimOnAllWifiSsids: Boolean,
                                powerOptimWifiSsidList: List<DataRepository.WifiSsidItem>) {
-        Log.d(TAG, "dynamicUpdates called w/ nwConnected($nwConnected), nwTransport($nwTransport), connWifiSsid($connWifiSsid), enableWifiPowerOptim($enableWifiPowerOptim), enablePowerOptimOnAllWifiSsids($enablePowerOptimOnAllWifiSsids), powerOptimWifiSsidList(${powerOptimWifiSsidList.toString()})")
+        Log.d(TAG, "PowerManagerService dynamicUpdates(): nwConnected($nwConnected), nwTransport($nwTransport), connWifiSsid($connWifiSsid), enableWifiPowerOptim($enableWifiPowerOptim), enablePowerOptimOnAllWifiSsids($enablePowerOptimOnAllWifiSsids), powerOptimWifiSsidList(${powerOptimWifiSsidList.toString()})")
         if (nwConnected) {
             if (nwTransport == WIFI) {
                 if (enableWifiPowerOptim) {
@@ -194,7 +161,7 @@ class PowerManagerService : Service() {
                         // Slow down the GPS update as we assume that the device is NOT in critical area
                         // TODO: This will have to change this below when we add custom geofence
                         CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
-                        Log.d(TAG, "WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids true: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                        Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids true: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                         // Send eventbus message so that LocationService can soft restart
                         EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                     } else {
@@ -202,14 +169,14 @@ class PowerManagerService : Service() {
                         if (powerOptimWifiSsidList.any { it.name == connWifiSsid }) {
                             // connWifiSsid is in powerOptimWifiSsidList
                             CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
-                            Log.d(TAG, "WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                            Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                             // Send eventbus message so that LocationService can soft restart
                             EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                         } else {
                             // Fast updates
                             if (CotDispatchService.currReportingIntervalInSecs != CotDispatchService.reportingUpdateIntervalSecs) {
                                 CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                Log.d(TAG, "WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) NOT in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                                Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) NOT in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                                 // Send eventbus message so that LocationService can soft restart
                                 EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                             }
@@ -219,7 +186,7 @@ class PowerManagerService : Service() {
                     // Fast updates
                     if (CotDispatchService.currReportingIntervalInSecs != CotDispatchService.reportingUpdateIntervalSecs) {
                         CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-                        Log.d(TAG, "WIFI w/ enableWifiPowerOptim false: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                        Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim false: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                         // Send eventbus message so that LocationService can soft restart
                         EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                     }
@@ -228,7 +195,7 @@ class PowerManagerService : Service() {
                 // Fast GPS update
                 if (CotDispatchService.currReportingIntervalInSecs != CotDispatchService.reportingUpdateIntervalSecs) {
                     CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-                    Log.d(TAG, "CELLULAR: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                    Log.d(TAG, "PowerManagerService CELLULAR: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
                     // Send eventbus message so that LocationService can soft restart
                     EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                 }
@@ -236,7 +203,7 @@ class PowerManagerService : Service() {
         } else {
             // Not connected. Slow down the GPS update
             CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
-            Log.d(TAG, "Disconnected: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+            Log.d(TAG, "PowerManagerService Network Disconnected: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
             // Send eventbus message so that LocationService can soft restart
             EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
         }
@@ -248,7 +215,7 @@ class PowerManagerService : Service() {
 
     private val initialPowerManagerStartRunnable = object : Runnable {
         override fun run() {
-            Log.d(TAG, "Starting PowerManager Functionality")
+            Log.d(TAG, "PowerManagerService Starting PowerManager Functionality")
             runBlocking {
                 dynamicUpdates(NetworkManager.isNetworkConnected, isWifiToInt(NetworkManager.isWifi), NetworkManager.connectedWifiSsid,
                     dataRepository.getEnableWifiBatteryOptimization.first(), dataRepository.getEnableAllWifiBatteryOptimization.first(), dataRepository.getWifiSsidList.first())

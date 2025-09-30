@@ -10,9 +10,6 @@
 package com.aitech.weartak_civ.service
 
 
-import android.app.Notification
-import android.app.Notification.PRIORITY_MAX
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ComponentName
@@ -20,16 +17,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.NetworkUtils
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.complication.TakServerComplicationService
 import com.aitech.weartak_civ.events.MessageEvent
@@ -40,11 +31,13 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
+import com.aitech.weartak_civ.events.PowerManagerEvent
+import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.manager.NetworkManager
-import com.aitech.weartak_civ.service.CotDispatchService.Companion.esriGeojsonMsg
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.dateTimeFormatter
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
@@ -74,8 +67,8 @@ import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.Base64
+import java.util.Calendar
 import java.util.Date
-import java.util.Enumeration
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -84,14 +77,10 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.math.max
 import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.events.TakChatEvent
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
-import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
 import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
@@ -118,28 +107,30 @@ class TAKConnectService: Service() {
         var password: String,
         var p12Cert: String?,
         var p12CertPassword: String?,
+        var reportingUpdateInterval: Int,
+        var currReportingUpdateInterval: Int = 0,
         var numConnAttempts : Int = 0,
         val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
         val connectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_DISCONNECTED_STRING),
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
         var privateKey: PrivateKey? = null,
         var secureSocket : SSLSocket? = null,
+        var lastTimeMsgSent: Long = 0L
     )
 
     override fun onCreate() {
-        Log.d(TAG, "TAKConnectService onCreate")
+        super.onCreate()
+        Log.d(TAG, "TAKConnectService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = TAK_CONNECT_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
+        setFromDatastore()
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
-        }
-        startMulticastCollector()
-        return super.onCreate()
-    }
-
-    private fun startMulticastCollector() {
-        CoroutineScope(Dispatchers.IO).launch {
-            NetworkManager.getInstance().wifiNetwork.collect { net ->
-                if (net != null) NetworkUtils.MulticastPublisher.start(net) else NetworkUtils.MulticastPublisher.stop()
-            }
         }
     }
 
@@ -147,63 +138,35 @@ class TAKConnectService: Service() {
         runBlocking {
             val takServers : List<TakServerItem> = dataRepository.getTakServerList.first()
             takServerDetails = mutableListOf()
+            Log.i(TAG, "==== ==== Seeding TakServerDetails from Persistent Store ==== ====")
             for (takServer in takServers) {
+                val currReportingUpdateInterval = if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
+                    PowerManagerService.slowDownReportingInterval(takServer.reportingUpdateInterval)
+                } else {
+                    takServer.reportingUpdateInterval
+                }
                 takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
                     takServer.isP12Cert, takServer.username, takServer.password,
-                    takServer.p12Cert, takServer.p12CertPassword, numConnAttempts = 0))
-                Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
-                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
+                    takServer.p12Cert, takServer.p12CertPassword, takServer.reportingUpdateInterval,
+                    currReportingUpdateInterval = currReportingUpdateInterval, numConnAttempts = 0))
+                Log.v(TAG, "                 takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
+                Log.v(TAG, "                 reportInterval(${takServer.reportingUpdateInterval}), currReportingUpdateInterval($currReportingUpdateInterval),")
+                Log.v(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
-            enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
-            esriEndpoint = dataRepository.getEsriEndpoint.first()
+            Log.i(TAG, "==== ==== Done Seeding ==== ====")
         }
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-            isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
-            isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
-            setFromDatastore()
-            networkManager = NetworkManager.getInstance()
-            isNetworkConnected = networkManager?.isNetworkConnected() ?: false
-            isWifiConnected = networkManager?.isWifiConnected() ?: false
-            if (isNetworkConnected) {
-                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
-                connectToTakServers()
-            }
+        Log.d(TAG, "TAKConnectService onStartCommand()")
+        networkManager = NetworkManager.getInstance()
+        isNetworkConnected = networkManager?.isNetworkConnected() ?: false
+        isWifiConnected = networkManager?.isWifiConnected() ?: false
+        if (isNetworkConnected) {
+            Log.d(TAG, "TAKConnectService onStartCommand(): net=$isNetworkConnected wifi=$isWifiConnected")
+            connectToTakServers()
         }
         return START_NOT_STICKY
-    }
-
-    private fun startForegroundService() {
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "TAK Connect Service"
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV TAK Connect service running")
-            .setPriority(PRIORITY_MAX)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        startForeground(TAK_CONNECT_SERVICE_NOTIFICATION_ID, notification)
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun createNotificationChannel(): String {
-        val channelId = "TAK Connect Service"
-        val channelName = "TAK Connect Background Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -212,13 +175,14 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "TAKConnectService onDestroy called")
+        Log.d(TAG, "TAKConnectService onDestroy()")
         isRunning.set(false)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
         networkManager = null
         closeTakServerSockets()
+        stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     private fun resetTakServerConnectionDetails() {
@@ -262,12 +226,6 @@ class TAKConnectService: Service() {
                 resetTakServerConnectionDetails()
             }
         }
-        /*
-         * Notify all collectors (multicast handler) that isWifiConnected has changed
-         */
-        CoroutineScope(Dispatchers.IO).launch {
-            dataRepository.isWifiConnected.emit(isWifiConnected)
-        }
     }
 
     // TODO:
@@ -288,7 +246,13 @@ class TAKConnectService: Service() {
             }
             val takServer = takServers.last()
             val takServerDetail = TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
-                takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword)
+                takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword,
+                takServer.reportingUpdateInterval, currReportingUpdateInterval = takServer.reportingUpdateInterval)
+            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
+                // There is power optimization going on
+                Log.d(TAG, "GPS Power optimization going on")
+                takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
+            }
             if (takServerDetails.size == index) {
                 Log.d(TAG, "Adding server at index $index")
                 takServerDetails.add(takServerDetail)
@@ -333,6 +297,8 @@ class TAKConnectService: Service() {
                 takServer.username != oldTakServerDetail.username || takServer.password != oldTakServerDetail.password ||
                 takServer.p12Cert != oldTakServerDetail.p12Cert || takServer.p12CertPassword != oldTakServerDetail.p12CertPassword) {
                 serverConnDetailsChanged = true
+            } else if (takServer.reportingUpdateInterval != oldTakServerDetail.reportingUpdateInterval) {
+                Log.d(TAG, "Reporting interval changed")
             }
             val takServerDetail = takServerDetails[index]
             takServerDetail.isEnabled = takServer.isEnabled; takServerDetail.name = takServer.name
@@ -340,7 +306,15 @@ class TAKConnectService: Service() {
             takServerDetail.isP12Cert = takServer.isP12Cert;
             takServerDetail.username = takServer.username; takServerDetail.password = takServer.password
             takServerDetail.p12Cert = takServer.p12Cert; takServerDetail.p12CertPassword = takServer.p12CertPassword
+            takServerDetail.reportingUpdateInterval = takServer.reportingUpdateInterval
             takServerDetail.numConnAttempts = 0
+            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
+                // There is power optimization going on
+                Log.d(TAG, "GPS Power optimization going on")
+                takServerDetail.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServerDetail.reportingUpdateInterval)
+            } else {
+                takServerDetail.currReportingUpdateInterval = takServerDetail.reportingUpdateInterval
+            }
         }
         if (serverConnDetailsChanged) {
             Log.d(TAG, "serverConnDetailsChanged $serverConnDetailsChanged")
@@ -443,6 +417,25 @@ class TAKConnectService: Service() {
         }
     }
 
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    public fun onPowerManagerEvent(powerManagerEvent: PowerManagerEvent) {
+        Log.d(TAG, "TAKConnectService received PowerManagerEvent")
+        if (CHANGED_UPDATE_INTERVAL == powerManagerEvent.eventType) {
+            if (CotDispatchService.currReportingIntervalInSecs > CotDispatchService.reportingUpdateIntervalSecs) {
+                // Power optimization going on
+                Log.d(TAG, "GPS Power optimization going on")
+                for (takServer in takServerDetails) {
+                    takServer.currReportingUpdateInterval = PowerManagerService.slowDownReportingInterval(takServer.reportingUpdateInterval)
+                }
+            } else {
+                Log.d(TAG, "No GPS Power optimization going on")
+                for (takServer in takServerDetails) {
+                    takServer.currReportingUpdateInterval = takServer.reportingUpdateInterval
+                }
+            }
+        }
+    }
+
     fun closeTakServerSockets() {
         for (takServer in takServerDetails) {
             if (takServer.isEnabled) {
@@ -496,6 +489,7 @@ class TAKConnectService: Service() {
         var isWifiConnected = false
         var isAnyTakConnected : Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
         val isAnyTakConnectedLiveData = MutableLiveData<Boolean>(false)
+
         val context: Context = mainActivity.applicationContext
 
         var isAnyTakConnecting : Boolean = false // Overall flag indicating if connection is being made to any TAK server
@@ -573,7 +567,7 @@ class TAKConnectService: Service() {
 
                 base64CSR = Base64.getEncoder().encodeToString(csr.encoded)
             } catch (e: Exception) {
-                Log.d(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
+                Log.e(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
             }
             return base64CSR
         }
@@ -624,7 +618,7 @@ class TAKConnectService: Service() {
                             }
                     }
 
-                    Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
+                    Log.i(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
                     return nameValueList
                 }
             } catch (e: Exception) {
@@ -687,7 +681,7 @@ class TAKConnectService: Service() {
                         return null
                     }
                     val responseBodyString = response.body?.string()
-                    Log.d(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
+                    Log.v(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
                     // Return the response body as string
                     return responseBodyString
                 }
@@ -761,7 +755,7 @@ class TAKConnectService: Service() {
                         return@runBlocking false
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "loadKeyStore failed w/ exception: ${e.message}", e)
+                    Log.w(TAG, "loadKeyStore failed w/ exception: ${e.message}", e)
                     return@runBlocking false
                 }
                 return@runBlocking true
@@ -778,7 +772,7 @@ class TAKConnectService: Service() {
                 //val expiryDate: Date = signedCert.getNotAfter()
                 val ca0Cert = parseBase64ToX509(signClientResponse.ca0 ?: "")
                 val ca1Cert = parseBase64ToX509(signClientResponse.ca1 ?: "")
-                Log.v(TAG, "signedCert expiry date: ${signedCert.getNotAfter()}")
+                Log.i(TAG, "signedCert expiry date: ${signedCert.getNotAfter()}")
                 Log.v(TAG, "ca0Cert expiry date: ${ca0Cert.getNotAfter()}")
                 Log.v(TAG, "ca1Cert expiry date: ${ca1Cert.getNotAfter()}")
 
@@ -802,7 +796,7 @@ class TAKConnectService: Service() {
                     try {
                         MainActivity.mainActivity.openFileOutput("$takServer.jks", Context.MODE_PRIVATE).use { fos ->
                             takServerDetail.keyStore.store(fos, keystorePassword)
-                            Log.d(TAG, "Keystore stored successfully in $takServer.jks")
+                            Log.i(TAG, "Keystore stored successfully in $takServer.jks")
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Not able to store keystore file as $takServer.jks. Error: ${e.message}")
@@ -889,63 +883,6 @@ class TAKConnectService: Service() {
 
          */
 
-        fun dumpKeyStoreAliases(ks: KeyStore, tag: String = TAG) {
-            try {
-                val aliases: Enumeration<String> = ks.aliases()
-                if (!aliases.hasMoreElements()) {
-                    Log.d(tag, "(keystore is empty)")
-                    return
-                }
-                while (aliases.hasMoreElements()) {
-                    val alias = aliases.nextElement()
-                    val isKey = ks.isKeyEntry(alias)
-                    val isTrustedCert = ks.isCertificateEntry(alias)
-                    val type = when {
-                        isKey -> "keyEntry"
-                        isTrustedCert -> "trustedCert"
-                        else -> "unknown"
-                    }
-                    Log.d(tag, "alias=\"$alias\" type=$type")
-
-                    if (isKey) {
-                        // For key entries you can inspect the certificate chain
-                        val chain = ks.getCertificateChain(alias)
-                        Log.d(tag, "  chain length=${chain?.size ?: 0}")
-                        chain?.forEachIndexed { idx, c ->
-                            (c as? X509Certificate)?.let { x ->
-                                logX509("$tag/$alias[$idx]", x)
-                            }
-                        }
-                    } else {
-                        // For trusted cert entries there’s a single certificate
-                        (ks.getCertificate(alias) as? X509Certificate)?.let { x ->
-                            logX509("$tag/$alias", x)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(tag, "Failed to dump keystore aliases: ${e.message}", e)
-            }
-        }
-
-        private fun logX509(tag: String, cert: X509Certificate) {
-            Log.d(tag, "  Subject: ${cert.subjectX500Principal.name}")
-            Log.d(tag, "  Issuer : ${cert.issuerX500Principal.name}")
-            Log.d(tag, "  Valid  : notBefore=${cert.notBefore}  notAfter=${cert.notAfter}")
-            Log.d(tag, "  SHA256 : ${sha256(cert.encoded)}")
-            // Uncomment if you also want SANs (may be null)
-            // val sans = try { cert.subjectAlternativeNames?.joinToString { it[1].toString() } ?: "(none)" } catch (_: Exception) { "(n/a)" }
-            // Log.d(tag, "  SANs   : $sans")
-        }
-
-        private fun sha256(bytes: ByteArray): String {
-            val md = MessageDigest.getInstance("SHA-256").digest(bytes)
-            // Android Base64
-            return android.util.Base64.encodeToString(md, android.util.Base64.NO_WRAP)
-            // If not on Android, use:
-            // return java.util.Base64.getEncoder().encodeToString(md)
-        }
-
         fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
             Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
@@ -1007,7 +944,7 @@ class TAKConnectService: Service() {
                             connectTAKServer(takServerDetail)
                         } else {
                             deleteFile("${takServerDetail.address}.jks")
-                            Log.d(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
+                            Log.i(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
                             val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
                             var signClientResponse: SignClientResponse? = null
                             var base64CSR: String? = null
@@ -1069,55 +1006,14 @@ class TAKConnectService: Service() {
                 }
             }
         }
-
-        fun firstKeyAlias(ks: KeyStore): String? {
-            val e = ks.aliases()
-            while (e.hasMoreElements()) {
-                val a = e.nextElement()
-                if (ks.isKeyEntry(a)) return a
-            }
-            return null
-        }
-
-        fun findRootInChain(ks: KeyStore): X509Certificate? {
-            val alias = firstKeyAlias(ks)
-            Log.d(TAG, "findRootInChain for alias=$alias")
-            val chain = ks.getCertificateChain(alias)
-                ?.map { it as X509Certificate }
-            if (null == chain) return null
-
-            // Prefer a self-signed cert (subject == issuer AND signature verifies with its own key)
-            chain.firstOrNull { isSelfSigned(it) }?.let { return it }
-
-            // Fallback: pick the cert whose issuer DN is not the subject DN of any other (top of chain)
-            val subjects = chain.map { it.subjectX500Principal.name }.toSet()
-            val candidate = chain.firstOrNull { it.issuerX500Principal.name !in subjects }
-            return candidate
-        }
-
-        private fun isSelfSigned(cert: X509Certificate): Boolean = try {
-            if (cert.subjectX500Principal != cert.issuerX500Principal) {
-                Log.d(TAG, "isSelfSigned=false")
-                false
-            } else {
-                cert.verify(cert.publicKey);
-                Log.d(TAG, "isSelfSigned=true")
-                true
-            }
-        } catch (_: Exception) {
-            Log.d(TAG, "isSelfSigned=false")
-            false
-        }
         
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             val takServer = takServerDetail.address
             val port = takServerDetail.port
-            Log.d(TAG,"connectTAKServer called for takServer ($takServer)")
+            Log.i(TAG,"connectTAKServer called for takServer ($takServer)")
             if (takServerDetail.connectionStatus.getAndSet(TAK_SERVER_CONNECTING_COT_PORT) == TAK_SERVER_OBTAINED_CLIENT_CERT) {
                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                 try {
-                    Log.d(TAG, "Aliases for server $takServer")
-                    dumpKeyStoreAliases(takServerDetail.keyStore, TAG)
                     // Initialize the KeyManagerFactory with the client certificate
                     val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
                     if (takServerDetail.isP12Cert) {
@@ -1127,27 +1023,11 @@ class TAKConnectService: Service() {
                     }
 
                     // Initialize SSL Context with TrustManager
-                    val root = findRootInChain(takServerDetail.keyStore)
-                    Log.d(TAG, "root=${root?.toString() ?: "null"}")
-                    val trustKs = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
-                        load(null, null)
-                        setCertificateEntry("root", root)
-                    }
-                    val trustManagerFactory = if (null != root) {
-                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-                            .apply { init(trustKs) }
-                    } else {
-                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-                            .apply { init (takServerDetail.keyStore) }
-
-                    }
-                    /*
+                    val sslContext = SSLContext.getInstance("TLSv1.3")
                     val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
                     trustManagerFactory.init(takServerDetail.keyStore)
-                     */
-                    val trustManager = trustManagerFactory.trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
-
-                    val sslContext = SSLContext.getInstance("TLSv1.3")
+                    val trustManagers = trustManagerFactory.trustManagers
+                    val trustManager = trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
                     if (null != trustManager) {
                         sslContext.init(keyManagerFactory.keyManagers, arrayOf(trustManager), null)
                     } else {
@@ -1254,6 +1134,7 @@ class TAKConnectService: Service() {
             isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         }
 
+
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
             //Log.d(TAG, "sendData called")
             CoroutineScope(Dispatchers.IO).launch {
@@ -1262,7 +1143,15 @@ class TAKConnectService: Service() {
                         val outputStream = takServerDetail.secureSocket!!.getOutputStream()
                         outputStream.write(msg.toByteArray(charset("UTF-8")))
                         outputStream.flush()
-                        //Log.d(TAG, "Sent data (notPli=$isNotPli) to ${takServerDetail.address}: $msg")
+                        //Log.d(TAG, "Sent data to ${takServerDetail.address}: $msg")
+                        if (!isNotPli) {
+                            takServerDetail.lastTimeMsgSent = max(currTime, takServerDetail.lastTimeMsgSent + takServerDetail.currReportingUpdateInterval*1000L)
+
+                            //Log.d(TAG, "sendData: sent PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
+                        }
+                        /* else {
+                            Log.d(TAG, "sendData: sent non-PLI msg successfully to server(${takServerDetail.address}) at time($currTime)")
+                        } */
                     } else {
                         if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                             Log.i(TAG, "ERROR sendDataTAKServers to server(${takServerDetail.address}): secureSocket=${takServerDetail.secureSocket}; isConnected: ${takServerDetail.secureSocket?.isConnected ?: false}. Reconnecting....")
@@ -1318,57 +1207,6 @@ class TAKConnectService: Service() {
             return text.substring(valueStartIndex, endIndex)
         }
 
-        fun sendEsriData(msg: String) {
-            val client = OkHttpClient()
-            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-            val body = RequestBody.create(mediaType, msg)
-            val request = Request.Builder()
-                .url(esriEndpoint)
-                .post(body)
-                .build()
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(
-                            TAG,
-                            "ERROR sendEsriData returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()} and response: $response"
-                        )
-                    } else {
-                        Log.d(TAG, "sendEsriData Response Code: ${response.code} w/ Body: ${response.body?.string()}")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "ERROR in sendEsriData: ${e.message}", e)
-            }
-        }
-
-        fun sendTabletCommandData(msg: String) {
-            if (tabletCommandEndpoint.isEmpty() || tabletCommandApikey.isEmpty()) {
-                return
-            }
-            try {
-                val client = OkHttpClient()
-                val mediaType = "application/json".toMediaTypeOrNull()
-                val body = RequestBody.create(mediaType, msg)
-                val request = Request.Builder()
-                .url(tabletCommandEndpoint)
-                .method("POST", body)
-                .addHeader("apikey", tabletCommandApikey)
-                .addHeader("Content-Type", "application/json")
-                .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "ERROR sendTabletCommandData returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()} and response: $response")
-                    }
-                    //else {
-                    //    Log.d(TAG, "sendTabletCommandData Response Code: ${response.code} w/ Body: ${response.body?.string()}")
-                    //}
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "ERROR in sendTabletCommandData: ${e.message}", e)
-            }
-        }
-
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
             if (isLicenseValid() && isNetworkConnected) {
                 val currTime = System.currentTimeMillis()
@@ -1381,14 +1219,34 @@ class TAKConnectService: Service() {
                         if (isNotPli) {
                             // Send immediately
                             sendData(takServerDetail, msg, isNotPli, currTime)
-                            // TODO: We need to add for ESRI and TabletCommand
                         } else {
-                            sendData(takServerDetail, msg, isNotPli, currTime)
-                            if (enableEsriEndpoint && !esriEndpoint.isNullOrEmpty() && !esriGeojsonMsg.isNullOrEmpty()) {
-                                sendEsriData(esriGeojsonMsg)
-                            }
-                            if (enableTabletCommandEndpoint && !tabletCommandEndpoint.isNullOrEmpty() && !tabletCommandApikey.isNullOrEmpty() && !tabletCommandJsonMsg.isNullOrEmpty()) {
-                                sendTabletCommandData(tabletCommandJsonMsg)
+                            if (takServerDetail.reportingUpdateInterval == CotDispatchService.reportingUpdateIntervalSecs) {
+                                // TODO: What about wifi optimization?
+                                //Log.d(TAG, "${takServerDetail.address}: takServer and COT reporting intervals same")
+                                sendData(takServerDetail, msg, isNotPli, currTime)
+                            } else {
+                                //Log.d(TAG, "currTime($currTime) - takServerDetail.lastTimeMsgSent(${takServerDetail.lastTimeMsgSent}) = ${(currTime - takServerDetail.lastTimeMsgSent)*1.2} >= ${(takServerDetail.currReportingUpdateInterval * 1000L)}")
+                                if (((currTime - takServerDetail.lastTimeMsgSent) * 1.2) >= (takServerDetail.currReportingUpdateInterval * 1000.0)) {
+                                    //Log.d(TAG, "Going to send data after manipulating stale time")
+                                    var newMsg = msg
+                                    try {
+                                        val startTime = getQuotedStringAfterSubstring(msg, "start")
+                                        if (null != startTime) {
+                                            val startDateTime = dateTimeFormatter.parse(startTime)
+                                            val calendar: Calendar = Calendar.getInstance()
+                                            calendar.setTime(startDateTime)
+                                            calendar.add(Calendar.SECOND, 3 * takServerDetail.currReportingUpdateInterval)
+                                            val staleTime = dateTimeFormatter.format(calendar.time)
+                                            newMsg = replaceQuotedStringAfterSubstring(msg, "stale", staleTime)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "sendDataTAKServers stale time manipulation ERROR: ${e.message}", e)
+                                    }
+                                    sendData(takServerDetail, newMsg, isNotPli, currTime)
+                                }
+                                /* else {
+                                    Log.d(TAG, "Not sending data to ${takServerDetail.address}")
+                                } */
                             }
                         }
                     }

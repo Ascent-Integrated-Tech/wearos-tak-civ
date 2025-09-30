@@ -1,42 +1,22 @@
-/*
- * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
-
 package com.aitech.weartak_civ
 
 import android.annotation.SuppressLint
-import android.app.ActivityManager
-import android.app.AlarmManager
-import android.app.AlarmManager.AlarmClockInfo
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
-import android.content.Context.ALARM_SERVICE
-import android.content.Intent
 import android.graphics.Color
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.receiver.AlarmReceiver
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -44,6 +24,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.sqrt
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import java.io.StringReader
@@ -51,65 +32,24 @@ import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
 
 
+
 object Utils {
     private const val TAG = "WearTAK-Utils"
     private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
     const val EARTH_RADIUS = 6378137.0  // in meters
-    const val GPS_ALARM_REQUEST_CODE = 234324243
-    const val REDUCE_ALARM_TIME_MS = 35
     val secureRandom: SecureRandom = SecureRandom()
-
-    fun runTimerJob(timeMs: Long) {
-        object : Thread() {
-            override fun run() {
-                super.run()
-                //val logStr="runTimerJob called with timeout: $timeMs ms"
-                //Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
-                startGlobalTimer(timeMs)
-            }
-        }.start()
-    }
-
-    fun startGlobalTimer(timeMs: Long) {
-        //Log.d(TAG, "startGlobalTimer called with timeout: $timeMs ms")
-        val alarmIntent = Intent(mainActivity, AlarmReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(mainActivity, GPS_ALARM_REQUEST_CODE, alarmIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
-        val ac = AlarmClockInfo(System.currentTimeMillis() + timeMs - REDUCE_ALARM_TIME_MS, pendingIntent)
-        alarmManager.setAlarmClock(ac, pendingIntent)
-    }
-
-    fun startMainActivityIfNotRunning(context: Context) {
-        if (!isActivityRunning(MainActivity::class.java, context)) {
-            Log.w(TAG, "MainActivity not running. Starting it...")
-            val bootIntent = Intent(context, MainActivity::class.java)
-            bootIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(bootIntent)
-        } else {
-            Log.w(TAG, "Activity is already running. Do not start one")
-        }
-    }
-
-    fun isActivityRunning(activityClass: Class<*>, currContext: Context): Boolean {
-        val activityManager = currContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val tasks = activityManager.getRunningTasks(Int.MAX_VALUE)
-
-        for (task in tasks) {
-            if (activityClass.canonicalName.equals(task.baseActivity?.className ?: "null", ignoreCase = true)) {
-                Log.d(TAG, "isActivityRunning returned true")
-                return true
-            }
-        }
-        Log.d(TAG, "isActivityRunning returned false")
-        return false
-    }
 
     fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {
         return list1.size == list2.size && list1.toSet() == list2.toSet()
 	}
+
+    // Managed config uses this to determine if an app restriction is configured or not.
+    fun Bundle.getNullableBoolean(key: String): Boolean? =
+        if (this.containsKey(key)) this.getBoolean(key) else null
+
+    private fun Bundle.getNullableString(key: String): String? =
+        if (this.containsKey(key)) this.getString(key) else null
 
     /**
      * Starts this Service in the foreground, creating a notification channel
@@ -132,7 +72,7 @@ object Utils {
         importance: Int
     ) {
         val tag = this.javaClass.simpleName
-        Log.d(tag, "Starting $tag as ForegroundService")
+        Log.d(tag, "$tag startForegroundServiceCompat()")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val chan = NotificationChannel(channelId, channelName, importance).apply {
@@ -211,7 +151,7 @@ object Utils {
         // Generate random offsets in [-maxJitterUnsignedM, maxJitterUnsignedM] meters
         val dx = (secureRandom.nextDouble() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // East-West
         val dy = (secureRandom.nextDouble() * 2 * maxJitterUnsignedM) - maxJitterUnsignedM  // North-South
-        //Log.d(TAG, "jitteredLatLon: dlatM($dy), dLonM($dx): dist(${(sqrt(dx*dx + dy*dy))})")
+        Log.d(TAG, "jitteredLatLon: dlatM($dy), dLonM($dx): dist(${(sqrt(dx*dx + dy*dy))})")
 
         // Convert to angular distance in radians
         val dLat = dy / EARTH_RADIUS
@@ -395,99 +335,6 @@ object Utils {
         var timeLastClosed: Long
     )
 
-    object PhysioUtils {
-        private fun calculateMaxHeartRate(ageYears: Int): Double {
-            return (208 - 0.7 * ageYears)
-        }
-
-        fun calculateHeartRateReserve(maxHr: Int, restingHr: Int): Int {
-            return (maxHr - restingHr)
-        }
-
-        fun calculateExertion(currentHr: Int, ageYears: Int, restingHr: Int): Double {
-            if (currentHr < 0.0) return -1.0
-            val mhr = calculateMaxHeartRate(ageYears)
-            val hrr = mhr - restingHr
-            if (hrr <= 0) return -1.0 // Cannot calculate and hence return invalid value
-            //Log.d(TAG, "exertion ($currentHr, $ageYears, $restingHr): ($currentHr-$restingHr)/($mhr-$restingHr)")
-            return ((currentHr - restingHr).coerceAtLeast(0)) / hrr // If currentHr <= restingHr, then the user is not at all exerting them selfs, hence exertion = 0
-        }
-
-        fun classifyExertion(exertion: Double): String = when {
-            exertion >= 0.7 -> "VIGOROUS"
-            exertion >= 0.5 -> "MODERATE"
-            exertion < 0.0 -> "UNKNOWN"
-            else            -> "LIGHT"
-        }
-
-        sealed class PhysioEvent {
-            data class Hr(val bpm: Int, val t: Long) : PhysioEvent()
-            data class Motion(val accelRms: Double, val t: Long) : PhysioEvent()
-        }
-
-        class RestingHeartRateAggregator(
-            private val maxSamples: Int = 15 // 15 * 2 hr samples/sec --> 30 second buffer window
-        ) {
-            private val buffer = ArrayDeque<Double>(maxSamples)
-            private val lock = Mutex()
-
-            suspend fun pushSample(bpm: Double) {
-                lock.withLock {
-                    buffer.addLast(bpm)
-                    if (buffer.size > maxSamples) buffer.removeFirst()
-                }
-            }
-
-            suspend fun computeAverage(minSamples: Int = maxSamples / 2): Double? {
-                return lock.withLock {
-                    if (buffer.size >= minSamples) {
-                        buffer.average()
-                    } else null
-                }
-            }
-        }
-    }
-
-    object SettingsUtils {
-        private const val TAG = "WearTAK-SettingsUtils"
-
-        data class CategoryRolesEntry(
-            val category: String, val roles: List<String>
-        )
-
-        /**
-         * Reads the default roles/categories from res/raw/roles_json_config.json.
-         * On any error, logs it and returns an empty list.
-         */
-        fun Context.defaultRoleCategoryEntriesFromRaw(): List<CategoryRolesEntry> {
-            return try {
-                Log.i(TAG, "Loading default categories from raw JSON")
-                val jsonStr = resources.openRawResource(R.raw.roles_json_config)
-                    .bufferedReader()
-                    .use { it.readText() }
-
-                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-                val typeToken = object : TypeToken<List<CategoryRolesEntry>>() {}
-                val type = typeToken.type
-                Gson().fromJson<List<CategoryRolesEntry>>(jsonStr, type).also {
-                    Log.i(TAG, "Parsed ${it.size} default categories")
-                }
-            } catch (io: IOException) {
-                Log.e(TAG, "I/O error reading roles_json_config.json", io)
-                emptyList()
-            } catch (js: JsonSyntaxException) {
-                Log.e(TAG, "Malformed JSON in roles_json_config.json", js)
-                emptyList()
-            } catch (jp: JsonParseException) {
-                Log.e(TAG, "Gson failed to parse JSON", jp)
-                emptyList()
-            } catch (ex: Exception) {
-                Log.e(TAG, "Unexpected error loading default categories", ex)
-                emptyList()
-            }
-        }
-    }
-
     object CotUtils {
         /** Quick screen for chat‐related COTs. */
         fun isChatMessage(raw: String): Boolean =
@@ -580,98 +427,5 @@ object Utils {
 
             return rooms
         }
-
-        class CotDetail(elementName: String = "detail") {
-            private var elemName: String = elementName
-                set(value) {
-                    require(value.isNotBlank()) { "Element name cannot be blank" }
-                    field = value
-                }
-
-            private val attrs = LinkedHashMap<String, String>()
-            private val children = mutableListOf<CotDetail>()
-            private var innerText: String? = null
-
-            fun elementName(): String = elemName
-
-            fun setElementName(name: String): CotDetail {
-                this.elemName = name
-                return this
-            }
-
-            fun setAttribute(name: String, value: String?): CotDetail {
-                if (!name.isNullOrBlank() && value != null) {
-                    attrs[name] = value
-                }
-                return this
-            }
-
-            fun removeAttribute(name: String): String? = attrs.remove(name)
-
-            fun clearAttributes(): CotDetail {
-                attrs.clear()
-                return this
-            }
-
-            /** Inner text and children are mutually exclusive (like ATAK’s CotDetail). */
-            fun setInnerText(text: String?): CotDetail {
-                children.clear()
-                innerText = text
-                return this
-            }
-
-            /** Adding a child clears innerText to mirror ATAK behavior. */
-            fun addChild(child: CotDetail): CotDetail {
-                require(child.elementName().isNotBlank()) { "Child element must have a name" }
-                innerText = null
-                children.add(child)
-                return this
-            }
-
-            fun getChildren(): List<CotDetail> = children.toList()
-
-            fun toXmlString(): String = buildString { buildXml(this) }
-
-            private fun buildXml(out: Appendable) {
-                out.append('<').append(elemName)
-                for ((k, v) in attrs) {
-                    out.append(' ').append(k).append("='")
-                    if (v != null) out.append(escapeXml(v))
-                    out.append('\'')
-                }
-                val text = innerText
-                if (text != null) {
-                    out.append('>')
-                    out.append(escapeXml(text))
-                    out.append("</").append(elemName).append('>')
-                } else {
-                    if (children.isEmpty()) {
-                        out.append("/>")
-                    } else {
-                        out.append('>')
-                        children.forEach { it.buildXml(out) }
-                        out.append("</").append(elemName).append('>')
-                    }
-                }
-            }
-
-            private fun escapeXml(s: String): String {
-                // Minimal, covers content/attr usage like ATAK’s CotDetail.escapeXmlText(...)
-                val sb = StringBuilder(s.length + 16)
-                for (ch in s) {
-                    when (ch) {
-                        '&'  -> sb.append("&amp;")
-                        '<'  -> sb.append("&lt;")
-                        '>'  -> sb.append("&gt;")
-                        '"'  -> sb.append("&quot;")
-                        '\'' -> sb.append("&apos;")
-                        else -> sb.append(ch)
-                    }
-                }
-                return sb.toString()
-            }
-
-        }
-
     }
 }

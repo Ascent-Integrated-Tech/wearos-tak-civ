@@ -61,11 +61,18 @@
         android:defaultValue="@string/location_service_enabled_default" />
 
     <restriction
-        android:key="physiological_services_enabled"
+        android:key="physio_service_enabled"
         android:restrictionType="bool"
-        android:title="@string/physiological_services_title"
-        android:description="@string/physiological_services_description"
-        android:defaultValue="@string/physiological_services_enabled_default" />
+        android:title="@string/physio_service_title"
+        android:description="@string/physio_service_description"
+        android:defaultValue="@string/physio_service_enabled_default" />
+
+    <restriction
+        android:key="heartrate_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/heartrate_service_title"
+        android:description="@string/heartrate_service_description"
+        android:defaultValue="@string/heartrate_service_enabled_default" />
 
     <restriction
         android:key="activity_recognition_service_enabled"
@@ -74,12 +81,14 @@
         android:description="@string/activity_recognition_service_description"
         android:defaultValue="@string/activity_recognition_service_enabled_default" />
 
+
     <restriction
         android:key="skin_temp_service_enabled"
         android:restrictionType="bool"
         android:title="@string/skin_temp_service_title"
         android:description="@string/skin_temp_service_description"
         android:defaultValue="@string/skin_temp_service_enabled_default" />
+
 
     <restriction
         android:key="ditto_service_enabled"
@@ -96,18 +105,32 @@
         android:defaultValue="@string/chat_service_enabled_default" />
 
     <restriction
-        android:key="hail_service_enabled"
+        android:key="wifiOptimization_service_enabled"
         android:restrictionType="bool"
-        android:title="@string/hail_service_title"
-        android:description="@string/hail_service_description"
-        android:defaultValue="@string/hail_service_enabled_default" />
+        android:title="@string/wifiOptimization_service_enabled_title"
+        android:description="@string/wifiOptimization_service_enabled_description"
+        android:defaultValue="@string/wifiOptimization_service_enabled_default" />
 
     <restriction
-        android:key="multicast_service_enabled"
+        android:key="wifiOptimization_all_enabled"
         android:restrictionType="bool"
-        android:title="@string/multicast_service_enabled_title"
-        android:description="@string/multicast_service_enabled_description"
-        android:defaultValue="@string/multicast_service_enabled_default" />
+        android:title="@string/wifiOptimization_all_title"
+        android:description="@string/wifiOptimization_all_description"
+        android:defaultValue="@string/wifiOptimization_all_default" />
+
+    <restriction
+        android:key="wifiOptimization_ssid_list"
+        android:restrictionType="string"
+        android:title="@string/wifiOptimization_ssid_list_title"
+        android:description="@string/wifiOptimization_ssid_list_description"
+        android:defaultValue=""/>
+
+    <restriction
+        android:key="enable_dynamic_reporting_strategy"
+        android:restrictionType="bool"
+        android:title="@string/enable_dynamic_reporting_strategy_title"
+        android:description="@string/enable_dynamic_reporting_strategy_description"
+        android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
 
     <restriction
         android:key="enable_sms"
@@ -178,12 +201,6 @@
         android:entryValues="@array/allergy_entry_values"
         android:defaultValue="@array/physiological_metrics_allergies_default" />
     <restriction
-        android:key="physiological_metrics_resting_heart_rate"
-        android:restrictionType="integer"
-        android:title="@string/physiological_metrics_resting_heart_rate_title"
-        android:description="@string/physiological_metrics_resting_heart_rate_description"
-        android:defaultValue="@string/physiological_metrics_resting_heart_rate_default"/>
-    <restriction
         android:key="physiological_metrics_user_type"
         android:restrictionType="choice"
         android:title="@string/physiological_metrics_user_type_title"
@@ -207,77 +224,11 @@
         android:defaultValue="@string/hr_high_alert_number_secs_threshold_default"/>
 
     <restriction
-        android:key="wifiOptimization_service_enabled"
-        android:restrictionType="bool"
-        android:title="@string/wifiOptimization_service_enabled_title"
-        android:description="@string/wifiOptimization_service_enabled_description"
-        android:defaultValue="@string/wifiOptimization_service_enabled_default" />
-
-    <restriction
-        android:key="wifiOptimization_all_enabled"
-        android:restrictionType="bool"
-        android:title="@string/wifiOptimization_all_title"
-        android:description="@string/wifiOptimization_all_description"
-        android:defaultValue="@string/wifiOptimization_all_default" />
-
-    <restriction
-        android:key="wifiOptimization_ssid_list"
+        android:key="custom_developer_config_json"
         android:restrictionType="string"
-        android:title="@string/wifiOptimization_ssid_list_title"
-        android:description="@string/wifiOptimization_ssid_list_description"
-        android:defaultValue=""/>
-
-    <restriction
-        android:key="enable_dynamic_reporting_strategy"
-        android:restrictionType="bool"
-        android:title="@string/enable_dynamic_reporting_strategy_title"
-        android:description="@string/enable_dynamic_reporting_strategy_description"
-        android:defaultValue="@string/enable_dynamic_reporting_strategy_default"/>
-
-    <restriction
-        android:key="constant_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/constant_reporting_interval_title"
-        android:description="@string/constant_reporting_interval_description"
-        android:defaultValue="@string/constant_reporting_interval_default"/>
-
-    <restriction
-        android:key="alerting_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/alerting_reporting_interval_title"
-        android:description="@string/alerting_reporting_interval_description"
-        android:defaultValue="@string/alerting_reporting_interval_default"/>
-
-    <restriction
-        android:key="on_foot_walking_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/on_foot_walking_reporting_interval_title"
-        android:description="@string/on_foot_walking_reporting_interval_description"
-        android:defaultValue="@string/on_foot_walking_reporting_interval_default"/>
-
-
-    <restriction
-        android:key="in_vehicle_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/in_vehicle_reporting_interval_title"
-        android:description="@string/in_vehicle_reporting_interval_description"
-        android:defaultValue="@string/in_vehicle_reporting_interval_default"/>
-
-    <restriction
-        android:key="stationary_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/stationary_reporting_interval_title"
-        android:description="@string/stationary_reporting_interval_description"
-        android:defaultValue="@string/stationary_reporting_interval_default"/>
-
-    <restriction
-        android:key="select_data_endpoints"
-        android:restrictionType="multi-select"
-        android:title="@string/select_data_endpoints_title"
-        android:description="@string/select_data_endpoints_description"
-        android:entries="@array/select_data_endpoints_entries"
-        android:entryValues="@array/select_data_endpoints_entry_values"
-        android:defaultValue="@array/select_data_endpoints_default_value" />
+        android:title="@string/custom_developer_config_json_title"
+        android:description="@string/custom_developer_config_json_description"
+        android:defaultValue="{}" />
 
     <restriction
         android:key="tak_server_list"
@@ -353,43 +304,15 @@
                 android:title="@string/tak_server_cert_title"
                 android:description="@string/tak_server_cert_description"
                 android:defaultValue="" />
+
+            <restriction
+                android:key="update_interval"
+                android:restrictionType="integer"
+                android:title="@string/update_interval_title"
+                android:description="@string/update_interval_description"
+                android:defaultValue="@string/update_interval_default" />
         </restriction>
     </restriction>
-
-    <restriction
-        android:key="esri_endpoint"
-        android:restrictionType="string"
-        android:title="@string/esri_endpoint_title"
-        android:description="@string/esri_endpoint_description"
-        android:defaultValue="" />
-
-    <restriction
-        android:key="esri_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/esri_reporting_interval_title"
-        android:description="@string/esri_reporting_interval_description"
-        android:defaultValue="@string/update_interval_default" />
-
-    <restriction
-        android:key="tabletcommand_endpoint"
-        android:restrictionType="string"
-        android:title="@string/tabletcommand_endpoint_title"
-        android:description="@string/tabletcommand_endpoint_description"
-        android:defaultValue="" />
-
-    <restriction
-        android:key="tabletcommand_apikey"
-        android:restrictionType="string"
-        android:title="@string/tabletcommand_apikey_title"
-        android:description="@string/tabletcommand_apikey_description"
-        android:defaultValue="" />
-
-    <restriction
-        android:key="tabletcommand_reporting_interval"
-        android:restrictionType="integer"
-        android:title="@string/tabletcommand_reporting_interval_title"
-        android:description="@string/tabletcommand_reporting_interval_description"
-        android:defaultValue="@string/update_interval_default" />
 
     <restriction
         android:key="ble_beacon_service_enabled"
@@ -399,16 +322,55 @@
         android:defaultValue="@string/ble_beacon_service_enabled_default" />
 
     <restriction
-        android:key="localization_iBeacon_geojson"
-        android:restrictionType="string"
-        android:title="@string/localization_iBeacon_geojson_title"
-        android:description="@string/localization_iBeacon_geojson_description" />
+        android:key="localization_iBeacon_list"
+        android:restrictionType="bundle_array"
+        android:title="@string/localization_iBeacon_list_title"
+        android:description="@string/localization_iBeacon_list_description">
 
-    <restriction
-        android:key="custom_developer_config_json"
-        android:restrictionType="string"
-        android:title="@string/custom_developer_config_json_title"
-        android:description="@string/custom_developer_config_json_description"
-        android:defaultValue="{}" />
+        <!-- Server 0 Default: DEFAULT -->
+        <restriction
+            android:key="localization_iBeacon_details"
+            android:restrictionType="bundle"
+            android:title="@string/localization_iBeacon_details_title"
+            android:description="@string/localization_iBeacon_details_description">
+            <restriction
+                android:key="localization_iBeacon_uuid"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_uuid_title"
+                android:description="@string/localization_iBeacon_uuid_description"
+                android:defaultValue="@string/localization_iBeacon_uuid_default" />
 
+            <restriction
+                android:key="localization_iBeacon_major"
+                android:restrictionType="integer"
+                android:title="@string/localization_iBeacon_major_title"
+                android:description="@string/localization_iBeacon_major_description" />
+
+            <restriction
+                android:key="localization_iBeacon_minor"
+                android:restrictionType="integer"
+                android:title="@string/localization_iBeacon_minor_title"
+                android:description="@string/localization_iBeacon_minor_description" />
+
+            <restriction
+                android:key="localization_iBeacon_lat"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_lat_title"
+                android:description="@string/localization_iBeacon_lat_description" />
+
+            <restriction
+                android:key="localization_iBeacon_lon"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_lon_title"
+                android:description="@string/localization_iBeacon_lon_description" />
+
+            <restriction
+                android:key="localization_iBeacon_alt"
+                android:restrictionType="string"
+                android:title="@string/localization_iBeacon_alt_title"
+                android:description="@string/localization_iBeacon_alt_description" />
+
+        </restriction>
+
+    </restriction>
 </restrictions>

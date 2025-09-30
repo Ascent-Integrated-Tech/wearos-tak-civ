@@ -1,13 +1,4 @@
-/*
- * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
-
-package com.aitech.weartak_civ.receiver
+package com.aitech.weartak_civ
 
 import android.app.ActivityOptions
 import android.app.PendingIntent
@@ -15,21 +6,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.aitech.weartak_civ.Utils.isActivityRunning
 import com.aitech.weartak_civ.presentation.MainActivity
 
 class WearTakInitOnBoot : BroadcastReceiver() {
     companion object {
-        private val TAG = "WearTAK-InitOnBoot"
+        private val TAG = "WearTAK-" + "InitOnBoot"
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {
         Log.d(TAG, "onReceive of WearTAK boot completed w/ action ${intent?.action}")
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent?.action)) {
-            if ((context != null) && isActivityRunning(MainActivity::class.java, context)) {
-                Log.d(TAG, "MainActivity is already running. No need to start it")
-                return
-            }
             // Create an intent to start MainActivity.
             val activityIntent = Intent(context, MainActivity::class.java).apply {
                 // Needed when starting an Activity from a non-Activity context.

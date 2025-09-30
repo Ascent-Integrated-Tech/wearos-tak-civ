@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
-
 package com.aitech.weartak_civ.complication
 
 import androidx.wear.watchface.complications.data.ComplicationData
@@ -22,7 +13,7 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class SosActiveTextComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
-        val TAG = "WearTAK-" + SosActiveTextComplicationService::class.java.simpleName
+        val TAG = "WearTAK-" + CallsignComplicationService::class.java.simpleName
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
@@ -34,8 +25,9 @@ class SosActiveTextComplicationService : SuspendingComplicationDataSourceService
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+
         if (null == mainActivityIsInit) {
-            return createComplicationData(getString(R.string.loading), getString(R.string.sos_details_loading))
+            return createComplicationData("Loading...", "SOS Details Loading")
         }
 
         return when (isLicenseValid()) {
@@ -43,9 +35,9 @@ class SosActiveTextComplicationService : SuspendingComplicationDataSourceService
                 true -> createComplicationData(getString(R.string.sos_active), getString(R.string.sos_active))
                 false -> createComplicationData(" ", getString(R.string.sos_inactive))
 
-                else -> createComplicationData(getString(R.string.loading), getString(R.string.sos_details_loading))
+                else -> createComplicationData("Loading...", "SOS Details Loading")
             }
-            false -> createComplicationData(getString(R.string.loading), getString(R.string.invalid_license_key))
+            false -> createComplicationData("Loading...", getString(R.string.invalid_license_key))
         }
     }
 

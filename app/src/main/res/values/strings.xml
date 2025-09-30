@@ -151,13 +151,6 @@
     <!--    <string name="tak_server_cert_title">TAK Server Certificate (base64)</string>-->
     <!--    <string name="tak_server_cert_description">Enter the base64-encoded P12 certificate for authentication</string>-->
 
-    <!-- Select Data Endpoints -->
-    <string name="select_data_endpoints_title" translatable="false">Select Data Endpoints</string>
-    <string name="select_data_endpoints_description" translatable="false">Select 1 or more endpoints to send data to.</string>
-    <string name="select_data_endpoint_tak" translatable="false">TAK</string>
-    <string name="select_data_endpoint_esri" translatable="false">ESRI</string>
-    <string name="select_data_endpoint_tabletcommand" translatable="false">Tablet Command</string>
-
     <!-- Tak Server Configurations -->
     <!--     Server Defaults: 0=DEFAULT, 1=TEST, 2=DEVELOP -->
     <string name="tak_server_list_title" translatable="false">TAK Server Connections</string>
@@ -200,30 +193,6 @@
     <string name="tak_server_cert_password_description" translatable="false">Enter the password for the P12 certificate</string>
     <string name="tak_server_cert_title" translatable="false">TAK Server Certificate (base64)</string>
     <string name="tak_server_cert_description" translatable="false">Enter the base64-encoded P12 certificate used for authentication</string>
-
-    <!-- Cot Update Interval -->
-    <string name="update_interval_title" translatable="false">Update Interval</string>
-    <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
-    <string name="update_interval_default" translatable="false">60</string>
-
-
-    <!-- ESRI Endpoint -->
-    <string name="esri_endpoint_title" translatable="false">ESRI Endpoint</string>
-    <string name="esri_endpoint_description" translatable="false">Enter ESRI HTTPS endpoint to send data to.</string>
-
-    <string name="esri_reporting_interval_title" translatable="false">ESRI Reporting Interval</string>
-    <string name="esri_reporting_interval_description" translatable="false">Interval in seconds for ESRI GeoJSON updates.</string>
-
-    <!-- Tablet Command Endpoint -->
-    <string name="tabletcommand_endpoint_title" translatable="false">Tablet Command Endpoint</string>
-    <string name="tabletcommand_endpoint_description" translatable="false">Enter Tablet Command HTTPS endpoint to send data to.</string>
-
-    <string name="tabletcommand_apikey_title" translatable="false">Tablet Command Apikey</string>
-    <string name="tabletcommand_apikey_description" translatable="false">Enter Tablet Command apikey.</string>
-
-    <string name="tabletcommand_reporting_interval_title" translatable="false">Tablet Command Reporting Interval</string>
-    <string name="tabletcommand_reporting_interval_description" translatable="false">Interval in seconds for Tablet Command JSON updates.</string>
-
     <!-- Teams Configuration -->
     <string name="custom_teams_names_title" translatable="false">Custom Teams Name</string>
     <string name="custom_teams_names_description" translatable="false">Comma separated list of custom team NAMES. Entries must map to team colors one to one! </string>
@@ -235,8 +204,8 @@
 
     <!-- Roles Configuration -->
     <string name="custom_roles_title" translatable="false">Custom Roles</string>
-    <string name="custom_roles_description" translatable="false">List of JSON formatted category and its roles</string>
-    <string name="custom_roles_default" translatable="false">[{\"category\":\"MIL\",\"roles\":[\"Forward Observer\",\"HQ\",\"K9\",\"Medic\",\"RTO\",\"Sniper\",\"Team Lead\",\"Team Member\"]},{\"category\":\"LEO\",\"roles\":[\"Armed Surveillance\",\"Assistant Team Leader\",\"Aviation\",\"Bomb Tech\",\"Command Post\",\"Critical Response\",\"Hazards\",\"Negotiator\",\"Surveillance\",\"Tactical Communicator\",\"TOC\"]},{\"category\":\"FES\",\"roles\":[\"Assistant Chief\",\"Battalion Chief\",\"Captain\",\"Deputy Chief\",\"District Chief\",\"Engineer\",\"Fire Chief\",\"Firefighter\",\"Lieutenant\",\"Safety Officer\"]}]</string>
+    <string name="custom_roles_description" translatable="false">List of custom roles</string>
+    <string name="custom_roles_default" translatable="false">Team Member,Team Lead,HQ,Sniper,Medic,Forward Observer,RTO,K9</string>
 
     <!-- License Key -->
     <string name="license_key_title" translatable="false">License Key</string>
@@ -247,23 +216,31 @@
     <string name="ditto_auth_token_title" translatable="false">Ditto Online Playground Authentication Token</string>
     <string name="ditto_auth_token_description" translatable="false">Developer token for the big peer instance</string>
     <string name="ditto_auth_token_default" translatable="false"></string>
-
     <string name="ditto_app_id_title" translatable="false">Ditto App ID Token</string>
     <string name="ditto_app_id_description" translatable="false">App ID token for ditto big peer</string>
     <string name="ditto_app_id_default" translatable="false"></string>
+
+    <!-- Cot Update Interval -->
+    <string name="update_interval_title" translatable="false">Update Interval</string>
+    <string name="update_interval_description" translatable="false">Interval in seconds for cot updates</string>
+    <string name="update_interval_default" translatable="false">10</string>
 
     <!-- Enable / Disable Services -->
     <string name="location_service_title" translatable="false">Enable Location Service</string>
     <string name="location_service_description" translatable="false">Enable or disable the location service</string>
     <string name="location_service_enabled_default" translatable="false">true</string>
 
-    <string name="physiological_services_title" translatable="false">Enable Physiological Services</string>
-    <string name="physiological_services_description" translatable="false">Enable or disable physiological services</string>
-    <string name="physiological_services_enabled_default" translatable="false">true</string>
+    <string name="physio_service_title" translatable="false">Enable Physio Service</string>
+    <string name="physio_service_description" translatable="false">Enable or disable the physio services (heart rate, skin temp, activity recognition)</string>
+    <string name="physio_service_enabled_default" translatable="false">true</string>
+
+    <string name="heartrate_service_title" translatable="false">Enable Heart Rate Service</string>
+    <string name="heartrate_service_description" translatable="false">Enable or disable the heart rate service</string>
+    <string name="heartrate_service_enabled_default" translatable="false">true</string>
 
     <string name="activity_recognition_service_title" translatable="false">Enable Activity Recognition Service</string>
     <string name="activity_recognition_service_description" translatable="false">Enable or disable the Activity Recognition service for running, walking, biking, etc.</string>
-    <string name="activity_recognition_service_enabled_default" translatable="false">false</string>
+    <string name="activity_recognition_service_enabled_default" translatable="false">true</string>
 
     <string name="skin_temp_service_title" translatable="false">Enable Skin Temp Service</string>
     <string name="skin_temp_service_description" translatable="false">Enable or disable the skin temperature service</string>
@@ -276,14 +253,6 @@
     <string name="chat_service_title" translatable="false">Enable Chat Service</string>
     <string name="chat_service_description" translatable="false">Enable or disable Chat service</string>
     <string name="chat_service_enabled_default" translatable="false">false</string>
-
-    <string name="hail_service_title" translatable="false">Enable Hail Service</string>
-    <string name="hail_service_description" translatable="false">Enable or disable Hail service</string>
-    <string name="hail_service_enabled_default" translatable="false">false</string>
-
-    <string name="multicast_service_enabled_title" translatable="false">Enable Multicast</string>
-    <string name="multicast_service_enabled_description" translatable="false">Enabling multicast publishes PLI CoT over UDP on Wifi LAN</string>
-    <string name="multicast_service_enabled_default" translatable="false">true</string>
 
     <!-- WiFi Battery optimization-->
     <string name="wifiOptimization_service_enabled_title" translatable="false">Save Battery on WiFi</string>
@@ -298,28 +267,8 @@
     <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
 
     <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
-    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval dynamically changes based on motion and alerting status OR if it is constant.</string>
+    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval is increased when device is detected to be moving slowly or stationary.</string>
     <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
-
-    <string name="constant_reporting_interval_title" translatable="false">Constant Reporting Interval (Constant Reporting Strategy)</string>
-    <string name="constant_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when using Constant Reporting Strategy)</string>
-    <string name="constant_reporting_interval_default" translatable="false">60</string>
-
-    <string name="alerting_reporting_interval_title" translatable="false">Alerting Reporting Interval (Dynamic Reporting Strategy)</string>
-    <string name="alerting_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when device is alerting: SOS or other alerts (part of Dynamic Reporting Strategy)</string>
-    <string name="alerting_reporting_interval_default" translatable="false">10</string>
-
-    <string name="on_foot_walking_reporting_interval_title" translatable="false">Walking/On Foot Reporting Interval (Dynamic Reporting Strategy)</string>
-    <string name="on_foot_walking_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is walking/on foot (part of Dynamic Reporting Strategy)</string>
-    <string name="on_foot_walking_reporting_interval_default" translatable="false">20</string>
-
-    <string name="in_vehicle_reporting_interval_title" translatable="false">In Vehicle/Driving Reporting Interval (Dynamic Reporting Strategy)</string>
-    <string name="in_vehicle_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is in vehicel/driving (part of Dynamic Reporting Strategy)</string>
-    <string name="in_vehicle_reporting_interval_default" translatable="false">60</string>
-
-    <string name="stationary_reporting_interval_title" translatable="false">Stationary Reporting Interval (Dynamic Reporting Strategy)</string>
-    <string name="stationary_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is stationary (part of Dynamic Reporting Strategy)</string>
-    <string name="stationary_reporting_interval_default" translatable="false">300</string>
 
     <string name="enable_sms_title" translatable="false">Enable SMS for Alerts</string>
     <string name="enable_sms_description" translatable="false">Boolean that determines if SMS will be sent on detection of alerts.</string>
@@ -333,21 +282,18 @@
     <string name="enable_physiological_alerts_description" translatable="false">Boolean that determines if physiological alerts will be enabled.</string>
     <string name="enable_physiological_alerts_default" translatable="false">false</string>
 
-    <string name="physiological_metrics_resting_heart_rate_title" translatable="false">Physiological Metrics: Resting Heart Rate</string>
-    <string name="physiological_metrics_resting_heart_rate_description" translatable="false">Enter Average Resting Heart Rate in BPM</string>
-    <string name="physiological_metrics_resting_heart_rate_default" translatable="false">60</string>
     <string name="physiological_metrics_age_title" translatable="false">Physiological Metrics: Age</string>
     <string name="physiological_metrics_age_description" translatable="false">Enter Age in Years</string>
-    <string name="physiological_metrics_age_default" translatable="false">24</string>
+    <string name="physiological_metrics_age_default" translatable="false"></string>
     <string name="physiological_metrics_height_feet_title" translatable="false">Physiological Metrics: Height(ft)</string>
     <string name="physiological_metrics_height_feet_description" translatable="false">Enter Height(ft)</string>
-    <string name="physiological_metrics_height_feet_default" translatable="false">6</string>
+    <string name="physiological_metrics_height_feet_default" translatable="false"></string>
     <string name="physiological_metrics_height_inches_title" translatable="false">Physiological Metrics: Height(inch)</string>
     <string name="physiological_metrics_height_inches_description" translatable="false">Enter Height(inch)</string>
-    <string name="physiological_metrics_height_inches_default" translatable="false">0</string>
+    <string name="physiological_metrics_height_inches_default" translatable="false"></string>
     <string name="physiological_metrics_weight_title" translatable="false">Physiological Metrics: Weight(lbs)</string>
     <string name="physiological_metrics_weight_description" translatable="false">Enter Weight(lbs)</string>
-    <string name="physiological_metrics_weight_default" translatable="false">180</string>
+    <string name="physiological_metrics_weight_default" translatable="false"></string>
     <string name="physiological_metrics_sex_title" translatable="false">Physiological Metrics: Sex</string>
     <string name="physiological_metrics_sex_description" translatable="false">Enter Sex</string>
     <string name="physiological_metrics_blood_type_title" translatable="false">Physiological Metrics: Blood Type</string>
@@ -425,9 +371,30 @@
     <string name="ble_beacon_service_enabled_default" translatable="false">false</string>
 
     <!-- Localization iBeacon Configuration -->
-    <string name="localization_iBeacon_geojson_title" translatable="false">iBeacon GeoJSON</string>
-    <string name="localization_iBeacon_geojson_description" translatable="false">Full iBeacon dataset as GeoJSON string ({"type":"FeatureCollection","name":"Test-02","properties":{"uuid":"426c7565-4368-6172-6d42-6561636f6e74","setName":"Test-01","generatedAt":"2025-08-20T16:10:32.551Z"},"features":[{"type":"Feature","properties":{"major":1,"minor":2},"geometry":{"type":"Point","coordinates":[-87.967657,45.459174,98.5]}},{"type":"Feature","properties":{"major":3,"minor":4},"geometry":{"type":"Point","coordinates":[-87.669969,45.511368,54.3]}}]})</string>
+    <string name="localization_iBeacon_list_title" translatable="false">Localization iBeacons</string>
+    <string name="localization_iBeacon_list_description" translatable="false">List of Localization iBeacon details.</string>
 
+    <string name="localization_iBeacon_details_title" translatable="false">Localization iBeacon details</string>
+    <string name="localization_iBeacon_details_description" translatable="false">Enter details of the localization iBeacon: UUID, Major, Minor, lat, lon, alt</string>
+
+    <string name="localization_iBeacon_uuid_title" translatable="false">UUID</string>
+    <string name="localization_iBeacon_uuid_description" translatable="false">Enter UUID (e.g., 426c7565-4368-6172-6d42-6561636f6e73).</string>
+    <string name="localization_iBeacon_uuid_default" translatable="false">426c7565-4368-6172-6d42-6561636f6e73</string>
+
+    <string name="localization_iBeacon_major_title" translatable="false">Major Number</string>
+    <string name="localization_iBeacon_major_description" translatable="false">Enter Major Number (between 0 and 65535).</string>
+
+    <string name="localization_iBeacon_minor_title" translatable="false">Minor Number</string>
+    <string name="localization_iBeacon_minor_description" translatable="false">Enter Minor Number (between 0 and 65535).</string>
+
+    <string name="localization_iBeacon_lat_title" translatable="false">Latitude (deg)</string>
+    <string name="localization_iBeacon_lat_description" translatable="false">Enter latitude of iBeacon in degrees (between -90.0 and 90.0 inclusive).</string>
+
+    <string name="localization_iBeacon_lon_title" translatable="false">Longitude (deg)</string>
+    <string name="localization_iBeacon_lon_description" translatable="false">Enter longitude of iBeacon in degrees (between -180.0 and 180.0 inclusive).</string>
+
+    <string name="localization_iBeacon_alt_title" translatable="false">Altitude HAE (m)</string>
+    <string name="localization_iBeacon_alt_description" translatable="false">Enter Height Above Ellipsoid of iBeacon in meters.</string>
     <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
     <string name="sos_active">SOS Live</string>
     <string name="sos_alert_sent">SOS Alert SENT</string>
@@ -436,6 +403,7 @@
     <string name="sos_inactive">SOS Inactive</string>
     <string name="sos_text_complication_service" translatable="false">SOS Text Complication Service</string>
     <string name="sos_active_text_complication_service" translatable="false">SOS Active Text Complication Service</string>
+    <string name="sos_complication_service" />
     <string name="on_off">ON/OFF</string>
     <string name="sms_recipients">SMS Recipients</string>
     <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
@@ -454,9 +422,4 @@
     <string name="value_exceeds_maximum_please_re_enter">Value exceeds maximum, please re-enter</string>
     <string name="threshold_high_heart_rate">Threshold - High Heart Rate</string>
     <string name="threshold_high_heart_rate_length">Threshold - High Heart Rate Length</string>
-    <string name="resting_heart_rate">Resting Heart Rate</string>
-    <string name="loading">Loading...</string>
-    <string name="callsign_loading">Callsign Loading</string>
-    <string name="invalid_license">INVALID LICENSE</string>
-    <string name="sos_details_loading">SOS Details Loading</string>
 </resources>

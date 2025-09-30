@@ -20,6 +20,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import java.util.Calendar
 
 /**
  * Skeleton for complication data source that returns short text.
@@ -38,12 +39,12 @@ class CallsignComplicationService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         if (null == mainActivityIsInit) {
-            return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading))
+            return createComplicationData("Loading...", "Callsign Loading")
         }
         return when (isLicenseValid()) {
             true -> createComplicationData(callsign, getString(R.string.watch_callsign))
-            false -> createComplicationData(getString(R.string.invalid_license), getString(R.string.invalid_license_key))
-            else -> createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading))
+            false -> createComplicationData("INVALID LICENSE", getString(R.string.invalid_license_key))
+            else -> createComplicationData("Loading...", "Callsign Loading")
         }
     }
 

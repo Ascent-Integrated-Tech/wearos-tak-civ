@@ -16,9 +16,6 @@ import com.aitech.weartak_civ.complication.ConnectivityComplicationService
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.WifiSsidRcvd
 import com.aitech.weartak_civ.presentation.MainActivity
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import org.greenrobot.eventbus.EventBus
 
 class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags)  {
@@ -26,11 +23,9 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     private var mainActivity : MainActivity? = null
     private var connectivityManager : ConnectivityManager? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val _wifiNetwork = MutableStateFlow<Network?>(null)
-    val wifiNetwork: StateFlow<Network?> = _wifiNetwork.asStateFlow()
 
     fun init() {
-        Log.d(TAG, "init called")
+        Log.d(TAG, "Initializing NetworkManager")
         mainActivity = MainActivity.Constants.getActivity()
         connectivityManager = mainActivity?.applicationContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val networkRequest = NetworkRequest.Builder()
@@ -65,6 +60,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
         val requester = ComplicationDataSourceUpdateRequester.Companion.create(context, componentName)
         requester.requestUpdateAll()
+        Log.v(TAG, "Updated Connectivity Complication")
     }
 
     fun checkNetworkConnected(network: Network?, networkCapabilities: NetworkCapabilities?) {
@@ -86,11 +82,11 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 networkInfoChanged = true
                 isNetworkConnectedLiveData.postValue(isNetworkConnected)
                 requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
             }
 
             val currIsWifi = activeNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-            val currWifiInfo = if (currIsWifi) { activeNetworkCapabilities.transportInfo as WifiInfo } else { null }
+            val currWifiInfo = if (currIsWifi) { activeNetworkCapabilities.transportInfo as WifiInfo
+            } else { null }
             if (null != currWifiInfo) {
                 currWifiSsid = currWifiInfo.ssid
                 // Valid SSIDs are surrounded by double quotes and this removes them
@@ -105,7 +101,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 networkInfoChanged = true
                 isWifiConnectedLiveData.postValue(isWifi)
                 requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
+
             }
             val currIsCellular = activeNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
             if (isCellular != currIsCellular) {
@@ -113,7 +109,6 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 networkInfoChanged = true
                 isCellularConnectedLiveData.postValue(isCellular)
                 requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
             }
         } else {
             if (isNetworkConnected == true) {
@@ -121,27 +116,22 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 networkInfoChanged = true
                 isNetworkConnectedLiveData.postValue(isNetworkConnected)
                 requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
             }
-
             if (isWifi == true) {
                 isWifi = false
                 networkInfoChanged = true
                 isWifiConnectedLiveData.postValue(isWifi)
                 requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
             }
-
             if (isCellular == true) {
                 isCellular = false
                 networkInfoChanged = true
                 isCellularConnectedLiveData.postValue(isCellular)
                 requestConnectivityComplicationUpdate(context)
-                Log.d(TAG, "complication updated")
             }
         }
-
         Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
+
         //writeToLogFileLocation(logFile, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         if (networkInfoChanged) {
             Log.d(TAG, "Change detected in network connection information.Sending NwConnEvent")
@@ -161,7 +151,6 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 // TODO: What happens if the actual SSID is called <unknown_ssid>. For now, this case is not being handled
                 connectedWifiSsid = currWifiSsid
                 EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                handleMulticastToggle(network)
             }
         } else {
             //Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
@@ -172,50 +161,20 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                     Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
                     connectedWifiSsid = currWifiSsid
                     EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                    handleMulticastToggle(network)
                 }
             } else {
                 if (currWifiSsid != connectedWifiSsid) {
                     Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
                     connectedWifiSsid = currWifiSsid
                     EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                    handleMulticastToggle(network)
                 }
             }
-        }
-    }
-
-    private fun handleMulticastToggle(network: Network?) {
-        val cm = connectivityManager ?: return // We want to multicast whenever we are on Wi-Fi — even without internet (WAN).
-        val publishableWifi: Network? =
-            if (isWifi) {
-                // Prefer the specific callback's network *if* it's Wi-Fi.
-                val n = when {
-                    network != null && cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> network
-                    else -> null
-                }
-
-                /*
-                // Fallback: find any Wi-Fi network if the callback didn't include one.
-                n ?: cm.allNetworks.firstOrNull { n2 ->
-                    cm.getNetworkCapabilities(n2)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                }
-
-                 */
-                n
-            } else {
-                null
-            }
-
-        if (_wifiNetwork.value != publishableWifi) {
-            _wifiNetwork.value = publishableWifi
-            //Log.d(TAG, "Sending wifiNetwork=${publishableWifi.toString()}")
         }
     }
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
-        Log.d(TAG, "onCapabilitiesChanged called")
+//        Log.d(TAG, "onCapabilitiesChanged called")
         //writeToLogFileLocation(logFile, "onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
     }

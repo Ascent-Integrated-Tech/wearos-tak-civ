@@ -1,34 +1,19 @@
-/*
- * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
-
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Binder
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.os.VibrationEffect
 import android.util.Log
-import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.events.LocationUpdateRequired
-import com.aitech.weartak_civ.presentation.MainActivity
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -76,37 +61,38 @@ class MovementDetectionService : Service(), SensorEventListener {
             isUserMoving = false
             motionStartCandidateTime = 0L
             stillStartCandidateTime = 0L
-            Log.d(TAG, "🛑 Confirmed STILL after delay")
+            Log.d(TAG, "MovementDetectionService 🛑 Confirmed STILL after delay")
             updateCotInterval(true, INTERVAL_STILL)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "MovementDetectionService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = MOVEMENT_DETECTION_SERVICE_NOTIFICAITON_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        accelerometer?.let {
+            sensorManager.registerListener(this, it, ACCELEROMETER_MAX_SENSOR_DELAY_US)
+        }
+        isUserMoving = false
+        //gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        /*
+        gyroscope?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+        }
+        */
+        //currentInterval = INTERVAL_STILL
+        updateCotInterval(true, INTERVAL_STILL)
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            isRunning.set(true)
-            startForeground(MOVEMENT_DETECTION_SERVICE_NOTIFICAITON_ID, createNotification())
-            Log.d(TAG, "Movement detection service started")
-
-            sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-            accelerometer?.let {
-                sensorManager.registerListener(this, it, ACCELEROMETER_MAX_SENSOR_DELAY_US)
-            }
-            //gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-            /*
-            gyroscope?.let {
-                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
-            }
-            */
-
-            isUserMoving = false
-            //currentInterval = INTERVAL_STILL
-            updateCotInterval(true, INTERVAL_STILL)
-        }
+        Log.d(TAG, "MovementDetectionService onStartCommand()")
         return START_NOT_STICKY
     }
 
@@ -122,7 +108,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         event ?: return
         //val currentTime = System.currentTimeMillis()
-        //Log.d(TAG, "onSensorChanged: name(${event.sensor.name}) type:${event.sensor.type}")
+        //Log.d(TAG, "MovementDetectionService onSensorChanged: name(${event.sensor.name}) type:${event.sensor.type}")
 
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
@@ -156,7 +142,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                     if (!isUserMoving && (highCount >= REQUIRED_CONSECUTIVE_HIGHS)) {
                         isUserMoving = true
                         updateCotInterval(false, INTERVAL_MOVING)
-                        Log.d(TAG, "✅ MOVING (3 consecutive HIGHs)")
+                        Log.d(TAG, "MovementDetectionService ✅ MOVING (3 consecutive HIGHs)")
                         highCount = 0
                     }
                 } else {
@@ -165,7 +151,7 @@ class MovementDetectionService : Service(), SensorEventListener {
 
                     if (isUserMoving && lowCount >= REQUIRED_CONSECUTIVE_LOWS) {
                         if (lowCount == REQUIRED_CONSECUTIVE_LOWS) {
-                            Log.d(TAG, "⏳ 3 LOWs detected. Scheduling STILL confirmation in $STILL_CONFIRM_DELAY_MS ms")
+                            Log.d(TAG, "MovementDetectionService ⏳ 3 LOWs detected. Scheduling STILL confirmation in $STILL_CONFIRM_DELAY_MS ms")
                             transitionHandler.removeCallbacks(confirmStillRunnable)
                             transitionHandler.postDelayed(confirmStillRunnable, STILL_CONFIRM_DELAY_MS)
                         }
@@ -220,7 +206,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        Log.d(TAG, "MovementDetectionService onAccuracyChanged: sensor(${sensor?.name}) accuracy($accuracy)")
+        Log.d(TAG, "MovementDetectionService onAccuracyChanged(): sensor(${sensor?.name}) accuracy($accuracy)")
     }
 
     private fun updateCotInterval(isStill: Boolean, newInterval: Int) {
@@ -248,7 +234,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                     //MainActivity.mainActivity.vibrateWatch(MainActivity.mainActivity, 1000, VibrationEffect.DEFAULT_AMPLITUDE)
                 }
                 EventBus.getDefault().post(LocationUpdateRequired())
-                Log.d(TAG, "Set CotDispatchService.currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                Log.d(TAG, "MovementDetectionService updateCotInterval(): Set CotDispatchService.currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
             }
         }
     }
@@ -287,34 +273,11 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         super.onDestroy()
-
-        sensorManager.unregisterListener(this)
-        //cotRunnable?.let { handler.removeCallbacks(it) }
+        Log.d(TAG, "MovementDetectionService onDestroy()")
         isRunning.set(false)
-        Log.d(TAG, "Movement detection service stopped")
-    }
-
-    private fun createNotification(): Notification {
-        val channelId = "movement_channel"
-        val channelName = "Movement Detection"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val chan = NotificationChannel(
-                channelId,
-                channelName,
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(chan)
-        }
-
-        return NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Movement Service Running")
-            .setContentText("Monitoring your movement in background.")
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        sensorManager.unregisterListener(this)
+        stopForeground(STOP_FOREGROUND_DETACH)
+        //cotRunnable?.let { handler.removeCallbacks(it) }
     }
 
     companion object {

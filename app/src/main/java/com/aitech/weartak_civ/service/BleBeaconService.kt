@@ -26,6 +26,7 @@ import androidx.lifecycle.Observer
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.jitteredLatLon
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -98,20 +99,26 @@ class BleBeaconService: Service() {
     }
 
     override fun onCreate() {
+        super.onCreate()
         Log.d(TAG, "BleBeaconService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            BLE_BEACON_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+        beaconManager = BeaconManager.getInstanceForApplication(mainActivity)
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
+        }
+
+        CoroutineScope(Dispatchers.Main).launch {
+            setDataFromDatastore()
+            startMonitoringBleBeacons()
         }
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if(!isRunning.getAndSet(true)) {
-            startForegroundService()
-            CoroutineScope(Dispatchers.Main).launch {
-                setDataFromDatastore()
-                startMonitoringBleBeacons()
-            }
-        }
         return START_NOT_STICKY
     }
 
@@ -127,8 +134,8 @@ class BleBeaconService: Service() {
                     val minor = bleBeacon.minor
                     val id: String = "$uuid|$major|$minor"
                     val (jitteredLat, jitteredLon) = jitteredLatLon(bleBeacon.lat, bleBeacon.lon, JITTER_MAX_M)
-                    //val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, (jittered: $jitteredLat, $jitteredLon), ${bleBeacon.alt})"
-                    //Log.d(TAG, logString)
+                    val logString = "setDataFromDatastore: $id (${bleBeacon.lat}, ${bleBeacon.lon}, (jittered: $jitteredLat, $jitteredLon), ${bleBeacon.alt})"
+                    Log.d(TAG, logString)
                     //writeToLogFileLocation(logFile, logString)
                     val beacon = LocalizationBleBeacon(bleBeacon.uuid.lowercase(), bleBeacon.major, bleBeacon.minor, bleBeacon.lat, bleBeacon.lon, jitteredLat, jitteredLon, bleBeacon.alt)
                     mapLocalizationBeacons.put(id, beacon)
@@ -153,7 +160,6 @@ class BleBeaconService: Service() {
         // measurements. This can sometimes give better performance than the default algorithm.
         // BeaconManager.setRssiFilterImplClass(ArmaRssiFilter::class.java)
 
-        beaconManager = BeaconManager.getInstanceForApplication(mainActivity)
         //beaconManager.beaconParsers.add(BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"))
         //beaconManager.beaconParsers.add(IBeaconParser())
         beaconManager.beaconParsers.set(0, IBeaconParser())
@@ -287,6 +293,7 @@ class BleBeaconService: Service() {
             Log.d(TAG, logString)
             //writeToLogFileLocation(logFile, logString)
         }
+
          */
     }
 
@@ -390,13 +397,14 @@ class BleBeaconService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "BleBeaconService onDestroy()")
         isRunning.set(false)
-        stopForeground(true)
+        stopForeground(STOP_FOREGROUND_DETACH)
+
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
         beaconManager.stopRangingBeacons(iBeaconRegion)
-        Log.d(TAG, "BleBeaconService Destroyed")
     }
 
     companion object {

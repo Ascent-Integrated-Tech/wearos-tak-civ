@@ -13,26 +13,22 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,30 +63,62 @@ class DittoService : Service() {
     private var subscriptionMapItem: DittoSyncSubscription? = null
     private var changeCounterTrackDocument: Int = 1
 
-    private val model = android.os.Build.MODEL
-    private val manufacturer = android.os.Build.MANUFACTURER
+    private val model = Build.MODEL
+    private val manufacturer = Build.MANUFACTURER
     private lateinit var dittoVersion: String
 
     override fun onCreate() {
         super.onCreate()
-        dataRepository = MainActivity.dataRepository // or another injection approach
+        Log.d(TAG, "DittoService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = DITTO_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+        dataRepository = MainActivity.dataRepository
 
-        // listen for ditto specific events for markers, alerts.
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this)
-        }
+        if (!EventBus.getDefault().isRegistered(this)) { EventBus.getDefault().register(this) }
 
         if (null == getDittoInstance()) {
             initializeDitto(applicationContext, dataRepository)
         }
 
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
-        Log.d(TAG, "Oncreate Called")
+
+        startDispatchScheduler() // we want to update our ditto data at fixed interval
+        subscribeToCollections() // must subscribe to a collection before upserting
+        configureDitto() // configure all peer transports
+
+        try {
+            ditto.startSync() // Start syncing
+            Log.i(TAG, "DittoService startSync()")
+        } catch (e: DittoError) {
+            Log.e(TAG, "DittoService ERROR startSync(): ${e.message}")
+        }
+    }
+
+    private fun subscribeToCollections() {
+        Log.d(TAG, "DittoService subscribeToCollections(): [ track, alert, mapitem ]")
+        subscriptionTrack = ditto.sync.registerSubscription("SELECT * FROM track")
+        subscriptionMapItem = ditto.sync.registerSubscription("SELECT * FROM mapitem")
+        subscriptionAlert = ditto.sync.registerSubscription("SELECT * FROM alert")
+
+    }
+
+    private fun unSubscribeToCollections() {
+        Log.d(TAG, "Subscriptions have been closed.")
+        subscriptionTrack?.close()
+        subscriptionAlert?.close()
+        subscriptionMapItem?.close()
+
+        subscriptionTrack   = null
+        subscriptionAlert   = null
+        subscriptionMapItem = null
     }
 
     private fun configureDitto() {
         val config = DittoTransportConfig()
-        config.enableAllPeerToPeer() //Enable all peer to peer transports
+        config.enableAllPeerToPeer() // Enable all peer to peer transports
         ditto.deviceName = callsign // set deviceName for presence viewer
         dittoVersion = ditto.sdkVersion // used in the cot detail for ditto
         ditto.transportConfig = config
@@ -128,123 +156,6 @@ class DittoService : Service() {
         // Schedule the first run
         dittoUpdateHandler?.postDelayed(dittoUpdateRunnable, DISPATCH_INTERVAL)
     }
-
-/*
-    @Subscribe(threadMode = ThreadMode.ASYNC)
-    fun onDittoDoc(evt: DittoDocumentEvent) {
-        ioScope.launch {
-            try {
-                val raw       = evt.cotXml
-                // 1) Core CoT parsing
-                val id        = extract(raw, "uid")
-                val timeStart = Instant.parse(extract(raw, "time")).toEpochMilli()
-                val timeStale = Instant.parse(extract(raw, "stale")).toEpochMilli()
-
-                // 2) Point attributes
-                val lat  = extract(raw, "lat").toDouble()
-                val lon  = extract(raw, "lon").toDouble()
-                val hae  = extract(raw, "hae").toDouble()
-                val ce   = extract(raw, "ce").toDouble()
-                val le   = extract(raw, "le").toDouble()
-
-                // 3) Detail + author info
-                val how       = extractOrNull(raw, "how") ?: ""
-                val access    = extractOrNull(raw, "access") ?: "Undefined"
-                val detailXml = raw
-                    .substringAfter("<detail>", "")
-                    .takeIf     { it.contains("</detail>") }
-                    ?.let       { "<detail>${it.substringBefore("</detail>")}</detail>" }
-                    ?: ""
-                val typeAlias = extract(raw, "type")
-                val cs        = extractOrNull(raw, "callsign") ?: callsign
-                val pks       = extractOrNull(raw, "pks")      ?: localPeerKeyString
-
-                // 4) Build v2‐style doc for mapitem vs alert
-                val doc = when (evt.collection) {
-                    "mapitem" -> mapOf<String, Any?>(
-                        // — Ditto‐managed metadata (_c, _r, _v) are omitted here —
-                        "_id" to id,
-                        "_r" to false,
-                        "_v" to 2,
-
-                        "authorCs" to callsign,
-                        "AuthorId" to uuid,
-                        "authorType" to typeAlias,
-                        "visible" to true,
-
-                        // — common props + visibility —
-                        "a" to pks,
-                        "b" to timeStart,
-                        "c" to cs,           // map‐item title
-                        "d" to id,
-                        "e" to cs,
-                        "f" to true,         // visible
-
-                        // — CoT point & timing —
-                        "g" to "2.0",
-                        "h" to ce,
-                        "i" to hae,
-                        "j" to lat,
-                        "k" to le,
-                        "l" to lon,
-                        "n" to timeStart,
-                        "o" to timeStale,
-
-                        // — how/access/detail —
-                        "p" to how,
-                        "q" to access,
-                        "r" to detailXml,
-
-                        // — type alias —
-                        "w" to typeAlias
-                    )
-
-                    "alert" -> mapOf<String, Any?>(
-                        "_id" to id,
-                        "_r" to false,
-                        "_v" to 2,
-                        // only common & CoT props—no c/f for alerts
-                        "a" to pks,
-                        "b" to timeStart,
-                        "d" to id,
-                        "e" to "$cs-Alert",
-
-                        "authorCs" to callsign,
-                        "AuthorId" to uuid,
-                        "authorType" to typeAlias,
-                        "visible" to true,
-
-                        "g" to "2.0",
-                        "h" to ce,
-                        "i" to hae,
-                        "j" to lat,
-                        "k" to le,
-                        "l" to lon,
-                        "n" to timeStart,
-                        "o" to timeStale,
-
-                        "p" to how.ifEmpty { "m-g" },
-                        "q" to access,
-                        "r" to detailXml,
-
-                        "w" to typeAlias
-                    )
-
-                    else -> return@launch
-                }
-
-                // 5) Upsert into Ditto
-                ditto.store.write { tx ->
-                    tx.scoped(evt.collection).upsert(doc)
-                }
-                Log.v(TAG, "Wrote to ${evt.collection}: $doc")
-
-            } catch (t: Throwable) {
-                Log.e(TAG, "Ditto write failed", t)
-            }
-        }
-    }
-*/
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onDittoDoc(evt: DittoDocumentEvent) {
@@ -405,7 +316,7 @@ class DittoService : Service() {
             val staleMsOffset = 3000 * CotDispatchService.currReportingIntervalInSecs
             val staleTimeMs = timeMs+staleMsOffset
             val location = dataRepository.latestLocation.value
-            var heartRate = dataRepository.latestHeartRate.value ?: -1
+            val heartRate = dataRepository.latestHeartRate.value ?: -1
             val battery = dataRepository.latestBatteryPercentage.value ?: -1
             val latActual = location?.latitude ?: 0.0
             val lonActual = location?.longitude ?: 0.0
@@ -428,7 +339,7 @@ class DittoService : Service() {
                 heartRate     = heartRate,
                 battery       = battery,
                 callsign      = callsign,
-                roleValue     = role,
+                roleValue     = roleValue,
                 teamValue     = teamValue,
                 uid           = uuid,
                 bearingActual = bearingActual,
@@ -506,28 +417,19 @@ class DittoService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "DittoService onDestroy called")
+        Log.d(TAG, "DittoService onDestroy()")
+        isRunning.set(false)
+        stopForeground(STOP_FOREGROUND_DETACH)
 
-        if (isRunning.getAndSet(false)) {
-            stopForeground(true)
-            // Stop syncing when the service is destroyed
-            try {
-                ditto.stopSync()
-                Log.d("DittoService", "Sync stopped")
-            } catch (e: DittoError) {
-                Log.e("DittoService", "Error stopping sync: ${e.message}")
-            }
-            subscriptionTrack?.close() // stop subscribing to track collection
-            subscriptionAlert?.close()
-            subscriptionAlert?.close()
-            Log.d(TAG, "Subscriptions have been closed.")
-
+        try {
+            ditto.stopSync()
+            Log.d(TAG, "Sync stopped")
+        } catch (e: DittoError) {
+            Log.e(TAG, "Error stopping sync: ${e.message}")
         }
 
-        subscriptionTrack = null
-        subscriptionAlert = null
-        subscriptionMapItem = null
-        ioScope.cancel() // cancel all coroutines when service is destroyed
+        unSubscribeToCollections()
+        ioScope.cancel()
 
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -535,61 +437,12 @@ class DittoService : Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService() // service needs to work in the background when screen is off
-            startDispatchScheduler() // we want to update our ditto data at fixed interval
-            Log.d(TAG, "Subscribing to [ track, alert, mapitem ] collection")
-
-            subscriptionTrack = ditto.sync.registerSubscription("SELECT * FROM track")
-            subscriptionMapItem = ditto.sync.registerSubscription("SELECT * FROM mapitem")
-            subscriptionAlert = ditto.sync.registerSubscription("SELECT * FROM alert")
-
-            configureDitto() // configure all peer transports
-            try {
-                ditto.startSync() // Start syncing
-                Log.d("DittoService", "Sync started")
-            } catch (e: DittoError) {
-                Log.e("DittoService", "Error starting sync: ${e.message}")
-            }
-        }
+        Log.d(TAG, "DittoService onStartCommand()")
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null // Not a bound service
-    }
-
-    private fun startForegroundService() {
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "DittoService"
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV Ditto service running")
-            .setPriority(Context.BIND_WAIVE_PRIORITY)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        try {
-            startForeground(DITTO_SERVICE_NOTIFICATION_ID, notification)
-        } catch (e: NullPointerException) {
-            Log.e(TAG, "Failed to set Ditto ForegroundService", e )
-        }
-    }
-
-    private fun createNotificationChannel(): String {
-        val channelId = "Ditto_Service"
-        val channelName = "Ditto Background Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
     }
 
     //––––––––– | Helper tools for Cot Parsing from DittoDocumentEvent
@@ -617,7 +470,6 @@ class DittoService : Service() {
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
         lateinit var localPeerKeyString: String
         private lateinit var ditto: Ditto
-
 
         fun getDittoInstance(): Ditto? =
             if (::ditto.isInitialized) ditto else null

@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
-
 package com.aitech.weartak_civ.complication
 
 import androidx.wear.watchface.complications.data.ComplicationData
@@ -16,7 +7,7 @@ import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysioServiceLiveData
 import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
@@ -35,7 +26,7 @@ class HeartRateComplicationService : SuspendingComplicationDataSourceService() {
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         //Log.d(TAG, "onComplicationRequest called")
         return when (isLicenseValid()) {
-            true -> return when (enablePhysiologicalServicesSettingsState.value) {
+            true -> return when (enablePhysioServiceLiveData.value) {
 //            return when (hr) {
 //                hr -> createComplicationData(hr.toString(), getString(R.string.heart_rate))
 //                else -> throw IllegalArgumentException(getString(R.string.heart_rate_could_not_be_found))
