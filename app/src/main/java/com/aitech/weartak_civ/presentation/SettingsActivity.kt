@@ -236,7 +236,6 @@ import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsActivity
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.ActivityRecognitionService
@@ -296,7 +295,7 @@ class SettingsActivity : ComponentActivity() {
         lateinit var settingsActivity: SettingsActivity
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
-        val sexOptionsList : List<String> = listOf("N/A", "Male", "Female")
+//        val sexOptionsList : List<String> = listOf(stringResource(R.string.n_a), "Male", "Female")
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
@@ -471,23 +470,23 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "constant_reporting_interval_screen") {
-            NumericEntryPage(navController, constantReportingIntervalSettingsState, 1000000, "Constant Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, constantReportingIntervalSettingsState, 1000000, stringResource(R.string.constant_reporting_interval), context, "reporting_settings_screen")
         }
         composable(
             "stationary_reporting_interval_screen") {
-            NumericEntryPage(navController, stationaryReportingIntervalSettingsState, 1000000, "Stationary Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, stationaryReportingIntervalSettingsState, 1000000, stringResource(R.string.stationary_reporting_interval), context, "reporting_settings_screen")
         }
         composable(
             "on_foot_reporting_interval_screen") {
-            NumericEntryPage(navController, onFootReportingIntervalSettingsState, 1000000, "On Foot Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, onFootReportingIntervalSettingsState, 1000000, stringResource(R.string.on_foot_reporting_interval), context, "reporting_settings_screen")
         }
         composable(
             "vehicle_reporting_interval_screen") {
-            NumericEntryPage(navController, vehicleReportingIntervalSettingsState, 1000000, "Vehicle Reporting Interval", context,"reporting_settings_screen" )
+            NumericEntryPage(navController, vehicleReportingIntervalSettingsState, 1000000, stringResource(R.string.vehicle_reporting_interval), context,"reporting_settings_screen" )
         }
         composable(
             "while_alerting_reporting_interval_screen") {
-            NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, "While Alerting Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, stringResource(R.string.while_alerting_reporting_interval), context, "reporting_settings_screen")
         }
         composable(
             "license_setting_screen") {
@@ -532,6 +531,8 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_sex_screen") {
+            val sexOptionsList : List<String> = listOf(stringResource(R.string.n_a), stringResource(R.string.male), stringResource(R.string.female))
+
             SexBloodtypeUsertypeSetting(navController, sexSettingsState, sexOptionsList, stringResource(R.string.sex))
         }
         composable(
@@ -2263,12 +2264,12 @@ fun ReportingStrategySettings(navController: NavController) {
                     }
                 },
                 enabled = true,
-                label = { Text(text = "Reporting Strategy") },
+                label = { Text(text = stringResource(R.string.reporting_strategy)) },
                 secondaryLabel = {
                     if (enableDynamicReporting == true) {
-                        Text("Dynamic Reporting")
+                        Text(stringResource(R.string.dynamic_reporting))
                     } else {
-                        Text("Constant Reporting")
+                        Text(stringResource(R.string.constant_reporting))
                     }
                 },
                 colors = ChipDefaults.chipColors(
@@ -2283,13 +2284,18 @@ fun ReportingStrategySettings(navController: NavController) {
             Spacer(modifier = Modifier.height(5.dp))
 
             if (enableDynamicReporting == true) {
-                DataMetricsChip("stationary_reporting_interval_screen", "Stationary Reporting Interval", stationaryReportingIntervalSettingsState.value.toString(), navController)
-                DataMetricsChip("on_foot_reporting_interval_screen", "On Foot Reporting Interval", onFootReportingIntervalSettingsState.value.toString(), navController)
-                DataMetricsChip("vehicle_reporting_interval_screen", "Vehicle Reporting Interval", vehicleReportingIntervalSettingsState.value.toString(), navController)
-                DataMetricsChip("while_alerting_reporting_interval_screen", "While Alerting Reporting Interval", whileAlertingReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("stationary_reporting_interval_screen",
+                    stringResource(R.string.stationary_reporting_interval), stationaryReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("on_foot_reporting_interval_screen",
+                    stringResource(R.string.on_foot_reporting_interval), onFootReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("vehicle_reporting_interval_screen",
+                    stringResource(R.string.vehicle_reporting_interval), vehicleReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("while_alerting_reporting_interval_screen",
+                    stringResource(R.string.while_alerting_reporting_interval), whileAlertingReportingIntervalSettingsState.value.toString(), navController)
 
             } else {
-                DataMetricsChip("constant_reporting_interval_screen", "Constant Reporting Interval", constantReportingIntervalSettingsState.value.toString(), navController)
+                DataMetricsChip("constant_reporting_interval_screen",
+                    stringResource(R.string.constant_reporting_interval), constantReportingIntervalSettingsState.value.toString(), navController)
 
             }
 
@@ -2334,7 +2340,9 @@ fun ReportingStrategyDynamicConstantSetting (
     navController: NavController,
 ) {
     val enableDynamicReporting = enableDynamicReportingStrategySettingsState.value ?: true
-    val radioOptions = listOf("Constant Reporting", "Dynamic Reporting")
+    val CONSTANT_REPORTING = stringResource(R.string.constant_reporting)
+    val DYNAMIC_REPORTING = stringResource(R.string.dynamic_reporting)
+    val radioOptions = listOf(CONSTANT_REPORTING, DYNAMIC_REPORTING)
     val initialValue = when {
         !enableDynamicReporting -> radioOptions[0]  // "Constant"
         else  -> radioOptions[1] // "Dynamic"
@@ -2356,7 +2364,7 @@ fun ReportingStrategyDynamicConstantSetting (
                         .padding(bottom = 5.dp),
                     selected = isSelectedItem(text),
                     onClick = { onChangeState(text)
-                        if (text == "Constant Reporting") {
+                        if (text == CONSTANT_REPORTING) {
                             enableDynamicReportingStrategySettingsState.postValue(false)
                         } else {
                             enableDynamicReportingStrategySettingsState.postValue(true)
@@ -2990,7 +2998,7 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
     columnContent = {
         DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
         DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
-        DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
+        DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + stringResource(R.string.lbs), navController)
         DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
         DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
         DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
@@ -3195,9 +3203,9 @@ fun InvalidHailScreen(navController: NavController) {
     WearTAKCIVTheme {
         Column(
             modifier = Modifier
-                    .fillMaxSize()
-                    .background(colors.background)
-                    .padding(10.dp),
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -3437,7 +3445,7 @@ fun SettingsScreen(
                     }
                 },
                 enabled = true,
-                label = { Text(text = "Reporting Settings") },
+                label = { Text(text = stringResource(R.string.reporting_settings)) },
                 colors = ChipDefaults.chipColors(
                     backgroundColor = Color.DarkGray,
                     contentColor = Color.White,
@@ -3532,7 +3540,7 @@ fun SettingsScreen(
                 enableSmsCheckedLive,
                 { enableSmsForAlertsSettingsState.postValue(it) },
                 {},
-                "SMS Alerts",
+                stringResource(R.string.sms_alerts),
                 stringResource(R.string.on_off)
             )
                 val focusManager = LocalFocusManager.current
@@ -4253,7 +4261,7 @@ fun PhysioSettingsPreview() {
 fun SexMetricPreview() {
     var licenseState = MutableLiveData<String>("")
 
-    SexBloodtypeUsertypeSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type")
+//    SexBloodtypeUsertypeSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type")
 }
 @Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
 @Composable

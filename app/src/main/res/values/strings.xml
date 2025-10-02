@@ -496,4 +496,18 @@
     <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
     <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
     <string name="high_exertion_alert_string">HIGH Exertion</string>
+    <string name="reporting_settings">Reporting Settings</string>
+    <string name="reporting_strategy">Reporting Strategy</string>
+    <string name="constant_reporting">Constant Reporting</string>
+    <string name="dynamic_reporting">Dynamic Reporting</string>
+    <string name="stationary_reporting_interval">Stationary Reporting Interval</string>
+    <string name="on_foot_reporting_interval">On Foot Reporting Interval</string>
+    <string name="vehicle_reporting_interval">Vehicle Reporting Interval</string>
+    <string name="while_alerting_reporting_interval">While Alerting Reporting Interval</string>
+    <string name="constant_reporting_interval">Constant Reporting Interval</string>
+    <string name="sms_alerts">SMS Alerts</string>
+    <string name="lbs">" lbs"</string>
+    <string name="n_a">N/A</string>
+    <string name="male">Male</string>
+    <string name="female">Female</string>
 </resources>

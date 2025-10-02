@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+    This string is used for square devices and overridden by hello_world in
+    values-round/strings.xml for round devices.
+    -->
+    <string name="hello_world">From WearTAK-CIV, %1$s!</string>
+    <string name="callsign_settings">Callsign Settings</string>
+    <string name="team">Team</string>
+    <string name="role">Role</string>
+    <string name="callsign">Callsign</string>
+    <string name="connection_settings">Connection Settings</string>
+    <string name="tak_server">TAK Server</string>
+    <string name="save_battery_on_wifi">Save Battery on WiFi</string>
+    <string name="license_key">License Key</string>
+    <string name="general_settings">General Settings</string>
+    <string name="location_service">Location Service</string>
+    <string name="service_on_off">Service ON/OFF</string>
+    <string name="biometrics">Biometrics</string>
+    <string name="ditto">Ditto</string>
+    <string name="version">Version %1$s</string>
+    <string name="tak_servers">TAK Servers</string>
+    <string name="edit_server">Edit Server</string>
+    <string name="connection_name">Connection Name</string>
+    <string name="address_url">Address/URL</string>
+    <string name="port">Port</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="registering_device_with_tak_server">Registering device with TAK Server</string>
+    <string name="registration_complete">Registration Complete</string>
+    <string name="registration_failed">Registration Failed</string>
+    <string name="tak_server_registration_succeeded">TAK Server registration succeeded</string>
+    <string name="invalid_credentials_try_again">Invalid Credentials, try again</string>
+    <string name="network_disconnected_try_later">Network Disconnected, try later</string>
+    <string name="retry">Retry</string>
+    <string name="okay">Okay</string>
+    <string name="cancel">Cancel</string>
+    <string name="slows_update_rate_on_enabled_wifi_networks">Slows Update Rate on Enabled WiFi Networks</string>
+    <string name="optimize_on">Optimize On:</string>
+    <string name="some_wifi_connections">Some WiFi Connections</string>
+    <string name="no_wifi_connections">No WiFi Connections</string>
+    <string name="all_wifi_connections">All WiFi Connections</string>
+    <string name="edit_optimized_wifi_connections">Edit Optimized WiFi Connections</string>
+    <string name="enabled_wifi_connections">Enabled WiFi Connections</string>
+    <string name="add_network">Add Network</string>
+    <string name="delete">Delete</string>
+    <string name="undo">Undo</string>
+    <string name="wifi_ssid">Wifi SSID</string>
+    <string name="confirm">Confirm</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="sos_alert_prompt">Do you want to trigger an SOS alert at your location?</string>
+    <string name="marker_drop_prompt">Drop marker at current location?</string>
+    <string name="success">Success!</string>
+    <string name="error">Error</string>
+    <string name="invalid_license_key">Invalid License Key</string>
+    <string name="please_add_correct_key_to_use_weartak">Please add correct key to use WearTAK</string>
+    <string name="update_license">Update License</string>
+    <string name="bpm">" bpm"</string>
+    <string name="sos">SOS</string>
+
+    <string name="weartak_accessibility_settings_toast">Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings</string>
+    <string name="connecting_to_toast">Connecting to %1$s</string>
+    <string name="connected_to_toast">Connected to %1$s</string>
+    <string name="connection_failed">Connection Failed</string>
+    <string name="tak_server_connections">TAK Server Connections</string>
+    <string name="new_server">New Server</string>
+    <string name="reporting_interval_empty_enter_again">Reporting Interval Empty, Enter Again</string>
+    <string name="reporting_interval_0_enter_again">Reporting Interval 0, Enter Again</string>
+    <string name="reporting_interval">Reporting Interval</string>
+    <string name="interval_in_secs">Interval in secs</string>
+    <string name="reporting_rate_outside_bounds">Reporting Rate Outside Bounds</string>
+    <string name="please_enter_valid_values_for_all_fields">Please enter valid values for all fields</string>
+    <string name="color_red">Red</string>
+    <string name="team_brown">Brown</string>
+    <string name="team_blue">Blue</string>
+    <string name="team_white">White</string>
+    <string name="team_yellow">Yellow</string>
+    <string name="team_orange">Orange</string>
+    <string name="team_magenta">Magenta</string>
+    <string name="team_maroon">Maroon</string>
+    <string name="team_purple">Purple</string>
+    <string name="team_dark_blue">Dark Blue</string>
+    <string name="team_cyan">Cyan</string>
+    <string name="team_teal">Teal</string>
+    <string name="team_green">Green</string>
+    <string name="team_dark_green">Dark Green</string>
+    <string name="role_team_member">Team Member</string>
+    <string name="role_team_lead">Team Lead</string>
+    <string name="role_hq">HQ</string>
+    <string name="role_sniper">Sniper</string>
+    <string name="role_medic">Medic</string>
+    <string name="role_forward_observer">Forward Observer</string>
+    <string name="role_rto">RTO</string>
+    <string name="role_k9">K9</string>
+
+    <!-- complication strings -->
+
+    <!--    &lt;!&ndash; Tak Server Configurations &ndash;&gt;-->
+    <!--    <string name="tak_server_connection_name_title">TAK Server Connection Name</string>-->
+    <!--    <string name="tak_server_connection_name_description">Enter the connection name for the TAK server</string>-->
+    <!--    <string name="tak_server_connection_name_default">Tak Default Server</string>-->
+
+    <!--    <string name="tak_server_connection_enabled_title">TAK Server Connection Enabled</string>-->
+    <!--    <string name="tak_server_connection_enabled_description">Enable/Disable this TAK server connection</string>-->
+    <!--    <string name="tak_server_connection_enabled_default">true</string>-->
+
+    <!--    <string name="tak_server_address_title">TAK Server Address/URL</string>-->
+    <!--    <string name="tak_server_address_description">Enter the IP address / URL of the TAK server</string>-->
+    <!--    <string name="tak_server_address_default">tak.test.ops.ascentitech.com</string>-->
+
+    <!--    <string name="tak_server_port_title">TAK Server Port</string>-->
+    <!--    <string name="tak_server_port_description">Enter the port number for the TAK server</string>-->
+    <!--    <string name="tak_server_port_default">8089</string>-->
+
+    <!--    &lt;!&ndash; TAK Server Username and Password Configs &ndash;&gt;-->
+    <!--    <string name="tak_server_username_title">TAK Server Username</string>-->
+    <!--    <string name="tak_server_username_description">Enter the username for the TAK server</string>-->
+    <!--    <string name="tak_server_username_default">TEST.AIT.WEAROS</string>-->
+
+    <!--    <string name="tak_server_password_title">TAK Server Password</string>-->
+    <!--    <string name="tak_server_password_description">Enter the password for the TAK server</string>-->
+    <!--    <string name="tak_server_password_default">TEST.AIT.WEAROS.Password01</string>-->
+
+    <!--    &lt;!&ndash; Certs Configuration &ndash;&gt;-->
+    <!--    <string name="tak_server_cert_title">TAK Server Certificate (base64)</string>-->
+    <!--    <string name="tak_server_cert_description">Enter the base64-encoded P12 certificate for authentication</string>-->
+
+    <!-- Select Data Endpoints -->
+
+    <!-- Tak Server Configurations -->
+    <!--     Server Defaults: 0=DEFAULT, 1=TEST, 2=DEVELOP -->
+
+    <!-- TAK Server Username and Password Configs -->
+    <string name="tak_server_username_default" translatable="false"></string>
+
+    <string name="tak_server_password_default" translatable="false"></string>
+
+    <!-- Certs Configuration -->
+
+    <!-- Cot Update Interval -->
+
+
+    <!-- ESRI Endpoint -->
+
+    <!-- Tablet Command Endpoint -->
+
+    <!-- Teams Configuration -->
+
+    <!-- Roles Configuration -->
+
+    <!-- License Key -->
+
+    <!-- Ditto -->
+    <string name="ditto_auth_token_default" translatable="false"></string>
+
+    <string name="ditto_app_id_default" translatable="false"></string>
+
+    <!-- Enable / Disable Services -->
+
+    <!-- WiFi Battery optimization-->
+
+    <string name="enable_sms_numbers_comma_separated_default" translatable="false"></string>
+
+    <!-- Sex entries -->
+
+    <!-- Blood Type entries -->
+
+    <!-- Allergy entries -->
+
+    <!-- User Type entries -->
+
+    <!--  -->
+
+
+    <!-- Developer Json -->
+
+    <!-- Developer bundle -->
+
+    <!-- Developer bundle array -->
+
+    <!-- Localization via proximity to known BLE iBeacons -->
+
+    <!-- Localization iBeacon Configuration -->
+
+    <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
+    <string name="sos_active">SOS Live</string>
+    <string name="sos_alert_sent">SOS Alert SENT</string>
+    <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
+    <string name="sos_inactive">SOS Inactive</string>
+    <string name="on_off">ON/OFF</string>
+    <string name="sms_recipients">SMS Recipients</string>
+    <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
+    <string name="physiological_settings">Physiological Settings</string>
+    <string name="physiological_monitoring">Physiological Monitoring</string>
+    <string name="chat">Chat</string>
+    <string name="physiological_alerts">Physiological Alerts</string>
+    <string name="physiological_user_metrics">Physiological User Metrics</string>
+    <string name="age">Age</string>
+    <string name="weight">Weight</string>
+    <string name="sex">Sex</string>
+    <string name="blood_type">Blood Type</string>
+    <string name="user_type">User Type</string>
+    <string name="height">Height</string>
+    <string name="allergies">Allergies</string>
+    <string name="value_exceeds_maximum_please_re_enter">Value exceeds maximum, please re-enter</string>
+    <string name="threshold_high_heart_rate">Threshold - High Heart Rate</string>
+    <string name="threshold_high_heart_rate_length">Threshold - High Heart Rate Length</string>
+    <string name="resting_heart_rate">Resting Heart Rate</string>
+    <string name="loading">Loading...</string>
+    <string name="callsign_loading">Callsign Loading</string>
+    <string name="invalid_license">INVALID LICENSE</string>
+    <string name="sos_details_loading">SOS Details Loading</string>
+    <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
+    <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
+    <string name="high_exertion_alert_string">HIGH Exertion</string>
+    <string name="reporting_settings">Reporting Settings</string>
+    <string name="reporting_strategy">Reporting Settings</string>
+    <string name="constant_reporting">Constant Reporting</string>
+    <string name="dynamic_reporting">Dynamic Reporting</string>
+    <string name="stationary_reporting_interval">Stationary Reporting Interval</string>
+    <string name="on_foot_reporting_interval">On Foot Reporting Interval</string>
+    <string name="vehicle_reporting_interval">Vehicle Reporting Interval</string>
+    <string name="while_alerting_reporting_interval">While Alerting Reporting Interval</string>
+    <string name="constant_reporting_interval">Constant Reporting Interval</string>
+    <string name="sms_alerts">SMS Alerts</string>
+    <string name="lbs">" lbs"</string>
+    <string name="n_a">N/A</string>
+    <string name="male">Male</string>
+    <string name="female">Female</string>
+</resources>
