@@ -77,6 +77,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -561,19 +562,16 @@ fun GenericOutlinedTextField(
     label: String,
     placeholder: String
 ): TextFieldValue {
-    var textFieldValue by remember {
-        mutableStateOf(
-            TextFieldValue(
-                liveDataState.value ?: "null"
-            )
-        )
+    var textFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(liveDataState.value ?: "null"))
     }
     OutlinedTextField(
         value = textFieldValue,
         onValueChange = {
             textFieldValue = it
         },
-        maxLines = 1,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         label = { Text(text = label, color = colors.primary) },
         placeholder = { Text(text = placeholder, color = colors.primary) },
         textStyle = TextStyle(color = colors.primary)
@@ -1154,7 +1152,7 @@ fun NewServerPage(navController: NavController) {
 
                 ServerSettingText(
                     stringResource(R.string.connection_name),
-                    name,
+                    TextFieldValue(name),
                     onValueChanged = { name = it },
                     false,
                     false,
@@ -1162,7 +1160,7 @@ fun NewServerPage(navController: NavController) {
                 )
                 ServerSettingText(
                     stringResource(R.string.address_url),
-                    address,
+                    TextFieldValue(address),
                     onValueChanged = { address = it },
                     false,
                     false,
@@ -1170,7 +1168,7 @@ fun NewServerPage(navController: NavController) {
                 )
                 ServerSettingText(
                     stringResource(R.string.port),
-                    port,
+                    TextFieldValue(port),
                     onValueChanged = { port = it },
                     false,
                     true,
@@ -1178,7 +1176,7 @@ fun NewServerPage(navController: NavController) {
                 )
                 ServerSettingText(
                     stringResource(R.string.username),
-                    username,
+                    TextFieldValue(username),
                     onValueChanged = { username = it },
                     false,
                     false,
@@ -1186,7 +1184,7 @@ fun NewServerPage(navController: NavController) {
                 )
                 ServerSettingText(
                     stringResource(R.string.password),
-                    password,
+                    TextFieldValue(password),
                     onValueChanged = { password = it },
                     true,
                     false,
@@ -1359,7 +1357,7 @@ fun EditServerPage(
 
                 ServerSettingText(
                     stringResource(R.string.connection_name),
-                    name,
+                    TextFieldValue(name),
                     onValueChanged = { name = it },
                     false,
                     false,
@@ -1369,7 +1367,7 @@ fun EditServerPage(
                 if (isP12Cert == true) {
                     ServerSettingText(
                         stringResource(R.string.address_url),
-                        address,
+                        TextFieldValue(address),
                         onValueChanged = { address = it },
                         false,
                         false,
@@ -1377,7 +1375,7 @@ fun EditServerPage(
                     )
                     ServerSettingText(
                         stringResource(R.string.port),
-                        port,
+                        TextFieldValue(port),
                         onValueChanged = { port = it },
                         false,
                         true,
@@ -1385,7 +1383,7 @@ fun EditServerPage(
                 } else {
                     ServerSettingText(
                         stringResource(R.string.address_url),
-                        address,
+                        TextFieldValue(address),
                         onValueChanged = { address = it },
                         false,
                         false,
@@ -1393,14 +1391,14 @@ fun EditServerPage(
                     )
                     ServerSettingText(
                         stringResource(R.string.port),
-                        port,
+                        TextFieldValue(port),
                         onValueChanged = { port = it },
                         false,
                         true,
                         true)
                     ServerSettingText(
                         stringResource(R.string.username),
-                        username,
+                        TextFieldValue(username),
                         onValueChanged = { username = it },
                         false,
                         false,
@@ -1408,7 +1406,7 @@ fun EditServerPage(
                     )
                     ServerSettingText(
                         stringResource(R.string.password),
-                        password,
+                        TextFieldValue(password),
                         onValueChanged = { password = it },
                         true,
                         false,
@@ -1582,7 +1580,7 @@ fun EditServerPage(
 @Composable
 fun ServerSettingText (
     label: String,
-    value: String,
+    value: TextFieldValue,
     onValueChanged: (String) -> Unit,
     isPassword : Boolean,
     isPort : Boolean,
@@ -1590,15 +1588,21 @@ fun ServerSettingText (
 ) {
     val maxChar = 20
 
+    var tfv by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(value) }
+
     OutlinedTextField(
-        value = value,
+        value = tfv,
         enabled = isEnabled,
-        onValueChange = onValueChanged,
+        onValueChange = { newValue ->
+            tfv = newValue
+            onValueChanged(newValue.text)
+        },
 //        maxLines = 1,
         label = { Text(text = label, color = colors.primary, fontSize = 12.sp) },
-        textStyle = TextStyle(color = colors.primary, fontSize = if (value!!.length <= maxChar) 12.sp else 10.sp),
+        textStyle = TextStyle(color = colors.primary, fontSize = if (value.text.length <= maxChar) 12.sp else 10.sp),
         modifier = Modifier.padding(bottom = 5.dp),
-        keyboardOptions = KeyboardOptions(keyboardType = if (isPort) KeyboardType.Number else KeyboardType.Text),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = if (isPort) KeyboardType.Number else KeyboardType.Text, imeAction = ImeAction.Done),
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
     )
 }
@@ -1876,20 +1880,20 @@ fun NewWiFiSSIDSetting(
         contentAlignment = Alignment.Center
     ) {
         //Log.d(TAG, "NewWiFiSSIDSetting called")
-        var name by remember {
-            mutableStateOf("")
-        }
+        var tfv by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+
 
         OutlinedTextField(
-            value = name,
-            onValueChange = {text ->
-                name = text
+            value = tfv,
+            onValueChange = {newValue ->
+                tfv = newValue
             },
             //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chivvv
-            maxLines = 1,
+            singleLine = true,
             label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
             placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
+            textStyle = TextStyle(color = colors.primary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
@@ -1903,9 +1907,9 @@ fun NewWiFiSSIDSetting(
                 },
                 onClickConfirm = {
                     //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chi^^^
-                    if (name.isNotBlank()) {
+                    if (tfv.text.isNotBlank()) {
                         val mutableWifiSsidList = wifiSsidListSettingsState.value?.toMutableList() ?: emptyList<DataRepository.WifiSsidItem>().toMutableList()
-                        mutableWifiSsidList.add(DataRepository.WifiSsidItem(name))
+                        mutableWifiSsidList.add(DataRepository.WifiSsidItem(tfv.text))
                         wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
                     }
 
@@ -1936,17 +1940,19 @@ fun EditedWiFiSSIDSetting(
     ) {
         val wifiSsidList by wifiSsidListSettingsState.observeAsState(initial = emptyList())
         Log.d(TAG, "EditedWiFiSSIDSetting SSID list: $wifiSsidList")
-        var name by remember { mutableStateOf(wifiSsidList.getOrNull(index)?.name.orEmpty()) }
-        Log.d(TAG, "text = $name")
+        var tfv by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(wifiSsidList.getOrNull(index)?.name.orEmpty())) }
+
+        Log.d(TAG, "text = ${wifiSsidList.getOrNull(index)?.name.orEmpty()}")
 
         OutlinedTextField(
-            value = name,
-            onValueChange = { text -> name = text },
+            value = tfv,
+            onValueChange = { tfv = it },
             //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chivvv
-            maxLines = 1,
+            singleLine = true,
             label = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
             placeholder = { Text(text = stringResource(R.string.wifi_ssid), color = colors.primary) },
-            textStyle = TextStyle(color = colors.primary)
+            textStyle = TextStyle(color = colors.primary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
@@ -1961,7 +1967,7 @@ fun EditedWiFiSSIDSetting(
                 //TODO: DUPLICATE CODE - Same outlinetextfield credentials for new and edited wifiSSID chi^^^
                 onClickConfirm = {
                     val mutableWifiSsidList = wifiSsidList.toMutableList()
-                    mutableWifiSsidList.set(index, DataRepository.WifiSsidItem(name))
+                    mutableWifiSsidList[index] = DataRepository.WifiSsidItem(tfv.text)
                     wifiSsidListSettingsState.postValue(mutableWifiSsidList.toList())
 
                     navController.navigate("wifi_ssid_screen") {
@@ -2190,7 +2196,7 @@ fun NumericEntryPage(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        var metricTextFieldValue by remember { mutableStateOf(TextFieldValue(metricSettingState.value.toString())) }
+        var metricTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(metricSettingState.value.toString())) }
         //Log.d(TAG, "metricTextFieldValue=" + metricTextFieldValue.text)
         val focusManager = LocalFocusManager.current
 
@@ -2199,7 +2205,7 @@ fun NumericEntryPage(
             onValueChange = {
                 metricTextFieldValue = it
             },
-            maxLines = 1,
+            singleLine = true,
             label = { Text(text = label, color = colors.primary) },
             placeholder = { Text(text = label, color = colors.primary) },
             textStyle = TextStyle(color = colors.primary),
@@ -2414,7 +2420,7 @@ fun ReportingStrategyIntervalSettings(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        var intervalSettingTextFieldValue by remember {
+        var intervalSettingTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
             mutableStateOf(
                 TextFieldValue(
                     intervalSettingState.value.toString() ?: "null"
@@ -2428,8 +2434,8 @@ fun ReportingStrategyIntervalSettings(
                 intervalSettingTextFieldValue = it
             },
             keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number),
-            maxLines = 1,
+                keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            singleLine = true,
             label = { Text(text = label, color = colors.primary, fontSize =  11.sp) },
             placeholder = { Text(text = placeholder, color = colors.primary) },
             textStyle = TextStyle(color = colors.primary)
@@ -3375,7 +3381,7 @@ fun SettingsScreen(
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
-    var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
+    var smsListTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(smsNumbersListString)) }
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
@@ -3577,6 +3583,7 @@ fun SettingsScreen(
                             )
                         },
                         textStyle = TextStyle(color = colors.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 if (smsListTextFieldValue.text.contains("[A-Za-z!\"#$%&'()*./:;\\\\<=>?@^_`{|}~]".toRegex())) {
