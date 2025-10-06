@@ -254,6 +254,13 @@ class PowerManagerService : Service() {
                     dataRepository.getEnableWifiBatteryOptimization.first(), dataRepository.getEnableAllWifiBatteryOptimization.first(), dataRepository.getWifiSsidList.first())
                 initialStartDelayDone.set(true)
             }
+
+            // Start EnvSensorService (foreground will be handled by the service itself)
+            try {
+                startService(Intent(this@PowerManagerService, EnvSensorService::class.java))
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to start EnvSensorService", t)
+            }
         }
     }
 
