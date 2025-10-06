@@ -179,7 +179,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = -45f,
                     sweepAngle = 85f,
                     Alignment.CenterEnd,
-                    "Friendly",
+                    stringResource(R.string.friendly),
                     marker = painterResource(R.drawable.friendly),
                     onClick = {
                         val time = System.currentTimeMillis()
@@ -195,7 +195,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = 45f,
                     sweepAngle = 85f,
                     Alignment.BottomCenter,
-                    "Unknown",
+                    stringResource(R.string.unknown),
                     marker = painterResource(R.drawable.unknown),
                     onClick = {
                         val time = System.currentTimeMillis()
@@ -211,7 +211,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = 135f,
                     sweepAngle = 85f,
                     Alignment.CenterStart,
-                    "Neutral",
+                    stringResource(R.string.neutral),
                     marker = painterResource(R.drawable.neutral),
                     onClick = {
                         val time = System.currentTimeMillis()
@@ -228,7 +228,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                     startAngle = 225f,
                     sweepAngle = 85f,
                     Alignment.TopCenter,
-                    "Hostile",
+                    stringResource(R.string.hostile),
                     marker = painterResource(R.drawable.hostile),
                     onClick = {
                         val time = System.currentTimeMillis()
@@ -336,6 +336,8 @@ fun LongPressProgressButtonWithInteraction(
         }
     }
     Box(modifier = modifier.size(100.dp)) {
+        val holdForMoreString = stringResource(R.string.hold_for_more)
+
         if (isPressed) {
             CircularProgressIndicator(
                 progress = progress,
@@ -347,7 +349,7 @@ fun LongPressProgressButtonWithInteraction(
         } else {
             CurvedLayout(modifier = Modifier.fillMaxSize()) {
                 basicCurvedText(
-                    "Hold for more",
+                    holdForMoreString,
                     CurvedModifier.padding(4.dp),
                     style = {
                         CurvedTextStyle(fontSize = 12.sp, color = Color.White)
@@ -421,7 +423,7 @@ fun LongPressScreen(navController: NavController, shouldShowDialog: MutableState
                         )
                     ) {
                         Text(
-                            text = "View Dropped Markers",
+                            text = stringResource(R.string.view_dropped_markers),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
@@ -462,7 +464,7 @@ fun LongPressScreen(navController: NavController, shouldShowDialog: MutableState
                         )
                     ) {
                         Text(
-                            text = "Clear Last Marker",
+                            text = stringResource(R.string.clear_last_marker),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
@@ -513,7 +515,7 @@ fun DroppedMarkerSetting(navController: NavController, shouldShowDialog: Mutable
                             },
                             label = {
                                 Text(
-                                    text = "Clear All Markers",
+                                    text = stringResource(R.string.clear_all_markers),
                                     textAlign = TextAlign.Center,
                                     color = Color.White,
                                     fontSize = 12.sp,
@@ -542,7 +544,7 @@ fun DroppedMarkerSetting(navController: NavController, shouldShowDialog: Mutable
                     } },
             )
         },
-        "Clear Dropped Markers"
+        stringResource(R.string.clear_dropped_markers)
     )
 }
 
@@ -707,10 +709,10 @@ fun markerIconFromString(markerType: String): Painter {
 @Composable
 fun markerTextFromString(markerType: String): String {
     val markerString: String = when (markerType) {
-        "a-u-G" -> "Unknown"
-        "a-f-G" -> "Friendly"
-        "a-h-G" -> "Hostile"
-        "a-n-G" -> "Neutral"
+        "a-u-G" -> stringResource(R.string.unknown)
+        "a-f-G" -> stringResource(R.string.friendly)
+        "a-h-G" -> stringResource(R.string.hostile)
+        "a-n-G" -> stringResource(R.string.neutral)
         else -> "ERROR"
     }
     return markerString
@@ -933,7 +935,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         {Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         //TODO" Have this text translated
-                        text = "$markerType Marker Dropped",
+                        text = markerType + stringResource(R.string.marker_dropped),
                         textAlign = TextAlign.Center,
                         color = Color.White
                     )}
@@ -959,7 +961,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
             if (droppedMarkerListSetting.isNotEmpty()) {
                 ClearMarkerConfirmationDialog(
                     shouldShowClearLastDialog,
-                    "Clear Last Marker?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType)} - " + utcToHoursMinutesSeconds(
+                    stringResource(R.string.clear_last_marker)+"?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType)} - " + utcToHoursMinutesSeconds(
                         droppedMarkerListSetting.last().timeDropped
                     ),
                     {
@@ -1023,7 +1025,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
 
             ClearMarkerConfirmationDialog(
                 shouldShowClearAllDialog,
-                "Clear All Dropped Markers?",
+                stringResource(R.string.clear_all_dropped_markers),
                 {Icon(
                     Icons.Outlined.Delete,
                     modifier = Modifier.size(25.dp),

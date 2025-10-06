@@ -233,10 +233,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.TAG
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.allergiesOptionsList
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.bloodTypeOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsActivity
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ChatService
@@ -295,10 +292,6 @@ class SettingsActivity : ComponentActivity() {
         lateinit var settingsActivity: SettingsActivity
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
-//        val sexOptionsList : List<String> = listOf(stringResource(R.string.n_a), "Male", "Female")
-        val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
-        val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
-        val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -537,14 +530,33 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_bloodtype_screen") {
+            val bloodTypeOptionsList : List<String> = listOf(stringResource(R.string.n_a), stringResource(R.string.a_plus), stringResource(R.string.a_minus), stringResource(R.string.b_plus), stringResource(R.string.b_minus), stringResource(R.string.ab_plus), stringResource(R.string.ab_minus), stringResource(R.string.o_plus), stringResource(R.string.o_minus))
+
             SexBloodtypeUsertypeSetting(navController, bloodTypeSettingsState, bloodTypeOptionsList, stringResource(R.string.blood_type))
         }
         composable(
             "physiological_metrics_allergies_screen") {
-            AllergySetting(navController, stringResource(R.string.allergies))
+            val allergiesOptionsList : List<String> = listOf(stringResource(R.string.n_a),
+                stringResource(R.string.antibiotics),
+                stringResource(R.string.anti_inflammatory_ibuprofen),
+                stringResource(R.string.antiseizure),
+                stringResource(R.string.aspirin),
+                stringResource(R.string.insulin),
+                stringResource(R.string.muscle_relaxers), stringResource(R.string.sulfa_drugs))
+
+            AllergySetting(navController, stringResource(R.string.allergies), allergiesOptionsList)
         }
         composable(
             "physiological_metrics_usertype_screen") {
+            val userTypeOptionsList : List<String> = listOf(stringResource(R.string.n_a),
+                stringResource(R.string.child),
+                stringResource(R.string.coalition_civilian),
+                stringResource(R.string.coalition_military),
+                stringResource(R.string.non_coalition_civilian),
+                stringResource(R.string.non_coalition_military),
+                stringResource(R.string.opposing_force_detainee)
+            )
+
             SexBloodtypeUsertypeSetting(navController, userTypeSettingsState, userTypeOptionsList, stringResource(R.string.user_type))
         }
         composable(
@@ -2632,7 +2644,7 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
         )
 
         DataMetricsChip("physiological_alerts_bpm_screen", stringResource(R.string.threshold_high_heart_rate), hrHighAlertBpmThresholdSettingsState.value.toString(), navController)
-        DataMetricsChip("physiological_alerts_bpm_length_screen", stringResource(R.string.threshold_high_heart_rate_length), hrHighAlertNumSecsThresholdSettingsState.value.toString() + " seconds", navController)
+        DataMetricsChip("physiological_alerts_bpm_length_screen", stringResource(R.string.threshold_high_heart_rate_length), hrHighAlertNumSecsThresholdSettingsState.value.toString() + " " + stringResource(R.string.seconds), navController)
 
         Spacer(modifier = Modifier.height(16.dp))
     },
@@ -2890,8 +2902,9 @@ fun findSexBloodtypeUsertypeIndex(dataName: String?, dataList: List<String>) : I
 @Composable
 fun AllergySetting (
     navController: NavController,
-    title: String
-) {
+    title: String,
+    dataList: List<String>,
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -2904,7 +2917,7 @@ fun AllergySetting (
 
         val initialIndices = remember(storedAllergies) {
             storedAllergies.mapNotNull { item ->
-                allergiesOptionsList.indexOf(item.name)
+                dataList.indexOf(item.name)
                     .takeIf { it >= 0 }
             }
         }
@@ -2940,7 +2953,7 @@ fun AllergySetting (
             )
             //TODO: DUPLICATE CODE - Same column and title credentials ^^^
 
-            allergiesOptionsList.forEachIndexed { index, dataItem ->
+            dataList.forEachIndexed { index, dataItem ->
                 run {
                     var checked = index in selectedIndices
                     ToggleChip(
@@ -2957,9 +2970,9 @@ fun AllergySetting (
                         },
                         enabled = true,
                         shape =
-                            if (dataItem == allergiesOptionsList.first())
+                            if (dataItem == dataList.first())
                                 RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
-                            else if (dataItem == allergiesOptionsList.last())
+                            else if (dataItem == dataList.last())
                                 RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
                             else
                                 RoundedCornerShape(0.dp)
@@ -2979,7 +2992,7 @@ fun AllergySetting (
                     }                },
                 onClickConfirm = {
                     val toSave = selectedIndices
-                        .map { idx -> DataRepository.AllergyItem(allergiesOptionsList[idx]) }
+                        .map { idx -> DataRepository.AllergyItem(dataList[idx]) }
                     allergyListSettingsState.postValue(toSave)
                     navController.navigate("physiological_metrics_setting_screen") {
                         popUpTo(("physiological_metrics_setting_screen")) {
@@ -3074,11 +3087,11 @@ fun HailDataText(text: String, canChangeColor: Boolean, status: HailLicenseState
 @Composable
 fun hailLicenseStatusTextFromString(status: HailLicenseStates?): String {
     val statusString: String = when (status) {
-        HailLicenseStates.VALID -> "License Valid"
-        HailLicenseStates.CHECKING -> "Checking License"
-        HailLicenseStates.SOFT_EXPIRED -> "Expiring Soon"
-        HailLicenseStates.EXPIRED -> "License Expired"
-        HailLicenseStates.INVALID -> "License Invalid"
+        HailLicenseStates.VALID -> stringResource(R.string.license_valid)
+        HailLicenseStates.CHECKING -> stringResource(R.string.checking_license)
+        HailLicenseStates.SOFT_EXPIRED -> stringResource(R.string.expiring_soon)
+        HailLicenseStates.EXPIRED -> stringResource(R.string.license_expired)
+        HailLicenseStates.INVALID -> stringResource(R.string.license_invalid)
         else -> stringResource(R.string.error)
     }
     return statusString
@@ -3103,7 +3116,7 @@ fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
     // Calculate days difference
     val today = LocalDate.now()
     val daysDiff = ChronoUnit.DAYS.between(today, localDate)
-    val daysDisplay = "$daysDiff Days"
+    val daysDisplay = stringResource(R.string.days, daysDiff)
 
     // Display in Compose
         HailDataText(text = displayDate, true, status)
@@ -3123,7 +3136,7 @@ fun HailSetting(navController: NavController) {
     WearTakCivScreenDimensions(
         columnContent = {
             Text(
-                "Status:",
+                stringResource(R.string.status),
                 modifier = Modifier.padding(bottom = 5.dp),
                 textAlign = TextAlign.Center,
                 color = if (hailLicenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
@@ -3135,23 +3148,23 @@ fun HailSetting(navController: NavController) {
 
             if (hailLicenseState == HailLicenseStates.EXPIRED || hailLicenseState == HailLicenseStates.SOFT_EXPIRED) {
                 Text(
-                    if (hailLicenseState == HailLicenseStates.EXPIRED) "Contact support to renew license" else "Contact support to extend license",
+                    if (hailLicenseState == HailLicenseStates.EXPIRED) stringResource(R.string.contact_support_to_renew_license) else stringResource(R.string.contact_support_to_extend_license),
                     textAlign = TextAlign.Center,
                     fontSize = 12.sp
                 )
             }
             HailTitleText(
-                if (hailLicenseState == HailLicenseStates.EXPIRED) "License Expired:" else "License Expires:",
+                if (hailLicenseState == HailLicenseStates.EXPIRED) stringResource(R.string.license_expired) else stringResource(R.string.license_expires),
                 true, hailLicenseState)
             DateDisplay(info?.expirationDate.toString(), hailLicenseState)
 
-            HailTitleText("Account Number:", false, hailLicenseState)
+            HailTitleText(stringResource(R.string.account_number), false, hailLicenseState)
             HailDataText(info?.accountNumber.toString(), false, hailLicenseState)
 
-            HailTitleText("License Identification:", false, hailLicenseState)
+            HailTitleText(stringResource(R.string.license_identification), false, hailLicenseState)
             HailDataText(info?.licenseId.toString(), false, hailLicenseState)
 
-            HailTitleText("Device Identification:", false, hailLicenseState)
+            HailTitleText(stringResource(R.string.device_identification), false, hailLicenseState)
             HailDataText(info?.deviceId.toString(), false, hailLicenseState)
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -3166,7 +3179,7 @@ fun HailSetting(navController: NavController) {
                     } },
             )
         },
-        text = "HAIL Settings"
+        text = stringResource(R.string.hail_settings)
     )
 }
 
@@ -3210,7 +3223,7 @@ fun InvalidHailScreen(navController: NavController) {
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Activate Hail",
+                text = stringResource(R.string.activate_hail),
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.SemiBold,
@@ -3219,7 +3232,7 @@ fun InvalidHailScreen(navController: NavController) {
                     .align(Alignment.CenterHorizontally)
             )
             Text(
-                text = "Pairing Code:",
+                text = stringResource(R.string.pairing_code),
                 textAlign = TextAlign.Center,
             )
             Text(
@@ -3232,7 +3245,7 @@ fun InvalidHailScreen(navController: NavController) {
                     .align(Alignment.CenterHorizontally)
                 )
             Text(
-                text = "Enter the code on your HAIL license portal, then press Register below",
+                text = stringResource(R.string.enter_the_code_on_your_hail_license_portal_then_press_register_below),
                 textAlign = TextAlign.Center,
                 fontSize = 12.sp,
                 lineHeight = 14.sp,
@@ -3271,14 +3284,14 @@ fun InvalidHailScreen(navController: NavController) {
                     colors = ButtonDefaults.buttonColors(colors.primary),
                 ) {
                     Text(
-                        text = "Register",
+                        text = stringResource(R.string.register),
                         color = Color.Black
                     )
                 }
             }
         }
         // Render the dialog ONCE, using the remembered state (no inline mutableStateOf(true))
-        LoadingDialog(shouldShowDialog = showLoadingDialog, secondaryText = "Checking License Status")
+        LoadingDialog(shouldShowDialog = showLoadingDialog, secondaryText = stringResource(R.string.checking_license_status))
     }
 }
 
@@ -3608,7 +3621,7 @@ fun SettingsScreen(
                     modifier = Modifier
                         .size(20.dp),
                 ) },
-                "HAIL",
+                stringResource(R.string.hail),
                 stringResource(R.string.service_on_off)
             )
             if (enableHailServiceSettingsState.value == true){
@@ -3618,7 +3631,7 @@ fun SettingsScreen(
                     } else {
                         "hail_setting_screen"
                     },
-                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
+                    stringResource(R.string.hail_settings), hailLicenseStatusTextFromString(hailLicenseState), navController)
             }
             Chip(
                 onClick = {
@@ -4273,7 +4286,7 @@ fun RoleSettingPreview() {
 @Composable
 fun AllergyMetricPreview() {
 
-    AllergySetting(rememberSwipeDismissableNavController(),"Allergies")
+    AllergySetting(rememberSwipeDismissableNavController(),"Allergies", listOf())
 }
 
 @Preview(widthDp = 192, heightDp = 500, showBackground = true)

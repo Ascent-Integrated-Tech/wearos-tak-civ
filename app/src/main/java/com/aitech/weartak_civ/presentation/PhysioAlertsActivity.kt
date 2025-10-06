@@ -142,8 +142,8 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
             ActivityDisabledScreen(
                 navController,
                 exitActivity,
-                "Alerts Disabled",
-                "Please enable alerts in order to use this feature"
+                stringResource(R.string.alerts_disabled),
+                stringResource(R.string.please_enable_alerts_in_order_to_use_this_feature)
             )
         }
 
@@ -196,7 +196,7 @@ fun AlertsScreen(
                         },
                         label = {
                             Text(
-                                text = alert.alert,
+                                text = alertStringFromConstant(alert.alert),
                                 fontSize = 15.sp,
                                 textAlign = TextAlign.Start,
                                 fontWeight = FontWeight.Medium,
@@ -222,8 +222,19 @@ fun AlertsScreen(
             BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
 
         },
-        text = "Active Alerts"
+        text = stringResource(R.string.active_alerts)
     )
+}
+
+@Composable
+fun alertStringFromConstant(emergencyType: String): String {
+    val alertString: String = when (emergencyType) {
+        HIGH_HEART_RATE_ALERT -> stringResource(R.string.high_heart_rate)
+        LOW_HEART_RATE_ALERT -> stringResource(R.string.low_heart_rate)
+        HIGH_EXERTION_ALERT -> stringResource(R.string.high_exertion)
+        else -> "ERROR"
+    }
+    return alertString
 }
 
 //TODO: WEAR-234 - Delete this
