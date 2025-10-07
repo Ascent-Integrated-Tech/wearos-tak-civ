@@ -51,9 +51,11 @@ import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.samsung.android.service.health.tracking.data.DataPoint
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -277,11 +279,40 @@ class DataRepository(private val context: Context) {
     }
     // ======== ======== Multicast SECTION END ======== ==========
 
-    private val _latestActivityConfidence = MutableStateFlow<Int>(100)
-    val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
+    data class LatestActivity (
+        var activity: ActivityRecognized,
+        var confidence: Int,
+        var timestamp: Long
+    )
 
-    private val _latestActivityRecognized = MutableStateFlow<ActivityRecognized>(ActivityRecognized.UNKNOWN)
+    private val _latestActivityRecognized = MutableStateFlow(ActivityRecognized.UNKNOWN)
     val latestActivityRecognized: StateFlow<ActivityRecognized> = _latestActivityRecognized
+
+    private val _latestActivityConfidence = MutableStateFlow(100)
+    val latestActivityConfidence: StateFlow<Int> = _latestActivityConfidence
+
+    private val latestActivityRecPair: Flow<Pair<ActivityRecognized, Int>> =
+        combine(latestActivityRecognized, latestActivityConfidence) { a, c -> a to c }
+            .distinctUntilChanged() // compares Pair(activity, confidence)
+
+    val getLatestActivity: StateFlow<LatestActivity> =
+        latestActivityRecPair
+            .map { (activity, confidence) ->
+                LatestActivity(
+                    activity = activity,
+                    confidence = confidence,
+                    timestamp = System.currentTimeMillis()
+                )
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = LatestActivity(
+                    activity = ActivityRecognized.UNKNOWN,
+                    confidence = 100,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
 
     private val _isAlerting = MutableStateFlow<Boolean>(false)
     val isAlerting : StateFlow<Boolean> = _isAlerting
@@ -524,6 +555,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeLatestActivityRecognized(activity: ActivityRecognized) {
+        Log.i(TAG, "storing $activity")
         _latestActivityRecognized.emit(activity)
     }
 
@@ -537,6 +569,17 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeLatestSkinTemp(skinTemp: Float) {
         _latestSkinTemp.emit(skinTemp)
+    }
+
+    private val _latestSpo2DataPoint = MutableStateFlow<DataPoint?>(null)
+    val getLatestSpo2DataPoint: StateFlow<DataPoint?> = _latestSpo2DataPoint
+
+    suspend fun updateLatestSpo2DataPoint(spo2DataPoint: DataPoint) {
+        _latestSpo2DataPoint.emit(spo2DataPoint)
+    }
+
+    suspend fun storeLatestSpo02(spo2DataPoint: DataPoint) {
+        // TODO: Store persistently using prefs[]?
     }
 
     suspend fun storeLatestLocation(location: Location) {
