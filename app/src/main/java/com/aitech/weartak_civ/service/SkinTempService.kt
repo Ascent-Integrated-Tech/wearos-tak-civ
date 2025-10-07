@@ -25,6 +25,7 @@ import com.samsung.android.service.health.tracking.data.ValueKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
@@ -34,6 +35,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 class SkinTempService : Service() {
+
     companion object {
         private const val TAG = "WearTAK-SkinTService"
         private const val NOTIF_ID = 177
@@ -45,9 +47,14 @@ class SkinTempService : Service() {
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
         const val LOG_FILENAME = "skin_temp.log"
 
-        // ===== SCHEDULER + POLICY =====
-        private const val SPO2_INTERVAL_MINUTES: Long = 1          // your target interval
-        private const val STILL_RECENT_WINDOW_MS: Long = 10_000 // how "recent" a STILL must be for immediate start
+        // ===== SPO2 SCHEDULER + POLICY =====
+        private const val SPO2_INTERVAL_MINUTES: Long = 60        // target interval in minutes
+        private const val STILL_RECENT_WINDOW_MS: Long = 10_000   // how "recent" a STILL must be for immediate start
+
+        // ===== SPO2 RETRY POLICY =====
+        private const val MAX_SPO2_RETRIES = 2                      // In the event we get weak signal, movement during sample, how many times should we retry?
+        private val RETRY_BACKOFF_MS = longArrayOf(5_000L, 10_000L) // per attempt (1..MAX), safe bounds
+        private const val SPO2_MAX_DURATION_MS = 40_000L            // watchdog: hard stop if session hangs
     }
 
     private val repo: DataRepository
@@ -62,71 +69,63 @@ class SkinTempService : Service() {
     private lateinit var healthTrackerCapability: HealthTrackerCapability
     private lateinit var availableTrackersList: List<HealthTrackerType>
     private lateinit var handlerThread: HandlerThread
-    private lateinit var bckgrndSkinTmpHandler: Handler
-    private lateinit var bckgrndSpo2Handler: Handler
+    private lateinit var backgroundSkinTempHandler: Handler
+    private lateinit var backgroundSpo2Handler: Handler
 
-    private var isSkTHandlerRunning = false
-    private var isSpo2HandlerRunning = false
+    @Volatile private var isSkTHandlerRunning = false
+    @Volatile private var isSpo2HandlerRunning = false
 
-    private var deviceWorn: Boolean = false
+    @Volatile private var deviceWorn: Boolean = false
 
-    private var nextFireSkinTempMs = 0L          // wall-clock target for the next run (skin temp)
-    private var nextFireSpo2Ms = 0L      // wall-clock target for the next run (spo2)
-    // One monotonic clock – the same one Handler uses
+    // Uptime targets (not wall clock)
+    private var nextFireSkinTempMs = 0L
+    private var nextFireSpo2Ms = 0L
+
     private val nowUptime get() = SystemClock.uptimeMillis()
+
+    // ===== SPO2 RUNTIME STATE =====
     @Volatile private var spo2SessionActive = false
-    private val SPO2_MAX_DURATION_MS = 40_000L
-
-    // ===== RUNTIME STATE =====
-    private var lastSpo2AtMs: Long = 0L                     // when we last finished (uptime)
     @Volatile private var spo2MeasurementPending: Boolean = false
-    private var latestStillAtMs: Long = 0L                  // updated on each STILL
+    @Volatile private var lastSpo2AtMs: Long = 0L
+    @Volatile private var latestStillAtMs: Long = 0L
+    @Volatile private var spo2Attempt: Int = 0 // 0 = first attempt, 1..MAX for retries
 
-    // Handy alias (you already have nowUptime)
     private val spO2IntervalMs get() = SPO2_INTERVAL_MINUTES * 60 * 1000L
 
-
-
-    // One function that always schedules the NEXT reading
+    // ===== Skin Temp Scheduling =====
     private fun scheduleNextSkinTempReading() {
-        if (!deviceWorn) return                     // skip if watch off-wrist
-        val target = nowUptime + DISPATCH_INTERVAL_MS        // absolute uptime timestamp
-        nextFireSkinTempMs = target                         // purely for diagnostics
-        bckgrndSkinTmpHandler.postAtTime(::startSkinTracker, target)
-//        writeToLogFileLocation(
-//            logFile,
-//            "Next reading scheduled for ${DISPATCH_INTERVAL_MS/1_000}s (at $target)"
-//        )
+        if (!deviceWorn) return
+        val target = nowUptime + DISPATCH_INTERVAL_MS
+        nextFireSkinTempMs = target
+        backgroundSkinTempHandler.postAtTime(::startSkinTracker, target)
     }
 
-    // Runnable the scheduler posts: ARM the pending flag; start now if STILL is recent
+    // ===== SPO2 Scheduler (arm, not start) =====
     private val spo2ArmRunnable = Runnable {
         spo2MeasurementPending = true
         Log.i(TAG, "SPO2 scheduler armed (pending=true)")
         val now = nowUptime
         val recentStill = (now - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
         if (deviceWorn && recentStill && !isSpo2HandlerRunning) {
-            Log.i(TAG, "SPO2 scheduler: recent STILL found; starting measurement now.")
-            startSpo2Tracker()
+            Log.i(TAG, "SPO2 scheduler: recent STILL; starting measurement now.")
+            requestStartSpo2(reason = "scheduler-recent-still", resetAttempts = true)
         }
     }
 
-    // Schedule the next ARM time (not a direct start)
     private fun scheduleNextSpo2Arm(minutes: Long = SPO2_INTERVAL_MINUTES) {
         if (!deviceWorn) return
         val target = nowUptime + minutes * 60 * 1000L
         nextFireSpo2Ms = target
-        bckgrndSpo2Handler.removeCallbacks(spo2ArmRunnable)
-        bckgrndSpo2Handler.postAtTime(spo2ArmRunnable, target)
-        Log.d(TAG, "SPO2 arm scheduled for t=$target (in ${minutes}m)")
+        backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+        backgroundSpo2Handler.postAtTime(spo2ArmRunnable, target)
+        Log.i(TAG, "SPO2 arm scheduled for t=$target (in ${minutes}m)")
     }
 
     private val logFile: File by lazy {
-        File(filesDir, LOG_FILENAME).apply {
-            if (!exists()) parentFile?.mkdirs()
-        }
+        File(filesDir, LOG_FILENAME).apply { if (!exists()) parentFile?.mkdirs() }
     }
 
+    // ===== Health Service Connection =====
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
             healthTrackerCapability = healthService.trackingCapability
@@ -134,8 +133,9 @@ class SkinTempService : Service() {
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
             spo2Tracker = healthService.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
             Log.i(TAG, "Health SDK Connected")
+
             if (deviceWorn) {
-                startSkinTracker()     // only kick off if worn
+                startSkinTracker()
                 scheduleNextSkinTempReading()
                 scheduleNextSpo2Arm()
             }
@@ -150,54 +150,72 @@ class SkinTempService : Service() {
 
         override fun onConnectionEnded() {
             Log.w(TAG, "SkinTempService onConnectionEnded(): HealthPlatform DISCONNECTED")
-            // Clean up when disconnected
             stopSkinTracker(true)
+            stopSpo2Tracker()
+            backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+            cancelSpo2Watchdog()
         }
     }
 
-    /*
-     *  SPO2 --> ValueKey.SPO2Set.STATUS
-     * Status | Description
-     * ------------------------------------
-     *   -6	    Time out
-     *   -5	    Signal quality is low
-     *   -4	    Device moved during measurement
-     *    0	    Calculating SpO2
-     *    2	    SpO2 measurement was completed
-     *
-     */
-
-    // on your class:
+    // ===== SPO2 Watchdog =====
     private val spo2Watchdog = Runnable {
-        Log.w(TAG, "SpO₂ watchdog fired — stopping after ${SPO2_MAX_DURATION_MS}ms")
+        Log.w(TAG, "SpO₂ watchdog fired — stopping after ${SPO2_MAX_DURATION_MS}ms (attempt=$spo2Attempt)")
         stopSpo2Tracker()
-        // Re-arm next cycle even on timeout
         lastSpo2AtMs = nowUptime
         scheduleNextSpo2Arm()
     }
 
     private fun cancelSpo2Watchdog() {
-        bckgrndSpo2Handler.removeCallbacks(spo2Watchdog)
+        backgroundSpo2Handler.removeCallbacks(spo2Watchdog)
     }
 
-    private fun startSpo2Tracker() {
-        if (!::spo2Tracker.isInitialized || isSpo2HandlerRunning) return
-        isSpo2HandlerRunning = true
-        spo2SessionActive = true
+    // ===== SPO2 Start/Stop (with attempt + logging) =====
+    private fun requestStartSpo2(reason: String, resetAttempts: Boolean) {
+        if (resetAttempts) spo2Attempt = 0
+        startSpo2TrackerInternal(reason)
+    }
+
+    private fun scheduleSpo2Retry(reason: String) {
+        if (spo2Attempt >= MAX_SPO2_RETRIES) {
+            Log.w(TAG, "SPO2 retry cap reached (attempt=$spo2Attempt/$MAX_SPO2_RETRIES). Will wait for next arm.")
+            scheduleNextSpo2Arm()
+            return
+        }
+        val backoff = RETRY_BACKOFF_MS.getOrNull(spo2Attempt.coerceAtLeast(0)) ?: RETRY_BACKOFF_MS.last()
+        spo2Attempt += 1
+        Log.w(TAG, "Scheduling SpO₂ retry #$spo2Attempt in ${backoff}ms (reason=$reason)")
+        backgroundSpo2Handler.postDelayed({ startSpo2TrackerInternal("retry-$spo2Attempt") }, backoff)
+    }
+
+    private fun startSpo2TrackerInternal(reason: String) {
+        if (!::spo2Tracker.isInitialized) {
+            Log.w(TAG, "SPO2 tracker not initialized; cannot start (reason=$reason)")
+            return
+        }
+        if (isSpo2HandlerRunning) {
+            Log.i(TAG, "SPO2 already running; skip start (reason=$reason)")
+            return
+        }
+        if (!deviceWorn) {
+            Log.w(TAG, "Device not worn; skip SpO₂ start (reason=$reason)")
+            return
+        }
 
         val supports = availableTrackersList.contains(HealthTrackerType.SPO2_ON_DEMAND)
         if (!supports) {
-            Log.w(TAG, "SPO2_ON_DEMAND not supported")
-            isSpo2HandlerRunning = false
-            spo2SessionActive = false
+            Log.w(TAG, "SPO2_ON_DEMAND not supported; cannot start (reason=$reason)")
             return
         }
-        Log.i(TAG, "Starting SpO₂...")
 
-        bckgrndSpo2Handler.post {
+        isSpo2HandlerRunning = true
+        spo2SessionActive = true
+        Log.i(TAG, "Starting SpO₂ (attempt=$spo2Attempt, reason=$reason) ...")
+
+        backgroundSpo2Handler.post {
             try {
                 spo2Tracker.setEventListener(spO2TrackerEventListener)
-                bckgrndSpo2Handler.postDelayed(spo2Watchdog, SPO2_MAX_DURATION_MS)
+                backgroundSpo2Handler.postDelayed(spo2Watchdog, SPO2_MAX_DURATION_MS)
+                Log.i(TAG, "SpO₂ listener set (attempt=$spo2Attempt)")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to set SpO₂ listener", t)
                 isSpo2HandlerRunning = false
@@ -206,24 +224,30 @@ class SkinTempService : Service() {
         }
     }
 
-
     private fun stopSpo2Tracker() {
-        Log.i(TAG, "Attempting to StopSpo2Tracker ...")
-        if (!isSpo2HandlerRunning) return
+        if (!isSpo2HandlerRunning) {
+            Log.i(TAG, "StopSpO2Tracker: no-op (already stopped)")
+            return
+        }
         isSpo2HandlerRunning = false
         spo2SessionActive = false
-        bckgrndSpo2Handler.post {
-            try { spo2Tracker.unsetEventListener() } catch (t: Throwable) {
+        Log.i(TAG, "Stopping SpO₂ (attempt=$spo2Attempt) ...")
+        backgroundSpo2Handler.post {
+            try {
+                spo2Tracker.unsetEventListener()
+            } catch (t: Throwable) {
                 Log.e(TAG, "Failed to unset SpO₂ listener", t)
             } finally {
-                Log.i(TAG, "Stopped Spo2Tracker ...")
-                bckgrndSpo2Handler.removeCallbacks(spo2Watchdog)
+                cancelSpo2Watchdog()
+                Log.i(TAG, "SpO₂ stopped (attempt=$spo2Attempt)")
             }
         }
     }
 
+    // ===== SPO2 Listener =====
     private val spO2TrackerEventListener = object : HealthTracker.TrackerEventListener {
         private var startedAtUptime: Long = 0L
+
         override fun onDataReceived(points: List<DataPoint?>) {
             if (!spo2SessionActive) return
             if (startedAtUptime == 0L) startedAtUptime = nowUptime
@@ -235,21 +259,37 @@ class SkinTempService : Service() {
                 val status = point.getValue(ValueKey.SpO2Set.STATUS)
                 val accuracy = point.getValue(ValueKey.SpO2Set.ACCURACY_FLAG)
 
+                val elapsed = nowUptime - startedAtUptime
+                Log.i(TAG, "SpO₂ upd: status=$status acc=$accuracy spo2=$spo2 hr=$hr elapsed=${elapsed}ms (attempt=$spo2Attempt)")
+
                 val terminal = when (status) { 2, -6, -5, -4 -> true; else -> false }
-                Log.i(TAG, "SpO₂ upd: status=$status acc=$accuracy spo2=$spo2 hr=$hr elapsed=${nowUptime - startedAtUptime}ms")
 
                 if (terminal) {
                     when (status) {
-                        2   -> Log.i(TAG, "✅ SpO₂ complete: $spo2% (HR=$hr, acc=$accuracy)")
-                        -6  -> Log.w(TAG, "⚠️ SpO₂ TIMEOUT")
-                        -5  -> Log.w(TAG, "⚠️ SpO₂ LOW SIGNAL")
-                        -4  -> Log.w(TAG, "⚠️ SpO₂ MOVED")
+                        2   -> Log.i(TAG, "✅ SpO₂ complete: $spo2% (HR=$hr, acc=$accuracy, attempt=$spo2Attempt)")
+                        -6  -> Log.w(TAG, "⚠️ SpO₂ TIMEOUT (attempt=$spo2Attempt)")
+                        -5  -> Log.w(TAG, "⚠️ SpO₂ LOW SIGNAL (attempt=$spo2Attempt)")
+                        -4  -> Log.w(TAG, "⚠️ SpO₂ MOVED (attempt=$spo2Attempt)")
                     }
 
-                    // mark completion time and plan next cycle
+                    // Finish current session
                     lastSpo2AtMs = nowUptime
                     stopSpo2Tracker()
-                    scheduleNextSpo2Arm()
+
+                    // On success → re-arm next interval; on failure → retry a few times, else re-arm
+                    if (status == 2) {
+                        spo2MeasurementPending = false
+                        scheduleNextSpo2Arm()
+                    } else {
+                        // retry only if still conditions are likely okay
+                        val recentStill = (nowUptime - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
+                        if (deviceWorn && recentStill) {
+                            scheduleSpo2Retry(reason = "terminal-$status")
+                        } else {
+                            Log.w(TAG, "Skip retry (deviceWorn=$deviceWorn, recentStill=$recentStill)")
+                            scheduleNextSpo2Arm()
+                        }
+                    }
                     break
                 }
             }
@@ -258,20 +298,27 @@ class SkinTempService : Service() {
         override fun onFlushCompleted() { /* no-op */ }
 
         override fun onError(error: HealthTracker.TrackerError) {
-            Log.e(TAG, "SpO₂ tracker error: $error")
+            Log.e(TAG, "SpO₂ tracker error: $error (attempt=$spo2Attempt)")
             lastSpo2AtMs = nowUptime
             stopSpo2Tracker()
-            scheduleNextSpo2Arm()
+            // Treat as failure; try retry path if appropriate
+            val recentStill = (nowUptime - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
+            if (deviceWorn && recentStill) {
+                scheduleSpo2Retry(reason = "error-${error.name}")
+            } else {
+                scheduleNextSpo2Arm()
+            }
         }
     }
 
+    // ===== Skin Temperature Listener (unchanged logic) =====
     private val skinTempTrackerEventListener = object : HealthTracker.TrackerEventListener {
 
         override fun onDataReceived(dataPoints: List<DataPoint>) {
             // 1️⃣  Stop sensor immediately (but keep queue)
             stopSkinTracker(false)
 
-            // 2️⃣  Collect temp data point  ──────────────────────────────
+            // 2️⃣  Collect temp data point
             dataPoints.firstOrNull()?.let { dp ->
                 val status = dp.getValue(ValueKey.SkinTemperatureSet.STATUS)
 
@@ -290,7 +337,8 @@ class SkinTempService : Service() {
                     skinTempLiveData.postValue("N/A")
                 }
 
-                CoroutineScope(Dispatchers.IO).launch {
+                // Use service scope (prevents leaks)
+                scope.launch {
                     repo.storeLatestSkinTemp(tempF)
                 }
             }
@@ -298,49 +346,42 @@ class SkinTempService : Service() {
             scheduleNextSkinTempReading()
         }
 
-        override fun onFlushCompleted() {
-            // No-op for on-demand service
-        }
+        override fun onFlushCompleted() { /* no-op for on-demand */ }
 
         fun Float.toFahrenheit(): Float = this * 9f/5f + 32f
 
         override fun onError(error: HealthTracker.TrackerError) {
             Log.e(TAG, "SkinTempService HealthTracker.TrackerError: $error")
         }
-
     }
 
+    // ===== Lifecycle =====
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SkinTempService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
 
-        // Start a dedicated thread for handling callbacks
         handlerThread = HandlerThread("SkinTempThread").apply { start() }
-        bckgrndSkinTmpHandler = Handler(handlerThread.looper)
-        bckgrndSpo2Handler = Handler(handlerThread.looper)
+        backgroundSkinTempHandler = Handler(handlerThread.looper)
+        backgroundSpo2Handler = Handler(handlerThread.looper)
 
-        // Connect to the Samsung Health Tracking Service
         healthService = HealthTrackingService(connectionListener, applicationContext)
         healthService.connectService()
 
-        // Listen for wrist wear state changes
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
         collectActivityRecFlow()
         collectMarkerFlows()
 
-        CoroutineScope(Dispatchers.IO).launch{
+        scope.launch {
             repo.reportingUpdateIntervalSecs.collect { secs ->
                 val newIntervalMs = (secs * 1_000L).coerceAtLeast(MIN_SKIN_TEMP_INTERVAL_MS)
                 if (newIntervalMs != DISPATCH_INTERVAL_MS) {
-//                    writeToLogFileLocation(logFile, "Dispatch Interval Changed from ${DISPATCH_INTERVAL_MS/1000}s to ${newIntervalMs/1000}s"); Log.i(TAG, "Reporting interval updated -> $secs s")
                     DISPATCH_INTERVAL_MS = newIntervalMs
-
                     if (deviceWorn) {
-                        bckgrndSkinTmpHandler.removeCallbacksAndMessages(null)
+                        backgroundSkinTempHandler.removeCallbacksAndMessages(null)
                         scheduleNextSkinTempReading()
                         startSkinTracker()
                     }
@@ -360,26 +401,33 @@ class SkinTempService : Service() {
         Log.d(TAG, "SkinTempService onDestroy()")
         isRunning.set(false)
         deviceWorn = false
+
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
 
-        // Ensure listener is removed and thread stopped
+        stopSpo2Tracker()
+        backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+        cancelSpo2Watchdog()
+
         stopSkinTracker(true)
         healthService.disconnectService()
+
+        scope.cancel()
         handlerThread.quitSafely()
         stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // Whenever the device is put on, we want fresh skin temp, not wait for the dispatch interval
+    // ===== Wear state =====
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onIsDeviceWornEvent(event: IsDeviceWornEvent) {
         val nowWorn = event.isDeviceWorn
         Log.d(TAG, "Wear event: new=$nowWorn")
-        // Clear old callbacks so they don’t pile up
-        bckgrndSkinTmpHandler.removeCallbacksAndMessages(null)
+
+        // Clear old skin callbacks so they don’t pile up
+        backgroundSkinTempHandler.removeCallbacksAndMessages(null)
 
         if (nowWorn) {
             deviceWorn = true
@@ -393,20 +441,18 @@ class SkinTempService : Service() {
                 Log.i(TAG, "SPO2 is overdue; pending=true")
             }
 
-            // Always (re)schedule the next arm tick.
             scheduleNextSpo2Arm()
-
             writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
-            stopSkinTracker(true)     // shut it down
+            stopSkinTracker(true)
             stopSpo2Tracker()
-            bckgrndSpo2Handler.removeCallbacks(spo2ArmRunnable)
+            backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
             writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
 
-
+    // ===== Activity recognition (STILL trigger path) =====
     private fun collectActivityRecFlow() {
         scope.launch {
             repo.getLatestActivity
@@ -414,6 +460,7 @@ class SkinTempService : Service() {
                 .collect { act ->
                     if (act.activity == ActivityRecognized.STILL && act.confidence >= 70) {
                         latestStillAtMs = nowUptime
+                        Log.i(TAG, "STILL observed (conf=${act.confidence})")
 
                         if (!deviceWorn) {
                             Log.w(TAG, "STILL but deviceWorn=false; ignoring")
@@ -424,51 +471,43 @@ class SkinTempService : Service() {
                         val due = (spo2MeasurementPending || dueByInterval)
 
                         if (due && !isSpo2HandlerRunning) {
-                            // Consume the pending flag so we don't double-trigger
                             val wasPending = spo2MeasurementPending
                             spo2MeasurementPending = false
-
-                            Log.i(
-                                TAG,
-                                "STILL trigger → start SpO2 (dueByInterval=$dueByInterval, " +
-                                        "wasPending=$wasPending, conf=${act.confidence})"
-                            )
-                            startSpo2Tracker()
+                            Log.i(TAG, "STILL trigger → start SpO2 (dueByInterval=$dueByInterval, wasPending=$wasPending)")
+                            requestStartSpo2(reason = "still", resetAttempts = true)
                         } else {
-                            Log.d(
-                                TAG,
-                                "STILL trigger but not due (pending=$spo2MeasurementPending, " +
-                                        "running=$isSpo2HandlerRunning)"
-                            )
+                            Log.d(TAG, "STILL but not due (pending=$spo2MeasurementPending, running=$isSpo2HandlerRunning)")
                         }
                     }
                 }
         }
     }
 
+    // ===== Manual marker flow (start/stop by user action) =====
     private fun collectMarkerFlows() {
         scope.launch(Dispatchers.IO) {
             repo.dropRequests.collect { req ->
                 if (!deviceWorn) return@collect
                 Log.i(TAG, "Received drop request with device worn...")
                 if (req.markerType == DataRepository.MarkerType.FRIENDLY) {
-                    Log.i(TAG, "---------> Start SPO2")
-                    startSpo2Tracker()
+                    Log.i(TAG, "---------> Start SPO2 (manual)")
+                    requestStartSpo2(reason = "manual", resetAttempts = true)
                 }
                 if (req.markerType == DataRepository.MarkerType.HOSTILE) {
-                    Log.i(TAG, "---------> Stop SPO2")
+                    Log.i(TAG, "---------> Stop SPO2 (manual)")
                     stopSpo2Tracker()
                 }
             }
         }
     }
 
+    // ===== SkinTemp start/stop (unchanged logic) =====
     private fun startSkinTracker() {
         if (!::skinTracker.isInitialized || isSkTHandlerRunning) return
         isSkTHandlerRunning = true
 
         if (availableTrackersList.contains(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)) {
-            bckgrndSkinTmpHandler.post { skinTracker.setEventListener(skinTempTrackerEventListener) }
+            backgroundSkinTempHandler.post { skinTracker.setEventListener(skinTempTrackerEventListener) }
         } else {
             Log.w(TAG, "Device does not support SKIN_TEMPERATURE_ON_DEMAND")
             isSkTHandlerRunning = false
@@ -478,12 +517,9 @@ class SkinTempService : Service() {
     private fun stopSkinTracker(clearQueue: Boolean = false) {
         if (!isSkTHandlerRunning) return
         isSkTHandlerRunning = false
-        bckgrndSkinTmpHandler.post {
+        backgroundSkinTempHandler.post {
             skinTracker.unsetEventListener()
-            if (clearQueue) bckgrndSkinTmpHandler.removeCallbacksAndMessages(null)
+            if (clearQueue) backgroundSkinTempHandler.removeCallbacksAndMessages(null)
         }
     }
-
-
-
 }
