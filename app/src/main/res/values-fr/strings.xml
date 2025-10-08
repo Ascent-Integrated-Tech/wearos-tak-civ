@@ -160,4 +160,18 @@
     <string name="gait_tracking">Gait Tracking</string>
     <string name="please_enter_a_value">Please enter a value</string>
     <string name="batdok">BATDOK</string>
+    <string name="tak_sa_multicast">TAK SA Multicast</string>
+    <string name="tablet_command">Tablet Command</string>
+    <string name="esri">ESRI</string>
+    <string name="manage_outputs">Manage Outputs</string>
+    <string name="address">Address</string>
+    <string name="server_port">Server Port</string>
+    <string name="output_protocol">Output Protocol</string>
+    <string name="endpoint">Endpoint</string>
+    <string name="api_key">API Key</string>
+    <string name="udp">UDP</string>
+    <string name="tcp">TCP</string>
+    <string name="quic">QUIC</string>
+    <string name="disabled">Disabled</string>
+    <string name="enabled">Enabled</string>
 </resources>

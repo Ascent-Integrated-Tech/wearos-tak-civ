@@ -322,7 +322,7 @@ class CotDispatchService : Service() {
         // If no location at all, i.e., loc is null, we still send out as these are alerts; ELS
         // But if location is stale, we don't immediately send out but wait for fresh location
         val send = if (null == loc) true else (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
-        Log.d(TAG, "loc: ${if (null == loc) "null" else "NOT null"}; FRESH: ${(System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS}, ${(System.currentTimeMillis() - lastLocationUpdateRcvd) / 1000.0} s ago")
+        //Log.i(TAG, "loc: ${if (null == loc) "null" else "NOT null"}; FRESH: ${(System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS}, ${(System.currentTimeMillis() - lastLocationUpdateRcvd) / 1000.0} s ago")
         return (dataRepository.anyEndpointConnected.value && send)
     }
 
@@ -1907,7 +1907,7 @@ class CotDispatchService : Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
-        Log.i(TAG, "onLocationRcvdEvent called")
+        //Log.i(TAG, "onLocationRcvdEvent called")
         lastLocationUpdateRcvd = System.currentTimeMillis()
         if (readyToSendAlertEvents()) {
             // Flush pending Manual emergency (if any)

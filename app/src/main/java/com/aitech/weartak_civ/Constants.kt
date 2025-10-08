@@ -80,3 +80,6 @@ const val MARKER_UNKNOWN = "Unknown"
 const val MARKER_NEUTRAL = "Neutral"
 
 
+const val DEFAULT_MULTICAST_ADDRESS = "239.2.3.1"
+const val DEFAULT_MULTICAST_PORT = 6969
+const val DEFAULT_MULTICAST_PROTOCOL = "UDP"

@@ -298,6 +298,24 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformPantsLe
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSize
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSizeSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSizeState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpointSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpointSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpointSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastAddress
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastAddressSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastProtocol
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastProtocolSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastPort
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastPortSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikeySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingIntervalState
@@ -312,6 +330,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
+import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -373,6 +392,15 @@ fun loadSettingsValues(){
     teamSettingsState.postValue(team)
     categorySettingsState.postValue(category)
     roleSettingsState.postValue(role)
+    multicastAddressSettingsState.postValue(multicastAddress)
+    multicastProtocolSettingsState.postValue(multicastProtocol)
+    multicastPortSettingsState.postValue(multicastPort)
+    tabletCommandEndpointSettingsState.postValue(tabletCommandEndpoint)
+    tabletCommandApikeySettingsState.postValue(tabletCommandApikey)
+    esriEndpointSettingsState.postValue(esriEndpoint)
+    enableMulticastSettingsState.postValue(enableMulticastOnWifi)
+    enableTabletCommandEndpointSettingsState.postValue(enableTabletCommandEndpoint)
+    enableEsriEndpointSettingsState.postValue(enableEsriEndpoint)
     enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
     enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
     enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
@@ -448,7 +476,13 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "callsign_screen") {
-            CallsignSetting(navController, callsignSettingsState)
+            StringEntryPage(
+                navController,
+                callsignSettingsState,
+                stringResource(R.string.callsign),
+                stringResource(R.string.callsign),
+               "settings_screen"
+            )
         }
         composable(
             "role_screen") {
@@ -534,6 +568,83 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             "while_alerting_reporting_interval_screen") {
             NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, "While Alerting Reporting Interval", context, "reporting_settings_screen")
         }
+
+        composable(
+            "manage_outputs_screen") {
+            ManageOutputsSetting(navController)
+        }
+        composable(
+            "tak_sa_multicast_screen") {
+            ManageOutputsMulticastSetting(navController)
+        }
+        composable(
+            "tak_sa_multicast_address_screen") {
+            StringEntryPage(
+                navController,
+                multicastAddressSettingsState,
+                stringResource(R.string.address),
+                stringResource(R.string.address),
+                "tak_sa_multicast_screen"
+            )
+        }
+        composable(
+            "tak_sa_multicast_output_protocol_screen") {
+            //val outputProtocolList = listOf(stringResource(R.string.udp), stringResource(R.string.tcp), stringResource(R.string.quic))
+            val outputProtocolList = listOf(stringResource(R.string.udp))
+            RadioChoiceSetting(navController, multicastProtocolSettingsState, outputProtocolList, stringResource(R.string.output_protocol), "tak_sa_multicast_screen")
+
+        }
+        composable(
+            "tak_sa_multicast_server_port_screen") {
+            NumericEntryPage(
+                navController,
+                multicastPortSettingsState,
+                99999,
+                stringResource(R.string.server_port),
+                context,
+                "tak_sa_multicast_screen")
+        }
+        composable(
+            "tablet_command_screen") {
+            ManageOutputsTabletCommandSetting(navController)
+
+        }
+        composable(
+            "tablet_command_endpoint_screen") {
+            StringEntryPage(
+                navController,
+                tabletCommandEndpointSettingsState,
+                stringResource(R.string.endpoint),
+                stringResource(R.string.endpoint),
+                "tablet_command_screen"
+            )
+        }
+        composable(
+            "tablet_command_apikey_screen") {
+            StringEntryPage(
+                navController,
+                tabletCommandApikeySettingsState,
+                stringResource(R.string.api_key),
+                stringResource(R.string.api_key),
+                "tablet_command_screen"
+            )
+        }
+        composable(
+            "esri_screen") {
+            ManageOutputsEsriSetting(navController)
+
+        }
+        composable(
+            "esri_endpoint_screen") {
+            StringEntryPage(
+                navController,
+                esriEndpointSettingsState,
+                stringResource(R.string.endpoint),
+                stringResource(R.string.endpoint),
+                "esri_screen"
+            )
+        }
+
         composable(
             "license_setting_screen") {
             LicenseKeyScreen(navController, licenseSettingsState, context)
@@ -616,11 +727,11 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_sex_screen") {
-            SexBloodtypeUsertypeSetting(navController, sexSettingsState, sexOptionsList, stringResource(R.string.sex))
+            RadioChoiceSetting(navController, sexSettingsState, sexOptionsList, stringResource(R.string.sex), "physiological_metrics_setting_screen")
         }
         composable(
             "physiological_metrics_bloodtype_screen") {
-            SexBloodtypeUsertypeSetting(navController, bloodTypeSettingsState, bloodTypeOptionsList, stringResource(R.string.blood_type))
+            RadioChoiceSetting(navController, bloodTypeSettingsState, bloodTypeOptionsList, stringResource(R.string.blood_type), "physiological_metrics_setting_screen")
         }
         composable(
             "physiological_metrics_allergies_screen") {
@@ -628,7 +739,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "physiological_metrics_usertype_screen") {
-            SexBloodtypeUsertypeSetting(navController, userTypeSettingsState, userTypeOptionsList, stringResource(R.string.user_type))
+            RadioChoiceSetting(navController, userTypeSettingsState, userTypeOptionsList, stringResource(R.string.user_type), "physiological_metrics_setting_screen")
         }
         composable(
             "physiological_metrics_resting_hr_screen") {
@@ -995,17 +1106,6 @@ fun findRoleSelectionFromString(roleString: String?): Pair<Int, Int>? {
         if (roleIndex != -1) return Pair(categoryIndex, roleIndex)
     }
     return null
-}
-
-fun findRoleCategoryIndex(dataName: String?, dataList: List<String>) : Int {
-    if (null == dataName) {
-        return 0
-    }
-    val index = dataList.indexOf(dataName)
-    if (index == -1) {
-        return 0
-    }
-    return index
 }
 
 @SuppressLint("CoroutineCreationDuringComposition")
@@ -2289,6 +2389,48 @@ fun ConfirmationDialog(
         )
     }
 }
+
+//Used for callsign and output string entry
+@Composable
+fun StringEntryPage(
+    navController: NavController,
+    metricSettingState: MutableLiveData<String>,
+    label: String,
+    placeholder: String,
+    route: String
+) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val textField = GenericOutlinedTextField(metricSettingState, label, placeholder)
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "$label Settings NOT saved")
+                        navController.navigate(route) {
+                            popUpTo((route)) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onClickConfirm = {
+                        metricSettingState.setValue(textField.text)
+                        Log.d(TAG, "Settings saved with $label: ${metricSettingState.value}")
+                        navController.navigate(route) {
+                            popUpTo((route)) {
+                                inclusive = true
+                            }
+                        }
+                    })
+            }
+        }
+    }
+
 //Used for PhysioAlerts, Reporting Rates, and some User Metrics
 @Composable
 fun NumericEntryPage(
@@ -2356,17 +2498,23 @@ fun NumericEntryPage(
                     }
                 },
                 onClickConfirm = {
-                    metricSettingState.setValue(metricTextFieldValue.text.toInt())
-                    Log.d(TAG, "Settings State saved with numeric entry threshold: ${metricSettingState.value}")
-                    navController.navigate(route) {
-                        popUpTo((route)) {
-                            inclusive = true
+                    val intValue = metricTextFieldValue.text.toIntOrNull()
+                    if (null != intValue) {
+                        metricSettingState.setValue(intValue)
+                        Log.d(TAG, "Settings State saved with numeric entry threshold: ${metricSettingState.value}")
+                        navController.navigate(route) {
+                            popUpTo((route)) {
+                                inclusive = true
+                            }
                         }
+                    } else {
+                        Toast.makeText(mainActivity, context.getString(R.string.please_enter_a_value), Toast.LENGTH_LONG).show()
                     }
                 })
         }
     }
 }
+
 @Composable
 fun ReportingStrategySettings(navController: NavController) {
     val enableDynamicReporting by enableDynamicReportingStrategySettingsState.observeAsState()
@@ -2570,18 +2718,224 @@ fun ReportingStrategyIntervalSettings(
                     }
                 },
                 onClickConfirm = {
-                    intervalSettingState.postValue(intervalSettingTextFieldValue.text.toInt())
-                    Log.d(TAG, "Settings saved with reporting interval: ${intervalSettingState.value}")
-                    navController.navigate("reporting_settings_screen") {
-                        popUpTo(("reporting_settings_screen")) {
-                            inclusive = true
+                    val intValue = intervalSettingTextFieldValue.text.toIntOrNull()
+                    if (null != intValue) {
+                        intervalSettingState.postValue(intValue)
+                        Log.d(TAG, "Settings saved with reporting interval: ${intervalSettingState.value}")
+                        navController.navigate("reporting_settings_screen") {
+                            popUpTo(("reporting_settings_screen")) {
+                                inclusive = true
+                            }
                         }
+                    } else {
+                        Toast.makeText(mainActivity, mainActivity.getString(R.string.please_enter_a_value), Toast.LENGTH_LONG).show()
                     }
                 })
         }
     }
 }
 
+@Composable
+fun enableDisableFromBoolean(boolean: Boolean?): String {
+    val enableDisableString: String = when (boolean) {
+        false -> stringResource(R.string.disabled)
+        true -> stringResource(R.string.enabled)
+        else -> stringResource(R.string.error)
+    }
+    return enableDisableString
+}
+@Composable
+fun ManageOutputsSetting(navController: NavController) {
+    Log.d(TAG, "ManageOutputsSetting called")
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            DataMetricsChip("tak_sa_multicast_screen", stringResource(R.string.tak_sa_multicast),
+                enableDisableFromBoolean(enableMulticastSettingsState.value), navController)
+            DataMetricsChip("tablet_command_screen", stringResource(R.string.tablet_command),
+                enableDisableFromBoolean(enableTabletCommandEndpointSettingsState.value), navController)
+            DataMetricsChip("esri_screen", stringResource(R.string.esri),
+                enableDisableFromBoolean(enableEsriEndpointSettingsState.value), navController)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Manage Outputs Settings NOT saved")
+                    enableMulticastSettingsState.setValue(enableMulticastOnWifi)
+                    enableTabletCommandEndpointSettingsState.setValue(enableTabletCommandEndpoint)
+                    enableEsriEndpointSettingsState.setValue(enableEsriEndpoint)
+
+                    multicastAddressSettingsState.setValue(multicastAddress)
+                    multicastProtocolSettingsState.setValue(multicastProtocol)
+                    multicastPortSettingsState.setValue(multicastPort)
+                    tabletCommandEndpointSettingsState.setValue(tabletCommandEndpoint)
+                    tabletCommandApikeySettingsState.setValue(tabletCommandApikey)
+                    esriEndpointSettingsState.setValue(esriEndpoint)
+
+
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.manage_outputs)
+    )
+}
+
+@Composable
+fun ManageOutputsMulticastSetting(navController: NavController) {
+    Log.d(TAG, "ManageOutputsMulticastSetting called")
+    val multicastCheckedLive by enableMulticastSettingsState.observeAsState()
+//    Log.d(TAG, "enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            SettingSwitchToggleLiveData(
+                multicastCheckedLive,
+                { enableMulticastSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.tak_sa_multicast),
+                stringResource(R.string.on_off)
+            )
+
+            DataMetricsChip("tak_sa_multicast_address_screen", stringResource(R.string.address), multicastAddressSettingsState.value.toString(), navController)
+            DataMetricsChip("tak_sa_multicast_output_protocol_screen", stringResource(R.string.output_protocol), multicastProtocolSettingsState.value.toString(), navController)
+            DataMetricsChip("tak_sa_multicast_server_port_screen", stringResource(R.string.server_port), multicastPortSettingsState.value.toString(), navController)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Multicast Settings NOT saved")
+                    enableMulticastSettingsState.setValue(enableMulticastOnWifi)
+                    multicastAddressSettingsState.setValue(multicastAddress)
+                    multicastProtocolSettingsState.setValue(multicastProtocol)
+                    multicastPortSettingsState.setValue(multicastPort)
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.tak_sa_multicast)
+    )
+}
+
+@Composable
+fun ManageOutputsTabletCommandSetting(navController: NavController) {
+    Log.d(TAG, "ManageOutputsTabletCommandSetting called")
+    val enableTabletCommandCheckedLive by enableTabletCommandEndpointSettingsState.observeAsState()
+//    Log.d(TAG, "enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            SettingSwitchToggleLiveData(
+                enableTabletCommandCheckedLive,
+                { enableTabletCommandEndpointSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.tablet_command),
+                stringResource(R.string.on_off)
+            )
+
+            DataMetricsChip("tablet_command_endpoint_screen", stringResource(R.string.endpoint), tabletCommandEndpointSettingsState.value.toString(), navController)
+            DataMetricsChip("tablet_command_apikey_screen", stringResource(R.string.api_key), tabletCommandApikeySettingsState.value.toString(), navController)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Tablet Command Settings NOT saved")
+                    enableTabletCommandEndpointSettingsState.setValue(enableTabletCommandEndpoint)
+                    tabletCommandEndpointSettingsState.setValue(tabletCommandEndpoint)
+                    tabletCommandApikeySettingsState.setValue(tabletCommandApikey)
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.tablet_command)
+    )
+}
+
+@Composable
+fun ManageOutputsEsriSetting(navController: NavController) {
+    Log.d(TAG, "ManageOutputsEsriSetting called")
+    val enableEsriCheckedLive by enableEsriEndpointSettingsState.observeAsState()
+//    Log.d(TAG, "enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            SettingSwitchToggleLiveData(
+                enableEsriCheckedLive,
+                { enableEsriEndpointSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.esri),
+                stringResource(R.string.on_off)
+            )
+
+            DataMetricsChip("esri_endpoint_screen", stringResource(R.string.endpoint), esriEndpointSettingsState.value.toString(), navController)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Esri Settings NOT saved")
+                    enableEsriEndpointSettingsState.setValue(enableEsriEndpoint)
+                    esriEndpointSettingsState.setValue(esriEndpoint)
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.esri)
+    )
+}
 
 @Composable
 fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: MutableLiveData<String>, context: Context) {
@@ -2727,11 +3081,6 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
 
     WearTakCivScreenDimensions(
     columnContent = {
-//        SettingSwitchToggle(
-//            checked = physiologicalAlertsChecked, onCheckedChange = { physiologicalAlertsChecked = it },
-//            title = stringResource(R.string.physiological_alerts),
-//            description = stringResource(R.string.on_off),
-//        )
 
         SettingSwitchToggleLiveData(
             physiologicalAlertsCheckedLive,
@@ -2944,8 +3293,8 @@ fun HeightPickerSetting(navController: NavController){
                         text = text,
                         style = textStyle,
                         color =
-                            if (selectedColumn == column) MaterialTheme.colors.secondary
-                            else MaterialTheme.colors.onBackground,
+                            if (selectedColumn == column) colors.secondary
+                            else colors.onBackground,
                         modifier =
                             Modifier
                                 .align(Alignment.Center)
@@ -2971,7 +3320,7 @@ fun HeightPickerSetting(navController: NavController){
                     option = { foot: Int -> Option(0, "%2d".format(foot + 1)) },
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(text = "'", style = textStyle, color = MaterialTheme.colors.onBackground)
+                Text(text = "'", style = textStyle, color = colors.onBackground)
                 Spacer(Modifier.width(8.dp))
                 Picker(
                     readOnly = selectedColumn != 1,
@@ -2980,7 +3329,7 @@ fun HeightPickerSetting(navController: NavController){
                     contentDescription = inchesContentDescription,
                     option = { inch: Int -> Option(1, "%02d".format(inch)) },
                 )
-                Text(text = "''", style = textStyle, color = MaterialTheme.colors.onBackground)
+                Text(text = "''", style = textStyle, color = colors.onBackground)
             }
         },
         rowContent = {
@@ -3019,12 +3368,14 @@ fun feetInchesIndex(dataName: Int?, picker: PickerState) : Int {
     return index
 }
 
+//Used for User metrics and output protocol
 @Composable
-fun SexBloodtypeUsertypeSetting (
+fun RadioChoiceSetting (
     navController: NavController,
     metricSettingState: MutableLiveData<String>,
     dataList: List<String>,
-    title: String
+    title: String,
+    route: String
 ) {
     Box(
         modifier = Modifier
@@ -3034,7 +3385,7 @@ fun SexBloodtypeUsertypeSetting (
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
-        val index = findSexBloodtypeUsertypeIndex(metricSettingState.value, dataList)
+        val index = findRadioIndex(metricSettingState.value, dataList)
         var selectedRadioIndex by remember { mutableStateOf(index) }
 //TODO: DUPLICATE CODE - Same column and title credentials vvv
         //TODO: Convert to a lazyColumn
@@ -3084,17 +3435,17 @@ fun SexBloodtypeUsertypeSetting (
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.d(TAG, "SexBloodtypeUsertypeSetting Settings NOT saved")
-                    navController.navigate("physiological_metrics_medical_profile_batdok") {
-                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
+                    Log.d(TAG, "RadioChoiceSetting Settings NOT saved: $title")
+                    navController.navigate(route) {
+                        popUpTo((route)) {
                             inclusive = true
                         }
                     }                },
                 onClickConfirm = {
                     metricSettingState.setValue(dataList[selectedRadioIndex])
-                    Log.d(TAG, "Settings saved with Sex, Blood Type or User Type: ${metricSettingState.value}")
-                    navController.navigate("physiological_metrics_medical_profile_batdok") {
-                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
+                    Log.d(TAG, "RadioChoiceSetting Settings saved ($title): ${metricSettingState.value}")
+                    navController.navigate(route) {
+                        popUpTo((route)) {
                             inclusive = true
                         }
                     }
@@ -3103,7 +3454,7 @@ fun SexBloodtypeUsertypeSetting (
     }
 }
 
-fun findSexBloodtypeUsertypeIndex(dataName: String?, dataList: List<String>) : Int {
+fun findRadioIndex(dataName: String?, dataList: List<String>) : Int {
     if (null == dataName) {
         return 0
     }
@@ -3432,7 +3783,7 @@ fun hailLicenseStatusTextFromString(status: HailLicenseStates?): String {
 fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
     // Parse the incoming date (pattern matches "Tue Sep 30 00:00:00 CDT 2025")
     if (serverDateString != "null") {
-        val parser = java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.ENGLISH)
+        val parser = SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.ENGLISH)
     val parsedDate = parser.parse(serverDateString)!!
 
     // Convert java.util.Date to LocalDate
@@ -3812,6 +4163,24 @@ fun SettingsScreen(
 
             Chip(
                 onClick = {
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo("manage_outputs_screen") { inclusive = true }
+                    }
+                },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.manage_outputs)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
+
+            Chip(
+                onClick = {
                     enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimizationState.value)
                     enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimizationState.value)
                     wifiSsidListSettingsState.postValue(wifiSsidListState.value)
@@ -4129,6 +4498,15 @@ fun SettingsScreen(
                     var physiologicalAlertsBpmThresholdTimeCheckedChanged: Boolean = false
                     var saveBattOnWifiChanged = false
                     var takServerListChanged = false
+                    var enableMulticastChanged = false
+                    var multicastAddressChanged = false
+                    var multicastOutputProtocolChanged = false
+                    var multicastServerPortChanged = false
+                    var enableTabletCommandChanged = false
+                    var tabletCommandEndpointChanged = false
+                    var tabletCommandAPIKeyChanged = false
+                    var enableEsriChanged = false
+                    var esriEndpointChanged = false
                     var ageChanged: Boolean = false
                     var heightFeetChanged: Boolean = false
                     var heightInchesChanged: Boolean = false
@@ -4351,6 +4729,43 @@ fun SettingsScreen(
                     Log.d(TAG, "takServerListState: " + takServerListState.value)
                     Log.d(TAG, "takServerListChanged: $takServerListChanged")
 
+                    if (enableMulticastOnWifi != enableMulticastSettingsState.value) {
+                        settingsChanged = true; enableMulticastChanged = true
+                        enableMulticastOnWifi = enableMulticastSettingsState.value ?: enableMulticastOnWifi
+                    }
+                    if (multicastAddress != multicastAddressSettingsState.value) {
+                        settingsChanged = true; multicastAddressChanged = true
+                        multicastAddress = multicastAddressSettingsState.value ?: multicastAddress
+                    }
+                    if (multicastProtocol != multicastProtocolSettingsState.value) {
+                        settingsChanged = true; multicastOutputProtocolChanged = true
+                        multicastProtocol = multicastProtocolSettingsState.value ?: multicastProtocol
+                    }
+                    if (multicastPort != multicastPortSettingsState.value) {
+                        settingsChanged = true; multicastServerPortChanged = true
+                        multicastPort = multicastPortSettingsState.value ?: multicastPort
+                    }
+                    if (enableTabletCommandEndpoint != enableTabletCommandEndpointSettingsState.value) {
+                        settingsChanged = true; enableTabletCommandChanged = true
+                        enableTabletCommandEndpoint = enableTabletCommandEndpointSettingsState.value ?: enableTabletCommandEndpoint
+                    }
+                    if (tabletCommandEndpoint != tabletCommandEndpointSettingsState.value) {
+                        settingsChanged = true; tabletCommandEndpointChanged = true
+                        tabletCommandEndpoint = tabletCommandEndpointSettingsState.value ?: tabletCommandEndpoint
+                    }
+                    if (tabletCommandApikey != tabletCommandApikeySettingsState.value) {
+                        settingsChanged = true; tabletCommandAPIKeyChanged = true
+                        tabletCommandApikey = tabletCommandApikeySettingsState.value ?: tabletCommandApikey
+                    }
+                    if (enableEsriEndpoint != enableEsriEndpointSettingsState.value) {
+                        settingsChanged = true; enableEsriChanged = true
+                        enableEsriEndpoint = enableEsriEndpointSettingsState.value ?: enableEsriEndpoint
+                    }
+                    if (esriEndpoint != esriEndpointSettingsState.value) {
+                        settingsChanged = true; esriEndpointChanged = true
+                        esriEndpoint = esriEndpointSettingsState.value ?: esriEndpoint
+                    }
+
                     if (enableLocationService != enableLocationServiceSettingsState.value) {
                         settingsChanged = true; locationCheckedChanged = true
                         enableLocationService = enableLocationServiceSettingsState.value ?: enableLocationService
@@ -4572,6 +4987,43 @@ fun SettingsScreen(
                              if (takServerListChanged) {
                                  Log.d(TAG, "Storing updated TAK Server List: $takServerList")
                                  dataRepository.storeTakServerList(takServerList)
+                             }
+
+                             if(enableMulticastChanged){
+                                 Log.d(TAG, "Storing updated Enable Multicast: $enableMulticastOnWifi")
+                                 dataRepository.storeEnableMulticast(enableMulticastOnWifi)
+                             }
+                             if (multicastAddressChanged) {
+                                 Log.d(TAG, "Storing updated Multicast Address: $multicastAddress")
+                                 dataRepository.storeMulticastAddress(multicastAddress)
+                             }
+                             if (multicastOutputProtocolChanged) {
+                                 Log.d(TAG, "Storing updated Multicast Output Protocol: $multicastProtocol")
+                                 dataRepository.storeMulticastProtocol(multicastProtocol)
+                             }
+                             if (multicastServerPortChanged) {
+                                 Log.d(TAG, "Storing updated Multicast Server Port: $multicastPort")
+                                 dataRepository.storeMulticastPort(multicastPort)
+                             }
+                             if (enableTabletCommandChanged){
+                                 Log.d(TAG, "Storing updated Enable Tablet Command: $enableTabletCommandEndpoint")
+                                 dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint)
+                             }
+                             if (tabletCommandEndpointChanged) {
+                                 Log.d(TAG, "Storing updated Tablet Command Endpoint: $tabletCommandEndpoint")
+                                 dataRepository.storeTabletCommandEndpoint(tabletCommandEndpoint)
+                             }
+                             if (tabletCommandAPIKeyChanged) {
+                                 Log.d(TAG, "Storing updated Tablet Command API Key: $tabletCommandApikey")
+                                 dataRepository.storeTabletCommandApikey(tabletCommandApikey)
+                             }
+                             if (enableEsriChanged){
+                                 Log.d(TAG, "Storing updated Enable Esri: $enableEsriEndpoint")
+                                 dataRepository.storeEnableEsriEndpoint(enableEsriEndpoint)
+                             }
+                             if (esriEndpointChanged) {
+                                 Log.d(TAG, "Storing updated ESRI Endpoint: $esriEndpoint")
+                                 dataRepository.storeEsriEndpoint(esriEndpoint)
                              }
 
                              if (locationCheckedChanged) {
@@ -4881,7 +5333,7 @@ fun PhysioSettingsPreview() {
 fun SexMetricPreview() {
     var licenseState = MutableLiveData<String>("")
 
-    SexBloodtypeUsertypeSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type")
+    RadioChoiceSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type", "physiological_metrics_setting_screen")
 }
 @Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
 @Composable
