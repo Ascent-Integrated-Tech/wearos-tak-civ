@@ -122,6 +122,13 @@ class SkinTempService : Service() {
 
     private val ppgIntervalMs get() = PPG_INTERVAL_MINUTES * 60 * 1000L
 
+    private fun setTrackerTracking(type: HealthTrackerType) {
+        trackerTrackingMap.replaceAll { _, _ -> false }
+        trackerTrackingMap[type] = true
+    }
+    private lateinit var trackerTrackingMap: HashMap<HealthTrackerType, Boolean>
+
+
     // ===== Skin Temp Scheduling =====
     private fun scheduleNextSkinTempReading() {
         if (!skinTempSupported) return
@@ -186,6 +193,7 @@ class SkinTempService : Service() {
         override fun onConnectionSuccess() {
             healthTrackerCapability = healthService.trackingCapability
             availableTrackersList = healthTrackerCapability.supportHealthTrackerTypes
+            trackerTrackingMap = HashMap()
             Log.i(TAG, "Health SDK Connected. Available trackers: \n |--------> $availableTrackersList")
 
             // --- DIAGNOSTIC: prove which trackers can be actually created ---
@@ -196,47 +204,44 @@ class SkinTempService : Service() {
                 Log.e(TAG, "Failed to enumerate supported trackers", it)
             }
 
-            fun probeTracker(type: HealthTrackerType, label: String) {
-                try {
-                    val tracker = healthService.getHealthTracker(type)
-                    Log.i(TAG, "Probe OK: getHealthTracker($label) returned $tracker")
-                } catch (t: Throwable) {
-                    Log.e(TAG, "Probe FAIL: getHealthTracker($label) threw ${t::class.java.simpleName}: ${t.message}")
-                }
-            }
-
-            // Probe a few interesting ones
-            probeTracker(HealthTrackerType.SPO2_ON_DEMAND, "SPO2_ON_DEMAND")
-            probeTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND, "SKIN_TEMPERATURE_ON_DEMAND")
-            // Only probe PPG if the list claims it's supported, to avoid obvious exceptions on older stacks
-            if (availableTrackersList.contains(HealthTrackerType.PPG_ON_DEMAND)) {
-                probeTracker(HealthTrackerType.PPG_ON_DEMAND, "PPG_ON_DEMAND")
-            } else {
-                Log.w(TAG, "PPG_ON_DEMAND not in capability list")
-            }
-
             skinTempSupported = false
-            if (availableTrackersList.contains(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)) {
-                skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
+            try {
+                if (availableTrackersList.contains(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)) {
+                    skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
+                    skinTempSupported = true
+                    trackerTrackingMap[HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND] = false
+                } else {
+                    Log.w(TAG, "SKIN_TEMPERATURE_ON_DEMAND not supported")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "SKIN_TEMPERATURE_ON_DEMAND unavailable at runtime; disabling Skin Temp", t)
                 skinTempSupported = false
-            } else {
-                Log.w(TAG, "SKIN_TEMPERATURE_ON_DEMAND not supported")
+                stopSkinTracker(true)
             }
 
             spo2Supported = false
-            if (availableTrackersList.contains(HealthTrackerType.SPO2_ON_DEMAND)) {
-                spo2Tracker = healthService.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
-                spo2Supported = true
-            } else {
-                Log.w(TAG, "SPO2_ON_DEMAND not supported")
+            try {
+                if (availableTrackersList.contains(HealthTrackerType.SPO2_ON_DEMAND)) {
+                    spo2Tracker = healthService.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
+                    spo2Supported = true
+                    trackerTrackingMap[HealthTrackerType.SPO2_ON_DEMAND] = false
+                } else {
+                    Log.w(TAG, "SPO2_ON_DEMAND not supported")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "SPO2_ON_DEMAND unavailable at runtime; disabling Spo2", t)
+                spo2Supported = false
+                // make sure nothing remains queued
+                backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
             }
 
             ppgSupported = false
             try {
                 if (availableTrackersList.contains(HealthTrackerType.PPG_ON_DEMAND)) {
-                    val ppgTypes = setOf(PpgType.GREEN) // You can also include GREEN if needed
+                    val ppgTypes = setOf(PpgType.GREEN)
                     ppgTracker = healthService.getHealthTracker(HealthTrackerType.PPG_ON_DEMAND, ppgTypes)
                     ppgSupported = true
+                    trackerTrackingMap[HealthTrackerType.PPG_ON_DEMAND] = false
                     Log.i(TAG, "PPG_ON_DEMAND supported")
                 } else {
                     Log.w(TAG, "PPG_ON_DEMAND NOT supported; disabling PPG")
