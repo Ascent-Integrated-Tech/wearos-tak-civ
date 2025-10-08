@@ -14,13 +14,14 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
-import com.samsung.android.service.health.tracking.HealthTrackerException
 import com.samsung.android.service.health.tracking.HealthTracker
 import com.samsung.android.service.health.tracking.HealthTrackerCapability
-import com.samsung.android.service.health.tracking.data.HealthTrackerType
+import com.samsung.android.service.health.tracking.HealthTrackerException
+import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.data.DataPoint
+import com.samsung.android.service.health.tracking.data.HealthTrackerType
+import com.samsung.android.service.health.tracking.data.PpgType
 import com.samsung.android.service.health.tracking.data.ValueKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,13 +49,21 @@ class SkinTempService : Service() {
         const val LOG_FILENAME = "skin_temp.log"
 
         // ===== SPO2 SCHEDULER + POLICY =====
-        private const val SPO2_INTERVAL_MINUTES: Long = 60        // target interval in minutes
-        private const val STILL_RECENT_WINDOW_MS: Long = 10_000   // how "recent" a STILL must be for immediate start
+        private const val SPO2_INTERVAL_MINUTES: Long = 60
+        private const val STILL_RECENT_WINDOW_MS: Long = 10_000
 
         // ===== SPO2 RETRY POLICY =====
-        private const val MAX_SPO2_RETRIES = 2                      // In the event we get weak signal, movement during sample, how many times should we retry?
-        private val RETRY_BACKOFF_MS = longArrayOf(5_000L, 10_000L) // per attempt (1..MAX), safe bounds
-        private const val SPO2_MAX_DURATION_MS = 40_000L            // watchdog: hard stop if session hangs
+        private const val MAX_SPO2_RETRIES = 2
+        private val RETRY_BACKOFF_MS = longArrayOf(5_000L, 10_000L)
+        private const val SPO2_MAX_DURATION_MS = 40_000L
+
+        // ===== PPG SCHEDULER + POLICY (mirrors SpO2) =====
+        private const val PPG_INTERVAL_MINUTES: Long = 60
+        private const val MAX_PPG_RETRIES = 2
+        private val PPG_RETRY_BACKOFF_MS = longArrayOf(5_000L, 10_000L)
+        private const val PPG_MAX_DURATION_MS = 20_000L   // hard cap in case of hang
+        private const val PPG_SAMPLE_WINDOW_MS = 8_000L   // collect window per session (on-demand)
+        private const val PPG_MIN_POINTS = 10             // require at least N points before finalizing
     }
 
     private val repo: DataRepository
@@ -65,21 +74,34 @@ class SkinTempService : Service() {
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
     private lateinit var spo2Tracker: HealthTracker
+    private lateinit var ppgTracker: HealthTracker
 
     private lateinit var healthTrackerCapability: HealthTrackerCapability
     private lateinit var availableTrackersList: List<HealthTrackerType>
     private lateinit var handlerThread: HandlerThread
     private lateinit var backgroundSkinTempHandler: Handler
     private lateinit var backgroundSpo2Handler: Handler
+    private lateinit var backgroundPpgHandler: Handler
 
     @Volatile private var isSkTHandlerRunning = false
     @Volatile private var isSpo2HandlerRunning = false
+    @Volatile private var isPpgHandlerRunning = false
 
     @Volatile private var deviceWorn: Boolean = false
+
+    // Supported --> the watch has these sensors true/false
+    // Available --> no other on demand tracker is running true/false (via samsung sdk docs, can't run two on demands at the same time).
+    @Volatile private var skinTempSupported: Boolean = false
+    @Volatile private var spo2Supported: Boolean     = false
+    @Volatile private var ppgSupported: Boolean      = false
+    @Volatile private var skinTempAvailable: Boolean = false
+    @Volatile private var spo2Available: Boolean     = false
+    @Volatile private var ppgAvailable: Boolean      = false
 
     // Uptime targets (not wall clock)
     private var nextFireSkinTempMs = 0L
     private var nextFireSpo2Ms = 0L
+    private var nextFirePpgMs = 0L
 
     private val nowUptime get() = SystemClock.uptimeMillis()
 
@@ -88,12 +110,21 @@ class SkinTempService : Service() {
     @Volatile private var spo2MeasurementPending: Boolean = false
     @Volatile private var lastSpo2AtMs: Long = 0L
     @Volatile private var latestStillAtMs: Long = 0L
-    @Volatile private var spo2Attempt: Int = 0 // 0 = first attempt, 1..MAX for retries
+    @Volatile private var spo2Attempt: Int = 0
 
     private val spO2IntervalMs get() = SPO2_INTERVAL_MINUTES * 60 * 1000L
 
+    // ===== PPG RUNTIME STATE =====
+    @Volatile private var ppgSessionActive = false
+    @Volatile private var ppgMeasurementPending: Boolean = false
+    @Volatile private var lastPpgAtMs: Long = 0L
+    @Volatile private var ppgAttempt: Int = 0
+
+    private val ppgIntervalMs get() = PPG_INTERVAL_MINUTES * 60 * 1000L
+
     // ===== Skin Temp Scheduling =====
     private fun scheduleNextSkinTempReading() {
+        if (!skinTempSupported) return
         if (!deviceWorn) return
         val target = nowUptime + DISPATCH_INTERVAL_MS
         nextFireSkinTempMs = target
@@ -102,6 +133,7 @@ class SkinTempService : Service() {
 
     // ===== SPO2 Scheduler (arm, not start) =====
     private val spo2ArmRunnable = Runnable {
+        if (!spo2Supported) return@Runnable
         spo2MeasurementPending = true
         Log.i(TAG, "SPO2 scheduler armed (pending=true)")
         val now = nowUptime
@@ -113,12 +145,36 @@ class SkinTempService : Service() {
     }
 
     private fun scheduleNextSpo2Arm(minutes: Long = SPO2_INTERVAL_MINUTES) {
+        if (!spo2Supported) return
         if (!deviceWorn) return
         val target = nowUptime + minutes * 60 * 1000L
         nextFireSpo2Ms = target
         backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
         backgroundSpo2Handler.postAtTime(spo2ArmRunnable, target)
         Log.i(TAG, "SPO2 arm scheduled for t=$target (in ${minutes}m)")
+    }
+
+    // ===== PPG Scheduler (arm, not start) =====
+    private val ppgArmRunnable = Runnable {
+        if (!ppgSupported) return@Runnable
+        ppgMeasurementPending = true
+        Log.i(TAG, "PPG scheduler armed (pending=true)")
+        val now = nowUptime
+        val recentStill = (now - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
+        if (deviceWorn && recentStill && !isPpgHandlerRunning) {
+            Log.i(TAG, "PPG scheduler: recent STILL; starting measurement now.")
+            requestStartPpg(reason = "scheduler-recent-still", resetAttempts = true)
+        }
+    }
+
+    private fun scheduleNextPpgArm(minutes: Long = PPG_INTERVAL_MINUTES) {
+        if (!ppgSupported) return
+        if (!deviceWorn) return
+        val target = nowUptime + minutes * 60 * 1000L
+        nextFirePpgMs = target
+        backgroundPpgHandler.removeCallbacks(ppgArmRunnable)
+        backgroundPpgHandler.postAtTime(ppgArmRunnable, target)
+        Log.i(TAG, "PPG arm scheduled for t=$target (in ${minutes}m)")
     }
 
     private val logFile: File by lazy {
@@ -130,14 +186,72 @@ class SkinTempService : Service() {
         override fun onConnectionSuccess() {
             healthTrackerCapability = healthService.trackingCapability
             availableTrackersList = healthTrackerCapability.supportHealthTrackerTypes
-            skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
-            spo2Tracker = healthService.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
-            Log.i(TAG, "Health SDK Connected")
+            Log.i(TAG, "Health SDK Connected. Available trackers: \n |--------> $availableTrackersList")
+
+            // --- DIAGNOSTIC: prove which trackers can be actually created ---
+            runCatching {
+                val names = availableTrackersList.joinToString(", ") { it.name }
+                Log.i(TAG, "Health SDK Connected. Available trackers:\n |--------> [$names]")
+            }.onFailure {
+                Log.e(TAG, "Failed to enumerate supported trackers", it)
+            }
+
+            fun probeTracker(type: HealthTrackerType, label: String) {
+                try {
+                    val tracker = healthService.getHealthTracker(type)
+                    Log.i(TAG, "Probe OK: getHealthTracker($label) returned $tracker")
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Probe FAIL: getHealthTracker($label) threw ${t::class.java.simpleName}: ${t.message}")
+                }
+            }
+
+            // Probe a few interesting ones
+            probeTracker(HealthTrackerType.SPO2_ON_DEMAND, "SPO2_ON_DEMAND")
+            probeTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND, "SKIN_TEMPERATURE_ON_DEMAND")
+            // Only probe PPG if the list claims it's supported, to avoid obvious exceptions on older stacks
+            if (availableTrackersList.contains(HealthTrackerType.PPG_ON_DEMAND)) {
+                probeTracker(HealthTrackerType.PPG_ON_DEMAND, "PPG_ON_DEMAND")
+            } else {
+                Log.w(TAG, "PPG_ON_DEMAND not in capability list")
+            }
+
+            skinTempSupported = false
+            if (availableTrackersList.contains(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)) {
+                skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
+                skinTempSupported = false
+            } else {
+                Log.w(TAG, "SKIN_TEMPERATURE_ON_DEMAND not supported")
+            }
+
+            spo2Supported = false
+            if (availableTrackersList.contains(HealthTrackerType.SPO2_ON_DEMAND)) {
+                spo2Tracker = healthService.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
+                spo2Supported = true
+            } else {
+                Log.w(TAG, "SPO2_ON_DEMAND not supported")
+            }
+
+            ppgSupported = false
+            try {
+                if (availableTrackersList.contains(HealthTrackerType.PPG_ON_DEMAND)) {
+                    val ppgTypes = setOf(PpgType.GREEN) // You can also include GREEN if needed
+                    ppgTracker = healthService.getHealthTracker(HealthTrackerType.PPG_ON_DEMAND, ppgTypes)
+                    ppgSupported = true
+                    Log.i(TAG, "PPG_ON_DEMAND supported")
+                } else {
+                    Log.w(TAG, "PPG_ON_DEMAND NOT supported; disabling PPG")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "PPG_ON_DEMAND unavailable at runtime; disabling PPG", t)
+                ppgSupported = false
+                // make sure nothing remains queued
+                backgroundPpgHandler.removeCallbacks(ppgArmRunnable)
+            }
 
             if (deviceWorn) {
-                startSkinTracker()
-                scheduleNextSkinTempReading()
-                scheduleNextSpo2Arm()
+                if (skinTempSupported) { startSkinTracker(); scheduleNextSkinTempReading(); }
+                if (spo2Supported) { scheduleNextSpo2Arm() } else backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+                if (ppgSupported) { scheduleNextPpgArm() } else backgroundPpgHandler.removeCallbacks(ppgArmRunnable)
             }
         }
 
@@ -152,8 +266,11 @@ class SkinTempService : Service() {
             Log.w(TAG, "SkinTempService onConnectionEnded(): HealthPlatform DISCONNECTED")
             stopSkinTracker(true)
             stopSpo2Tracker()
+            stopPpgTracker()
             backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+            backgroundPpgHandler.removeCallbacks(ppgArmRunnable)
             cancelSpo2Watchdog()
+            cancelPpgTimers()
         }
     }
 
@@ -200,7 +317,6 @@ class SkinTempService : Service() {
             Log.w(TAG, "Device not worn; skip SpO₂ start (reason=$reason)")
             return
         }
-
         val supports = availableTrackersList.contains(HealthTrackerType.SPO2_ON_DEMAND)
         if (!supports) {
             Log.w(TAG, "SPO2_ON_DEMAND not supported; cannot start (reason=$reason)")
@@ -233,9 +349,7 @@ class SkinTempService : Service() {
         spo2SessionActive = false
         Log.i(TAG, "Stopping SpO₂ (attempt=$spo2Attempt) ...")
         backgroundSpo2Handler.post {
-            try {
-                spo2Tracker.unsetEventListener()
-            } catch (t: Throwable) {
+            try { spo2Tracker.unsetEventListener() } catch (t: Throwable) {
                 Log.e(TAG, "Failed to unset SpO₂ listener", t)
             } finally {
                 cancelSpo2Watchdog()
@@ -243,6 +357,145 @@ class SkinTempService : Service() {
             }
         }
     }
+
+    // ===== PPG timers (watchdog + sample-window) =====
+    private val ppgWatchdog = Runnable {
+        Log.w(TAG, "PPG watchdog fired — stopping after ${PPG_MAX_DURATION_MS}ms (attempt=$ppgAttempt)")
+        finalizePpgSession(reason = "watchdog")
+    }
+
+    private val ppgSampleStopper = Runnable {
+        Log.i(TAG, "PPG sample window ended (${PPG_SAMPLE_WINDOW_MS}ms, attempt=$ppgAttempt)")
+        finalizePpgSession(reason = "window-complete")
+    }
+
+    private fun cancelPpgTimers() {
+        backgroundPpgHandler.removeCallbacks(ppgWatchdog)
+        backgroundPpgHandler.removeCallbacks(ppgSampleStopper)
+    }
+
+    // ===== PPG Start/Stop/Retry =====
+    private fun requestStartPpg(reason: String, resetAttempts: Boolean) {
+        if (resetAttempts) ppgAttempt = 0
+        startPpgTrackerInternal(reason)
+    }
+
+    private fun schedulePpgRetry(reason: String) {
+        if (ppgAttempt >= MAX_PPG_RETRIES) {
+            Log.w(TAG, "PPG retry cap reached (attempt=$ppgAttempt/$MAX_PPG_RETRIES). Will wait for next arm.")
+            scheduleNextPpgArm()
+            return
+        }
+        val backoff = PPG_RETRY_BACKOFF_MS.getOrNull(ppgAttempt.coerceAtLeast(0)) ?: PPG_RETRY_BACKOFF_MS.last()
+        ppgAttempt += 1
+        Log.w(TAG, "Scheduling PPG retry #$ppgAttempt in ${backoff}ms (reason=$reason)")
+        backgroundPpgHandler.postDelayed({ startPpgTrackerInternal("retry-$ppgAttempt") }, backoff)
+    }
+
+    private fun startPpgTrackerInternal(reason: String) {
+        if (!this::ppgTracker.isInitialized) {
+            Log.w(TAG, "PPG tracker not initialized; cannot start (reason=$reason)")
+            return
+        }
+        if (isPpgHandlerRunning) {
+            Log.i(TAG, "PPG already running; skip start (reason=$reason)")
+            return
+        }
+        if (!deviceWorn) {
+            Log.w(TAG, "Device not worn; skip PPG start (reason=$reason)")
+            return
+        }
+        val supports = availableTrackersList.contains(HealthTrackerType.PPG_ON_DEMAND)
+        if (!supports) {
+            Log.w(TAG, "PPG_ON_DEMAND not supported; cannot start (reason=$reason)")
+            return
+        }
+
+        // reset accumulation
+        synchronized(ppgAccumLock) {
+            ppgCount = 0
+            sumRed = 0.0
+            sumIr = 0.0
+            sumGreen = 0.0
+            hadError = false
+        }
+
+        isPpgHandlerRunning = true
+        ppgSessionActive = true
+        Log.i(TAG, "Starting PPG (attempt=$ppgAttempt, reason=$reason) ...")
+
+        backgroundPpgHandler.post {
+            try {
+                ppgTracker.setEventListener(ppgTrackerEventListener)
+                // Arm timers
+                backgroundPpgHandler.postDelayed(ppgSampleStopper, PPG_SAMPLE_WINDOW_MS)
+                backgroundPpgHandler.postDelayed(ppgWatchdog, PPG_MAX_DURATION_MS)
+                Log.i(TAG, "PPG listener set (attempt=$ppgAttempt)")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to set PPG listener", t)
+                isPpgHandlerRunning = false
+                ppgSessionActive = false
+            }
+        }
+    }
+
+    private fun stopPpgTracker() {
+        if (!isPpgHandlerRunning) {
+            Log.i(TAG, "StopPpgTracker: no-op (already stopped)")
+            return
+        }
+        isPpgHandlerRunning = false
+        ppgSessionActive = false
+        Log.i(TAG, "Stopping PPG (attempt=$ppgAttempt) ...")
+        backgroundPpgHandler.post {
+            try { ppgTracker.unsetEventListener() } catch (t: Throwable) {
+                Log.e(TAG, "Failed to unset PPG listener", t)
+            } finally {
+                cancelPpgTimers()
+                Log.i(TAG, "PPG stopped (attempt=$ppgAttempt)")
+            }
+        }
+    }
+
+    // ===== PPG accumulation + finalization =====
+    private val ppgAccumLock = Any()
+    @Volatile private var ppgCount = 0
+    @Volatile private var sumRed = 0.0
+    @Volatile private var sumIr = 0.0
+    @Volatile private var sumGreen = 0.0
+    @Volatile private var hadError = false
+
+    private fun finalizePpgSession(reason: String) {
+        // compute summary
+        val (cnt, avgRed, avgIr, avgGreen, error) = synchronized(ppgAccumLock) {
+            val c = ppgCount
+            val r = if (c > 0) sumRed / c else 0.0
+            val i = if (c > 0) sumIr / c else 0.0
+            val g = if (c > 0) sumGreen / c else 0.0
+            val e = hadError
+            ppgCount = 0; sumRed = 0.0; sumIr = 0.0; sumGreen = 0.0; hadError = false
+            arrayOf(c, r, i, g, e)
+        }.let { arr -> Quint(arr[0] as Int, arr[1] as Double, arr[2] as Double, arr[3] as Double, arr[4] as Boolean) }
+
+        stopPpgTracker()
+        lastPpgAtMs = nowUptime
+
+        if (cnt >= PPG_MIN_POINTS && !error) {
+            Log.i(TAG, "✅ PPG session complete (reason=$reason, points=$cnt) avgRed=${"%.1f".format(avgRed)} avgIR=${"%.1f".format(avgIr)} avgGreen=${"%.1f".format(avgGreen)} (attempt=$ppgAttempt)")
+            ppgMeasurementPending = false
+            scheduleNextPpgArm()
+        } else {
+            Log.w(TAG, "⚠️ PPG session insufficient (reason=$reason, points=$cnt, hadError=$error, attempt=$ppgAttempt)")
+            val recentStill = (nowUptime - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
+            if (deviceWorn && recentStill) {
+                schedulePpgRetry(reason = "insufficient")
+            } else {
+                scheduleNextPpgArm()
+            }
+        }
+    }
+
+    private data class Quint(val c: Int, val r: Double, val i: Double, val g: Double, val e: Boolean)
 
     // ===== SPO2 Listener =====
     private val spO2TrackerEventListener = object : HealthTracker.TrackerEventListener {
@@ -272,21 +525,17 @@ class SkinTempService : Service() {
                         -4  -> Log.w(TAG, "⚠️ SpO₂ MOVED (attempt=$spo2Attempt)")
                     }
 
-                    // Finish current session
                     lastSpo2AtMs = nowUptime
                     stopSpo2Tracker()
 
-                    // On success → re-arm next interval; on failure → retry a few times, else re-arm
                     if (status == 2) {
                         spo2MeasurementPending = false
                         scheduleNextSpo2Arm()
                     } else {
-                        // retry only if still conditions are likely okay
                         val recentStill = (nowUptime - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
                         if (deviceWorn && recentStill) {
                             scheduleSpo2Retry(reason = "terminal-$status")
                         } else {
-                            Log.w(TAG, "Skip retry (deviceWorn=$deviceWorn, recentStill=$recentStill)")
                             scheduleNextSpo2Arm()
                         }
                     }
@@ -301,7 +550,6 @@ class SkinTempService : Service() {
             Log.e(TAG, "SpO₂ tracker error: $error (attempt=$spo2Attempt)")
             lastSpo2AtMs = nowUptime
             stopSpo2Tracker()
-            // Treat as failure; try retry path if appropriate
             val recentStill = (nowUptime - latestStillAtMs) <= STILL_RECENT_WINDOW_MS
             if (deviceWorn && recentStill) {
                 scheduleSpo2Retry(reason = "error-${error.name}")
@@ -311,14 +559,55 @@ class SkinTempService : Service() {
         }
     }
 
+    // ===== PPG Listener =====
+    private val ppgTrackerEventListener = object : HealthTracker.TrackerEventListener {
+        private var startedAtUptime: Long = 0L
+        override fun onDataReceived(points: List<DataPoint?>) {
+            if (!ppgSessionActive) return
+            if (startedAtUptime == 0L) startedAtUptime = nowUptime
+
+            for (p in points) {
+                val point = p ?: continue
+
+                // Raw channels
+                val red   = point.getValue(ValueKey.PpgSet.PPG_RED)   ?: 0
+                val ir    = point.getValue(ValueKey.PpgSet.PPG_IR)    ?: 0
+                val green = point.getValue(ValueKey.PpgSet.PPG_GREEN) ?: 0
+
+                // Status flags (0 = normal, -1 = error for ON_DEMAND)
+                val redSt   = point.getValue(ValueKey.PpgSet.RED_STATUS)   ?: 0
+                val irSt    = point.getValue(ValueKey.PpgSet.IR_STATUS)    ?: 0
+                val greenSt = point.getValue(ValueKey.PpgSet.GREEN_STATUS) ?: 0
+
+                val elapsed = nowUptime - startedAtUptime
+                Log.i(TAG, "PPG upd: red=$red(irSt=$irSt) ir=$ir(redSt=$redSt) green=$green(greenSt=$greenSt) elapsed=${elapsed}ms (attempt=$ppgAttempt)")
+
+                synchronized(ppgAccumLock) {
+                    if (redSt == -1 || irSt == -1 || greenSt == -1) {
+                        hadError = true
+                    }
+                    sumRed += red
+                    sumIr += ir
+                    sumGreen += green
+                    ppgCount += 1
+                }
+            }
+        }
+
+        override fun onFlushCompleted() { /* no-op */ }
+
+        override fun onError(error: HealthTracker.TrackerError) {
+            Log.e(TAG, "PPG tracker error: $error (attempt=$ppgAttempt)")
+            finalizePpgSession(reason = "error-${error.name}")
+        }
+    }
+
     // ===== Skin Temperature Listener (unchanged logic) =====
     private val skinTempTrackerEventListener = object : HealthTracker.TrackerEventListener {
 
         override fun onDataReceived(dataPoints: List<DataPoint>) {
-            // 1️⃣  Stop sensor immediately (but keep queue)
             stopSkinTracker(false)
 
-            // 2️⃣  Collect temp data point
             dataPoints.firstOrNull()?.let { dp ->
                 val status = dp.getValue(ValueKey.SkinTemperatureSet.STATUS)
 
@@ -337,12 +626,10 @@ class SkinTempService : Service() {
                     skinTempLiveData.postValue("N/A")
                 }
 
-                // Use service scope (prevents leaks)
                 scope.launch {
                     repo.storeLatestSkinTemp(tempF)
                 }
             }
-            // 3️⃣  Schedule the next run *once*, with the helper
             scheduleNextSkinTempReading()
         }
 
@@ -365,13 +652,11 @@ class SkinTempService : Service() {
         handlerThread = HandlerThread("SkinTempThread").apply { start() }
         backgroundSkinTempHandler = Handler(handlerThread.looper)
         backgroundSpo2Handler = Handler(handlerThread.looper)
+        backgroundPpgHandler = Handler(handlerThread.looper)
 
         healthService = HealthTrackingService(connectionListener, applicationContext)
         healthService.connectService()
 
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this)
-        }
         collectActivityRecFlow()
         collectMarkerFlows()
 
@@ -387,6 +672,10 @@ class SkinTempService : Service() {
                     }
                 }
             }
+        }
+
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
         }
     }
 
@@ -407,8 +696,11 @@ class SkinTempService : Service() {
         }
 
         stopSpo2Tracker()
+        stopPpgTracker()
         backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+        backgroundPpgHandler.removeCallbacks(ppgArmRunnable)
         cancelSpo2Watchdog()
+        cancelPpgTimers()
 
         stopSkinTracker(true)
         healthService.disconnectService()
@@ -426,28 +718,29 @@ class SkinTempService : Service() {
         val nowWorn = event.isDeviceWorn
         Log.d(TAG, "Wear event: new=$nowWorn")
 
-        // Clear old skin callbacks so they don’t pile up
         backgroundSkinTempHandler.removeCallbacksAndMessages(null)
 
         if (nowWorn) {
             deviceWorn = true
-            startSkinTracker()    // immediate snapshot
+            startSkinTracker()
             scheduleNextSkinTempReading()
 
-            // If we’re already overdue, arm immediately so the next STILL fires a reading.
-            val overdue = (nowUptime - lastSpo2AtMs) >= spO2IntervalMs
-            if (overdue) {
-                spo2MeasurementPending = true
-                Log.i(TAG, "SPO2 is overdue; pending=true")
-            }
-
+            val spo2Overdue = (nowUptime - lastSpo2AtMs) >= spO2IntervalMs
+            if (spo2Overdue) { spo2MeasurementPending = true; Log.i(TAG, "SPO2 is overdue; pending=true") }
             scheduleNextSpo2Arm()
+
+            val ppgOverdue = (nowUptime - lastPpgAtMs) >= ppgIntervalMs
+            if (ppgOverdue) { ppgMeasurementPending = true; Log.i(TAG, "PPG is overdue; pending=true") }
+            scheduleNextPpgArm()
+
             writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
             stopSkinTracker(true)
             stopSpo2Tracker()
+            stopPpgTracker()
             backgroundSpo2Handler.removeCallbacks(spo2ArmRunnable)
+            backgroundPpgHandler.removeCallbacks(ppgArmRunnable)
             writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
@@ -467,23 +760,31 @@ class SkinTempService : Service() {
                             return@collect
                         }
 
-                        val dueByInterval = (nowUptime - lastSpo2AtMs) >= spO2IntervalMs
-                        val due = (spo2MeasurementPending || dueByInterval)
-
-                        if (due && !isSpo2HandlerRunning) {
+                        // SpO2 due?
+                        val spo2DueByInterval = (nowUptime - lastSpo2AtMs) >= spO2IntervalMs
+                        val spo2Due = (spo2MeasurementPending || spo2DueByInterval)
+                        if (spo2Due && !isSpo2HandlerRunning) {
                             val wasPending = spo2MeasurementPending
                             spo2MeasurementPending = false
-                            Log.i(TAG, "STILL trigger → start SpO2 (dueByInterval=$dueByInterval, wasPending=$wasPending)")
+                            Log.i(TAG, "STILL trigger → start SpO2 (dueByInterval=$spo2DueByInterval, wasPending=$wasPending)")
                             requestStartSpo2(reason = "still", resetAttempts = true)
-                        } else {
-                            Log.d(TAG, "STILL but not due (pending=$spo2MeasurementPending, running=$isSpo2HandlerRunning)")
+                        }
+
+                        // PPG due?
+                        val ppgDueByInterval = (nowUptime - lastPpgAtMs) >= ppgIntervalMs
+                        val ppgDue = (ppgMeasurementPending || ppgDueByInterval)
+                        if (ppgDue && !isPpgHandlerRunning) {
+                            val wasPendingPpg = ppgMeasurementPending
+                            ppgMeasurementPending = false
+                            Log.i(TAG, "STILL trigger → start PPG (dueByInterval=$ppgDueByInterval, wasPending=$wasPendingPpg)")
+                            requestStartPpg(reason = "still", resetAttempts = true)
                         }
                     }
                 }
         }
     }
 
-    // ===== Manual marker flow (start/stop by user action) =====
+    // ===== Manual marker flow (optional: start/stop SpO2; mirrored for PPG) =====
     private fun collectMarkerFlows() {
         scope.launch(Dispatchers.IO) {
             repo.dropRequests.collect { req ->
@@ -492,10 +793,16 @@ class SkinTempService : Service() {
                 if (req.markerType == DataRepository.MarkerType.FRIENDLY) {
                     Log.i(TAG, "---------> Start SPO2 (manual)")
                     requestStartSpo2(reason = "manual", resetAttempts = true)
+
+                    Log.i(TAG, "---------> Start PPG (manual)")
+                    requestStartPpg(reason = "manual", resetAttempts = true)
                 }
                 if (req.markerType == DataRepository.MarkerType.HOSTILE) {
                     Log.i(TAG, "---------> Stop SPO2 (manual)")
                     stopSpo2Tracker()
+
+                    Log.i(TAG, "---------> Stop PPG (manual)")
+                    stopPpgTracker()
                 }
             }
         }
@@ -503,7 +810,7 @@ class SkinTempService : Service() {
 
     // ===== SkinTemp start/stop (unchanged logic) =====
     private fun startSkinTracker() {
-        if (!::skinTracker.isInitialized || isSkTHandlerRunning) return
+        if (!::skinTracker.isInitialized || isSkTHandlerRunning || !skinTempSupported) return
         isSkTHandlerRunning = true
 
         if (availableTrackersList.contains(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)) {
