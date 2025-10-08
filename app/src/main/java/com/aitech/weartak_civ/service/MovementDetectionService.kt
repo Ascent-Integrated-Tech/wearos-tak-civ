@@ -12,6 +12,7 @@ import android.os.Process
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import androidx.compose.ui.graphics.vector.DefaultTrimPathEnd
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.algorithm.ExtendedKalmanFilter
@@ -41,7 +42,7 @@ import java.util.Locale
 
 // Updated MovementState enum to match Google's Activity Recognition types
 enum class MovementState {
-    STILL, WALKING, RUNNING, CYCLING, DRIVING, UNKNOWN
+    STILL, WALKING, RUNNING, CYCLING, DRIVING, UNKNOWN, ON_FOOT, TILTING
 }
 
 // ---------- NEW DATA STRUCTURES AND STATE ----------
@@ -78,6 +79,8 @@ class MovementDetectionService : Service(), SensorEventListener {
         private const val MOVEMENT_DETECTION_SERVICE_NOTIFICATION_ID = 1001
         private const val GPS_TIME_THRESHOLD_MS = 600000L // 10 minutes
         private const val GPS_RESET_TIME_THRESHOLD = 300000L // 5 minutes
+
+        private const val GPS_FORBIDDEN_MODE_CHECK_INTERVAL_MS = 10_000L
         
         // Activity Recognition broadcast constants
         private const val ACTION_ACTIVITY_BROADCAST = "com.aitech.weartak_civ.ACTIVITY_BROADCAST"
@@ -96,21 +99,6 @@ class MovementDetectionService : Service(), SensorEventListener {
         @Volatile
         var lastPredictedLatLonAlt: LatLonAlt? = null
             private set
-
-        // Lightweight helper (no side effects)
-        /*private fun logGpsRefix(origin: String, reason: String, details: String = "") {
-            Log.d(
-                GPS_REFIX_TAG,
-                "origin=$origin reason=$reason${if (details.isNotBlank()) " $details" else ""}"
-            )
-
-            /*try {
-                //Log.d(
-                    GPS_REFIX_TAG,
-                    "origin=$origin reason=$reason${if (details.isNotBlank()) " $details" else ""}"
-                )
-            } catch (_: Throwable) { /* ignore */ }*/
-        }*/
     }
 
     // Service state variables
@@ -140,7 +128,6 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var lastArUpdateTime: Long = 0L
     // Seed to avoid printing epoch-based seconds before first AR broadcast
     private var serviceStartMs: Long = 0L
-    private val arFallbackTimeoutMs: Long = 45000L // 45 seconds
 
     // --- movement txt logging (service-only) ---
     private var movementWriter: BufferedWriter? = null
@@ -148,29 +135,24 @@ class MovementDetectionService : Service(), SensorEventListener {
     private var movementLogDayStamp: String? = null
     private var lastGoogleAccuracyM: Double? = null
 
-    // --- Activity→EKF profiles feature flag & scheduling ---
-    private var profilesEnabled: Boolean = true
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
-
-    private var lastAppliedActivityType: Int? = null
-    private var lastProfileApplyElapsedMs: Long = 0L
-    private val minApplyGapMs: Long = 3000L   // don't spam apply
-
-    // --- IMU logging buffers ---
-    //private var latestAccelData: FloatArray? = null
-    //private var latestGyroData: FloatArray? = null
-    //private var latestMagData: FloatArray? = null
-
     // timestamps in nanoseconds from sensor events
     private var accTsNs: Long = 0L
     private var gyrTsNs: Long = 0L
     private var magTsNs: Long = 0L
 
-    // last written IMU log timestamp
-    private var lastLoggedTsNs: Long = 0L
 
-    // last time we requested a GPS reference (ms wall-clock)
-    private var imuLogLastGpsReqMs: Long = 0L
+    // GPS request rate limiting to prevent excessive location service calls
+    private var lastGpsRequestTime = System.currentTimeMillis() // Initialize to current time to prevent immediate GPS request
+    private val gpsRequestMinInterval = 10000L // 10 seconds minimum between GPS requests
+
+    // IMU data buffering to avoid multiple predict() calls
+    private var latestAccelData: FloatArray? = null
+    private var latestGyroData: FloatArray? = null
+    private var latestMagData: FloatArray? = null
+    private var latestPressureData: Float? = null
+    private var lastImuUpdateTime = System.currentTimeMillis() // Initialize to current time to prevent immediate IMU update
+    private val imuUpdateInterval = 50L // 50ms for 20Hz IMU updates
+    private var latestImuTimestampNs: Long = 0L  // Sensor timestamp for EKF predict
 
 
     // Broadcast receiver for activity updates
@@ -188,24 +170,28 @@ class MovementDetectionService : Service(), SensorEventListener {
                 // Convert Google Activity Recognition to our MovementState
                 val movementState = when (activityType) {
                     DetectedActivity.STILL -> MovementState.STILL
+                    DetectedActivity.ON_FOOT -> MovementState.ON_FOOT
                     DetectedActivity.WALKING -> MovementState.WALKING
                     DetectedActivity.RUNNING -> MovementState.RUNNING
                     DetectedActivity.ON_BICYCLE -> MovementState.CYCLING
                     DetectedActivity.IN_VEHICLE -> MovementState.DRIVING
+                    DetectedActivity.TILTING -> MovementState.TILTING
                     else -> MovementState.UNKNOWN
                 }
+
+                updateMovementStateFromGoogle(movementState, confidence)
                 
                 //Log.d(TAG, "🔄 Converted AR activity $activityType to MovementState: $movementState")
                 
                 // Apply hysteresis to prevent activity flapping
-                if (shouldUpdateActivity(movementState, confidence)) {
+                /*if (shouldUpdateActivity(movementState, confidence)) {
                     //Log.d(TAG, "✅ Hysteresis passed, updating activity state to: $movementState")
                     updateMovementStateFromGoogle(movementState, confidence)
                 } else {
                     //Log.d(TAG, "⏸️ Hysteresis blocked activity change to: $movementState (current: $currentActivity)")
-                }
+                }*/
             } else {
-                //Log.w(TAG, "⚠️ Received broadcast with unexpected action: ${intent?.action}")
+                return
             }
         }
     }
@@ -233,10 +219,8 @@ class MovementDetectionService : Service(), SensorEventListener {
         //Log.d(TAG, "✅ Movement state updated to: $activity (confidence: $confidence%)")
     }
     
-    /**
-     * Check if we should update activity based on hysteresis
-     */
-    private fun shouldUpdateActivity(newActivity: MovementState, confidence: Int): Boolean {
+
+    /*private fun shouldUpdateActivity(newActivity: MovementState, confidence: Int): Boolean {
         if (confidence < 70) return false
         val now = System.currentTimeMillis()
         if (newActivity == currentActivity) { 
@@ -250,12 +234,32 @@ class MovementDetectionService : Service(), SensorEventListener {
             candidateHits = 1 
         }
         return candidateHits >= requiredConsecutiveHits
+    }*/
+
+    private fun isEkfPredictionAllowed(activity: MovementState = currentActivity): Boolean {
+        return when (activity) {
+            MovementState.STILL,
+            MovementState.ON_FOOT,
+            MovementState.WALKING,
+            MovementState.TILTING -> true
+            else -> false // RUNNING, ON_BICYCLE, IN_VEHICLE, UNKNOWN
+        }
+    }
+
+    private fun checkGpsFixNeededWhenEkfForbidden() {
+        val now = System.currentTimeMillis()
+        val lastFixMs = lastGoodGps?.tMs ?: 0L
+
+        // Only nudge if we haven't seen a GPS fix in the last 10s (and respect request rate limiter)
+        if (now - lastFixMs >= GPS_FORBIDDEN_MODE_CHECK_INTERVAL_MS) {
+            requestGpsFix("EKF_FORBIDDEN_10S")
+        }
     }
 
     /**
      * Check if we should fall back to UNKNOWN due to no recent AR updates
      */
-    private fun checkArFallback() {
+    /*private fun checkArFallback() {
         val currentTime = System.currentTimeMillis()
         val timeSinceLastArUpdate = currentTime - lastArUpdateTime
         
@@ -271,13 +275,13 @@ class MovementDetectionService : Service(), SensorEventListener {
             //Log.d(TAG, "🔄 No location available and AR not working, attempting fallback")
             provideFallbackLocation()
         }
-    }
+    }*/
     
     /**
      * Manual method to set location for testing/debugging
      * This can be called from other services or for testing purposes
      */
-    fun setTestLocation(latitude: Double, longitude: Double, altitude: Double = 0.0) {
+    /*fun setTestLocation(latitude: Double, longitude: Double, altitude: Double = 0.0) {
         try {
             val testLocation = Location("test").apply {
                 this.latitude = latitude
@@ -293,19 +297,19 @@ class MovementDetectionService : Service(), SensorEventListener {
         } catch (e: Exception) {
             //Log.e(TAG, "❌ Error setting test location: ${e.message}")
         }
-    }
+    }*/
     
     /**
      * Get current location status for debugging
      */
-    fun getLocationStatus(): String {
+    /*fun getLocationStatus(): String {
         return "Location Status: " +
                "lastPredictedLocation=${lastPredictedLocation != null}, " +
                "lastGoodGps=${lastGoodGps != null}, " +
                "currentActivity=$currentActivity, " +
                "activityConfidence=$activityConfidence%, " +
                "lastArUpdate=${(System.currentTimeMillis() - lastArUpdateTime)/1000}s ago"
-    }
+    }*/
     
     // ---------- ACTIVITY-BASED EKF PARAMETER TUNING ----------
     
@@ -322,7 +326,23 @@ class MovementDetectionService : Service(), SensorEventListener {
                 velocityDampingFactor = 0.1f,  // Aggressive velocity damping
                 driftThresholdMeters = 500.0f    // Low drift tolerance
             )
-            
+
+            MovementState.ON_FOOT -> ActivityBasedEKFParams(
+                processNoiseStd = 0.5,        // Very low - device is stationary
+                measurementNoiseStd = 0.1,     // High GPS trust when stationary
+                gpsUpdateIntervalMs = 120000L, // 5 minutes - no need for frequent updates
+                velocityDampingFactor = 0.3f,  // Aggressive velocity damping
+                driftThresholdMeters = 500.0f    // Low drift tolerance
+            )
+
+            MovementState.TILTING -> ActivityBasedEKFParams(
+                processNoiseStd = 0.5,        // Very low - device is stationary
+                measurementNoiseStd = 0.1,     // High GPS trust when stationary
+                gpsUpdateIntervalMs = 120000L, // 5 minutes - no need for frequent updates
+                velocityDampingFactor = 0.3f,  // Aggressive velocity damping
+                driftThresholdMeters = 500.0f    // Low drift tolerance
+            )
+
             MovementState.WALKING -> ActivityBasedEKFParams(
                 processNoiseStd = 0.5,        // Low - predictable movement
                 measurementNoiseStd = 0.2,     // Good GPS trust
@@ -384,14 +404,7 @@ class MovementDetectionService : Service(), SensorEventListener {
      */
     private fun applyActivityBasedEKFParams(activity: MovementState, confidence: Int) {
         val params = getEKFParamsForActivity(activity, confidence)
-        
-        /*Log.d(TAG, "⚙️ Applying EKF params for $activity (confidence: $confidence%): " +
-                "processNoise=${params.processNoiseStd}, " +
-                "measurementNoise=${params.measurementNoiseStd}, " +
-                "gpsInterval=${params.gpsUpdateIntervalMs/1000}s, " +
-                "velocityDamping=${params.velocityDampingFactor}, " +
-                "driftThreshold=${params.driftThresholdMeters}m")*/
-        
+
         // Apply activity-tuned noise to EKF (without re-instantiating)
         ekf?.setNoiseParameters(
             processNoiseStd = params.processNoiseStd,
@@ -401,10 +414,6 @@ class MovementDetectionService : Service(), SensorEventListener {
         gpsUpdateInterval = params.gpsUpdateIntervalMs
         velocityDampingFactor = params.velocityDampingFactor
         driftThresholdMeters = params.driftThresholdMeters  // fixed 500 m per activity (tunable later)
-        
-        /*Log.d(TAG, "📊 Updated service parameters: gpsInterval=${gpsUpdateInterval/1000}s, " +
-                "velocityDamping=$velocityDampingFactor, driftThreshold=${driftThresholdMeters}m, " +
-                "noise=[${params.processNoiseStd}, ${params.measurementNoiseStd}]")*/
     }
     
     /**
@@ -418,27 +427,19 @@ class MovementDetectionService : Service(), SensorEventListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) 
                     != PackageManager.PERMISSION_GRANTED) {
-                    //Log.w(TAG, "⚠️ ACTIVITY_RECOGNITION permission not granted - activity recognition will not work")
-                    //Log.w(TAG, "📱 User needs to grant ACTIVITY_RECOGNITION permission in Settings > Apps > WearTAK > Permissions")
-                    //Log.w(TAG, "🔧 Without this permission, movement classification will default to UNKNOWN and EKF tuning will be limited")
                     return
                 }
-                //Log.d(TAG, "✅ ACTIVITY_RECOGNITION permission granted")
             }
             
             // Start the GoogleActivityRecognition service with foreground service support on O+
             val serviceIntent = Intent(this, GoogleActivityRecognition::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ContextCompat.startForegroundService(this, serviceIntent)
-                //Log.d(TAG, "🚀 Started GoogleActivityRecognition as foreground service (Android O+)")
                         } else {
                 startService(serviceIntent)
-                //Log.d(TAG, "🚀 Started GoogleActivityRecognition service (Android < O)")
             }
             
-            //Log.d(TAG, "✅ Google Activity Recognition service started successfully")
                                 } catch (e: Exception) {
-            //Log.e(TAG, "❌ Failed to start Google Activity Recognition service: ${e.message}")
         }
         
         // If activity recognition failed, try to provide fallback location
@@ -450,14 +451,12 @@ class MovementDetectionService : Service(), SensorEventListener {
         }
     }
     
-
-    
     /**
      * Update GPS update intervals based on activity type
      */
 
     // ---- EKF profile model and catalog (uses only knobs already exposed by EKF) ----
-    private data class EkfProfile(
+    /*private data class EkfProfile(
         val mode: String,                 // feeds ekf.adaptNoiseByState(...)
         val measurementNoiseStd: Double,  // feeds ekf.setNoiseParameters(..., R_std)
         val gpsHeadingMinSpeed: Double,   // m/s; heading gate threshold
@@ -466,18 +465,18 @@ class MovementDetectionService : Service(), SensorEventListener {
         val zaru: Boolean,                // if true, call ekf.zaruUpdate()
         val magWeight: Float,             // 0..1; hint for adaptNoiseByState()
         val distanceRefixMeters: Float    // distance-based refix threshold for this activity
-    )
+    )*/
 
-    private object ActivityProfiles {
+    /*private object ActivityProfiles {
         // ON_FOOT treated like stationary
         val STILL      = EkfProfile("STILL",    0.28, Double.POSITIVE_INFINITY, 0.05, 4, true,  0.75f, 500f)
-        val ON_FOOT    = EkfProfile("STILL",    0.28, 1.20,                      0.30, 3, true,  0.65f, 500f)
+        val ON_FOOT    = EkfProfile("WALKING",    0.28, 1.20,                      0.90, 0, false,  0.65f, 500f)
         val WALKING    = EkfProfile("WALKING",  0.35, 1.00,                      0.90, 0, false, 0.55f, 500f)
         val RUNNING    = EkfProfile("RUNNING",  0.40, 1.50,                      1.00, 0, false, 0.45f, 500f)
-        val ON_BICYCLE = EkfProfile("DRIVING",  0.43, 2.00,                      1.00, 0, false, 0.35f, 500f)
+        val ON_BICYCLE = EkfProfile("RUNNING",  0.43, 2.00,                      1.00, 0, false, 0.35f, 500f)
         val IN_VEHICLE = EkfProfile("DRIVING",  0.48, 3.00,                      1.00, 0, false, 0.15f, 500f)
-        val TILTING    = EkfProfile("WALKING",  0.40, 1.00,                      0.60, 0, true,  0.40f, 500f)
-        val UNKNOWN    = EkfProfile("WALKING",  0.38, 1.00,                      0.80, 3, true, 0.50f, 500f)
+        val TILTING    = EkfProfile("WALKING",  0.40, 1.00,                      0.90, 0, false,  0.40f, 500f)
+        val UNKNOWN    = EkfProfile("WALKING",  0.38, 1.00,                      0.90, 0, true, 0.50f, 500f)
 
         fun forType(type: Int): EkfProfile = when (type) {
             com.google.android.gms.location.DetectedActivity.STILL       -> STILL
@@ -530,32 +529,8 @@ class MovementDetectionService : Service(), SensorEventListener {
         // (f) Service-owned distance refix threshold
         driftThresholdMeters = p.distanceRefixMeters
         //Log.d(TAG, "📏 driftThresholdMeters set from profile: ${"%.0f".format(driftThresholdMeters)} m")
-    }
+    }*/
 
-    // ---------- SENSOR DATA PROCESSING ----------
-    
-    // Removed: Custom movement classification variables and functions
-    // Now using Google Activity Recognition exclusively
-    
-    private var lastSensorUpdateTime = 0L
-    private var sensorUpdateInterval = 20L // 20ms for 50Hz updates (much more responsive)
-    
-    // GPS check rate limiting to prevent excessive requests
-    private var lastGpsCheckTime = System.currentTimeMillis() // Initialize to current time to prevent immediate GPS check
-    private val gpsCheckInterval = 10000L // 5 seconds between GPS checks
-    
-    // GPS request rate limiting to prevent excessive location service calls
-    private var lastGpsRequestTime = System.currentTimeMillis() // Initialize to current time to prevent immediate GPS request
-    private val gpsRequestMinInterval = 10000L // 10 seconds minimum between GPS requests
-    
-    // IMU data buffering to avoid multiple predict() calls
-    private var latestAccelData: FloatArray? = null
-    private var latestGyroData: FloatArray? = null
-    private var latestMagData: FloatArray? = null
-    private var latestPressureData: Float? = null
-    private var lastImuUpdateTime = System.currentTimeMillis() // Initialize to current time to prevent immediate IMU update
-    private val imuUpdateInterval = 50L // 50ms for 20Hz IMU updates
-    private var latestImuTimestampNs: Long = 0L  // Sensor timestamp for EKF predict
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null) return
@@ -591,13 +566,13 @@ class MovementDetectionService : Service(), SensorEventListener {
         magTsNs = event.timestamp
         latestImuTimestampNs = max(latestImuTimestampNs, event.timestamp)
     }
-    
+
     private fun processPressureData(event: SensorEvent) {
         val pressure = event.values[0]
-        
+
         //Log.v(TAG, "🌡️ Pressure: ${String.format("%.1f", pressure)} hPa")
         logToFile("🌡️ Pressure: ${String.format("%.1f", pressure)} hPa")
-        
+
         latestPressureData = pressure
     }
 
@@ -629,189 +604,26 @@ class MovementDetectionService : Service(), SensorEventListener {
         }
     }
 
-    private fun closePoseTxt() {
-        try { poseTxtWriter?.flush(); poseTxtWriter?.close() } catch (_: Throwable) {}
-        poseTxtWriter = null
-        poseTxtDayStamp = null
-    }
-
     // Safe formatter for doubles/floats
     private fun fmt(d: Double, digits: Int = 6): String =
         if (d.isFinite()) String.format(Locale.US, "% .${"%d".format(digits)}f".replace(" ", ""), d) else "NaN"
 
-    private fun fmtf(f: Float, digits: Int = 6): String =
-        if (f.isFinite()) String.format(Locale.US, "% .${"%d".format(digits)}f".replace(" ", ""), f) else "NaN"
-
-    private fun writePoseTxtLine(
-        source: String,
-        tsNs: Long,
-        ekfSnap: com.aitech.weartak_civ.algorithm.ExtendedKalmanFilter.LogSnapshot,
-        ahrsSnap: com.aitech.weartak_civ.algorithm.ModifiedMadgwickFilter.AhrsLog?
-    ) {
-        try {
-            ensurePoseTxtOpen()
-            val tsMs = System.currentTimeMillis()
-            val magW = ahrsSnap?.magWeight ?: Float.NaN
-
-            val line = buildString {
-                append("ts_ms="); append(tsMs)
-                append(" ts_ns="); append(tsNs)
-                append(" source="); append(source)
-                append(" frame="); append(ekfSnap.frame)
-
-                append(" lat="); append(String.format(Locale.US, "%.8f", ekfSnap.lat))
-                append(" lon="); append(String.format(Locale.US, "%.8f", ekfSnap.lon))
-                append(" alt="); append(String.format(Locale.US, "%.2f", ekfSnap.alt))
-
-                append(" enu_x="); append(String.format(Locale.US, "%.3f", ekfSnap.enuX))
-                append(" enu_y="); append(String.format(Locale.US, "%.3f", ekfSnap.enuY))
-                append(" enu_z="); append(String.format(Locale.US, "%.3f", ekfSnap.enuZ))
-
-                append(" vel_e="); append(String.format(Locale.US, "%.3f", ekfSnap.vE))
-                append(" vel_n="); append(String.format(Locale.US, "%.3f", ekfSnap.vN))
-                append(" vel_u="); append(String.format(Locale.US, "%.3f", ekfSnap.vU))
-
-                append(" qw="); append(String.format(Locale.US, "%.6f", ekfSnap.qw))
-                append(" qx="); append(String.format(Locale.US, "%.6f", ekfSnap.qx))
-                append(" qy="); append(String.format(Locale.US, "%.6f", ekfSnap.qy))
-                append(" qz="); append(String.format(Locale.US, "%.6f", ekfSnap.qz))
-
-                append(" roll_deg="); append(String.format(Locale.US, "%.2f", ekfSnap.rollDeg))
-                append(" pitch_deg="); append(String.format(Locale.US, "%.2f", ekfSnap.pitchDeg))
-                append(" yaw_deg="); append(String.format(Locale.US, "%.2f", ekfSnap.yawDeg))
-
-                append(" mag_weight="); append(String.format(Locale.US, "%.3f", magW))
-            }
-
-            poseTxtWriter?.apply {
-                write(line); newLine(); flush()
-            }
-        } catch (_: Throwable) {
-            // best-effort; never crash service on logging
-        }
-    }
     
     /**
      * Update EKF with buffered IMU data (single predict call per update)
      * Only runs after we have received a GPS fix to anchor the coordinate system
      */
-    /*private fun tryUpdateEKFWithBufferedData() {
-        // Only start EKF updates after we have GPS fix
-        if (!hasGpsFix) {
-            //Log.d(TAG, "🚫 BLOCKED: No GPS fix yet (hasGpsFix=$hasGpsFix), EKF IMU updates disabled")
-            return
-        }
-        
-        ////Log.d(TAG, "✅ GPS fix confirmed (hasGpsFix=$hasGpsFix), proceeding with EKF IMU update")
-        
-        val currentTime = System.currentTimeMillis()
-        
-        // Rate limiting for IMU updates
-        if (currentTime - lastImuUpdateTime < imuUpdateInterval) {
-            return
-        }
-        
-        // Check if we have all required IMU data (accelerometer, gyroscope, magnetometer)
-        if (latestAccelData != null && latestGyroData != null && latestMagData != null) {
-            try {
-                // Create complete IMU data array: [ax, ay, az, ωx, ωy, ωz, mx, my, mz]
-                val imuData = doubleArrayOf(
-                    latestAccelData!![0].toDouble(),
-                    latestAccelData!![1].toDouble(),
-                    latestAccelData!![2].toDouble(),
-                    latestGyroData!![0].toDouble(),
-                    latestGyroData!![1].toDouble(),
-                    latestGyroData!![2].toDouble(),
-                    latestMagData!![0].toDouble(),
-                    latestMagData!![1].toDouble(),
-                    latestMagData!![2].toDouble()
-                )
-                
-                // Log accelerometer values BEFORE EKF
-                ////Log.d(TAG, "📊 BEFORE EKF - Raw Accelerometer: x=${"%.3f".format(latestAccelData!![0])} m/s², y=${"%.3f".format(latestAccelData!![1])} m/s², z=${"%.3f".format(latestAccelData!![2])} m/s²")
-                
-                // Update EKF with complete IMU data using single predict call with sensor timestamp
-                val ts = latestImuTimestampNs.takeIf { it != 0L } ?: System.nanoTime()
-                
-                // NEW: IMU & dt trace into EKF predict
-                val dtSec = if (latestImuTimestampNs != 0L) (ts - latestImuTimestampNs) / 1e9 else 0.0
-                /*//Log.d(TAG, "→ PREDICT input: dt=${"%.4f".format(dtSec)} s, " +
-                    "accel_body (m/s²)=(${latestAccelData!![0]}, ${latestAccelData!![1]}, ${latestAccelData!![2]}), " +
-                    "gyro (rad/s)=(${latestGyroData!![0]}, ${latestGyroData!![1]}, ${latestGyroData!![2]}), " +
-                    "mag (µT)=(${latestMagData!![0]}, ${latestMagData!![1]}, ${latestMagData!![2]})")*/
-                
-                ekf?.predict(ts, imuData)
-
-                // Existing predict logs
-                ekf?.let { logPredictTxt(it) }
-
-                // New: EKF pose TXT logging after predict
-                ekf?.let { e ->
-                    val ekfSnap = e.snapshotForLogging()
-                    val ahrsSnap = try { 
-                        // If you maintain a Madgwick instance named `ahrs` in service, use it; else null
-                        null as com.aitech.weartak_civ.algorithm.ModifiedMadgwickFilter.AhrsLog?
-                    } catch (_: Throwable) { null }
-                    val eventTsNs = latestImuTimestampNs.takeIf { it != 0L } ?: System.nanoTime()
-                    writePoseTxtLine("predict", eventTsNs, ekfSnap, ahrsSnap)
-                }
-                
-                // NEW: PREDICT completion status
-                val sig = ekf?.getHorizontalPositionStdMeters() ?: Double.NaN
-                ////Log.d(TAG, "← PREDICT done: horiz σ=${"%.2f".format(sig)} m")
-                
-                // Get EKF state AFTER prediction
-                val ekfState = ekf?.getCurrentPose()
-                if (ekfState != null) {
-                    // Apply velocity damping factor to individual components
-                    val rawVx = ekfState.velocity.first
-                    val rawVy = ekfState.velocity.second
-                    val rawVz = ekfState.velocity.third
-                    
-                    // Apply activity-based velocity damping
-                    val vx = rawVx * velocityDampingFactor
-                    val vy = rawVy * velocityDampingFactor
-                    val vz = rawVz * velocityDampingFactor
-                    
-                    val velocityMagnitude = kotlin.math.sqrt(vx * vx + vy * vy + vz * vz)
-                    
-                    // Log EKF state AFTER processing and damping
-                    ////Log.d(TAG, "🧠 AFTER EKF - Raw Velocity: vx=${"%.3f".format(rawVx)} m/s, vy=${"%.3f".format(rawVy)} m/s, vz=${"%.3f".format(rawVz)} m/s")
-                    ////Log.d(TAG, "🧠 AFTER EKF - Damped Velocity: vx=${"%.3f".format(vx)} m/s, vy=${"%.3f".format(vy)} m/s, vz=${"%.3f".format(vz)} m/s, |v|=${"%.3f".format(velocityMagnitude)} m/s (damping=${velocityDampingFactor})")
-                    
-                    // FIXED: Correct unit labeling - position is (lat,lon,alt), not ENU meters
-                    ////Log.d(TAG, "🧠 AFTER EKF - Geo Position: lat=${"%.7f".format(ekfState.position.first)}, " +
-                    //    "lon=${"%.7f".format(ekfState.position.second)}, alt=${"%.2f".format(ekfState.position.third)} m")
-                    ////Log.d(TAG, "🧠 AFTER EKF - Velocity (ENU, m/s): vx=${"%.3f".format(ekfState.velocity.first)}, " +
-                    ///    "vy=${"%.3f".format(ekfState.velocity.second)}, vz=${"%.3f".format(ekfState.velocity.third)}")
-                }
-                
-                // NEW: magnetometer heading correction (acc/mag are body-frame raw values)
-                /*ekf?.updateMagnetometer(
-                    doubleArrayOf(latestMagData!![0].toDouble(), latestMagData!![1].toDouble(), latestMagData!![2].toDouble()),
-                    doubleArrayOf(latestAccelData!![0].toDouble(), latestAccelData!![1].toDouble(), latestAccelData!![2].toDouble())
-                )*/
-                
-                // Publish EKF estimate after IMU prediction
-                publishFromEkf("predicted-imu")
-                
-                //logToFile("📊 EKF IMU Update: activity=$currentActivity, confidence=$activityConfidence%")
-                
-                // Update last IMU update time
-                lastImuUpdateTime = currentTime
-                
-            } catch (e: Exception) {
-                //Log.e(TAG, "❌ Error updating EKF with IMU data: ${e.message}", e)
-            }
-        } else {
-            //Log.v(TAG, "⏳ Waiting for complete IMU data: accel=${latestAccelData != null}, gyro=${latestGyroData != null}, mag=${latestMagData != null}")
-        }
-    }*/
 
     private fun tryUpdateEKFWithBufferedData() {
         // 0) Require GPS anchor before IMU predictions
         if (!hasGpsFix) {
             //Log.d(TAG, "🚫 BLOCKED: No GPS fix yet (hasGpsFix=$hasGpsFix), EKF IMU updates disabled")
+            return
+        }
+
+        // NEW: If EKF predict is *not* allowed, do a flat 10s GPS check and bail.
+        if (!isEkfPredictionAllowed()) {
+            checkGpsFixNeededWhenEkfForbidden()  // polls GPS every 10s (see constant)
             return
         }
 
@@ -853,89 +665,10 @@ class MovementDetectionService : Service(), SensorEventListener {
             // 4) EKF predict (rotates to ENU internally; subtracts gravity inside EKF)
             ekf?.predict(tsNs, imuData)
 
-            // 5) Log (TXT) snapshot line for offline analysis
-            ekf?.let { e ->
-                val ekfSnap = e.snapshotForLogging()
-                writePoseTxtLine("predict", tsNs, ekfSnap, null)
-            }
-
-            // 6) Four separate logs (with safe fallbacks)
-            ekf?.let { e ->
-                // ENU position
-                try {
-                    val enuPos = e.getEnuPosition()
-                    /*Log.d(
-                        "EKF_ENU",
-                        "ENU position: x=${"%.6f".format(enuPos.first)}, y=${"%.6f".format(enuPos.second)}, z=${"%.6f".format(enuPos.third)}"
-                    )*/
-                } catch (_: Throwable) {
-                    val s = e.snapshotForLogging()
-                    /*Log.d(
-                        "EKF_ENU",
-                        "ENU position: x=${"%.6f".format(s.enuX)}, y=${"%.6f".format(s.enuY)}, z=${"%.6f".format(s.enuZ)}"
-                    )*/
-                }
-
-                // Geo position (lat/lon/alt)
-                try {
-                    val geoPos = e.getCurrentPose().position
-                    /*Log.d(
-                        "EKF_POS",
-                        "Lat=${"%.6f".format(geoPos.first)}, Lon=${"%.6f".format(geoPos.second)}, Alt=${"%.6f".format(geoPos.third)}"
-                    )*/
-                } catch (_: Throwable) {
-                    val s = e.snapshotForLogging()
-                    /*Log.d(
-                        "EKF_POS",
-                        "Lat=${"%.6f".format(s.lat)}, Lon=${"%.6f".format(s.lon)}, Alt=${"%.6f".format(s.alt)}"
-                    )*/
-                }
-
-                // ENU velocities
-                try {
-                    val vel = e.getEnuVelocity()
-                    /*Log.d(
-                        "EKF_VEL",
-                        "Velocity: vx=${"%.6f".format(vel.first)}, vy=${"%.6f".format(vel.second)}, vz=${"%.6f".format(vel.third)}"
-                    )*/
-                } catch (_: Throwable) {
-                    val s = e.snapshotForLogging()
-                    /*Log.d(
-                        "EKF_VEL",
-                        "Velocity: vx=${"%.6f".format(s.vE)}, vy=${"%.6f".format(s.vN)}, vz=${"%.6f".format(s.vU)}"
-                    )*/
-                }
-
-                // Quaternion (w,x,y,z)
-                try {
-                    val q = e.getQuaternionWxyz()
-                    /*Log.d(
-                        "EKF_QUAT",
-                        "Quaternion: qw=${"%.6f".format(q[0])}, qx=${"%.6f".format(q[1])}, qy=${"%.6f".format(q[2])}, qz=${"%.6f".format(q[3])}"
-                    )*/
-                } catch (_: Throwable) {
-                    val s = e.snapshotForLogging()
-                    /*Log.d(
-                        "EKF_QUAT",
-                        "Quaternion: qw=${"%.6f".format(s.qw)}, qx=${"%.6f".format(s.qx)}, qy=${"%.6f".format(s.qy)}, qz=${"%.6f".format(s.qz)}"
-                    )*/
-                }
-
-                // Heading (course over ground or quaternion fallback)
-                try {
-                    val pose = e.getCurrentPose()
-                    val headingDeg = headingDegreesFromPose(pose)
-                    //Log.d("EKF_HEADING", "Heading=${"%.1f".format(headingDeg)}°")
-                } catch (_: Throwable) {
-                    //Log.d("EKF_HEADING", "Heading=NaN")
-                }
-            }
-
-
-            // 7) Publish + book-keeping
             publishFromEkf("predicted-imu")
             lastImuUpdateTime = nowMs
 
+            checkGpsFixNeeded()
         } catch (e: Exception) {
             //Log.e(TAG, "❌ Error updating EKF with IMU data: ${e.message}", e)
         }
@@ -1023,22 +756,6 @@ class MovementDetectionService : Service(), SensorEventListener {
                 //Log.w(TAG, "⚠️ Pressure sensor not available")
             }
             
-            // Log all available sensors for debugging
-            val allSensors = sensorManager?.getSensorList(Sensor.TYPE_ALL)
-            //Log.d(TAG, "🔍 All available sensors: ${allSensors?.size ?: 0}")
-            /*allSensors?.forEach { sensor ->
-                val sensorId = try {
-                    sensor.id
-                } catch (e: Exception) {
-                    -1  // fallback if running on lower API
-                }
-
-                Log.d(
-                    TAG,
-                    "🔍 Sensor: id=$sensorId, type=${sensor.type}, name=${sensor.name}, vendor=${sensor.vendor}, version=${sensor.version}"
-                )
-            }*/
-            
         } catch (e: Exception) {
             //Log.e(TAG, "❌ Error registering sensors: ${e.message}", e)
         }
@@ -1073,23 +790,9 @@ class MovementDetectionService : Service(), SensorEventListener {
         
         // Register BroadcastReceiver for activity updates
         val filter = IntentFilter(ACTION_ACTIVITY_BROADCAST)
-        /*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(activityReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(activityReceiver, filter, 0, RECEIVER_NOT_EXPORTED) // RECEIVER_EXPORTED equivalent for older versions
-        }*/
 
         registerReceiver(activityReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        
-        //Log.d(TAG, "🎯 MovementDetectionService created with Google Activity Recognition")
-        
-        // Don't initialize location yet - wait for GPS fix
-        //Log.d(TAG, "⏳ Waiting for GPS fix before initializing location")
-        
-        // Start GPS immediately and begin periodic refix
-        //Log.d(TAG, "🚀 Calling requestGpsFix() from onCreate() - INITIAL GPS REQUEST")
-        //logRefixTxt(reason = "INITIAL_STARTUP", details = "service_startup_gps_request")
+
         requestGpsFix("INITIAL_STARTUP")
         
         // One-shot high-accuracy anchor when (re)starting GPS
@@ -1164,19 +867,6 @@ class MovementDetectionService : Service(), SensorEventListener {
     /**
      * Log current service status for debugging
      */
-    fun logServiceStatus() {
-        //Log.d(TAG, "📊 === MovementDetectionService Status ===")
-        //Log.d(TAG, "🔧 Service running: ${isRunning.get()}")
-        //Log.d(TAG, "🧠 EKF initialized: ${ekf != null}")
-        //Log.d(TAG, "🎯 Current activity: $currentActivity (confidence: $activityConfidence%)")
-        //Log.d(TAG, "📍 GPS fix status: ${if (hasGpsFix) "✅ Received" else "⏳ Waiting"}")
-        //Log.d(TAG, "📍 Last GPS update: ${if (lastGoodGps != null) "Available" else "None"}")
-        //Log.d(TAG, "📡 Companion location: ${if (lastPredictedLocation != null) "Available" else "None"}")
-        //Log.d(TAG, "⏰ Last AR update: ${(System.currentTimeMillis() - lastArUpdateTime)/1000}s ago")
-        //Log.d(TAG, "⚙️ GPS interval: ${gpsUpdateInterval/1000}s, drift threshold: ${driftThresholdMeters}m")
-        //Log.d(TAG, "📱 Sensor data: accel=${latestAccelData != null}, gyro=${latestGyroData != null}")
-        //Log.d(TAG, "==========================================")
-    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -1192,12 +882,6 @@ class MovementDetectionService : Service(), SensorEventListener {
      */
     fun updateEKFWithGPS(location: Location) {
         try {
-            /*Log.d(TAG, "📍 GPS Update received: lat=${String.format("%.6f", location.latitude)}, " +
-                     "lon=${String.format("%.6f", location.longitude)}, " +
-                     "accuracy=${location.accuracy}m, " +
-                     "hasSpeed=${location.hasSpeed()}, " +
-                     "hasBearing=${location.hasBearing()}")*/
-            
             // Validate location quality
             if (!location.hasAccuracy() || location.accuracy > 500.0f) {
                 //Log.w(TAG, "⚠️ GPS accuracy too poor: ${location.accuracy}m, skipping update")
@@ -1239,11 +923,6 @@ class MovementDetectionService : Service(), SensorEventListener {
                 if (bearingOk) bearingRad else 0.0  // No NaN - EKF gates heading internally when speed is low
             )
             
-            /*Log.d(TAG, "🧠 Passing GPS data to EKF: lat=${String.format("%.6f", gpsData[0])}, " +
-                    "lon=${String.format("%.6f", gpsData[1])}, alt=${String.format("%.1f", gpsData[2])}m, " +
-                    "vx=${String.format("%.3f", gpsData[3])}m/s, vy=${String.format("%.3f", gpsData[4])}m/s, " +
-                    "bearing=${if (bearingOk) String.format("%.1f", Math.toDegrees(bearingRad)) else "N/A"}°")*/
-            
             // Update EKF with GPS data
             ekf?.update(gpsData)
 
@@ -1254,23 +933,12 @@ class MovementDetectionService : Service(), SensorEventListener {
                     null as com.aitech.weartak_civ.algorithm.ModifiedMadgwickFilter.AhrsLog?
                 } catch (_: Throwable) { null }
                 val gpsTsNs = System.currentTimeMillis() * 1_000_000L
-                writePoseTxtLine("gps_update", gpsTsNs, ekfSnap, ahrsSnap)
             }
             
             // Publish EKF estimate after GPS correction
             publishFromEkf("predicted-after-gps")
             
-            // Log GPS update
-            logToFile("📡 GPS Update: lat=${String.format("%.6f", location.latitude)}, " +
-                     "lon=${String.format("%.6f", location.longitude)}, " +
-                     "alt=${String.format("%.1f", location.altitude)}m, " +
-                     "speed=${String.format("%.2f", speedMps)}m/s, " +
-                     "bearing=${if (bearingOk) String.format("%.1f", Math.toDegrees(bearingRad)) else "N/A"}°, " +
-                     "vx=${String.format("%.2f", finalVx)}m/s, " +
-                     "vy=${String.format("%.2f", finalVy)}m/s")
-            
                         } catch (e: Exception) {
-            //Log.e(TAG, "❌ Error updating EKF with GPS: ${e.message}")
         }
     }
 
@@ -1278,8 +946,6 @@ class MovementDetectionService : Service(), SensorEventListener {
      * Handle GPS location updates (called from location callback)
      */
     fun onLocationUpdate(location: Location) {
-        //Log.d(TAG, "🎯 onLocationUpdate called with location: ${location.latitude}, ${location.longitude}")
-        
         // Save Google accuracy radius and write a GPS line
         lastGoogleAccuracyM = if (location.hasAccuracy()) location.accuracy.toDouble() else null
         //logGpsTxt(location)
@@ -1298,9 +964,6 @@ class MovementDetectionService : Service(), SensorEventListener {
                 zeroVelocity = true,
                 forceResetBiases = false
             )
-            
-            // Log the EKF reset
-            //logRefixTxt(reason = "RESET_FROM_SERVICE", details = "resetFromLatLon invoked")
 
             // Keep existing immediate publish of the raw GPS to companions:
             val initialGpsLocation = Location("initial-gps").apply {
@@ -1317,7 +980,6 @@ class MovementDetectionService : Service(), SensorEventListener {
             lastPredictedLocation = initialGpsLocation
             lastPredictedLatLonAlt = LatLonAlt(location.latitude, location.longitude, location.altitude, System.currentTimeMillis())
             
-            //Log.d(TAG, "📍 Initial GPS coordinates set: lat=${String.format("%.6f", location.latitude)}, lon=${String.format("%.6f", location.longitude)}")
         } else {
             // Subsequent GPS updates
             val ageMs = System.currentTimeMillis() - (lastGoodGps?.tMs ?: System.currentTimeMillis())
@@ -1415,7 +1077,7 @@ class MovementDetectionService : Service(), SensorEventListener {
             // Update companion object locations
             lastPredictedLocation = loc
             lastPredictedLatLonAlt = LatLonAlt(lat, lon, alt, now)
-            
+
             /*Log.d(TAG, "📡 Published EKF estimate ($source): " +
                     "lat=${String.format("%.6f", lat)}, " +
                     "lon=${String.format("%.6f", lon)}, " +
@@ -1465,63 +1127,6 @@ class MovementDetectionService : Service(), SensorEventListener {
      * This ensures dependents always have a non-null location
      */
     private fun requestGpsFix() = requestGpsFix("unspecified")
-
-    /*private fun requestGpsFix(reason: String) {
-        //logGpsRefix("MovementDetectionService.requestGpsFix", reason)
-
-        //Log.d("GPS_REFIX", "requestGpsFix reason=$reason")
-
-        // rate-limit (preserve existing logic)
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastGpsRequestTime < gpsRequestMinInterval) {
-            //Log.d(GPS_TAG, "GPS_REFIX_REQUEST reason=$reason status=suppressed")
-            return
-        }
-        lastGpsRequestTime = currentTime
-
-        //Log.d(GPS_TAG, "GPS_REFIX_REQUEST reason=$reason status=begin")
-
-        // --- begin: original method body (unchanged) ---
-        // Only publish EKF estimate if we have GPS fix to prevent pre-fix estimates
-        if (hasGpsFix) {
-            publishFromEkf("predicted-before-gps")
-        } else {
-            //Log.d(TAG, "⏳ No GPS fix yet, skipping EKF estimate publish")
-        }
-        
-        try {
-            // Check location permissions
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
-                != PackageManager.PERMISSION_GRANTED) {
-                //Log.d(GPS_TAG, "GPS_REFIX_REQUEST reason=$reason status=no-permission")
-                return
-            }
-            
-            // Create location request
-            val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000L)
-                .setWaitForAccurateLocation(false)
-                .setMinUpdateIntervalMillis(5000L)
-                .setMaxUpdateDelayMillis(10000L)
-                .build()
-            
-            // Request location updates
-            if (!isLocationUpdatesActive) {
-                fusedLocationClient.requestLocationUpdates(
-                    locationRequest,
-                    locationCallback!!,
-                    Looper.getMainLooper()
-                )
-                isLocationUpdatesActive = true
-                //Log.d(GPS_TAG, "GPS_REFIX_REQUEST reason=$reason status=updates-started")
-            } else {
-                //Log.d(GPS_TAG, "GPS_REFIX_REQUEST reason=$reason status=already-active")
-            }
-            
-        } catch (e: Exception) {
-            //Log.d(GPS_TAG, "GPS_REFIX_REQUEST reason=$reason status=error")
-        }
-        // --- end: original method body ---
-    }*/
 
     private fun requestGpsFix(reason: String) {
         //Log.d("GPS_REFIX", "requestGpsFix reason=$reason")
@@ -1851,27 +1456,4 @@ class MovementDetectionService : Service(), SensorEventListener {
             "yaw_deg=${fmt(yawDeg)}"
         )
     }
-
-    /*private fun logGpsTxt(loc: android.location.Location) {
-        val lat = loc.latitude
-        val lon = loc.longitude
-        val alt = if (loc.hasAltitude()) loc.altitude else Double.NaN
-        val speed = if (loc.hasSpeed()) loc.speed.toDouble() else Double.NaN // m/s
-        val bearingDeg = if (loc.hasBearing()) loc.bearing.toDouble() else Double.NaN
-        val acc = (lastGoogleAccuracyM ?: if (loc.hasAccuracy()) loc.accuracy.toDouble() else Double.NaN)
-        writeMovementLine(
-            "[${System.currentTimeMillis()}] GPS " +
-            "lat=${fmt(lat)} lon=${fmt(lon)} alt=${fmt(alt)} " +
-            "speed_mps=${fmt(speed)} bearing_deg=${fmt(bearingDeg)} " +
-            "google_AR_m=${fmt(acc)}"
-        )
-    }*/
-
-    /*private fun logRefixTxt(reason: String, details: String) {
-        writeMovementLine(
-            "[${System.currentTimeMillis()}] REFIX origin=MovementDetectionService " +
-            "reason=${reason.replace(',', ';')} details=${details.replace(',', ';')}"
-        )
-    }*/
-    // endregion
 }
