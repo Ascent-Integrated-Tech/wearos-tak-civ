@@ -16,6 +16,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.Network
 import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
@@ -91,6 +92,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.net.SocketTimeoutException
 import javax.net.ssl.TrustManagerFactory
 
@@ -162,10 +166,29 @@ class TAKConnectService: Service() {
         }
     }
 
+    data class MulticastConfig(
+        val net: Network?,
+        val enable: Boolean?,
+        val address: String?,
+        val port: Int?
+    )
+
     private fun startMulticastCollector() {
         CoroutineScope(Dispatchers.IO).launch {
-            NetworkManager.getInstance().wifiNetwork.collect { net ->
-                if (net != null) NetworkUtils.MulticastPublisher.start(net) else NetworkUtils.MulticastPublisher.stop()
+            combine(NetworkManager.getInstance().wifiNetwork,
+                dataRepository.multicastEnabled,
+                dataRepository.multicastAddress,
+                dataRepository.multicastPort) { net, enable, address, port ->
+                MulticastConfig(net, enable, address, port)
+            }.distinctUntilChanged().collectLatest{ cfg ->
+                val shouldRun = cfg.enable != null && cfg.enable && cfg.net != null &&
+                        !cfg.address.isNullOrBlank() && cfg.port != null
+                Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
+                if (shouldRun) {
+                    NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
+                } else {
+                    NetworkUtils.MulticastPublisher.stop()
+                }
             }
         }
     }

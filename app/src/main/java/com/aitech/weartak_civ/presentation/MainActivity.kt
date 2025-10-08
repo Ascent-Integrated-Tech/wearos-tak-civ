@@ -223,6 +223,9 @@ import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_WAIST_SIZE
 import com.aitech.weartak_civ.DEFAULT_USER_TYPE
 import com.aitech.weartak_civ.DEFAULT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_MULTICAST_ADDRESS
+import com.aitech.weartak_civ.DEFAULT_MULTICAST_PORT
+import com.aitech.weartak_civ.DEFAULT_MULTICAST_PROTOCOL
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -288,7 +291,6 @@ class MainActivity : ComponentActivity() {
         var enableBatteryAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATTERY_ALERTS)
         var enableHailService: Boolean = DEFAULT_ENABLE_HAIL_SERVICE
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HAIL_SERVICE)
-        var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
         var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
         var enableBatdokCotSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATDOK_COT)
 
@@ -329,6 +331,16 @@ class MainActivity : ComponentActivity() {
         val roleState = MutableLiveData<String>("")
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
+
+        var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
+        var enableMulticastSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_MULTICAST_ON_WIFI)
+        var multicastAddress = DEFAULT_MULTICAST_ADDRESS
+        val multicastAddressSettingsState = MutableLiveData<String>(DEFAULT_MULTICAST_ADDRESS)
+        var multicastProtocol = DEFAULT_MULTICAST_PROTOCOL
+        val multicastProtocolSettingsState = MutableLiveData<String>(DEFAULT_MULTICAST_PROTOCOL)
+        var multicastPort = DEFAULT_MULTICAST_PORT
+        val multicastPortSettingsState = MutableLiveData<Int>(DEFAULT_MULTICAST_PORT)
+
 
         var battWarnPercent = DEFAULT_BATT_WARNING_PERCENTAGE
         var battAlertPercent = DEFAULT_BATT_ALERT_PERCENTAGE
@@ -394,11 +406,16 @@ class MainActivity : ComponentActivity() {
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
         var enableTakEndpoint : Boolean = DEFAULT_ENABLE_TAK_ENDPOINT
         var enableEsriEndpoint : Boolean = DEFAULT_ENABLE_ESRI_ENDPOINT
+        var enableEsriEndpointSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ESRI_ENDPOINT)
         var esriEndpoint : String = ""
+        val esriEndpointSettingsState = MutableLiveData<String>("")
         var esriReportingUpdateInterval : Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
         var enableTabletCommandEndpoint: Boolean = DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
+        var enableTabletCommandEndpointSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT)
         var tabletCommandEndpoint : String = ""
+        val tabletCommandEndpointSettingsState = MutableLiveData<String>("")
         var tabletCommandApikey : String = ""
+        val tabletCommandApikeySettingsState = MutableLiveData<String>("")
         var tabletCommandReportingUpdateInterval : Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
 
         var enableDynamicReportingStrategy = DEFAULT_ENABLE_DYNAMIC_REPORTING
@@ -758,6 +775,11 @@ class MainActivity : ComponentActivity() {
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
 
+			// --- Multicast options ---
+            multicastAddress = dataRepository.getMulticastAddress.first()
+            multicastProtocol = dataRepository.getMulticastProtocol.first()
+            multicastPort = dataRepository.getMulticastPort.first()
+
             // --- Reporting intervals / strategy ---
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
             constantReportingInterval      = dataRepository.getConstantReportingInterval.first()
@@ -892,6 +914,12 @@ class MainActivity : ComponentActivity() {
 
         // TODO: Maybe obfuscate Tablet Command Apikey
         logOutput += """
+                    === === TAK SA Multicast Settings === ===
+                    ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
+                    ${String.format("%-25s %-30s", "Multicast Address:", multicastAddress)}
+                    ${String.format("%-25s %-30s", "Multicast Output Protocol:", multicastProtocol)}
+                    ${String.format("%-25s %-30s", "Multicast Server Port:", multicastPort)}
+                    
                     === === ESRI Server Settings === ===
                     ${String.format("%-25s %-30s", "ESRI Endpoint:", esriEndpoint)}
                     ${String.format("%-25s %-30s", "ESRI Reporting Interval:", esriReportingUpdateInterval)}
@@ -925,7 +953,6 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable Battery Alerts:", enableBatteryAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
                     ${String.format("%-25s %-30s", "Enable Batdok COT:", enableBatdokCot.toString())}
-                    ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
                     ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
                     ${String.format("%-25s %-30s", "High Resting Heart Rate Alert Threshold:", restingHrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "Low Resting Heart Rate Alert Threshold:", restingHrLowAlertBpmThreshold.toString())}
@@ -1110,6 +1137,17 @@ class MainActivity : ComponentActivity() {
         licenseState.postValue(license) // tell ui
         licenseSettingsState.postValue(license) // ephemeral ui value
         takServerListState.postValue(takServerList)
+
+        enableMulticastSettingsState.postValue(enableMulticastOnWifi)
+        multicastAddressSettingsState.postValue(multicastAddress)
+        multicastProtocolSettingsState.postValue(multicastProtocol)
+        multicastPortSettingsState.postValue(multicastPort)
+        enableTabletCommandEndpointSettingsState.postValue(enableTabletCommandEndpoint)
+        tabletCommandEndpointSettingsState.postValue(tabletCommandEndpoint)
+        tabletCommandApikeySettingsState.postValue(tabletCommandApikey)
+        enableEsriEndpointSettingsState.postValue(enableEsriEndpoint)
+        esriEndpointSettingsState.postValue(esriEndpoint)
+
         enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization) // tell ui
         enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
         enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
