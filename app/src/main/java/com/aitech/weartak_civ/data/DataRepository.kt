@@ -32,6 +32,9 @@ import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BLOOD_TYPE
+import com.aitech.weartak_civ.DEFAULT_MULTICAST_ADDRESS
+import com.aitech.weartak_civ.DEFAULT_MULTICAST_PORT
+import com.aitech.weartak_civ.DEFAULT_MULTICAST_PROTOCOL
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
@@ -321,6 +324,17 @@ class DataRepository(private val context: Context) {
     // ======== ======== HAIL SECTION END ======== ==========
 
     // ======== ======== Multicast SECTION Start ======== ==========
+    val multicastEnabled: StateFlow<Boolean?> =
+        context.dataStore.data
+            .map { prefs ->
+                prefs[ENABLE_MULTICAST] ?: DEFAULT_ENABLE_MULTICAST_ON_WIFI
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = null
+            )
+
     suspend fun storeEnableMulticast(enable: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_MULTICAST] = enable
@@ -330,6 +344,58 @@ class DataRepository(private val context: Context) {
     val getEnableMulticast: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_MULTICAST] ?: DEFAULT_ENABLE_MULTICAST_ON_WIFI
     }
+
+    val multicastAddress: StateFlow<String?> =
+        context.dataStore.data
+            .map { prefs ->
+                prefs[MULTICAST_ADDRESS] ?: DEFAULT_MULTICAST_ADDRESS
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = null
+            )
+
+    val getMulticastAddress: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[MULTICAST_ADDRESS] ?: DEFAULT_MULTICAST_ADDRESS
+    }
+
+    suspend fun storeMulticastAddress(multicastAddress: String) {
+        context.dataStore.edit { prefs ->
+            prefs[MULTICAST_ADDRESS] = multicastAddress
+        }
+    }
+
+    val getMulticastProtocol: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[MULTICAST_PROTOCOL] ?: DEFAULT_MULTICAST_PROTOCOL
+    }
+
+    suspend fun storeMulticastProtocol(multicastProtocol: String) {
+        context.dataStore.edit { prefs ->
+            prefs[MULTICAST_PROTOCOL] = multicastProtocol
+        }
+    }
+
+    val multicastPort: StateFlow<Int?> =
+        context.dataStore.data
+            .map { prefs ->
+                prefs[MULTICAST_PORT] ?: DEFAULT_MULTICAST_PORT
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = null
+            )
+    val getMulticastPort: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[MULTICAST_PORT] ?: DEFAULT_MULTICAST_PORT
+    }
+
+    suspend fun storeMulticastPort(multicastPort: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[MULTICAST_PORT] = multicastPort
+        }
+    }
+
     // ======== ======== Multicast SECTION END ======== ==========
 
     private val _latestActivityConfidence = MutableStateFlow<Int>(100)
@@ -2272,7 +2338,6 @@ class DataRepository(private val context: Context) {
         private val HAIL_LICENSE_INFO_JSON = stringPreferencesKey("hail_license_info_json_v1") // include suffix for forward-compat
         private val HAIL_LICENSE_STATE = stringPreferencesKey("hail_license_state")
         private val HAIL_COMBAT_ID = intPreferencesKey("hail_combat_id")
-        private val ENABLE_MULTICAST = booleanPreferencesKey("enable_multicast")
         private val WIFI_SSID_LIST_KEY = stringPreferencesKey("wifi_ssid_list")
         private val TAK_SERVER_LIST_KEY = stringPreferencesKey("tak_server_list")
         private val ENABLE_BLE_BEACON_SERVICE = booleanPreferencesKey("enable_ble_beacon_service")
@@ -2313,6 +2378,10 @@ class DataRepository(private val context: Context) {
         private val STRIDE_LENGTH = intPreferencesKey("stride_length")
         private val UNIFORM_PANTS_LENGTH = intPreferencesKey("uniform_pants_length")
         private val LOADOUT_WEIGHT = intPreferencesKey("loadout_weight")
+        private val ENABLE_MULTICAST = booleanPreferencesKey("enable_multicast")
+        private val MULTICAST_ADDRESS = stringPreferencesKey("multicast_address")
+        private val MULTICAST_PROTOCOL = stringPreferencesKey("multicast_protocol")
+        private val MULTICAST_PORT =intPreferencesKey("multicast_port")
         private val ENABLE_TAK_ENDPOINT = booleanPreferencesKey("enable_tak_endpoint")
         private val ENABLE_ESRI_ENDPOINT = booleanPreferencesKey("enable_esri_endpoint")
         private val ESRI_ENDPOINT = stringPreferencesKey("esri_endpoint")

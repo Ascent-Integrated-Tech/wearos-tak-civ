@@ -77,21 +77,24 @@ object NetworkUtils {
 
     object MulticastPublisher {
         private const val TAG = "WearTAK-MulticastPub"
-        private const val MCAST_ADDR = "239.2.3.1"
-        private const val MCAST_PORT = 6969
 
         @Volatile private var running = false
         @Volatile private var currentNetwork: Network? = null
         private var socket: MulticastSocket? = null
         private var group: InetAddress? = null
 
+        private var address: String = DEFAULT_MULTICAST_ADDRESS
+        private var port: Int = DEFAULT_MULTICAST_PORT
+
         /**
          * Call when Wi-Fi becomes available. We resolve the Wi-Fi Network and bind the socket to it.
          */
-        fun start(network: Network) {
+        fun start(network: Network, address: String, port: Int) {
+            Log.i(TAG, "MulticastPublisher starting → $address:$port")
+            MulticastPublisher.port = port
             synchronized(this) {
                 // No-op if already bound to this same Network and socket is alive
-                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed) return
+                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed && (address == MulticastPublisher.address)) return
 
                 // If running but on a different (or stale) Network, rebuild
                 stopLocked()
@@ -112,10 +115,10 @@ object NetworkUtils {
                     }
 
                     socket = ms
-                    group = java.net.InetAddress.getByName(MCAST_ADDR)
+                    group = java.net.InetAddress.getByName(address)
                     currentNetwork = network
                     running = true
-                    Log.i(TAG, "MulticastPublisher started → $MCAST_ADDR:$MCAST_PORT")
+                    Log.i(TAG, "MulticastPublisher started → $address:${MulticastPublisher.port}")
                 } catch (e: Exception) {
                     Log.e(TAG, "start() error: ${e.message}", e)
                     stopLocked() // clean up partial state
@@ -161,7 +164,7 @@ object NetworkUtils {
                 Log.w(TAG, "CoT payload ${bytes.size}B may fragment over UDP.")
             }
             try {
-                ms.send(DatagramPacket(bytes, bytes.size, grp, MCAST_PORT))
+                ms.send(DatagramPacket(bytes, bytes.size, grp, port))
                 //Log.i(TAG, "Sent Datagram to the multicast socket! $cotXml")
             } catch (e: Exception) {
                 Log.e(TAG, "Multicast send() error: ${e.message}", e)
