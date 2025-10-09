@@ -64,6 +64,9 @@
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
+    <!-- Audio capture and microphone-related permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!--
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
@@ -318,6 +321,12 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse"
+            android:stopWithTask="false" />
+        <service
+            android:name=".service.AudioCaptureService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
             android:stopWithTask="false" />
 
         <!--

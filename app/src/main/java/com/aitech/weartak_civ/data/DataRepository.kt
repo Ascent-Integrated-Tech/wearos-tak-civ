@@ -767,6 +767,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableAudioCaptureService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_AUDIO_CAP_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableAudioCaptureService(enableAudioCaptureService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_AUDIO_CAP_SERVICE] = enableAudioCaptureService
+        }
+    }
+
     private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_REPORTING_INTERVAL)
     val reportingUpdateIntervalSecs: StateFlow<Int> = _reportingUpdateIntervalSecs
 
@@ -1530,6 +1540,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
+        private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")

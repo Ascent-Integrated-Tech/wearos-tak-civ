@@ -71,6 +71,7 @@ class ServiceConfiguration(
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
+        ServiceType.AUDIO_CAP -> dataRepository.getEnableAudioCaptureService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
@@ -108,6 +109,11 @@ class ServiceConfiguration(
             add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
             add(android.Manifest.permission.BLUETOOTH_SCAN)
             add(android.Manifest.permission.BLUETOOTH_CONNECT)
+        }
+
+        ServiceType.AUDIO_CAP -> buildList {
+            add(android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
+            add(android.Manifest.permission.RECORD_AUDIO)
         }
 
         ServiceType.HAIL,
