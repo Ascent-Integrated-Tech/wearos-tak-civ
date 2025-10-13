@@ -18,6 +18,7 @@ package com.aitech.weartak_civ
 
 import android.app.Application
 import android.util.Log
+import com.aitech.weartak_civ.cep.di.CepProvider
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -33,6 +34,8 @@ class WearTakApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.v(TAG, "WearTakApplication created")
+        CepProvider.init(this)
+        CepProvider.getOrCreateEngine(this).start()
     }
 
 }

@@ -12,6 +12,7 @@ package com.aitech.weartak_civ.service
 import android.app.Notification
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import androidx.concurrent.futures.await
 import androidx.core.app.NotificationCompat
@@ -19,8 +20,11 @@ import androidx.core.app.ServiceCompat
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.PassiveListenerService
 import androidx.health.services.client.data.DataPointContainer
+import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.HealthEvent
 import androidx.health.services.client.data.PassiveListenerConfig
+import androidx.health.services.client.data.SampleDataPoint
+import androidx.health.services.client.getCapabilities
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -34,6 +38,8 @@ import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Instant
+
 
 /**
  * Service to receive data from Health Services.
@@ -54,7 +60,7 @@ class PassiveDataService : PassiveListenerService() {
         serviceScope.launch {
             try {
                 registerFallEvents()
-                Log.i(TAG, "Registered for FALL_DETECTED")
+                //Log.i(TAG, "Registered for FALL_DETECTED")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to register fall events: ${t.message}", t)
             }
@@ -105,6 +111,20 @@ class PassiveDataService : PassiveListenerService() {
     // Logs any passive datapoints you’ve subscribed to (not required for falls).
     override fun onNewDataPointsReceived(dataPoints: DataPointContainer) {
         Log.d(TAG, "Passive data types: ${dataPoints.dataTypes}")
+
+        //val bootInstant = Instant.ofEpochMilli(System.currentTimeMillis() - SystemClock.elapsedRealtime())
+
+        dataPoints.getData(DataType.VO2_MAX).forEach { dp: SampleDataPoint<Double> ->
+            val vo2Max: Double = dp.value                     // e.g., mL·kg⁻¹·min⁻¹
+            //val whenMeasured: Instant = dp.getTimeInstant(bootInstant)
+            Log.i(TAG, "VO2 Max: $vo2Max")
+
+            // Persist if you want
+            // serviceScope.launch(Dispatchers.IO) {
+            //     repository.storeVo2Max(vo2Max, whenMeasured)
+            // }
+        }
+
         super.onNewDataPointsReceived(dataPoints)
     }
 
@@ -148,13 +168,33 @@ class PassiveDataService : PassiveListenerService() {
         Log.i(TAG, "Broadcasted ACTION_FALL_DETECTED ($nowIso)")
     }
 
-    private suspend fun registerFallEvents() {
+    /*private suspend fun registerFallEvents() {
         val client = HealthServices.getClient(this).passiveMonitoringClient
         val config = PassiveListenerConfig.builder()
             .setHealthEventTypes(setOf(HealthEvent.Type.FALL_DETECTED))
             .build()
         client.setPassiveListenerServiceAsync(PassiveDataService::class.java, config).await()
+    }*/
+
+    private suspend fun registerFallEvents() {
+        val client = HealthServices.getClient(this).passiveMonitoringClient
+
+        // Ask capabilities, then only request what the device supports
+        val supported = client.getCapabilities().supportedDataTypesPassiveMonitoring
+
+        val wanted = setOf(
+            androidx.health.services.client.data.DataType.VO2_MAX
+        ).intersect(supported)
+
+        val config = androidx.health.services.client.data.PassiveListenerConfig
+            .builder()
+            .setHealthEventTypes(setOf(androidx.health.services.client.data.HealthEvent.Type.FALL_DETECTED))
+            .setDataTypes(wanted)
+            .build()
+
+        client.setPassiveListenerServiceAsync(PassiveDataService::class.java, config).await()
     }
+
 
     override fun onDestroy() {
         super.onDestroy()

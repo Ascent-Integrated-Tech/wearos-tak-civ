@@ -197,9 +197,16 @@ import java.time.format.DateTimeFormatter
 import com.aitech.weartak_civ.service.PassiveDataService
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
+import com.aitech.weartak_civ.service.EnvSensorService
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 
 class MainActivity : ComponentActivity() {
@@ -218,7 +225,7 @@ class MainActivity : ComponentActivity() {
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = true
         var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(true)
-        var enableActivityRecognitionService: Boolean = false
+        var enableActivityRecognitionService: Boolean = true
         var enableSkinTempService: Boolean = true
         var enableDittoService : Boolean = false
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
@@ -228,9 +235,10 @@ class MainActivity : ComponentActivity() {
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableMulticastOnWifi: Boolean = true
         var enableBatdokCot: Boolean = true
+        var enableEnviromentalService: Boolean = true
 
         //Enable Global Health Events
-        var enablePassiveDataService = false
+        var enablePassiveDataService = true
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -321,9 +329,9 @@ class MainActivity : ComponentActivity() {
         var tabletCommandApikey : String = ""
         var tabletCommandReportingUpdateInterval : Int = DEFAULT_REPORTING_INTERVAL
 
-        var enableDynamicReportingStrategy = false
-        val enableDynamicReportingStrategyState = MutableLiveData<Boolean>(false)
-        val enableDynamicReportingStrategySettingsState = MutableLiveData<Boolean>(false)
+        var enableDynamicReportingStrategy = true
+        val enableDynamicReportingStrategyState = MutableLiveData<Boolean>(true)
+        val enableDynamicReportingStrategySettingsState = MutableLiveData<Boolean>(true)
         var constantReportingInterval = DEFAULT_REPORTING_INTERVAL
         val constantReportingIntervalState = MutableLiveData<Int>(DEFAULT_REPORTING_INTERVAL)
         val constantReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_REPORTING_INTERVAL)
@@ -463,6 +471,19 @@ class MainActivity : ComponentActivity() {
                 if (ActivityRecognitionService.isRunning.get()) mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
                 return
             }
+
+            if (!ActivityRecognitionService.isRunning.get()) {
+                Log.d(TAG, "Starting ActivityRecognitionService")
+                mainActivity.startService(
+                    Intent(
+                        mainActivity,
+                        ActivityRecognitionService::class.java
+                    )
+                )
+            } else {
+                Log.d(TAG, "ActivityRecognitionService is already running." )
+            }
+
             if (enableActivityRecognitionService || enableDynamicReportingStrategy) {
                 if ((ActivityCompat.checkSelfPermission(
                         mainActivity.applicationContext,
@@ -728,6 +749,19 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun startEnviromentSensorService() {
+            if(enableEnviromentalService){
+                if (!EnvSensorService.isRunning.get()) {
+                    Log.d(TAG, "Starting EnvSensorService")
+                    mainActivity.startService(Intent(mainActivity, EnvSensorService::class.java))
+                } else {
+                    Log.d(TAG, "EnvSensorService is already running")
+                }
+            }else{
+                Log.d(TAG, "EnvSensorService has not been enabled")
+            }
+        }
+
         fun startReportingIntervalStrategyService() {
             if (!ReportingIntervalStrategyService.isRunning.get()) {
                 Log.d(TAG, "Starting ReportingIntervalStrategyService")
@@ -820,6 +854,7 @@ class MainActivity : ComponentActivity() {
                 startLocationService()
                 //startPassiveDataService()
                 startCotDispatchService()
+                startEnviromentSensorService()
                 startDittoService()
                 startPowerManagerService()
                 startBleBeaconService()
@@ -1333,6 +1368,24 @@ class MainActivity : ComponentActivity() {
         Log.v(TAG, logOutput)
     }
 
+    private val hcPermissionContract =
+        PermissionController.createRequestPermissionResultContract()
+
+    private val requestHcPermissions =
+        registerForActivityResult(hcPermissionContract) { granted: Set<String> ->
+            val vo2Perm = setOf(HealthPermission.getReadPermission(Vo2MaxRecord::class))
+            if (granted.containsAll(vo2Perm)) {
+                Log.i(TAG, "Health Connect VO₂ Max permission granted")
+            } else {
+                Log.w(TAG, "Health Connect VO₂ Max permission denied or partially granted")
+            }
+        }
+
+    private fun isHealthConnectAvailable(): Boolean {
+        val status = HealthConnectClient.getSdkStatus(this)
+        return status == HealthConnectClient.SDK_AVAILABLE
+    }
+
     private fun checkAndRequestPermissions() {
         val requiredPermissions = listOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -1379,6 +1432,37 @@ class MainActivity : ComponentActivity() {
         }
 
          */
+
+        lifecycleScope.launch {
+            // Bail out early if HC isn't available on this device/profile
+            if (!isHealthConnectAvailable()) {
+                Log.w(TAG, "Health Connect not available on this device/profile; skipping HC permission.")
+                return@launch
+            }
+
+            val hc = HealthConnectClient.getOrCreate(this@MainActivity)
+
+            val status = HealthConnectClient.getSdkStatus(this@MainActivity)
+
+            Log.d(TAG, status.toString())
+
+            /*val hc = try {
+                HealthConnectClient.getOrCreate(this@MainActivity)
+            } catch (uoe: UnsupportedOperationException) {
+                Log.w(TAG, "Health Connect client creation failed (unavailable/profile). Skipping.", uoe)
+                return@launch
+            }*/
+
+            val vo2Perm = setOf(HealthPermission.getReadPermission(Vo2MaxRecord::class))
+            val granted = hc.permissionController.getGrantedPermissions() // suspend
+
+            if (!granted.containsAll(vo2Perm)) {
+                Log.d(TAG, "Requesting Health Connect VO₂ Max permission")
+                requestHcPermissions.launch(vo2Perm)
+            } else {
+                Log.d(TAG, "Health Connect VO₂ Max permission already granted")
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

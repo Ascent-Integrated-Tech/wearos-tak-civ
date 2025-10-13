@@ -51,6 +51,7 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.health.READ_VO2_MAX" />
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
@@ -312,14 +313,16 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
+		<service
+			android:name=".service.EnvSensorService"
+			android:exported="false"
+			android:foregroundServiceType="dataSync" />
 
-        <!--
        <service
            android:name=".service.PassiveDataService"
            android:exported="true"
            android:permission="com.google.android.wearable.healthservices.permission.PASSIVE_DATA_BINDING"
            android:foregroundServiceType="health"/>
-           -->
 
         <uses-library
             android:name="com.google.android.wearable"

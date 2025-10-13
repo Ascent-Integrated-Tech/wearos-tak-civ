@@ -12,10 +12,12 @@ package com.aitech.weartak_civ.service
 import android.Manifest
 import android.app.Service
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.util.Log
+import androidx.concurrent.futures.await
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.google.android.gms.location.ActivityRecognition
@@ -27,15 +29,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.core.content.ContextCompat
+import androidx.health.connect.client.HealthConnectClient
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import androidx.health.services.client.HealthServices
+import androidx.health.services.client.HealthServicesClient
 import androidx.health.services.client.PassiveListenerCallback
 import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
+import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.HealthEvent
+import androidx.health.services.client.data.MeasureCapabilities
 import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
+import androidx.health.services.client.data.SampleDataPoint
 import androidx.health.services.client.getCapabilities
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_FALL_DETECTED
@@ -47,6 +54,11 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import org.greenrobot.eventbus.EventBus
+
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 
 
 class ActivityRecognitionService : Service() {
@@ -73,6 +85,11 @@ class ActivityRecognitionService : Service() {
     private val passiveMonitoringClient by lazy { healthClient.passiveMonitoringClient }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(this) }
+
+    @Volatile private var exerciseActive = false
+    private val EX_CONF_MIN = 60 // min confidence to (auto)start exercise
 
     private var cumulativeSteps:     Long?   = null
     private var cumulativeCalories:  Double? = null
@@ -117,6 +134,8 @@ class ActivityRecognitionService : Service() {
                         add(DataType.FLOORS_DAILY)
                     if (DataType.ELEVATION_GAIN_DAILY in caps.supportedDataTypesPassiveMonitoring)
                         add(DataType.ELEVATION_GAIN_DAILY)
+                    //  VO₂ Max (only if the device reports it passively)
+                    //if (DataType.VO2_MAX in caps.supportedDataTypesPassiveMonitoring) add(DataType.VO2_MAX)
                 }
 
                 if (wanted.isEmpty()) {
@@ -138,6 +157,8 @@ class ActivityRecognitionService : Service() {
                 Log.e(TAG, "Failed to register passive listener", t)
             }
         }
+
+        syncVo2MaxLast30Days()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -190,6 +211,62 @@ class ActivityRecognitionService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun syncVo2MaxLast30Days() = ioScope.launch {
+        // Optional: if you want to double-check permission here
+        val need = setOf(HealthPermission.getReadPermission(Vo2MaxRecord::class))
+        val granted = healthConnectClient.permissionController.getGrantedPermissions()
+        if (!granted.containsAll(need)) {
+            Log.w(TAG, "VO₂ Max read permission not granted (UI already handles asking). Skipping read.")
+            return@launch
+        }
+
+        try {
+            val end = Instant.now()
+            val start = end.minus(30, ChronoUnit.DAYS)
+
+            val resp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = Vo2MaxRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(start, end)
+                )
+            )
+
+            if (resp.records.isEmpty()) {
+                Log.i(TAG, "No Vo₂MaxRecord found in last 30 days.")
+                return@launch
+            }
+
+            // Example: take latest by time (Vo2MaxRecord extends InstantRecord)
+            val latest = resp.records.maxByOrNull { it.time }
+            latest?.let { r ->
+                val method = when (r.measurementMethod) {
+                    Vo2MaxRecord.MEASUREMENT_METHOD_METABOLIC_CART -> "Metabolic Cart"
+                    Vo2MaxRecord.MEASUREMENT_METHOD_HEART_RATE_RATIO -> "Heart Rate Ratio"
+                    Vo2MaxRecord.MEASUREMENT_METHOD_COOPER_TEST -> "Cooper"
+                    Vo2MaxRecord.MEASUREMENT_METHOD_MULTISTAGE_FITNESS_TEST -> "MSFT"
+                    Vo2MaxRecord.MEASUREMENT_METHOD_ROCKPORT_FITNESS_TEST -> "Rockport"
+                    else -> "Other"
+                }
+                Log.i(TAG, "VO₂ Max latest: ${r.vo2MillilitersPerMinuteKilogram} mL·kg⁻¹·min⁻¹ @ ${r.time} (method=$method)")
+
+                // TODO: persist / publish as needed:
+                // DataRepository.getInstance().storeVo2Max(r.vo2, r.time, method)
+                // or post to LiveData/EventBus for UI/engine use
+            }
+
+            // If you also want to iterate all:
+            // resp.records.forEach { Log.d(TAG, "VO₂ Max: ${it.vo2} at ${it.time}") }
+
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error reading Vo₂MaxRecord from Health Connect", t)
+        }
+    }
+
+    //Placeholder fn for VO2_MAX
+    fun getVo2Max(): Double {
+        return 45.0
+    }
 
     private val passiveDailyListenerCallback = object : PassiveListenerCallback {
         override fun onNewDataPointsReceived(container: DataPointContainer) {
