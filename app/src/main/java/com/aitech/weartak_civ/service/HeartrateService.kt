@@ -31,6 +31,7 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -323,6 +324,18 @@ class HeartrateService: Service() {
                     //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
                     return
                 }
+
+                val tsMs = System.currentTimeMillis()
+
+                try {
+                    val cep = CepProvider.getOrCreateEngine(applicationContext)
+                    cep.ingest("heart_rate.bpm", hr.toDouble(), tsMs)
+                    // Optional: short debug line
+                    //Log.d("CEP-HR", "Emitted HR=${hr} bpm @${tsMs}")
+                } catch (ex: Exception) {
+                    Log.e("CEP-HR", "Failed to emit HR sample", ex)
+                }
+
                 hr = localHr
                 //Log.d(TAG, "Obtained heartrate: $hr")
                 generateAlerts()

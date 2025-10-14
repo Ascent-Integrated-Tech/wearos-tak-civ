@@ -86,7 +86,7 @@ class ActivityRecognitionService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(this) }
+    //private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(this) }
 
     @Volatile private var exerciseActive = false
     private val EX_CONF_MIN = 60 // min confidence to (auto)start exercise
@@ -158,7 +158,7 @@ class ActivityRecognitionService : Service() {
             }
         }
 
-        syncVo2MaxLast30Days()
+        //syncVo2MaxLast30Days()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -212,7 +212,7 @@ class ActivityRecognitionService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun syncVo2MaxLast30Days() = ioScope.launch {
+    /*private fun syncVo2MaxLast30Days() = ioScope.launch {
         // Optional: if you want to double-check permission here
         val need = setOf(HealthPermission.getReadPermission(Vo2MaxRecord::class))
         val granted = healthConnectClient.permissionController.getGrantedPermissions()
@@ -261,7 +261,7 @@ class ActivityRecognitionService : Service() {
         } catch (t: Throwable) {
             Log.e(TAG, "Error reading Vo₂MaxRecord from Health Connect", t)
         }
-    }
+    }*/
 
     //Placeholder fn for VO2_MAX
     fun getVo2Max(): Double {

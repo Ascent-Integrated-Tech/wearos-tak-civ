@@ -3,6 +3,8 @@ package com.aitech.weartak_civ.cep.engine
 import android.content.Context
 import com.aitech.weartak_civ.cep.bus.CepBus
 import kotlinx.coroutines.*
+import android.util.Log
+import firebase.com.protolitewrapper.BuildConfig
 
 class CepEngine(
     private val appContext: Context,
@@ -14,6 +16,8 @@ class CepEngine(
     private val ruleEngine = RuleEngine(scope, config, featureStore)
 
     fun start() {
+        Log.d("CEP", "CEP Engine started")
+
         // Subscribe to the bus (no emitters yet; safe)
         scope.launch { CepBus.events.collect { evt -> windows.ingest(evt, featureStore) } }
 
@@ -43,6 +47,27 @@ class CepEngine(
             }
         }
     }
+
+    fun ingest(path: String, value: Double, tsMs: Long = System.currentTimeMillis()) {
+        try {
+            // Split path like "heart_rate.bpm" → namespace + field
+            val parts = path.split(".")
+            if (parts.size < 2) return
+
+            val ns = parts[0]
+            val key = parts[1]
+
+            // Store in the FeatureStore (already part of your engine)
+            featureStore.put(ns,  value, tsMs)
+
+            if (BuildConfig.DEBUG) {
+                Log.v("CEP", "Ingested $path=$value @${tsMs}")
+            }
+        } catch (ex: Exception) {
+            Log.e("CEP", "Failed to ingest $path", ex)
+        }
+    }
+
 }
 
 

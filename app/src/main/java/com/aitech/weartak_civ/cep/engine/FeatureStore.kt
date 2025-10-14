@@ -1,6 +1,5 @@
 package com.aitech.weartak_civ.cep.engine
 
-import com.aitech.weartak_civ.cep.model.CepEvent
 import java.util.concurrent.ConcurrentHashMap
 
 class FeatureStore {
@@ -8,7 +7,7 @@ class FeatureStore {
 
     fun namespacedId(id: String): String = if (id.startsWith("features.")) id else "features.$id"
 
-    fun put(id: String, value: Any?) { kv[namespacedId(id)] = value }
+    fun put(id: String, value: Any?, tsMs: Long) { kv[namespacedId(id)] = value }
     fun putAll(map: Map<String, Any?>) {
         map.forEach { (k, v) ->
             val key = if (k.startsWith("features.") || k.contains(".")) k else "features.$k"
@@ -32,11 +31,11 @@ class FeatureStore {
     fun snapshot(keys: List<String>): Map<String, Any?> =
         if (keys.isEmpty()) kv.toMap() else keys.associateWith { kv[resolve(it)] }
 
-    fun putRaw(evt: CepEvent<Any>) {
+    /*fun putRaw(evt: CepEvent<Any>) {
         // Populate simple “latest” keys by convention (optional)
         // Example: if topic == heart_rate => put("heart_rate", payload.bpm)
         // Left intentionally blank; WindowStore handles ingestion primarily.
-    }
+    }*/
 }
 
 

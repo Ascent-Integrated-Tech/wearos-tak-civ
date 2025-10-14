@@ -6,614 +6,305 @@
     "default_hold_down_sec": 60,
     "clock_skew_tolerance_ms": 250
   },
-  "inputs": {
-    "heart_rate": {
-      "fields": {
-        "bpm": "float"
-      },
-      "meta": {
-        "source": "HeartrateService"
-      }
-    },
-    "hrv": {
-      "fields": {
-        "rmssd_ms": "float",
-        "sdnn_ms": "float"
-      },
-      "meta": {
-        "source": "HeartrateService"
-      }
-    },
-    "skin_temp": {
-      "fields": {
-        "c_peripheral": "float[]",
-        "labels": "string[]"
-      },
-      "meta": {
-        "source": "SkinTempService"
-      }
-    },
-    "ambient": {
-      "fields": {
-        "temp_c": "float",
-        "humidity_pct": "float",
-        "wind_mps": "float"
-      },
-      "meta": {
-        "source": "EnvSensorService"
-      }
-    },
-    "ppg": {
-      "fields": {
-        "tremor_power_8_12_hz": "float",
-        "contact_quality": "float"
-      },
-      "meta": {
-        "source": "HeartrateService"
-      }
-    },
-    "accel": {
-      "fields": {
-        "magnitude_g": "float",
-        "cadence_spm": "float"
-      },
-      "meta": {
-        "source": "MovementDetectionService"
-      }
-    },
-    "activity": {
-      "fields": {
-        "state": "enum[STILL,WALKING,RUNNING,DRIVING,UNKNOWN]"
-      },
-      "meta": {
-        "source": "EnhancedMovementClassifier"
-      }
-    },
-    "spo2": {
-      "fields": {
-        "pct": "float"
-      },
-      "meta": {
-        "source": "HeartrateService"
-      }
-    },
-    "immersion": {
-      "fields": {
-        "wet_flag": "bool",
-        "immersion_flag": "bool"
-      },
-      "meta": {
-        "source": "EnvSensorService"
-      }
-    },
-    "sleep": {
-      "fields": {
-        "is_sleeping": "bool"
-      },
-      "meta": {
-        "source": "PassiveDataService"
-      }
-    },
-    "offbody": {
-      "fields": {
-        "on_wrist": "bool"
-      },
-      "meta": {
-        "source": "OffBodyDetectService"
-      }
-    }
-  },
-  "personalization": {
-    "hr_rest_bpm": {
-      "default": 60,
-      "update_policy": "rolling_min_30d_rest_only",
-      "min_observations": 5
-    },
-    "hr_max_bpm": {
-      "method": "Tanaka_2001",
-      "formula": "208 - 0.7*age",
-      "fallback": "220 - age",
-      "update_policy": "max_observed_30d_during_exercise"
-    }
-  },
+
   "features": [
     {
-      "name": "hr_hrr",
-      "type": "compute",
-      "expr": "(heart_rate.bpm - profile.hr_rest_bpm) / max(1.0, (profile.hr_max_bpm - profile.hr_rest_bpm))",
+      "id": "features.hr.hrr",
+      "type": "derived",
+      "expr": {
+        "karvonen_ratio": {
+          "hr_key": "heart_rate.bpm",
+          "rest_key": "profile.hr_rest_bpm",
+          "max_key": "profile.hr_max_bpm",
+          "min_den": 1.0
+        }
+      },
       "units": "ratio"
     },
+
     {
-      "name": "zone_1_min_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.50*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_1_max_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.60*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_1_min_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.5*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_1_max_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.6*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_2_min_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.6*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_2_max_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.7*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_3_min_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.7*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_3_max_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.8*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_4_min_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.8*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_4_max_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.9*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_5_min_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 0.9*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "zone_5_max_bpm",
-      "type": "compute",
-      "expr": "profile.hr_rest_bpm + 1.0*(profile.hr_max_bpm-profile.hr_rest_bpm)",
-      "units": "bpm"
-    },
-    {
-      "name": "skin_temp_min_c_1m",
-      "type": "window",
+      "id": "features.skin_temp_min_c_1m",
+      "type": "window_multi",
       "source": "skin_temp.c_peripheral",
+      "multi_policy": "min",
       "agg": "min",
-      "window_sec": 60,
-      "multi_policy": "min"
+      "window_sec": 60
     },
     {
-      "name": "skin_temp_min_c_5m",
-      "type": "window",
+      "id": "features.skin_temp_min_c_5m",
+      "type": "window_multi",
       "source": "skin_temp.c_peripheral",
+      "multi_policy": "min",
       "agg": "min",
-      "window_sec": 300,
-      "multi_policy": "min"
+      "window_sec": 300
     },
+
     {
-      "name": "skin_temp_slope_c_per_min_5m",
+      "id": "features.skin_temp_slope_c_per_min_5m",
       "type": "slope",
-      "source": "skin_temp.c_peripheral",
-      "window_sec": 300,
-      "units": "\u00b0C/min",
-      "multi_policy": "min_channel_slope"
+      "expr": {
+        "slope": {
+          "source_key": "skin_temp.c_peripheral",
+          "horizon_sec": 300,
+          "per": "min",
+          "multi_policy": "min_channel_slope"
+        }
+      },
+      "units": "°C/min"
     },
+
     {
-      "name": "accel_low_motion",
+      "id": "features.accel_low_motion",
       "type": "threshold",
-      "expr": "accel.magnitude_g <= 0.05",
+      "expr": { "lte_key": ["accel.magnitude_g", 0.05] },
       "units": "bool"
     },
+
     {
-      "name": "shiver_power_z",
-      "type": "zscore",
-      "source": "ppg.tremor_power_8_12_hz",
-      "window_sec": 120
+      "id": "features.shiver_power_z",
+      "type": "derived",
+      "expr": {
+        "zscore": {
+          "source_key": "ppg.tremor_power_8_12_hz",
+          "window_sec": 120
+        }
+      }
     },
     {
-      "name": "shiver_present",
+      "id": "features.shiver_present",
       "type": "threshold",
-      "expr": "features.shiver_power_z >= 3.0",
+      "expr": { "gte_key": ["features.shiver_power_z", 3.0] },
       "units": "bool"
     },
+
     {
-      "name": "cold_environment",
-      "type": "logic",
-      "expr": "(ambient.temp_c <= 5) or (features.wind_chill_c <= 0) or (immersion.immersion_flag == true)"
-    },
-    {
-      "name": "wind_chill_c",
+      "id": "features.wind_chill_c",
       "type": "compute",
-      "expr": "13.12 + 0.6215*ambient.temp_c - 11.37*(max(0,ambient.wind_mps)*3.6)**0.16 + 0.3965*ambient.temp_c*(max(0,ambient.wind_mps)*3.6)**0.16",
-      "units": "\u00b0C",
-      "note": "Canadian wind chill formula; wind_mps converted to km/h"
+      "expr": {
+        "wind_chill": {
+          "temp_key": "ambient.temp_c",
+          "wind_key": "ambient.wind_mps"
+        }
+      },
+      "units": "°C",
+      "note": "Canadian wind chill; converts m/s → km/h internally"
     },
+
     {
-      "name": "tactile_loss_risk",
-      "type": "threshold",
-      "expr": "(features.skin_temp_min_c_1m <= 15) or (features.skin_temp_min_c_1m <= 8)",
+      "id": "features.cold_environment",
+      "type": "logic",
+      "expr": {
+        "or": [
+          { "lte_key": ["ambient.temp_c", 5] },
+          { "lte_key": ["features.wind_chill_c", 0] },
+          { "eq_key": ["immersion.immersion_flag", true] }
+        ]
+      }
+    },
+
+    {
+      "id": "features.tactile_loss_risk",
+      "type": "logic",
+      "expr": {
+        "or": [
+          { "lte_key": ["features.skin_temp_min_c_1m", 15] },
+          { "lte_key": ["features.skin_temp_min_c_1m", 8] }
+        ]
+      },
       "units": "bool"
     },
+
     {
-      "name": "absent_shiver_in_cold",
+      "id": "features.absent_shiver_in_cold",
       "type": "logic",
-      "expr": "(features.cold_environment) and (features.skin_temp_min_c_5m <= 28) and (not features.shiver_present)"
+      "expr": {
+        "and": [
+          { "ref": "features.cold_environment", "is": true },
+          { "lte_key": ["features.skin_temp_min_c_5m", 28] },
+          { "not": { "ref": "features.shiver_present", "is": true } }
+        ]
+      }
     },
+
     {
-      "name": "poor_recovery_2min",
+      "id": "features.poor_recovery_2min",
       "type": "delta",
       "source": "heart_rate.bpm",
-      "window_sec": 120,
-      "cmp": "drop",
+      "horizon_sec": 120,
       "units": "bpm",
       "note": "Positive values mean HR drop in 2 min window"
     }
   ],
-  "rulesets": [
+
+  "rules": [
     {
-      "name": "heartrate_exertion",
-      "context": "hr_exertion",
-      "rules": [
-        {
-          "id": "bradycardia_rest_alert",
-          "severity": "ALERT",
-          "when": {
-            "all": [
-              {
-                "ref": "accel_low_motion",
-                "is": true
-              },
-              {
-                "gte": {
-                  "feature": "sleep.is_sleeping",
-                  "value": null
-                }
-              },
-              {
-                "lte": {
-                  "feature": "heart_rate.bpm",
-                  "value": 40
-                }
-              },
-              {
-                "sustained_for_sec": 600
-              }
-            ]
-          },
-          "message": "Bradycardia at rest: HR \u2264 40 bpm for \u2265 10 min (not sleeping).",
-          "tags": [
-            "hr",
-            "rest",
-            "bradycardia"
-          ],
-          "action": {
-            "type": "log",
-            "level": "WARN"
-          }
-        },
-        {
-          "id": "tachycardia_rest_warn",
-          "severity": "WARN",
-          "when": {
-            "all": [
-              {
-                "ref": "accel_low_motion",
-                "is": true
-              },
-              {
-                "any": [
-                  {
-                    "gte": {
-                      "feature": "heart_rate.bpm",
-                      "value": 100
-                    }
-                  },
-                  {
-                    "gte": {
-                      "feature": "heart_rate.bpm",
-                      "value_ref_ratio": [
-                        "profile.hr_rest_bpm",
-                        1.2
-                      ]
-                    }
-                  }
-                ]
-              },
-              {
-                "sustained_for_sec": 600
-              }
-            ]
-          },
-          "message": "Elevated HR at rest for 10 min (\u2265100 bpm or \u226520% above rest).",
-          "tags": [
-            "hr",
-            "rest",
-            "tachycardia"
-          ],
-          "action": {
-            "type": "log",
-            "level": "INFO"
-          }
-        },
-        {
-          "id": "no_motion_high_hr_immediate",
-          "severity": "ALERT",
-          "when": {
-            "all": [
-              {
-                "ref": "accel_low_motion",
-                "is": true
-              },
-              {
-                "between": {
-                  "feature": "heart_rate.bpm",
-                  "min_ref": "zone_4_min_bpm",
-                  "max_ref": "zone_5_max_bpm"
-                }
-              }
-            ]
-          },
-          "message": "High HR with no motion (Zone 4\u20135, immediate). Possible stress/illness.",
-          "tags": [
-            "hr",
-            "no_motion"
-          ],
-          "action": {
-            "type": "log",
-            "level": "WARN"
-          }
-        },
-        {
-          "id": "zone4_sustained_alert",
-          "severity": "ALERT",
-          "when": {
-            "all": [
-              {
-                "gte": {
-                  "feature": "heart_rate.bpm",
-                  "value_ref": "zone_4_min_bpm"
-                }
-              },
-              {
-                "lt": {
-                  "feature": "heart_rate.bpm",
-                  "value_ref": "zone_5_min_bpm"
-                }
-              },
-              {
-                "sustained_for_sec": 600
-              }
-            ]
-          },
-          "message": "Zone 4 sustained > 10 min.",
-          "tags": [
-            "hr",
-            "exercise",
-            "zone4"
-          ],
-          "action": {
-            "type": "log",
-            "level": "INFO"
-          }
-        },
-        {
-          "id": "zone5_duration_alert",
-          "severity": "ALERT",
-          "when": {
-            "all": [
-              {
-                "gte": {
-                  "feature": "heart_rate.bpm",
-                  "value_ref": "zone_5_min_bpm"
-                }
-              },
-              {
-                "sustained_for_sec": 600
-              }
-            ]
-          },
-          "message": "Zone 5 > 10 min \u2014 check intensity/fatigue.",
-          "tags": [
-            "hr",
-            "exercise",
-            "zone5"
-          ],
-          "action": {
-            "type": "log",
-            "level": "WARN"
-          }
-        },
-        {
-          "id": "poor_recovery_warn",
-          "severity": "WARN",
-          "when": {
-            "all": [
-              {
-                "recently_in": {
-                  "feature": "heart_rate.bpm",
-                  "min_ref": "zone_4_min_bpm",
-                  "duration_sec": 120
-                }
-              },
-              {
-                "lt": {
-                  "feature": "features.poor_recovery_2min",
-                  "value": 20
-                }
-              }
-            ]
-          },
-          "message": "Poor HR recovery: <20 bpm drop in 2 min after exertion.",
-          "tags": [
-            "hr",
-            "recovery"
-          ],
-          "action": {
-            "type": "log",
-            "level": "INFO"
-          }
-        }
-      ]
+      "id": "bradycardia_rest_alert",
+      "when": {
+        "all": [
+          { "ref": "features.accel_low_motion", "is": true },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "lte_key": ["heart_rate.bpm", 40] }
+        ]
+      },
+      "sustained_for_sec": 600,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Bradycardia at rest: HR ≤ 40 bpm for ≥ 10 min (not sleeping).",
+        "tags": ["hr", "rest", "bradycardia"]
+      }
     },
+
     {
-      "name": "cold_stress",
-      "context": "cold",
-      "rules": [
-        {
-          "id": "cold_warn_fast_cooling",
-          "severity": "WARN",
-          "when": {
-            "all": [
-              {
-                "lte": {
-                  "feature": "features.skin_temp_slope_c_per_min_5m",
-                  "value": -0.5
-                }
-              },
-              {
-                "ref": "cold_environment",
-                "is": true
-              }
+      "id": "tachycardia_rest_warn",
+      "when": {
+        "all": [
+          { "ref": "features.accel_low_motion", "is": true },
+          {
+            "or": [
+              { "gte_key": ["heart_rate.bpm", 100] },
+              { "gte_key": ["heart_rate.bpm", { "ref": "profile.hr_rest_bpm", "ratio": 1.2 }] }
             ]
-          },
-          "message": "Cold Stress: rapid peripheral cooling (slope \u2264 \u22120.5 \u00b0C/min over 5 min).",
-          "tags": [
-            "cold",
-            "slope"
-          ],
-          "action": {
-            "type": "log",
-            "level": "INFO"
           }
-        },
-        {
-          "id": "cold_alert_skin_lt_28",
-          "severity": "ALERT",
-          "when": {
-            "all": [
-              {
-                "lte": {
-                  "feature": "features.skin_temp_min_c_1m",
-                  "value": 28
-                }
-              },
-              {
-                "sustained_for_sec": 60
-              }
-            ]
-          },
-          "message": "Cold Stress: Skin \u2264 28 \u00b0C sustained.",
-          "tags": [
-            "cold",
-            "threshold"
-          ],
-          "action": {
-            "type": "log",
-            "level": "WARN"
-          }
-        },
-        {
-          "id": "cold_emergency_skin_lt_20",
-          "severity": "EMERGENCY",
-          "when": {
-            "all": [
-              {
-                "lte": {
-                  "feature": "features.skin_temp_min_c_1m",
-                  "value": 20
-                }
-              },
-              {
-                "sustained_for_sec": 30
-              }
-            ]
-          },
-          "message": "Cold Emergency: Skin \u2264 20 \u00b0C (loss of dexterity, frostbite risk).",
-          "tags": [
-            "cold",
-            "emergency"
-          ],
-          "action": {
-            "type": "log",
-            "level": "ERROR"
-          }
-        },
-        {
-          "id": "cold_emergency_absent_shiver",
-          "severity": "EMERGENCY",
-          "when": {
-            "all": [
-              {
-                "ref": "absent_shiver_in_cold",
-                "is": true
-              },
-              {
-                "sustained_for_sec": 120
-              }
-            ]
-          },
-          "message": "Cold Emergency: Absent shiver despite cold (autonomic failure).",
-          "tags": [
-            "cold",
-            "shiver",
-            "emergency"
-          ],
-          "action": {
-            "type": "log",
-            "level": "ERROR"
-          }
-        },
-        {
-          "id": "cold_warn_tactile_risk",
-          "severity": "WARN",
-          "when": {
-            "any": [
-              {
-                "lte": {
-                  "feature": "features.skin_temp_min_c_1m",
-                  "value": 15
-                }
-              },
-              {
-                "lte": {
-                  "feature": "features.skin_temp_min_c_1m",
-                  "value": 8
-                }
-              }
-            ]
-          },
-          "message": "Dexterity/Tactile risk: peripheral skin \u2264 15 \u00b0C (\u22648 \u00b0C tactile failure).",
-          "tags": [
-            "cold",
-            "dexterity"
-          ],
-          "action": {
-            "type": "log",
-            "level": "INFO"
-          }
-        }
-      ]
+        ]
+      },
+      "sustained_for_sec": 600,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Elevated HR at rest for 10 min (≥100 bpm or ≥20% above rest).",
+        "tags": ["hr", "rest", "tachycardia"]
+      }
+    },
+
+    {
+      "id": "no_motion_high_hr_immediate",
+      "when": {
+        "all": [
+          { "ref": "features.accel_low_motion", "is": true },
+          { "gte_key": ["features.hr.hrr", 0.8] }  // Zone 4–5 region
+        ]
+      },
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "High HR with no motion (HRR in Zone 4–5 range, immediate). Possible stress/illness.",
+        "tags": ["hr", "no_motion"]
+      }
+    },
+
+    {
+      "id": "zone4_sustained_alert",
+      "when": {
+        "all": [
+          { "gte_key": ["features.hr.hrr", 0.8] },
+          { "lt_key": ["features.hr.hrr", 0.9] }
+        ]
+      },
+      "sustained_for_sec": 600,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Zone 4 sustained > 10 min.",
+        "tags": ["hr", "exercise", "zone4"]
+      }
+    },
+
+    {
+      "id": "zone5_duration_alert",
+      "when": { "gte_key": ["features.hr.hrr", 0.9] },
+      "sustained_for_sec": 600,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Zone 5 > 10 min — check intensity/fatigue.",
+        "tags": ["hr", "exercise", "zone5"]
+      }
+    },
+
+    {
+      "id": "poor_recovery_warn",
+      "when": {
+        "all": [
+          { "recently_in": ["features.hr.hrr", 0.8, 120] },
+          { "lt_key": ["features.poor_recovery_2min", 20] }
+        ]
+      },
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Poor HR recovery: <20 bpm drop in 2 min after exertion.",
+        "tags": ["hr", "recovery"]
+      }
+    },
+
+    {
+      "id": "cold_warn_fast_cooling",
+      "when": {
+        "all": [
+          { "lte_key": ["features.skin_temp_slope_c_per_min_5m", -0.5] },
+          { "ref": "features.cold_environment", "is": true }
+        ]
+      },
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Cold Stress: rapid peripheral cooling (slope ≤ −0.5 °C/min over 5 min).",
+        "tags": ["cold", "slope"]
+      }
+    },
+
+    {
+      "id": "cold_alert_skin_lt_28",
+      "when": { "lte_key": ["features.skin_temp_min_c_1m", 28] },
+      "sustained_for_sec": 60,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Cold Stress: Skin ≤ 28 °C sustained.",
+        "tags": ["cold", "threshold"]
+      }
+    },
+
+    {
+      "id": "cold_emergency_skin_lt_20",
+      "when": { "lte_key": ["features.skin_temp_min_c_1m", 20] },
+      "sustained_for_sec": 30,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "Cold Emergency: Skin ≤ 20 °C (loss of dexterity, frostbite risk).",
+        "tags": ["cold", "emergency"]
+      }
+    },
+
+    {
+      "id": "cold_emergency_absent_shiver",
+      "when": { "ref": "features.absent_shiver_in_cold", "is": true },
+      "sustained_for_sec": 120,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "Cold Emergency: Absent shiver despite cold (autonomic failure).",
+        "tags": ["cold", "shiver", "emergency"]
+      }
+    },
+
+    {
+      "id": "cold_warn_tactile_risk",
+      "when": {
+        "or": [
+          { "lte_key": ["features.skin_temp_min_c_1m", 15] },
+          { "lte_key": ["features.skin_temp_min_c_1m", 8] }
+        ]
+      },
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Dexterity/Tactile risk: peripheral skin ≤ 15 °C (≤8 °C tactile failure).",
+        "tags": ["cold", "dexterity"]
+      }
     }
   ]
 }
+
