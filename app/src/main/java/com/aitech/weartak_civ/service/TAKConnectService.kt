@@ -59,6 +59,8 @@ import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.File
+import java.io.FileInputStream
 import java.io.StringReader
 import java.security.*
 import java.security.cert.Certificate
@@ -881,6 +883,35 @@ class TAKConnectService: Service() {
             // return java.util.Base64.getEncoder().encodeToString(md)
         }
 
+        private fun readTextFileOrNull(f: File): String? = try { f.readText() } catch (_: Exception) { null }
+
+        private fun maybeLoadP12FromDisk(t: TakServerDetail): Boolean {
+            val certDir = File(context.filesDir, "certs")
+            val binP12  = File(certDir, "${t.address}.p12")
+            val b64P12  = File(certDir, "${t.address}.p12.b64")
+
+            if (!binP12.exists() && !b64P12.exists()) return false
+
+            val pwd = KEYSTORE_PASS
+
+            return try {
+                t.keyStore.load(null, null) // init empty
+                if (binP12.exists()) {
+                    FileInputStream(binP12).use { t.keyStore.load(it, pwd.toCharArray()) }
+                } else {
+                    val b64 = readTextFileOrNull(b64P12)?.replace("\\s+".toRegex(), "") ?: return false
+                    val bytes = Base64.getDecoder().decode(b64)
+                    ByteArrayInputStream(bytes).use { t.keyStore.load(it, pwd.toCharArray()) }
+                }
+                t.isP12Cert = true            // drive the existing P12 path
+                t.p12CertPassword = pwd
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "maybeLoadP12FromDisk failed for ${t.address}: ${e.message}", e)
+                false
+            }
+        }
+
         fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
             Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
@@ -902,6 +933,15 @@ class TAKConnectService: Service() {
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                     requestStatusIconsComplicationUpdate(context)
 
+                    // see if we have one locally
+                    if (!takServerDetail.isP12Cert) {
+                        Log.i(TAG, "Not P12 for ${takServerDetail.address} ... checking if p12 locally loaded ...")
+                        if (maybeLoadP12FromDisk(takServerDetail)) {
+                            Log.i(TAG, "Oh Shit we found one. --> isP12: ${takServerDetail.isP12Cert} | cert is: \n ${takServerDetail.p12Cert} ")
+                        } else {
+                            Log.w(TAG, "Didn't find a P12 for ${takServerDetail.address} in certs/")
+                        }
+                    }
 
                     if (takServerDetail.isP12Cert) {
                         Log.d(TAG, "isP12Cert true")
