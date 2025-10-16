@@ -12,9 +12,12 @@ import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -62,6 +65,14 @@ class AudioCaptureService : Service() {
         }
     }
 
+    private val audioRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).audioRepo
+        } catch (_: Throwable) {
+            AudioCaptureRepository(applicationContext)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate()")
@@ -78,18 +89,62 @@ class AudioCaptureService : Service() {
         }
 
         startDropCollector()
+        collectAudioFlows()
+
+        if (!hasRecordAudioPermission()) {
+            updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
+        } else {
+            updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
+        }
     }
 
+    // Temporary UI bridge so we can use marker ui to test
     private fun startDropCollector() {
         serviceScope.launch(Dispatchers.IO) {
-            repo.dropRequests
-                .filter { drop ->
-                    drop.markerType != DataRepository.MarkerType.FRIENDLY
-                    drop.markerType != DataRepository.MarkerType.HOSTILE }
-                .collect { req ->
-                    Log.i(TAG, "Received drop request...")
-                    if (req.markerType == DataRepository.MarkerType.FRIENDLY) startAudioCollection()
-                    if (req.markerType == DataRepository.MarkerType.HOSTILE) stopAudioCollection()
+            repo.dropRequests.collect { req ->
+                when (req.markerType) {
+                    DataRepository.MarkerType.FRIENDLY -> audioRepo.requestStartRecording()
+                    DataRepository.MarkerType.HOSTILE  -> audioRepo.requestStopRecording()
+                    DataRepository.MarkerType.NEUTRAL  -> audioRepo.requestPauseRecording()
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun collectAudioFlows() {
+        serviceScope.launch(Dispatchers.IO) {
+            audioRepo.getRecordRequest.collect { req ->
+                when (req) {
+                    AudioCaptureRepository.RecordAction.START -> startAudioCollection()
+                    AudioCaptureRepository.RecordAction.STOP  -> stopAudioCollection()
+                    AudioCaptureRepository.RecordAction.PAUSE -> pauseAudioCollection()
+                }
+            }
+        }
+
+        serviceScope.launch(Dispatchers.IO) {
+            audioRepo.getRecordingState
+                .distinctUntilChanged()
+                .collect { state ->
+                    when (state) {
+                        AudioCaptureRepository.RecordingState.RECORDING -> Log.i(TAG, "RecordingState --> RECORDING")
+                        AudioCaptureRepository.RecordingState.AVAILABLE -> Log.i(TAG, "RecordingState --> AVAILABLE")
+                        AudioCaptureRepository.RecordingState.UNAVAILABLE -> Log.i(TAG, "RecordingState --> UNAVAILABLE")
+                        AudioCaptureRepository.RecordingState.PAUSED -> Log.i(TAG, "RecordingState --> PAUSED")
+                        AudioCaptureRepository.RecordingState.PLAYING -> Log.i(TAG, "RecordingState --> PLAYING")
+                    }
+            }
+        }
+
+        serviceScope.launch(Dispatchers.IO) {
+            audioRepo.getRecordingSessionState
+                .distinctUntilChanged()
+                .collect { state ->
+                    when (state) {
+                        true -> Log.i(TAG, "Recording Session IN PROGRESS")
+                        false -> Log.i(TAG, "Recording Session ENDED")
+                    }
                 }
         }
     }
@@ -112,6 +167,26 @@ class AudioCaptureService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+//TODO: Use isCollecting as a state holder for "paused" or not, use the state in repo later for is a session happening or not.
+    private fun updateRecordingSessionState(isSessionRunning: Boolean) {
+        if (!isSessionRunning) {
+            if (hasRecordAudioPermission()) {
+                updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
+            } else {
+                updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
+            }
+        }
+        serviceScope.launch {
+            isCollecting.set(isSessionRunning)
+            audioRepo.updateRecordingSessionState(isSessionRunning)
+        }
+    }
+
+    private fun updateRecordingState(state: AudioCaptureRepository.RecordingState) {
+        serviceScope.launch {
+            audioRepo.updateRecordingState(state)
+        }
+    }
 
     private fun startAudioCollection() {
         if (!isRunning.get()) {
@@ -126,7 +201,8 @@ class AudioCaptureService : Service() {
         // Permission guard
         if (!hasRecordAudioPermission()) {
             Log.e(TAG, "RECORD_AUDIO permission not granted; aborting")
-            isCollecting.set(false)
+            updateRecordingSessionState(false)
+            updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
             return
         }
 
@@ -135,7 +211,7 @@ class AudioCaptureService : Service() {
             initAudioRecord()
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to init recording: ${t.message}", t)
-            isCollecting.set(false)
+            updateRecordingSessionState(false)
             return
         }
 
@@ -143,13 +219,15 @@ class AudioCaptureService : Service() {
             try {
                 // start may throw SecurityException if permission revoked mid-flight
                 audioRecord?.startRecording()
+                updateRecordingSessionState(true)
+                updateRecordingState(AudioCaptureRepository.RecordingState.RECORDING)
             } catch (se: SecurityException) {
                 Log.e(TAG, "startRecording() SecurityException: ${se.message}", se)
-                isCollecting.set(false)
+                updateRecordingSessionState(false)
                 return@launch
             } catch (t: Throwable) {
                 Log.e(TAG, "startRecording() error: ${t.message}", t)
-                isCollecting.set(false)
+                updateRecordingSessionState(false)
                 return@launch
             }
 
@@ -191,6 +269,8 @@ class AudioCaptureService : Service() {
             try { audioRecord?.stop() } catch (_: Throwable) {}
             audioRecord?.release()
             audioRecord = null
+            updateRecordingSessionState(false)
+            updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
         } catch (t: Throwable) {
             Log.w(TAG, "stopAudioCollection cleanup error: ${t.message}")
         }
@@ -205,6 +285,23 @@ class AudioCaptureService : Service() {
             currentFile = null
             recordingJob = null
         }
+    }
+
+    fun pauseAudioCollection() {
+        //TODO: Pause Audio Collection
+        serviceScope.launch {
+            val state = audioRepo.getRecordingState.first()
+            if (state == AudioCaptureRepository.RecordingState.PAUSED) {
+                resumeAudioCollection()
+            }
+            if (state == AudioCaptureRepository.RecordingState.RECORDING) {
+                updateRecordingState(AudioCaptureRepository.RecordingState.PAUSED)
+            }
+        }
+    }
+
+    fun resumeAudioCollection() {
+        updateRecordingState(AudioCaptureRepository.RecordingState.RECORDING)
     }
 
     // ---------------- Internals ----------------

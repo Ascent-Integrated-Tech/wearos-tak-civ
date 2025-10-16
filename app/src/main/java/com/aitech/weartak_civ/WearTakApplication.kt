@@ -19,6 +19,7 @@ package com.aitech.weartak_civ
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import live.ditto.Ditto
 import live.ditto.DittoError
@@ -28,17 +29,22 @@ import live.ditto.android.DefaultAndroidDittoDependencies
 class WearTakApplication : Application() {
 
     lateinit var repo: DataRepository; private set
+    lateinit var audioRepo: AudioCaptureRepository; private set
 
     companion object {
         val TAG = "WearTAK-Applicaton"
-
     }
 
     override fun onCreate() {
         super.onCreate()
-        repo = DataRepository(applicationContext)
+        initDataRepos()
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
+    }
+
+    fun initDataRepos() {
+        repo = DataRepository(applicationContext)
+        audioRepo = AudioCaptureRepository(applicationContext)
     }
 
     object AppCtx {

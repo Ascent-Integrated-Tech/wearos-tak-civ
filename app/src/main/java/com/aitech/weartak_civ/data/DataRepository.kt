@@ -129,7 +129,6 @@ class DataRepository(private val context: Context) {
     }
 
 
-
     /**
      * Hail License State can be one of the four states below and controls
      * UI screens, license authentication, and activation of building
@@ -184,6 +183,7 @@ class DataRepository(private val context: Context) {
             prefs[HAIL_COMBAT_ID] = id
         }
     }
+
     val getCombatId: Flow<Int?> = context.dataStore.data.map { prefs ->
         prefs[HAIL_COMBAT_ID]
     }
@@ -206,10 +206,15 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             val beforeJson = prefs[HAIL_LICENSE_INFO_JSON]
             val current = beforeJson?.let {
-                runCatching { gson.fromJson(it, HailService.HailLicenseInfo::class.java) }.getOrNull()
+                runCatching {
+                    gson.fromJson(
+                        it,
+                        HailService.HailLicenseInfo::class.java
+                    )
+                }.getOrNull()
             }
             val next = transform(current)
-            val afterJson = next?.let { gson.toJson(it)}
+            val afterJson = next?.let { gson.toJson(it) }
 
             Log.d(TAG, "HailLicenseInfo Before=$beforeJson")
             Log.d(TAG, "HailLicenseInfo Current=$current")
@@ -260,8 +265,8 @@ class DataRepository(private val context: Context) {
             enable && (state == HailLicenseStates.VALID ||
                     state == HailLicenseStates.SOFT_EXPIRED)
         }
-        .distinctUntilChanged()
-        .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
+            .distinctUntilChanged()
+            .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
 
     // ======== ======== HAIL SECTION END ======== ==========
 
@@ -280,11 +285,12 @@ class DataRepository(private val context: Context) {
     private val _latestActivityConfidence = MutableStateFlow<Int>(100)
     val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
 
-    private val _latestActivityRecognized = MutableStateFlow<ActivityRecognized>(ActivityRecognized.UNKNOWN)
+    private val _latestActivityRecognized =
+        MutableStateFlow<ActivityRecognized>(ActivityRecognized.UNKNOWN)
     val latestActivityRecognized: StateFlow<ActivityRecognized> = _latestActivityRecognized
 
     private val _isAlerting = MutableStateFlow<Boolean>(false)
-    val isAlerting : StateFlow<Boolean> = _isAlerting
+    val isAlerting: StateFlow<Boolean> = _isAlerting
 
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
@@ -318,9 +324,11 @@ class DataRepository(private val context: Context) {
 
     // --- Service States Debugging Tools ----
     private val _serviceDebugStateFlow =
-        MutableStateFlow(EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>(
-            ReactiveServiceManager.ServiceType::class.java
-        ))
+        MutableStateFlow(
+            EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>(
+                ReactiveServiceManager.ServiceType::class.java
+            )
+        )
 
     val serviceDebugStateFlow: StateFlow<EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>> =
         _serviceDebugStateFlow.asStateFlow()
@@ -415,7 +423,8 @@ class DataRepository(private val context: Context) {
     var getEnableCotDispatchService: MutableStateFlow<Boolean> = _getEnableCotDispatchService
 
     private val _getEnableMovementDetectionService = MutableStateFlow<Boolean>(true)
-    var getEnableMovementDetectionService: MutableStateFlow<Boolean> = _getEnableMovementDetectionService
+    var getEnableMovementDetectionService: MutableStateFlow<Boolean> =
+        _getEnableMovementDetectionService
 
     private val _getEnableBatteryService = MutableStateFlow<Boolean>(true)
     var getEnableBatteryService: MutableStateFlow<Boolean> = _getEnableBatteryService

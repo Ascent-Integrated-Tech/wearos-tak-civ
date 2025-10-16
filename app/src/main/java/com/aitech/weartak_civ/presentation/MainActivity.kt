@@ -204,9 +204,11 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.AudioCaptureRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 import kotlin.math.min
@@ -254,6 +256,7 @@ class MainActivity : ComponentActivity() {
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
+
         @SuppressLint("StaticFieldLeak")
         var networkManager : NetworkManager? = null
         var takConnectService : TAKConnectService? = null
@@ -428,6 +431,33 @@ class MainActivity : ComponentActivity() {
                 Log.i(TAG, "MainActivity stopReactiveServiceManager(): ReactiveServiceManager is not Running!")
             }
         }
+    }
+
+    private val audioRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).audioRepo
+        } catch (_: Throwable) {
+            AudioCaptureRepository(applicationContext)
+        }
+    }
+
+    private fun collectAudioRecordingFlows() {
+        scope.launch {
+            audioRepo.getRecordingSessionState
+                .distinctUntilChanged()
+                .collect { state ->
+                    when (state) {
+                        true -> makeToast("Audio Rec Session IN PROGRESS!")
+                        false -> makeToast("Audio Rec Session ENDED!")
+                    }
+                }
+        }
+    }
+
+    private fun makeToast(toast: String) {
+        val duration = Toast.LENGTH_SHORT
+        val toast = Toast.makeText(this, toast, duration) // in Activity
+        toast.show()
     }
 
     val callsignState = MutableLiveData<String>("")
@@ -937,6 +967,7 @@ class MainActivity : ComponentActivity() {
         //startHealthCapabilitiesCollection()
         validateLicense(license)
         startReactiveServiceManager(applicationContext)
+        collectAudioRecordingFlows()
 
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
