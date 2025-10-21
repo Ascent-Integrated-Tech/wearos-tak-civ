@@ -81,6 +81,62 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                     tsMs
                 )
             }
+
+            // ---- NEW: WindPayload (Topics.WIND) ----
+            is WindPayload -> {
+                p.speedMps?.let {
+                    latest["ambient.wind_mps"] = it                   // keep backward-compatible key
+                    fs.put("ambient.wind_mps", it, tsMs)
+                }
+                p.directionDeg?.let { fs.put("wind.direction_deg", it, tsMs) }
+            }
+
+            // ---- NEW: GyroPayload (Topics.GYRO) ----
+            is GyroPayload -> {
+                // Raw axes if you want them available:
+                fs.put("gyro.x_dps", p.x.toDouble(), tsMs)
+                fs.put("gyro.y_dps", p.y.toDouble(), tsMs)
+                fs.put("gyro.z_dps", p.z.toDouble(), tsMs)
+                // Optional RMS stream to support shiver detection windows:
+                p.rms?.let {
+                    num.getOrPut("gyro.rms_dps") { DoubleRing(numCap()) }.add(it.toDouble())
+                    fs.put("gyro.rms_dps", it, tsMs)
+                }
+            }
+
+            // ---- NEW: PpgPayload (Topics.PPG) ----
+            is PpgPayload -> {
+                // Amplitude is the one the rules use for collapse ratio:
+                num.getOrPut("ppg.amplitude") { DoubleRing(numCap()) }.add(p.amplitude.toDouble())
+                fs.put("ppg.amplitude", p.amplitude, tsMs)
+                p.quality?.let { fs.put("ppg.quality", it, tsMs) }
+                p.wavelength?.let { fs.put("ppg.wavelength", it, tsMs) }
+            }
+
+            // ---- NEW: HumidityPayload (Topics.HUMIDITY) ----
+            is HumidityPayload -> {
+                fs.put("humidity.relative_percent", p.relativePercent, tsMs)
+                latest["humidity.relative_percent"] = p.relativePercent
+            }
+
+            // ---- NEW: WaterPayload (Topics.WATER) ----
+            is WaterPayload -> {
+                fs.put("water_sensor.wet", p.wet, tsMs)
+                latest["water_sensor.wet"] = p.wet
+                p.temperatureC?.let {
+                    // Mirror to ambient.water_temp_c to match immersion override rule
+                    fs.put("ambient.water_temp_c", it, tsMs)
+                }
+            }
+
+            // ---- NEW: LightPayload (Topics.LIGHT) ----
+            is LightPayload -> {
+                fs.put("light.lux", p.lux, tsMs)
+                latest["light.lux"] = p.lux
+                p.covered?.let {
+                    fs.put("als.covered", it, tsMs) // used by coverage/exposure logic
+                }
+            }
         }
     }
 
@@ -96,10 +152,10 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
             "median" -> if (window.isNotEmpty()) window.sorted()[window.size/2] else null
             else -> null
         }
-        fs.put(def.id, v, tsMs)
+        fs.putDerived(def.id, v, tsMs)
     }
 
-    fun computeMultiWindow(def: FeatureDef.MultiWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+    /*fun computeMultiWindow(def: FeatureDef.MultiWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = arr[def.source] ?: return
         val n = def.windowSec * tickHz
         val window = ring.tail(n)
@@ -112,10 +168,35 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
             "avg" -> if (perSampleMin.isNotEmpty()) perSampleMin.average() else null
             else -> perSampleMin.minOrNull()
         }
-        fs.put(def.id, valWindow, tsMs)
+        fs.putDerived(def.id, valWindow, tsMs)
+    }*/
+
+    fun computeMultiWindow(def: FeatureDef.MultiWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        val ring = arr[def.source] ?: return
+        val n = def.windowSec * tickHz
+        val window = ring.tail(n)
+        if (window.isEmpty()) return
+
+        // Combine channels per sample according to multiPolicy
+        val perSampleAgg: List<Double> = when (def.multiPolicy) {
+            "min" -> window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY }
+            "max" -> window.map { it.maxOrNull() ?: Double.NEGATIVE_INFINITY }
+            else  -> window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY } // default
+        }
+
+        val v = when (def.op) {
+            "min" -> perSampleAgg.minOrNull()
+            "max" -> perSampleAgg.maxOrNull()
+            "avg" -> if (perSampleAgg.isNotEmpty()) perSampleAgg.average() else null
+            "rms" -> MathOps.rms(perSampleAgg.toList())
+            "median" -> if (perSampleAgg.isNotEmpty()) perSampleAgg.sorted()[perSampleAgg.size/2] else null
+            else -> perSampleAgg.minOrNull()
+        }
+
+        fs.putDerived(def.id, v, tsMs)
     }
 
-    fun computeSlopeMulti(def: FeatureDef.SlopeMulti, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+    /*fun computeSlopeMulti(def: FeatureDef.SlopeMulti, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = arr[def.source] ?: return
         val n = def.windowSec * tickHz
         val window = ring.tail(n)
@@ -125,14 +206,36 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
         val series = window.mapNotNull { it.getOrNull(minIdx) }.toDoubleArray()
         val slopePerSample = MathOps.lsqSlope(series) ?: return
         val slope = if (def.unitsPerSec == "per_minute") slopePerSample * tickHz * 60.0 else slopePerSample * tickHz
-        fs.put(def.id, slope, tsMs)
+        fs.putDerived(def.id, slope, tsMs)
+    }*/
+
+    fun computeSlopeMulti(def: FeatureDef.SlopeMulti, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        val ring = arr[def.source] ?: return
+        val n = def.windowSec * tickHz
+        val window = ring.tail(n)
+        if (window.isEmpty()) return
+
+        // Choose which channel to follow for slope based on multiPolicy
+        val last = window.last()
+        val channelIdx = when (def.multiPolicy) {
+            "min_channel" -> last.indices.minByOrNull { last[it] } ?: 0
+            "max_channel" -> last.indices.maxByOrNull { last[it] } ?: 0
+            else          -> 0
+        }
+
+        val series = window.mapNotNull { it.getOrNull(channelIdx) }.toDoubleArray()
+        val slopePerSample = MathOps.lsqSlope(series) ?: return
+        val slopePerSec = if (def.unitsPerSec == "per_minute") slopePerSample * tickHz * 60.0
+        else slopePerSample * tickHz
+
+        fs.putDerived(def.id, slopePerSec, tsMs)
     }
 
     fun computeDelta(def: FeatureDef.Delta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = num[def.source] ?: return
         val now = ring.lastOrNull() ?: return
         val back = ring.getBack(def.horizonSec * tickHz) ?: return
-        fs.put(def.id, now - back, tsMs)
+        fs.putDerived(def.id, now - back, tsMs)
     }
 }
 

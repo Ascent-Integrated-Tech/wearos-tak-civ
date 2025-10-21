@@ -4,6 +4,8 @@ import android.content.Context
 import com.aitech.weartak_civ.cep.bus.CepBus
 import kotlinx.coroutines.*
 import android.util.Log
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.NumericSample
 import firebase.com.protolitewrapper.BuildConfig
 
 class CepEngine(
@@ -25,7 +27,12 @@ class CepEngine(
         scope.launch {
             val tickMs = (1000L / config.tickHz).coerceAtLeast(1L)
             while (isActive) {
+                featureStore.beginTick()         // NEW: start tracking this tick
+
                 computeFeaturesSafely()
+
+                featureStore.logDerivedTick("CEP") // NEW: print everything computed this tick
+
                 ruleEngine.processTick()
                 delay(tickMs)
             }
@@ -43,26 +50,33 @@ class CepEngine(
                     is FeatureDef.Derived     -> DerivedEval.eval(def, featureStore)
                 }
             } catch (ex: Throwable) {
-                android.util.Log.e("CEP", "Feature compute failed for ${def.id}", ex)
+                Log.e("CEP", "Feature compute failed for ${def.id}", ex)
             }
         }
     }
 
     fun ingest(path: String, value: Double, tsMs: Long = System.currentTimeMillis()) {
         try {
-            // Split path like "heart_rate.bpm" → namespace + field
             val parts = path.split(".")
             if (parts.size < 2) return
 
-            val ns = parts[0]
-            val key = parts[1]
+            val ns  = parts[0]
+            val key = parts.drop(1).joinToString(".")
 
-            // Store in the FeatureStore (already part of your engine)
-            featureStore.put(ns,  value, tsMs)
+            // write to store using the full dotted id
+            featureStore.put("$ns.$key", value, tsMs)
 
-            if (BuildConfig.DEBUG) {
-                Log.v("CEP", "Ingested $path=$value @${tsMs}")
+            // publish to bus
+            val evt = CepEvent(
+                topic = "$ns.$key",
+                payload = NumericSample(ns = ns, key = key, value = value),
+                ts = tsMs
+            )
+            if (!CepBus.tryEmit(evt)) {
+                scope.launch { CepBus.emit(evt) }
             }
+
+            Log.i("CEP", "INGEST $ns.$key=$value @ $tsMs")
         } catch (ex: Exception) {
             Log.e("CEP", "Failed to ingest $path", ex)
         }

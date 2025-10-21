@@ -13,7 +13,13 @@ object TopicRegistry {
         Topics.SPO2      to Spo2Payload::class.java,
         Topics.IMMERSION to ImmersionPayload::class.java,
         Topics.SLEEP     to SleepPayload::class.java,
-        Topics.OFFBODY   to OffBodyPayload::class.java
+        Topics.OFFBODY   to OffBodyPayload::class.java,
+        Topics.WIND      to WindPayload::class.java,
+        Topics.GYRO      to GyroPayload::class.java,
+        Topics.PPG       to PpgPayload::class.java,
+        Topics.HUMIDITY  to HumidityPayload::class.java,
+        Topics.WATER     to WaterPayload::class.java,
+        Topics.LIGHT     to LightPayload::class.java,
     )
     fun payloadClass(topic: String): Class<out CepPayload>? = map[topic]
 }

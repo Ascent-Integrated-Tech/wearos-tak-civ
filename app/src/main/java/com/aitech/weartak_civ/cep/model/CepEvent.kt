@@ -5,5 +5,3 @@ data class CepEvent<out P : CepPayload>(
     val payload: P,
     val ts: Long = System.currentTimeMillis()
 )
-
-
