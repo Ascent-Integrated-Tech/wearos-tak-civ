@@ -99,6 +99,7 @@ dependencies {
     implementation files('libs/hail-sdk.aar')
 
     implementation libs.protolite.well.known.types
+    implementation libs.animation.core
 
     def room_version = "2.7.2"
     implementation "androidx.room:room-runtime:$room_version"

@@ -31,6 +31,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.receiver.AlarmReceiver
+import com.google.common.math.IntMath
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -405,6 +406,17 @@ object Utils {
         var newMessagesPresent: Boolean,
         val timeLastOpened: Long,
         var timeLastClosed: Long
+    )
+
+    /** Minimal data models for bloodhound. */
+    data class BloodhoundItem(
+        val target: String,
+        val uid: String,
+        val callsign: String,
+        val timeReceived: Long,
+        val distance: Double, // May not come directly from COT, changes consistently
+        val orientation: Float, // May not come directly from COT, changes consistently
+        val bloodhounding: Boolean
     )
 
     /** Minimal data models for physio alerts. */

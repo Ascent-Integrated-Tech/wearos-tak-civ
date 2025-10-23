@@ -192,6 +192,22 @@
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="0" />
         </service>
+        <service
+            android:name=".complication.BloodhoundComplicationService"
+            android:exported="true"
+            android:label="Bloodhound Complication"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
 <!--        <service-->
 <!--            android:name=".complication.PhysioAlertIconComplicationService"-->
 <!--            android:exported="true"-->
@@ -412,6 +428,17 @@
         </activity>
         <activity
             android:name=".presentation.PhysioAlertsActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.aitech.weartak_civ"
+            android:theme="@style/MainActivityTheme.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".presentation.BloodhoundActivity"
             android:exported="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"

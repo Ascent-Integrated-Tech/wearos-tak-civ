@@ -44,6 +44,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -184,6 +185,7 @@ import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
@@ -312,6 +314,8 @@ class MainActivity : ComponentActivity() {
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
 
+        var bloodhoundList : List<Utils.BloodhoundItem> = listOf()
+        val bloodhoundListState = MutableLiveData<List<Utils.BloodhoundItem>>(listOf())
         var SOME_WIFI_NETWORKS = "Some WiFi Networks"
         var ALL_WIFI_NETWORKS = "All WiFi Networks"
         var NO_WIFI_NETWORKS = "No WiFi Networks"
@@ -2083,6 +2087,7 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
+    val activeBhound by BloodhoundActivity.activeBhoundItem.observeAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2104,26 +2109,27 @@ fun MainScreen(
                 Column(
                     modifier = Modifier
                         .background(colors.background)
+                        .padding(top = 20.dp)
                         .padding(5.dp),
                     //                horizontalAlignment = Alignment.CenterHorizontally,
                     //                verticalArrangement = Arrangement.Center
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(top = 30.dp)
                             .fillMaxWidth()
                             .weight(0.8f)
+                            .padding(vertical = 3.dp)
                     ) {
                         HeartRate(context)
                     }
-                    Spacer(
-                        modifier = Modifier.height(10.dp)
-                    )
+//                    Spacer(
+//                        modifier = Modifier.height(10.dp)
+//                    )
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(.9f),
+                            .weight(1f),
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -2138,7 +2144,7 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(top = 0.dp),
+                            .padding(vertical = 5.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         requestChatComplicationUpdate(context)
@@ -2187,7 +2193,16 @@ fun MainScreen(
                         )
                         Callsign(context, callsignState)
                     }
-
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+//                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ){
+                        BloodhoundButton(context, activeBhound)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
                 TroubleshootingIcons()
 
@@ -2651,6 +2666,58 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
         }
     }
 }
+@Composable
+fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?){
+    Row(
+        modifier = Modifier.clickable(onClick = {context.startActivity(Intent(context, BloodhoundActivity::class.java))}),
+        verticalAlignment = Alignment.CenterVertically
+    ){
+        Image(
+            painter = painterResource(R.drawable.compass_1),
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .size(35.dp)
+                .graphicsLayer {
+                    rotationZ =
+                    if (BloodhoundActivity.activeBhoundItem.value != null) activeBhound!!.orientation
+                    else 0F }
+        )
+        Column (
+            modifier = Modifier.padding(start = 13.dp)
+        ){
+            if (BloodhoundActivity.activeBhoundItem.value != null) {
+                Text(
+                    text = activeBhound!!.target,
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = activeBhound.distance.toString(),
+                    fontSize = 15.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            } else {
+                Text(
+                    text = "Compass",
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = "---",
+                    fontSize = 15.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
 
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")
 @Composable
@@ -2818,6 +2885,7 @@ fun DefaultPreview() {
 
     WearTAKCivApp(callsignState, licenseState)
 }
+
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable
