@@ -1241,8 +1241,12 @@ class CotDispatchService : Service() {
         iconSetPath = req.markerType.icon
         Log.i(TAG, "sendDropNow::markerType:: = [ ${type} ]")
         val xml = buildMarkerCotMessage(uid, type, loc, heartRate, battery)
+        sendMulticastDatagram(xml)
 
         var sent = false
+        if (dataRepository.getEnableMulticast.first()) {
+            sendMulticastDatagram(xml)
+        }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
             sent = true
@@ -1259,6 +1263,7 @@ class CotDispatchService : Service() {
         dataRepository.appendDroppedMarker(
             DataRepository.DroppedMarker(uid = uid, markerType = type, timeDropped = req.timeMillis)
         )
+
     }
 
 //    @Subscribe(threadMode = ThreadMode.ASYNC)

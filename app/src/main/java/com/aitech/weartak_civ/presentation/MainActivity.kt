@@ -26,7 +26,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.os.Build
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -36,6 +36,8 @@ import android.provider.Settings
 import android.provider.Settings.Secure
 import android.text.format.DateFormat
 import android.util.Log
+import android.view.Display
+import android.view.Surface
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -44,6 +46,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -91,7 +94,6 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.getString
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -130,6 +132,7 @@ import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFrom
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
 import com.aitech.weartak_civ.Utils.secureRandom
+import androidx.compose.runtime.State as ComposeState
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
@@ -158,23 +161,15 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BatteryService
-import com.aitech.weartak_civ.service.BleBeaconService
-import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CustomAccessibilityService
-import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
-import com.aitech.weartak_civ.service.LocationService
-import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
-import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
 import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
-import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.delay
@@ -183,7 +178,10 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
@@ -194,7 +192,6 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import com.aitech.weartak_civ.service.PassiveDataService
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.google.gson.Gson
@@ -204,15 +201,14 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.util.EnumMap
-import kotlin.math.min
-
 
 class MainActivity : ComponentActivity() {
 
@@ -256,6 +252,8 @@ class MainActivity : ComponentActivity() {
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
+        lateinit var bhRepo: BloodhoundRepository
+
         @SuppressLint("StaticFieldLeak")
         var networkManager : NetworkManager? = null
         var takConnectService : TAKConnectService? = null
@@ -312,6 +310,8 @@ class MainActivity : ComponentActivity() {
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
 
+        var bloodhoundList : List<Utils.BloodhoundItem> = listOf()
+        val bloodhoundListState = MutableLiveData<List<Utils.BloodhoundItem>>(listOf())
         var SOME_WIFI_NETWORKS = "Some WiFi Networks"
         var ALL_WIFI_NETWORKS = "All WiFi Networks"
         var NO_WIFI_NETWORKS = "No WiFi Networks"
@@ -911,6 +911,7 @@ class MainActivity : ComponentActivity() {
 
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
+        bhRepo = (context.applicationContext as WearTakApplication).bhRepo
 
         seedVariablesFromRepo()
         refreshUI(context)
@@ -1063,6 +1064,7 @@ class MainActivity : ComponentActivity() {
         requestStatusIconsComplicationUpdate(context)
         requestChatComplicationUpdate(context)
         requestPhysioComplicationUpdate(context)
+        requestBloodhoundComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -2045,7 +2047,6 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         }
     }
 
-
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
         navController = navController,
@@ -2056,6 +2057,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
                 navController = navController,
                 callsignState = callsignLiveDataState,
                 dataRepository = dataRepository,
+                bhRepo = bhRepo,
                 context = context
             )
         }
@@ -2075,7 +2077,8 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 fun MainScreen(
     navController: NavController,
     callsignState: MutableLiveData<String>,
-    dataRepository: DataRepository, // Add dataRepository parameter
+    dataRepository: DataRepository, // Add dataRepository parameter,
+    bhRepo: BloodhoundRepository,
     context: Context // Add context parameter
 ) {
     //Log.d(TAG, "MainScreen called")
@@ -2083,6 +2086,7 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
+    val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2100,30 +2104,31 @@ fun MainScreen(
                     .padding(5.dp)
                     .unswipeable()
             ) {
-
+                OrientationAware()
                 Column(
                     modifier = Modifier
                         .background(colors.background)
+                        .padding(top = 20.dp)
                         .padding(5.dp),
                     //                horizontalAlignment = Alignment.CenterHorizontally,
                     //                verticalArrangement = Arrangement.Center
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(top = 30.dp)
                             .fillMaxWidth()
                             .weight(0.8f)
+                            .padding(vertical = 3.dp)
                     ) {
                         HeartRate(context)
                     }
-                    Spacer(
-                        modifier = Modifier.height(10.dp)
-                    )
+//                    Spacer(
+//                        modifier = Modifier.height(10.dp)
+//                    )
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(.9f),
+                            .weight(1f),
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -2138,7 +2143,7 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(top = 0.dp),
+                            .padding(vertical = 5.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         requestChatComplicationUpdate(context)
@@ -2187,7 +2192,16 @@ fun MainScreen(
                         )
                         Callsign(context, callsignState)
                     }
-
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+//                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ){
+                        BloodhoundButton(context, activeItem, chatCheckedLive)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
                 TroubleshootingIcons()
 
@@ -2651,6 +2665,90 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
         }
     }
 }
+@Composable
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatChecked: Boolean?){
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+    val needleOrientation = activeItem?.orientation ?: properNorthBearing
+    requestBloodhoundComplicationUpdate(context)
+ Row(
+        modifier = Modifier.clickable(
+            onClick = {
+                if (chatChecked == true) {
+                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Bloodhound is disabled. Please enable Chat in Settings.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }),
+        verticalAlignment = Alignment.CenterVertically
+    ){
+        Image(
+            painter = painterResource(R.drawable.compass_1),
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .size(35.dp)
+                .graphicsLayer {
+                    rotationZ =
+                        needleOrientation.toFloat()
+                }
+        )
+        Column (
+            modifier = Modifier.padding(start = 13.dp)
+        ) {
+            if (chatChecked == true) {
+                if (activeItem != null) {
+                    Text(
+                        text = activeItem.target,
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                        Text(
+                            text = activeItem.distance.toString() + " km",
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                } else {
+                    Text(
+                        text = stringResource(R.string.compass),
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = "---",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.compass),
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = "---",
+                    fontSize = 15.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
 
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")
 @Composable
@@ -2753,6 +2851,7 @@ fun ActivityDisabledScreen(
     titleText: String,
     description: String) {
     WearTAKCIVTheme {
+        val ctx = LocalContext.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -2775,9 +2874,12 @@ fun ActivityDisabledScreen(
             Spacer(modifier = Modifier.size(10.dp))
             Button(
                 onClick = {
-                    navController.navigate("invalid_license_screen") {
-                        popUpTo("invalid_license_screen") { inclusive = true }
-                    }
+                    Log.i(TAG, "Navigating to settings screen license valid: ${isLicenseValid()}")
+                    ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                    exitActivity()
+//                    navController.navigate("invalid_license_screen") {
+//                        popUpTo("invalid_license_screen") { inclusive = true }
+//                    }
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.primary,
@@ -2810,6 +2912,55 @@ fun ActivityDisabledScreen(
     }
 }
 
+@Composable
+fun rememberDisplayRotation(): ComposeState<Int> {
+    val context = LocalContext.current
+    val rotationState = rememberSaveable { mutableIntStateOf(currentRotation(context)) }
+
+    DisposableEffect(Unit) {
+        val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val listener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) = Unit
+            override fun onDisplayRemoved(displayId: Int) = Unit
+            override fun onDisplayChanged(displayId: Int) {
+                // Most watches are single-display (DEFAULT_DISPLAY), but we refresh from whichever fired
+                val disp = dm.getDisplay(displayId) ?: dm.getDisplay(Display.DEFAULT_DISPLAY)
+                val newRotation = disp?.rotation ?: return
+                if (rotationState.intValue != newRotation) {
+                    rotationState.intValue = newRotation
+                }
+            }
+        }
+        // Register on the main thread
+        dm.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { dm.unregisterDisplayListener(listener) }
+    }
+
+    return rotationState
+}
+
+private fun currentRotation(context: Context): Int {
+    val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+    val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
+    return display?.rotation ?: Surface.ROTATION_0
+}
+
+@Composable
+fun OrientationAware() {
+    val rotation by rememberDisplayRotation()
+    // Log, send analytics, or update UI
+    val label = when (rotation) {
+        Surface.ROTATION_0 -> "ROTATION_0"
+        Surface.ROTATION_90 -> "ROTATION_90"
+        Surface.ROTATION_180 -> "ROTATION_180"
+        Surface.ROTATION_270 -> "ROTATION_270"
+        else -> "UNKNOWN"
+    }
+
+    // Example UI
+    Log.d(TAG, "Screen Rotation: $label")
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)
 @Composable
 fun DefaultPreview() {
@@ -2818,6 +2969,7 @@ fun DefaultPreview() {
 
     WearTAKCivApp(callsignState, licenseState)
 }
+
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable

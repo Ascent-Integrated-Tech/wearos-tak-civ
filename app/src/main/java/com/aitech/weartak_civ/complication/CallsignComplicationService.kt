@@ -10,8 +10,12 @@
 package com.aitech.weartak_civ.complication
 
 import android.util.Log
+import androidx.core.graphics.drawable.IconCompat
+import androidx.core.widget.TextViewCompat
 import androidx.wear.watchface.complications.data.ComplicationData
+import androidx.wear.watchface.complications.data.ComplicationText
 import androidx.wear.watchface.complications.data.ComplicationType
+import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
@@ -38,12 +42,22 @@ class CallsignComplicationService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         if (null == mainActivityIsInit) {
-            return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading))
+            return createComplicationData(
+                getString(R.string.loading),
+                getString(R.string.callsign_loading)
+            )
         }
         return when (isLicenseValid()) {
             true -> createComplicationData(callsign, getString(R.string.watch_callsign))
-            false -> createComplicationData(getString(R.string.invalid_license), getString(R.string.invalid_license_key))
-            else -> createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading))
+            false -> createComplicationData(
+                getString(R.string.invalid_license),
+                getString(R.string.invalid_license_key)
+            )
+
+            else -> createComplicationData(
+                getString(R.string.loading),
+                getString(R.string.callsign_loading)
+            )
         }
     }
 

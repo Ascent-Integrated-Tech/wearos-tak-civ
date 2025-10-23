@@ -15,8 +15,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 43
-        versionName "0.55"
+        versionCode 44
+        versionName "0.56"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -99,6 +99,7 @@ dependencies {
     implementation files('libs/hail-sdk.aar')
 
     implementation libs.protolite.well.known.types
+    implementation libs.animation.core
 
     def room_version = "2.7.2"
     implementation "androidx.room:room-runtime:$room_version"

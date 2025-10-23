@@ -500,4 +500,14 @@
     <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
     <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
     <string name="high_exertion_alert_string">HIGH Exertion</string>
+    <string name="view_chat">View Chat</string>
+    <string name="rgr">RGR</string>
+    <string name="npos">nPos</string>
+    <string name="km">km</string>
+    <string name="bloodhounding">Bloodhounding</string>
+    <string name="not_bloodhounding">Not Bloodhounding</string>
+    <string name="sent">"Sent: "</string>
+    <string name="bloodhound">Bloodhound</string>
+    <string name="bloodhound_disabled">Bloodhound Disabled</string>
+    <string name="compass">Compass</string>
 </resources>
