@@ -281,6 +281,10 @@
     <string name="physiological_services_description" translatable="false">Enable or disable physiological services</string>
     <string name="physiological_services_enabled_default" translatable="false">true</string>
 
+    <string name="heartrate_service_title" translatable="false">Enable Heart Rate Service</string>
+    <string name="heartrate_service_description" translatable="false">Enable or disable the heart rate service</string>
+    <string name="heartrate_service_enabled_default" translatable="false">true</string>
+
     <string name="activity_recognition_service_title" translatable="false">Enable Activity Recognition Service</string>
     <string name="activity_recognition_service_description" translatable="false">Enable or disable the Activity Recognition service for running, walking, biking, etc.</string>
     <string name="activity_recognition_service_enabled_default" translatable="false">false</string>

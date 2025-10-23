@@ -9,6 +9,7 @@
 
 package com.aitech.weartak_civ.events
 
+
 class MarkerEvent(val message: String, val addlIntInfo: Int) {
 
     companion object {
@@ -16,5 +17,6 @@ class MarkerEvent(val message: String, val addlIntInfo: Int) {
         val FRIENDLY = "Friendly"
         val UNKNOWN = "Unknown"
         val NEUTRAL = "Neutral"
+
     }
 }

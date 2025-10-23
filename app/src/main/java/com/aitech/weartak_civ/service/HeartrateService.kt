@@ -9,28 +9,24 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -77,7 +73,7 @@ class HeartrateService: Service() {
     private var userAge: Int? = null
     private var restingHeartRate: Int? = null
 
-    private val sharedRepository: DataRepository // TODO: Use Constructor Injection for a more robust use of a shared DataRepository. Using hilt or dagger, you’d define a single @Singleton repository and annotate each service as @AndroidEntryPoint. Then each service receives the same repository instance automatically.
+    private val sharedRepository: DataRepository
         get() = MainActivity.dataRepository
 
     private fun observeMetrics() {
@@ -94,38 +90,45 @@ class HeartrateService: Service() {
     }
 
     override fun onCreate() {
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         super.onCreate()
-        //RestingHrManager.init(sharedRepository)
+        Log.d(TAG, "HeartrateService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = HEARTRATE_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
         observeMetrics()
+
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        deviceWorn = sharedRepository.latestIsDeviceWorn.value
+
+        CoroutineScope(Dispatchers.Main).launch {
+            setDataFromDatastore()
+            if (deviceWorn) {
+                startSensors()
+            }
+        }
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "HeartrateService onStartCommand called w/ isRunning=$isRunning")
-        if (!isRunning.getAndSet(true)) {
-            deviceWorn = sharedRepository.latestIsDeviceWorn.value
-            startForegroundService()
-            CoroutineScope(Dispatchers.Main).launch {
-                setDataFromDatastore()
-                if (deviceWorn) {
-                    startSensors()
-                }
-            }
-        }
+        Log.d(TAG, "HeartrateService onStartCommand()")
         return START_NOT_STICKY
     }
 
     private fun createEvictingQ() {
         if (highAlertNumSecs > 0) {
             hrValuesEvictingQ = EvictingQueue.create<Int>(highAlertNumSecs)
-            Log.d(TAG, "hrValuesEvictingQ maxsize=${highAlertNumSecs} currsize=${hrValuesEvictingQ?.size}")
+            Log.d(TAG, "HeartrateService createEvictingQ(): maxsize=${highAlertNumSecs}, currsize=${hrValuesEvictingQ?.size}")
         }
     }
 
-    private suspend fun setDataFromDatastore() {
+    suspend private fun setDataFromDatastore() {
         enableHrAlerts = sharedRepository.getEnablePhysiologicalAlerts.first()
         highAlertThreshold = sharedRepository.getHrHighAlertBpmThreshold.first()
         highAlertNumSecs = sharedRepository.getHrHighAlertNumSecsThreshold.first()
@@ -135,14 +138,14 @@ class HeartrateService: Service() {
         //RestingHrManager.stop()
         scope.cancel()
         super.onDestroy()
+        Log.d(TAG, "HeartrateService onDestroy()")
         isRunning.set(false)
         deviceWorn = false
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
         stopSensors()
-        stopForeground(true)
-        Log.d(TAG, "Heartrate Service Destroyed")
+        stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -154,40 +157,10 @@ class HeartrateService: Service() {
         return null
     }
 
-    private fun startForegroundService() {
-        Log.d(TAG, "Starting heartrate foreground service")
-        val channelId = createNotificationChannel()
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV heartrate service running")
-            .setPriority(Context.BIND_WAIVE_PRIORITY)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        try {
-            startForeground(HEARTRATE_SERVICE_NOTIFICATION_ID, notification)
-        } catch (e: NullPointerException) {
-            Log.e(TAG, "Failed to set location ForegroundService", e )
-        }
-    }
-
-    private fun createNotificationChannel(): String {
-        val channelId = "Heartrate_Service"
-        val channelName = "Heartrate Foreground Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_HIGH
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
-    }
-
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onIsDeviceWornEvent(event: IsDeviceWornEvent) {
         val currDeviceWorn = event.isDeviceWorn
-        Log.d(TAG, "Received IsDeviceWornEvent w/ isDeviceWorn=$currDeviceWorn & prev deviceWorn=$deviceWorn")
+        Log.d(TAG, "HeartrateService IsDeviceWornEvent(): isDeviceWorn=$currDeviceWorn & Previous isDeviceWorn=$deviceWorn")
         if (deviceWorn != currDeviceWorn) {
             if (currDeviceWorn) {
                 startSensors()
@@ -247,8 +220,8 @@ class HeartrateService: Service() {
         requester.requestUpdateAll()
     }
 
-    private fun startSensors() {
-        Log.d(TAG, "HeartrateService startSensors called")
+    fun startSensors() {
+        Log.d(TAG, "HeartrateService startSensors()")
         if (enableHrAlerts) {
             createEvictingQ()
         } else {
@@ -258,14 +231,15 @@ class HeartrateService: Service() {
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         permission = checkPermissions()
         if (null != heartRateSensor) {
-            Log.d(TAG, "Heartrate sensor callback registered")
+            Log.i(TAG, "HeartrateService heartRateSensor callback registered")
             sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
         } else {
-            Log.e(TAG, "Heartrate Sensor is null. CANNOT read heartrate")
+            Log.e(TAG, "HeartrateService heartRateSensor is null. CANNOT read heartrate")
         }
     }
 
-    private fun stopSensors() {
+    fun stopSensors() {
+        Log.d(TAG, "HeartrateService stopSensors()")
         sensorManager.unregisterListener(sensorEventListener)
         hrValuesEvictingQ = null
     }

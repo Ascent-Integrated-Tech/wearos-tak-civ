@@ -81,10 +81,8 @@ class ActivityRecognitionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-
         isRunning.set(true)
-        val logStr = "ActivityRecognitionService onCreate called"
-        Log.d(TAG, logStr)
+        Log.i(TAG, "ActivityRecognitionService onCreate()")
         //writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
@@ -141,6 +139,7 @@ class ActivityRecognitionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "ActivityRecognitionService onStartCommand()")
         // Handle every ACTION_RECOGNITION intent
         if (intent?.action == ACTION_RECOGNITION &&
             ActivityRecognitionResult.hasResult(intent)) {
@@ -180,6 +179,7 @@ class ActivityRecognitionService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.i(TAG, "ActivityRecognitionService onDestroy()")
 
         if (!isRunning.getAndSet(false)) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return
@@ -208,7 +208,7 @@ class ActivityRecognitionService : Service() {
             // Push snapshot to repository
             scope.launch {
                 val nowHour = Instant.now().truncatedTo(ChronoUnit.HOURS)
-				//Log.d(TAG, "passiveDailyListenerCallback: nowHour: $nowHour; Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
+                //Log.d(TAG, "passiveDailyListenerCallback: nowHour: $nowHour; Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
                 repo.updateDailyMetrics(
                     timestampHour = nowHour,
                     steps         = cumulativeSteps,

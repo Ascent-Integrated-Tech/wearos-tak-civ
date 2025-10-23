@@ -9,24 +9,18 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Color
 import android.os.BatteryManager
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
-import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,45 +33,19 @@ class BatteryService: Service() {
     private val batteryMonitorRunnable = BatteryMonitorRunnable()
 
     override fun onCreate() {
-        Log.d(LOG_TAG, "BatteryService onCreate")
+        super.onCreate()
+        Log.d(TAG, "BatteryService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            BATTERY_MONITOR_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+        startBatteryMonitor()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-            startBatteryMonitor()
-        }
+        Log.d(TAG, "BatteryService onStartCommand()")
         return START_NOT_STICKY
-    }
-
-    private fun startForegroundService() {
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "Battery Monitor Service"
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV battery service running")
-            .setPriority(Context.BIND_WAIVE_PRIORITY)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        startForeground(BATTERY_MONITOR_SERVICE_NOTIFICATION_ID, notification)
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun createNotificationChannel(): String {
-        val channelId = "Battery Monitor Service"
-        val channelName = "Battery Foreground Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
     }
 
     private fun startBatteryMonitor() {
@@ -87,7 +55,7 @@ class BatteryService: Service() {
             batteryMonitorHandler = batteryMonitorThread?.looper?.let { Handler(it) }
             batteryMonitorHandler?.postDelayed(batteryMonitorRunnable, INITIAL_BATTERY_MONITOR_START_DELAY)
         } catch (e: IllegalThreadStateException) {
-            Log.e(LOG_TAG, "Not able to start the battery monitor thread ", e)
+            Log.e(TAG, "Not able to start the battery monitor thread ", e)
         }
     }
 
@@ -95,12 +63,12 @@ class BatteryService: Service() {
         try {
             val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
             val batteryStatus = context.registerReceiver(null, iFilter)
-            val level = (if ((batteryStatus != null)) batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) else -1).toFloat()
-            val scale = if ((batteryStatus != null)) batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1) else -1
+            val level = (batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1).toFloat()
+            val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
             //Log.d(LOG_TAG, "getBatteryPercentage: level ($level); scale ($scale)")
             return (level / scale) * 100
         } catch (e: RuntimeException) {
-            Log.e(LOG_TAG, "Error in getBatteryPercentage: ", e)
+            Log.e(TAG, "Error in getBatteryPercentage: ", e)
             return (-1000).toFloat()
         }
     }
@@ -125,18 +93,19 @@ class BatteryService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(LOG_TAG, "BatteryService onDestroy called")
+        Log.d(TAG, "BatteryService onDestroy()")
+        isRunning.set(false)
+        stopForeground(STOP_FOREGROUND_DETACH)
+
         if ((batteryMonitorThread != null) && (batteryMonitorHandler != null)) {
             batteryMonitorHandler?.removeCallbacks(batteryMonitorRunnable)
             batteryMonitorHandler?.looper?.quit()
             batteryMonitorThread?.quitSafely()
         }
-        isRunning.set(false)
-        //Log.d(LOG_TAG, "BatteryService Destroyed")
     }
 
     companion object {
-        private val LOG_TAG = "WearTAK-" + BatteryService::class.java.simpleName
+        private val TAG = "WearTAK-" + BatteryService::class.java.simpleName
         const private val INITIAL_BATTERY_MONITOR_START_DELAY = 1_000L // Set to 1 second
         //const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 3_00_000L // 5 minutes
         const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 60_000L // Set to 1 minute

@@ -196,7 +196,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertNum
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.restartTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
@@ -208,13 +207,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startActivityRecognitionService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startHeartrateService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startSkinTempService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
@@ -239,14 +231,9 @@ import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsAc
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.ActivityRecognitionService
-import com.aitech.weartak_civ.service.ChatService
-import com.aitech.weartak_civ.service.DittoService
-import com.aitech.weartak_civ.service.HeartrateService
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
-import com.aitech.weartak_civ.service.LocationService
-import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
@@ -280,6 +267,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingR
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
@@ -304,6 +294,7 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i(TAG, "SettingsActivity onCreate()")
         settingsActivity = this
         loadSettingsValues()
         //TODO: Is there a reason this is called here? Is the same thing done through main activity?
@@ -2551,7 +2542,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             popUpTo("settings_screen") { inclusive = true }
                         }
                     }
-                    startStopServicesLicense(context)
+//                    startStopServicesLicense(context)
                 }
             )
         }
@@ -3879,13 +3870,6 @@ fun SettingsScreen(
                         settingsChanged = true; locationCheckedChanged = true
                         enableLocationService = enableLocationServiceSettingsState.value ?: enableLocationService
                         requestStatusIconsComplicationUpdate(context)
-                        if (enableLocationService) {
-                            Log.d(TAG, "Trying to start location service")
-                            startLocationService()
-                        } else {
-                            Log.d(TAG, "Trying to stop location service")
-                            mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                        }
                         runBlocking {
                             // This is in case enableLocationService above is NOT set to enableLocationServiceSettingsState.value
                             enableLocationServiceSettingsState.postValue(enableLocationService)
@@ -3895,13 +3879,6 @@ fun SettingsScreen(
                     if (enableDittoService != enableDittoServiceSettingsState.value) {
                         settingsChanged = true; dittoCheckedChanged = true
                         enableDittoService = enableDittoServiceSettingsState.value ?: enableDittoService
-                        if (enableDittoService) {
-                            Log.d(TAG, "Trying to start ditto service")
-                            startDittoService()
-                        } else {
-                            Log.d(TAG, "Trying to stop ditto service")
-                            mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                        }
                         runBlocking {
                             enableDittoServiceSettingsState.postValue(enableDittoService)
                         }
@@ -3910,17 +3887,11 @@ fun SettingsScreen(
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
                         enableChatService = enableChatServiceSettingsState.value ?: enableChatService
-                        if (enableChatService) {
-                            Log.d(TAG, "Trying to start chat service")
-                            startChatService()
-                        } else {
-                            Log.d(TAG, "Trying to stop chat service")
-                            mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-                        }
                         runBlocking {
                             enableChatServiceSettingsState.postValue(enableChatService)
                         }
-                        restartTAKConnectService()
+                        //restartTAKConnectService()
+                        //TODO: Find out if we actually need to restart the tak connect service (manager should handle)
                         requestChatComplicationUpdate(context)
                     }
 
@@ -3955,17 +3926,6 @@ fun SettingsScreen(
                     if (enablePhysiologicalServices != enablePhysiologicalServicesSettingsState.value) {
                         settingsChanged = true; physioCheckedChanged = true
                         enablePhysiologicalServices = enablePhysiologicalServicesSettingsState.value ?: enablePhysiologicalServices
-                        if (enablePhysiologicalServices) {
-                            Log.d(TAG, "Trying to start physiological services")
-                            startHeartrateService()
-                            startActivityRecognitionService()
-                            startSkinTempService()
-                        } else {
-                            Log.d(TAG, "Trying to stop physiological services")
-                            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                            mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-                            mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-                        }
                         runBlocking {
                             enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
                         }
@@ -3975,12 +3935,11 @@ fun SettingsScreen(
                     if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState.value) {
                         settingsChanged = true; physiologicalAlertsCheckedChanged = true
                         enablePhysiologicalAlerts = enablePhysiologicalAlertsSettingState.value ?: enablePhysiologicalAlerts
-                        requestPhysioComplicationUpdate(context)
                         runBlocking {
                             enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
                         }
+                        requestPhysioComplicationUpdate(context)
                     }
-
 
                      if (settingsChanged) {
                          CoroutineScope(Dispatchers.Main).launch {

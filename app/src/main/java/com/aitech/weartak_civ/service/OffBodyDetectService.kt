@@ -9,25 +9,17 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
-import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_NOT_WORN
@@ -47,26 +39,30 @@ class OffBodyDetectService: Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "OffBodyDetectService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = OFFBODY_DETECT_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
+        runBlocking {
+            dataRepository.storeLatestIsDeviceWorn(false)
+        }
+        startOffBodySensor()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "OffBodyDetectService onStartCommand called w/ isRunning=$isRunning")
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-            runBlocking {
-                dataRepository.storeLatestIsDeviceWorn(false)
-            }
-            startOffBodySensor()
-        }
+        Log.d(TAG, "OffBodyDetectService onStartCommand()")
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "OffBodyDetectService onDestroy()")
         isRunning.set(false)
         stopOffBodySensor()
-        stopForeground(true)
-        Log.d(TAG, "OffbodyDetect Service Destroyed")
+        stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -78,45 +74,10 @@ class OffBodyDetectService: Service() {
         return null
     }
 
-    private fun startForegroundService() {
-        Log.d(TAG, "Starting offbody detect foreground service")
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "OffBodyDetect Service"
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV OffBodyDetect service running")
-            .setPriority(Context.BIND_WAIVE_PRIORITY)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        try {
-            startForeground(OFFBODY_DETECT_SERVICE_NOTIFICATION_ID, notification)
-        } catch (e: NullPointerException) {
-            Log.e(TAG, "Failed to set location ForegroundService", e )
-        }
-    }
-
-    private fun createNotificationChannel(): String {
-        val channelId = "OffBodyDetect_Service"
-        val channelName = "OffBodyDetect Foreground Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_HIGH
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
-    }
-
     fun startOffBodySensor() {
-        Log.d(TAG, "startOffBodySensor called")
+        Log.d(TAG, "OffBodyDetectService startOffBodySensor()")
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         offBodySensor = sensorManager.getDefaultSensor(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT)
-        //permission = checkPermissions()
         if (null != offBodySensor) {
             Log.d(TAG, "OffBody Sensor callback registered")
             sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
@@ -126,45 +87,39 @@ class OffBodyDetectService: Service() {
     }
 
     fun stopOffBodySensor() {
-        sensorManager.unregisterListener(sensorEventListener)
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(sensorEventListener)
+        }
     }
-
 
     val sensorEventListener = object : SensorEventListener {
         var offBodyDataFloat : Float = 0.0F
         var accuracyVal = -1
         //var lastTimeHrSent : Long = 0L
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-            Log.d(TAG, "onAccuracyChanged called w/ accuracy: $accuracy")
+            Log.d(TAG, "OffBodyDetectService onAccuracyChanged(): accuracy= $accuracy")
             accuracyVal = accuracy
         }
 
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT) {
                 offBodyDataFloat = event.values[0]
-                Log.d(TAG, "offBody onSensorChanged events with accuracy $accuracyVal and offbody $offBodyDataFloat")
+                Log.d(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(false)
-                        Log.d(TAG, "Stored isDeviceWorn as false");
+                        Log.i(TAG, "OffBodyDetectService Device is not worn");
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
                     }
                 } else {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(true)
-                        Log.d(TAG, "Stored isDeviceWorn as true");
+                        Log.i(TAG, "OffBodyDetectService Device is worn");
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))
                     }
                 }
             }
         }
-    }
-
-    private fun checkPermissions(): Boolean {
-        if (ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") != PackageManager.PERMISSION_GRANTED) {
-            return false
-        }
-        return true
     }
 
     companion object {

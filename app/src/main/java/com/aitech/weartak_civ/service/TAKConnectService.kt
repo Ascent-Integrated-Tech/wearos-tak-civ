@@ -10,24 +10,16 @@
 package com.aitech.weartak_civ.service
 
 
-import android.app.Notification
-import android.app.Notification.PRIORITY_MAX
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationCompat
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
@@ -82,6 +74,7 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -90,6 +83,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandA
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
 import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
+import kotlinx.coroutines.delay
+import java.net.SocketTimeoutException
 import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
@@ -125,12 +120,20 @@ class TAKConnectService: Service() {
     )
 
     override fun onCreate() {
-        Log.d(TAG, "TAKConnectService onCreate")
+        super.onCreate()
+        Log.d(TAG, "TAKConnectService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = TAK_CONNECT_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
+        setFromDatastore()
+        startMulticastCollector()
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-        startMulticastCollector()
-        return super.onCreate()
     }
 
     private fun startMulticastCollector() {
@@ -158,50 +161,15 @@ class TAKConnectService: Service() {
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-            isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
-            isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
-            setFromDatastore()
-            networkManager = NetworkManager.getInstance()
-            isNetworkConnected = networkManager?.isNetworkConnected() ?: false
-            isWifiConnected = networkManager?.isWifiConnected() ?: false
-            if (isNetworkConnected) {
-                Log.d(TAG, "onStartCommand: isNetworkConnected=$isNetworkConnected w/ isWifiConnected=$isWifiConnected")
-                connectToTakServers()
-            }
+        Log.d(TAG, "TAKConnectService onStartCommand()")
+        networkManager = NetworkManager.getInstance()
+        isNetworkConnected = networkManager?.isNetworkConnected() ?: false
+        isWifiConnected = networkManager?.isWifiConnected() ?: false
+        if (isNetworkConnected) {
+            Log.d(TAG, "TAKConnectService onStartCommand(): net=$isNetworkConnected wifi=$isWifiConnected")
+            connectToTakServers()
         }
         return START_NOT_STICKY
-    }
-
-    private fun startForegroundService() {
-        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel()
-        } else {
-            "TAK Connect Service"
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV TAK Connect service running")
-            .setPriority(PRIORITY_MAX)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        startForeground(TAK_CONNECT_SERVICE_NOTIFICATION_ID, notification)
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun createNotificationChannel(): String {
-        val channelId = "TAK Connect Service"
-        val channelName = "TAK Connect Background Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -210,13 +178,14 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "TAKConnectService onDestroy called")
+        Log.d(TAG, "TAKConnectService onDestroy()")
         isRunning.set(false)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
         networkManager = null
         closeTakServerSockets()
+        stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     private fun resetTakServerConnectionDetails() {
@@ -576,7 +545,7 @@ class TAKConnectService: Service() {
 
                 base64CSR = Base64.getEncoder().encodeToString(csr.encoded)
             } catch (e: Exception) {
-                Log.d(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
+                Log.e(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
             }
             return base64CSR
         }
@@ -690,7 +659,7 @@ class TAKConnectService: Service() {
                         return null
                     }
                     val responseBodyString = response.body?.string()
-                    Log.d(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
+                    Log.v(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
                     // Return the response body as string
                     return responseBodyString
                 }
@@ -764,7 +733,7 @@ class TAKConnectService: Service() {
                         return@runBlocking false
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "loadKeyStore failed w/ exception: ${e.message}", e)
+                    Log.w(TAG, "loadKeyStore failed w/ exception: ${e.message}", e)
                     return@runBlocking false
                 }
                 return@runBlocking true
@@ -781,7 +750,7 @@ class TAKConnectService: Service() {
                 //val expiryDate: Date = signedCert.getNotAfter()
                 val ca0Cert = parseBase64ToX509(signClientResponse.ca0 ?: "")
                 val ca1Cert = parseBase64ToX509(signClientResponse.ca1 ?: "")
-                Log.v(TAG, "signedCert expiry date: ${signedCert.getNotAfter()}")
+                Log.i(TAG, "signedCert expiry date: ${signedCert.getNotAfter()}")
                 Log.v(TAG, "ca0Cert expiry date: ${ca0Cert.getNotAfter()}")
                 Log.v(TAG, "ca1Cert expiry date: ${ca1Cert.getNotAfter()}")
 
@@ -805,7 +774,7 @@ class TAKConnectService: Service() {
                     try {
                         MainActivity.mainActivity.openFileOutput("$takServer.jks", Context.MODE_PRIVATE).use { fos ->
                             takServerDetail.keyStore.store(fos, keystorePassword)
-                            Log.d(TAG, "Keystore stored successfully in $takServer.jks")
+                            Log.i(TAG, "Keystore stored successfully in $takServer.jks")
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Not able to store keystore file as $takServer.jks. Error: ${e.message}")
@@ -972,7 +941,7 @@ class TAKConnectService: Service() {
                             connectTAKServer(takServerDetail)
                         } else {
                             deleteFile("${takServerDetail.address}.jks")
-                            Log.d(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
+                            Log.i(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
                             val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
                             var signClientResponse: SignClientResponse? = null
                             var base64CSR: String? = null
@@ -1077,7 +1046,7 @@ class TAKConnectService: Service() {
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             val takServer = takServerDetail.address
             val port = takServerDetail.port
-            Log.d(TAG,"connectTAKServer called for takServer ($takServer)")
+            Log.i(TAG,"connectTAKServer called for takServer ($takServer)")
             if (takServerDetail.connectionStatus.getAndSet(TAK_SERVER_CONNECTING_COT_PORT) == TAK_SERVER_OBTAINED_CLIENT_CERT) {
                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                 try {
@@ -1143,36 +1112,37 @@ class TAKConnectService: Service() {
 
                     // start a background COT‐reader on the same socket
                     CoroutineScope(Dispatchers.IO).launch {
-                        var openTakReceiveReader = false
-                        runBlocking {
-                            openTakReceiveReader = dataRepository.getEnableChatService.first()
-                        }
-                        if (!openTakReceiveReader) {
-                            return@launch
-                        }
                         try {
-                            Log.v(TAG, "Trying to read cot messages in.")
                             val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
                             val buffer = StringBuilder()
+
                             while (true) {
-                                val line = reader.readLine() ?: break
+                                // Gate: do not read unless chat is enabled
+                                if (!dataRepository.getEnableChatService.first()) {
+                                    delay(750)    // light sleep; re-check flag soon
+                                    continue
+                                }
+
+                                val line = try {
+                                    reader.readLine()
+                                } catch (e: SocketTimeoutException) {
+                                    // timeout just to re-check enabled/cancellation
+                                    continue
+                                } ?: break
+
                                 buffer.append(line)
 
-                                // work against the String version so we can substring easily
+                                // parse one <event> ... </event>
                                 val bufStr = buffer.toString()
                                 val endIdx = bufStr.indexOf("</event>")
                                 if (endIdx >= 0) {
-                                    // extract one complete <event>…</event>
                                     val rawXml = bufStr.substring(0, endIdx + "</event>".length)
-                                    // remove it from the buffer
                                     buffer.delete(0, endIdx + "</event>".length)
 
-                                    // only forward chat messages addressed to us or “All Chat Rooms”
                                     if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
                                     if (CotUtils.isChatMessage(rawXml)
                                         && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
                                         Log.d(TAG, "Received Chat for me:\n$rawXml")
-                                        Log.v(TAG, "Posting a tak chat message Event.")
                                         EventBus.getDefault().post(TakChatEvent(rawXml))
                                     }
                                 }
