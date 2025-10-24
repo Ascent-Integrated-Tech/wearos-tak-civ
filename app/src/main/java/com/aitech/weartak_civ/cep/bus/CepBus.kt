@@ -19,28 +19,28 @@ object CepBus {
 
     suspend fun emit(event: CepEvent<out CepPayload>) {
 
-        try {
+        /*try {
             Log.d(
                 TAG,
                 "Emit → topic=${event.topic}, ts=${event.ts}, payload=${event.payload}"
             )
         } catch (t: Throwable) {
             Log.w(TAG, "Emit log failed: ${t.message}")
-        }
+        }*/
 
         events.emit(event)
     }
 
     fun tryEmit(event: CepEvent<out CepPayload>): Boolean {
         val result = events.tryEmit(event)
-        try {
+        /*try {
             Log.d(
                 TAG,
                 "TryEmit → topic=${event.topic}, ts=${event.ts}, payload=${event.payload}, success=$result"
             )
         } catch (t: Throwable) {
             Log.w(TAG, "TryEmit log failed: ${t.message}")
-        }
+        }*/
         return result
     }
 }

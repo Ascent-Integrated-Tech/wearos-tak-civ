@@ -12,7 +12,7 @@ class DoubleRing(private val cap: Int) {
     fun lastOrNull(): Double? = if (size == 0) null else buf[(head - 1 + cap) % cap]
     fun getBack(k: Int): Double? {
         if (k <= 0 || k > size) return null
-        val idx = (head - 1 - k + 1_000_000 * cap) % cap
+        val idx = Math.floorMod(head - 1 - k, cap)
         return buf[idx]
     }
     fun tail(n: Int): List<Double> {
