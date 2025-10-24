@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +77,7 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.activeBhoundItem
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -134,6 +136,8 @@ class BloodhoundActivity  : ComponentActivity() {
 fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+    val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
+
 //    val bloodhoundDefaultList by dataRepository.bloodhoundItemsFlow.collectAsState(initial = emptyList())
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -145,9 +149,14 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
                 exitActivity()
             }
-            isValid == true && currentDestination != "bloodhound_screen" -> {
+            isValid && chatEnabledLive == true && currentDestination != "bloodhound_screen" -> {
                 navController.navigate("bloodhound_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
+                }
+            }
+            isValid && chatEnabledLive == false && currentDestination != "bloodhound_disabled_screen" -> {
+                navController.navigate("bloodhound_disabled_screen") {
+                    popUpTo(0) { inclusive = true }
                 }
             }
         }
@@ -155,10 +164,25 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
 
     SwipeDismissableNavHost(
         navController = navController,
-        startDestination = if (isLicenseValid()) "bloodhound_screen" else "invalid_license_screen"
+        startDestination =
+            if (isLicenseValid()) {
+                if (chatEnabledLive == true) "bloodhound_screen" else "bloodhound_disabled_screen"
+            } else {
+                "invalid_license_screen"
+            }
     ) {
         composable("bloodhound_screen" ) {
             BloodhoundScreen(bloodhoundDefaultList, navController, exitActivity, context)
+        }
+
+        composable("bloodhound_disabled_screen") {
+//            ChatDisabledScreen(navController, exitActivity)
+            ActivityDisabledScreen(
+                navController,
+                exitActivity,
+                stringResource(R.string.bloodhound_disabled),
+                "Please enable Chat in order to use this feature"
+            )
         }
 
         composable(

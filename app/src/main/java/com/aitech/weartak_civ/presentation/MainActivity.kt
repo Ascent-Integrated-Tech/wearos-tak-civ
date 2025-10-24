@@ -1067,6 +1067,7 @@ class MainActivity : ComponentActivity() {
         requestStatusIconsComplicationUpdate(context)
         requestChatComplicationUpdate(context)
         requestPhysioComplicationUpdate(context)
+        requestBloodhoundComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -2200,7 +2201,7 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ){
-                        BloodhoundButton(context, activeBhound)
+                        BloodhoundButton(context, activeBhound, chatCheckedLive)
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -2667,9 +2668,17 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
     }
 }
 @Composable
-fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?){
+fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?, chatChecked: Boolean?){
+    requestBloodhoundComplicationUpdate(context)
     Row(
-        modifier = Modifier.clickable(onClick = {context.startActivity(Intent(context, BloodhoundActivity::class.java))}),
+        modifier = Modifier.clickable(
+            onClick = {
+                if (chatChecked == true) {
+                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
+                } else {
+                    //Do nothing
+                }
+            }),
         verticalAlignment = Alignment.CenterVertically
     ){
         Image(
@@ -2680,29 +2689,53 @@ fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?){
                 .size(35.dp)
                 .graphicsLayer {
                     rotationZ =
-                    if (BloodhoundActivity.activeBhoundItem.value != null) activeBhound!!.orientation
-                    else 0F }
+                        if (chatChecked == true) {
+                            if (BloodhoundActivity.activeBhoundItem.value != null) {
+                                activeBhound!!.orientation
+                            } else {
+                                0F
+                            }
+                        } else {
+                            0F
+                        }
+                }
         )
         Column (
             modifier = Modifier.padding(start = 13.dp)
-        ){
-            if (BloodhoundActivity.activeBhoundItem.value != null) {
-                Text(
-                    text = activeBhound!!.target,
-                    fontSize = 13.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Medium,
-                )
+        ) {
+            if (chatChecked == true) {
+                if (BloodhoundActivity.activeBhoundItem.value != null) {
+                    Text(
+                        text = activeBhound!!.target,
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
 
-                Text(
-                    text = activeBhound.distance.toString(),
-                    fontSize = 15.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                    Text(
+                        text = activeBhound.distance.toString(),
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.compass),
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = "---",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             } else {
                 Text(
-                    text = "Compass",
+                    text = stringResource(R.string.compass),
                     fontSize = 13.sp,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Medium,

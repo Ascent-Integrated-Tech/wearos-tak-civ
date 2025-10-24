@@ -23,6 +23,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.complication.SosComplicationService.Companion.isAlertActive
 import com.aitech.weartak_civ.presentation.BloodhoundActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.isAnyBloodhoundingActive
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -30,13 +31,14 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
         val TAG = "WearTAK-" + BloodhoundComplicationService::class.java.simpleName
+        const val CHAT_DISABLED = "disabled"
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.SHORT_TEXT) {
             return null
         }
-        return createComplicationData(callsign, getString(R.string.watch_callsign), R.drawable.compass_1, "compass", 0F)
+        return createComplicationData(callsign, getString(R.string.watch_callsign), R.drawable.compass_1, getString(R.string.compass), 0F)
 
     }
 
@@ -45,21 +47,31 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
         }
         return when (isLicenseValid()) {
-            true -> return when (isAnyBloodhoundingActive()) {
-                true -> createComplicationData(
-                    BloodhoundActivity.activeBhoundItem.value?.distance.toString(),
-                    getString(R.string.watch_callsign),
-                    icon = R.drawable.compass_1,
-                    titleText = BloodhoundActivity.activeBhoundItem.value!!.target,
-                    BloodhoundActivity.activeBhoundItem.value!!.orientation
-                )
-                false -> createComplicationData(
+            true -> return when (chatComplication) {
+                CHAT_DISABLED -> createComplicationData(
                     "---",
                     getString(R.string.watch_callsign),
                     icon = R.drawable.compass_1,
-                    titleText = "Compass",
+                    titleText = getString(R.string.compass),
                     0F
                 )
+                else -> return when (isAnyBloodhoundingActive()) {
+                    true -> createComplicationData(
+                        BloodhoundActivity.activeBhoundItem.value?.distance.toString(),
+                        getString(R.string.watch_callsign),
+                        icon = R.drawable.compass_1,
+                        titleText = BloodhoundActivity.activeBhoundItem.value!!.target,
+                        BloodhoundActivity.activeBhoundItem.value!!.orientation
+                    )
+
+                    false -> createComplicationData(
+                        "---",
+                        getString(R.string.watch_callsign),
+                        icon = R.drawable.compass_1,
+                        titleText = getString(R.string.compass),
+                        0F
+                    )
+                }
             }
             false -> createComplicationData(
                 getString(R.string.invalid_license), getString(R.string.invalid_license_key),
