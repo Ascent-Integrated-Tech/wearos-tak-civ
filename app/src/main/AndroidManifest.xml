@@ -300,6 +300,16 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
         <service
+            android:name=".service.GoogleActivityRecognition"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="health"/>
+        <service
+            android:name=".service.MovementDetectionService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="health"/>
+        <service
             android:name=".service.CustomAccessibilityService"
             android:enabled="true"
             android:exported="true"

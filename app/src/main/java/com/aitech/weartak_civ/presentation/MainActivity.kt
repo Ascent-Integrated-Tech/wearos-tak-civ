@@ -242,6 +242,8 @@ class MainActivity : ComponentActivity() {
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableMulticastOnWifi: Boolean = true
         var enableBatdokCot: Boolean = true
+        var enableMovementDetectionService: Boolean = true
+        var enableGoogleActivityRecognitionService: Boolean = true
 
         //Enable Global Health Events
         var enablePassiveDataService = false
