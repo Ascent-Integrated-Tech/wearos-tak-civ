@@ -20,11 +20,9 @@ import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.complication.SosComplicationService.Companion.isAlertActive
-import com.aitech.weartak_civ.presentation.BloodhoundActivity
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
-import com.aitech.weartak_civ.presentation.isAnyBloodhoundingActive
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
@@ -41,32 +39,50 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+        val bhRepo = (applicationContext as WearTakApplication).bhRepo
+        val active = bhRepo.activeBloodhoundUi.value
+
         if (null == mainActivityIsInit) {
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
         }
-        return when (isLicenseValid()) {
-            true -> return when (isAnyBloodhoundingActive()) {
-                true -> createComplicationData(
-                    BloodhoundActivity.activeBhoundItem.value?.distance.toString(),
-                    getString(R.string.watch_callsign),
+//        return when (isLicenseValid()) {
+//            true -> return when (isAnyBloodhoundingActive()) {
+//                true -> createComplicationData(
+//                    BloodhoundActivity.activeBhoundItem.value?.distance.toString(),
+//                    getString(R.string.watch_callsign),
+//                    icon = R.drawable.compass_1,
+//                    titleText = BloodhoundActivity.activeBhoundItem.value!!.target,
+//                    BloodhoundActivity.activeBhoundItem.value!!.orientation
+//                )
+//                false -> createComplicationData(
+//                    "---",
+//                    getString(R.string.watch_callsign),
+//                    icon = R.drawable.compass_1,
+//                    titleText = "Compass",
+//                    0F
+//                )
+//            }
+//            false -> createComplicationData(
+//                getString(R.string.invalid_license), getString(R.string.invalid_license_key),
+//                icon = R.drawable.compass_1,
+//                titleText = getString(R.string.invalid_license),
+//                0F
+//            )
+//        }
+        return if (isLicenseValid()) {
+            if (active != null) {
+                createComplicationData(
+                    text = active.distance.toString() + " km",
+                    contentDescription = getString(R.string.watch_callsign),
                     icon = R.drawable.compass_1,
-                    titleText = BloodhoundActivity.activeBhoundItem.value!!.target,
-                    BloodhoundActivity.activeBhoundItem.value!!.orientation
+                    titleText = active.target,
+                    orientation = active.orientation
                 )
-                false -> createComplicationData(
-                    "---",
-                    getString(R.string.watch_callsign),
-                    icon = R.drawable.compass_1,
-                    titleText = "Compass",
-                    0F
-                )
+            } else {
+                createComplicationData("---", getString(R.string.watch_callsign), R.drawable.compass_1, "Compass", 0F)
             }
-            false -> createComplicationData(
-                getString(R.string.invalid_license), getString(R.string.invalid_license_key),
-                icon = R.drawable.compass_1,
-                titleText = getString(R.string.invalid_license),
-                0F
-            )
+        } else {
+            createComplicationData(getString(R.string.invalid_license), getString(R.string.invalid_license_key), R.drawable.compass_1, getString(R.string.invalid_license), 0F)
         }
     }
 
@@ -78,7 +94,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     //TODO: WEAR-161: Change this back and add code to bloodhoundcomplicationservice when its made
 
     //TODO: WEAR-161: See if this is more or less jank than referencing the 360 images vvvv
-   private fun getRotatedCompassBitmap(
+    private fun getRotatedCompassBitmap(
         context: Context,
         @DrawableRes drawableResId: Int,
         rotationDegrees: Float
