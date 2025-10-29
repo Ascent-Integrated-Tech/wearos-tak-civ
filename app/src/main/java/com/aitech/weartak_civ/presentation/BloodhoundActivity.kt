@@ -36,7 +36,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -74,15 +76,18 @@ import androidx.navigation.navArgument
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
+import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.activeBhoundItem
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
         lateinit var bloodhoundActivity : BloodhoundActivity
-        val TAG = "WearTAK-" + BloodhoundActivity::class.java.simpleName
+        val TAG = "WearTAK-BloodHActivity"
         var bloodhoundDefaultList = mutableStateListOf(
             Utils.BloodhoundItem(
                 target = "Denny's",
@@ -112,9 +117,8 @@ class BloodhoundActivity  : ComponentActivity() {
                 bloodhounding = false
             )
         )
-        var activeBhoundItem = MutableLiveData<Utils.BloodhoundItem>(null)
-
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bloodhoundActivity = this
@@ -123,7 +127,10 @@ class BloodhoundActivity  : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context)
+                    BloodhoundCivApp(
+                        exitActivity = {finishAndRemoveTask()},
+                        context
+                    )
                 }
             }
         }
@@ -136,9 +143,10 @@ class BloodhoundActivity  : ComponentActivity() {
 fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val uiList by bhRepo.listBloodhoundsUi.collectAsState(initial = emptyList())
     val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
 
-//    val bloodhoundDefaultList by dataRepository.bloodhoundItemsFlow.collectAsState(initial = emptyList())
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
         val currentDestination = navController.currentBackStackEntry?.destination?.route
@@ -172,7 +180,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
             }
     ) {
         composable("bloodhound_screen" ) {
-            BloodhoundScreen(bloodhoundDefaultList, navController, exitActivity, context)
+            BloodhoundScreen(bloodhounds = uiList, navController, exitActivity, context)
         }
 
         composable("bloodhound_disabled_screen") {
@@ -190,8 +198,9 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
             arguments = listOf(navArgument("index") { type = NavType.IntType })
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
-            Log.d(TAG, "bloodhound_screen_detailed index: $index")
-            BloodhoundScreenDetailed(navController, index, bloodhoundDefaultList, context,{ exitActivity() })
+            val uidFromIndex = uiList[index].uid
+            Log.d(TAG, "bloodhound_screen_detailed index: $index, uidFromIndex: $uidFromIndex")
+            BloodhoundScreenDetailed(navController, index, uiList, context,{ exitActivity() })
         }
 
         composable(
@@ -251,7 +260,13 @@ fun BloodhoundScreen(
                             bloodhoundItem.distance,
                             bloodhoundItem.bloodhounding,
                             bloodhoundItem.orientation,
-                            {navController.navigate("bloodhound_screen_detailed/$index")}
+                            {
+                                if (bloodhoundItem.uid.isNotBlank()) {
+                                    navController.navigate("bloodhound_screen_detailed/$index")
+                                } else {
+                                    Log.i(TAG, "Blank bloodhoundItem")
+                                }
+                            }
                         )
                     }
                 }
@@ -261,7 +276,7 @@ fun BloodhoundScreen(
                     onClick = {
                         exitActivity()
                         context.startActivity(Intent(context, MainActivity::class.java))
-                })
+                    })
             }
         }
     }
@@ -347,56 +362,82 @@ fun BloodhoundScreenDetailed(
     index: Int,
     bloodhoundList: List<Utils.BloodhoundItem>,
     context: Context,
-    exitActivity: () -> Unit
+    exitActivity: () -> Unit,
 ) {
-    val bloodhoundItem = bloodhoundList.getOrNull(index)
-    val bhoundTarget = bloodhoundItem?.target.orEmpty()
-    val bhoundCallsign = bloodhoundItem?.callsign.orEmpty()
-    val bhoundTimeReceived = bloodhoundItem!!.timeReceived
-    val bhoundDistance = bloodhoundItem.distance
-    val bhoundOrientation = bloodhoundItem.orientation
-    var bhoundBloodhounding = bloodhoundItem.bloodhounding
+    Log.i(TAG, "Got here 0")
+    val app = context.applicationContext as WearTakApplication
+    val bhRepo = app.bhRepo
+    Log.i(TAG, "Got here 1")
+    val list = bhRepo.listBloodhoundsUi.collectAsState().value
+    // 2) resolve uid *once* from the index, but guard
+    val initialUid = remember(index, list.size) {
+        list.getOrNull(index)?.uid
+    }
+
+    // 3) if we failed to resolve, bail
+    if (initialUid == null) {
+        LaunchedEffect(Unit) { navController.popBackStack() }
+        return
+    }
+
+    // 4) always re-find by uid (index may be stale after mutations)
+    val item = list.firstOrNull { it.uid == initialUid }
+
+    // 5) if removed (e.g., NPOS), bounce out gracefully
+    if (item == null) {
+        LaunchedEffect(initialUid) { navController.popBackStack() }
+        return
+    }
+
+    val bhoundTarget = item.target
+    val bhoundCallsign = item.callsign
+    val bhoundTimeReceived = item.timeReceived
+    val bhoundDistance = item.distance
+    val bhoundOrientation = item.orientation
+    var bhoundBloodhounding = item.bloodhounding
 
     WearTakCivScreenDimensions(
-    columnContent = {
-        Text(
-            //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
-            text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
-            fontSize = 14.sp,
-            overflow = TextOverflow.Ellipsis,
-            color = if (bhoundBloodhounding) Color.White else Color.LightGray,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(bottom = 10.dp)
-        )
-        DetailedBloodhoundInfo(
-            distance = bhoundDistance,
-            callsign = bhoundCallsign,
-            timeReceived = bhoundTimeReceived,
-            orientation = bhoundOrientation
-        )
-        if (bhoundBloodhounding){
-            Button(
-                onClick = {
-                    exitActivity()
-                    bloodhoundDefaultList.removeAt(index)
-                    activeBhoundItem.value = null
-                    requestBloodhoundComplicationUpdate(context)
-                },
-                modifier = Modifier.padding(top = 10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.primary,
-                    contentColor = Color.Black
-                ),
-            ) {
-                Text(
-                    text = stringResource(R.string.npos),
-                    fontSize = 15.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    color = Color.Black,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            //TODO: WEAR-161: Add when chat backend is finished
+        columnContent = {
+            Text(
+                //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
+                text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
+                fontSize = 14.sp,
+                overflow = TextOverflow.Ellipsis,
+                color = if (bhoundBloodhounding) Color.White else Color.LightGray,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
+            DetailedBloodhoundInfo(
+                distance = bhoundDistance,
+                callsign = bhoundCallsign,
+                timeReceived = bhoundTimeReceived,
+                orientation = bhoundOrientation
+            )
+            if (bhoundBloodhounding){
+                Button(
+                    onClick = {
+//                        bloodhoundDefaultList.removeAt(index)
+                        bhRepo.requestInPosition(item.uid)
+//                        activeBhoundItem.value = null
+                        requestBloodhoundComplicationUpdate(context)
+                        navController.popBackStack()
+                        exitActivity()
+                    },
+                    modifier = Modifier.padding(top = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.primary,
+                        contentColor = Color.Black
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.npos),
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        color = Color.Black,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                //TODO: WEAR-161: Add when chat backend is finished
 //            Button(
 //                onClick = {},
 //                modifier = Modifier.padding(top = 7.dp),
@@ -420,41 +461,45 @@ fun BloodhoundScreenDetailed(
 //                    fontWeight = FontWeight.SemiBold,
 //                )
 //            }
-        } else {
-            Button(
-                onClick = {
-                    activeBhoundItem.value = bloodhoundItem
-                    requestBloodhoundComplicationUpdate(context)
-                    setActiveBloodhound(index)
-                    Log.d(TAG, bloodhoundDefaultList.toString())
-                    exitActivity()
-                },
-                modifier = Modifier.padding(top = 10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.primary,
-                    contentColor = Color.Black
-                ),
-            ) {
-                Text(
-                    text = stringResource(R.string.rgr),
-                    fontSize = 15.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    color = Color.Black,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-    },
-    rowContent = {
-        BackButton(
-            onClick = {
-                navController.navigate("bloodhound_screen") {
-                    popUpTo("bloodhound_screen") { inclusive = true }
+            } else {
+                Button(
+                    onClick = {
+//                        activeBhoundItem.value = bloodhoundItem
+//                        setActiveBloodhound(index)
+
+                        bhRepo.requestActivateBloodhound(item.uid)
+                        requestBloodhoundComplicationUpdate(context)
+//                        Log.d(TAG, bloodhoundDefaultList.toString())
+                        Log.i(TAG, "Requesting Ack and Activation of bloodhound")
+                        navController.popBackStack()
+                        exitActivity()
+                    },
+                    modifier = Modifier.padding(top = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.primary,
+                        contentColor = Color.Black
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.rgr),
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        color = Color.Black,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
-            })
-    },
-    text = bhoundTarget
-)
+            }
+        },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("bloodhound_screen") {
+                        popUpTo("bloodhound_screen") { inclusive = true }
+                    }
+                })
+        },
+        text = bhoundTarget
+    )
 }
 
 @Composable
@@ -483,9 +528,9 @@ fun DetailedBloodhoundInfo(
             horizontalAlignment = Alignment.CenterHorizontally
         ){
             RotatingArrowIcon(
-                    degrees = orientation,
-                    color = Color.White,
-                    modifier = Modifier.size(ChipDefaults.IconSize)
+                degrees = orientation,
+                color = Color.White,
+                modifier = Modifier.size(ChipDefaults.IconSize)
             )
             Text(
                 text = orientation.toString(),
@@ -575,7 +620,7 @@ fun requestBloodhoundComplicationUpdate(context: Context) {
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
 }
-
+/*
 fun isAnyBloodhoundingActive(/*items: List<Utils.BloodhoundItem>*/): Boolean {
     val items = bloodhoundDefaultList
     return items.any { it.bloodhounding }
@@ -609,12 +654,13 @@ fun setActiveBloodhound(index: Int) {
     bloodhoundList.clear()
     bloodhoundList.addAll(reorderedList)
 }
-
+*/
 @Preview(widthDp = 192, heightDp = 300, showBackground = true)
 @Composable
 fun BloodhoundScreenPreview() {
     BloodhoundScreen(bloodhoundDefaultList, rememberSwipeDismissableNavController(), {}, LocalContext.current)
 }
+
 @Preview(widthDp = 192, heightDp = 300, showBackground = true)
 @Composable
 fun BloodhoundDetailedScreenPreview() {
