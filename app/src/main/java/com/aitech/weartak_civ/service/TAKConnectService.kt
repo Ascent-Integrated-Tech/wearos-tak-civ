@@ -1165,7 +1165,7 @@ class TAKConnectService: Service() {
                                         val mapItem = BloodhoundRepository.MarkerMapItem(markerCotEvent)
                                         val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                             mapItem = mapItem,
-                                            server = takServerDetail,
+                                            server = takServerDetail.address,
                                             timeIssued = mapItem.link.productionTime,
                                             timeCompleted = null
                                         )

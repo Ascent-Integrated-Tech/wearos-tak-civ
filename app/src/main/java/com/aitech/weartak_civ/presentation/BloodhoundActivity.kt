@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -76,6 +77,7 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -111,7 +113,6 @@ class BloodhoundActivity  : ComponentActivity() {
             )
         )
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bloodhoundActivity = this
@@ -120,14 +121,28 @@ class BloodhoundActivity  : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    BloodhoundCivApp(
-                        exitActivity = {finishAndRemoveTask()},
-                        context
-                    )
+                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context)
                 }
             }
         }
     }
+
+    override fun onPause() {
+        super.onPause()
+        Log.i(TAG, "onPause() Bloodhound")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.i(TAG, "onDestroy() Bloodhound")
+    }
+    
+    override fun onStart() {
+        super.onStart()
+        Log.i(TAG, "onStart() Bloodhound")
+    }
+
+    
 }
 
 
@@ -138,12 +153,14 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
+    val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
         val currentDestination = navController.currentBackStackEntry?.destination?.route
         val isValid = isLicenseValid()
 
+        Log.i(TAG, "isValid: $isValid, currentDest: $currentDestination, chatEnabledLive: $chatEnabledLive")
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
@@ -191,7 +208,11 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
 
         composable(
             "invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            LaunchedEffect(Unit) {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+                Log.i(TAG, "Launching Settings from invalid_license_screen")
+                exitActivity()   // <-- actually call it so the user returns to MainActivity
+            }
         }
     }
 }
@@ -213,6 +234,7 @@ fun BloodhoundScreen(
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
+            OrientationAware()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -379,9 +401,14 @@ fun BloodhoundScreenDetailed(
     val bhoundDistance = item.distance
     val bhoundOrientation = item.orientation
     var bhoundBloodhounding = item.bloodhounding
+    val timeUtc = java.time.format.DateTimeFormatter
+        .ofPattern("HH:mm 'UTC'")
+        .withZone(java.time.ZoneOffset.UTC)
+        .format(java.time.Instant.ofEpochMilli(bhoundTimeReceived))
 
     WearTakCivScreenDimensions(
         columnContent = {
+            OrientationAware()
             Text(
                 //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
                 text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
@@ -394,7 +421,7 @@ fun BloodhoundScreenDetailed(
             DetailedBloodhoundInfo(
                 distance = bhoundDistance,
                 callsign = bhoundCallsign,
-                timeReceived = bhoundTimeReceived,
+                timeReceived = timeUtc,
                 orientation = bhoundOrientation
             )
             if (bhoundBloodhounding){
@@ -500,7 +527,7 @@ fun bloodhoundingTextFromString(bloodhounding: Boolean?): String {
 fun DetailedBloodhoundInfo(
     distance: Double?,
     callsign: String,
-    timeReceived: Long,
+    timeReceived: String,
     orientation: Float
 ) {
     Row(
@@ -541,7 +568,7 @@ fun DetailedBloodhoundInfo(
                 fontWeight = FontWeight.Normal
             )
             Text(
-                text = stringResource(R.string.sent) + utcToHoursMinutes(timeReceived),
+                text = stringResource(R.string.sent) + timeReceived,
                 fontSize = 15.sp,
                 overflow = TextOverflow.Ellipsis,
                 color = Color.LightGray,
@@ -598,7 +625,7 @@ fun RotatingArrowIcon(
 
 
 fun requestBloodhoundComplicationUpdate(context: Context) {
-    Log.d(MainActivity.Constants.TAG, "requestBloodhoundComplicationUpdate called")
+//    Log.d(MainActivity.Constants.TAG, "requestBloodhoundComplicationUpdate called")
     val componentName = ComponentName(context, BloodhoundComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)

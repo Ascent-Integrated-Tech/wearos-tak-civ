@@ -15,9 +15,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
@@ -89,7 +91,7 @@ class BloodhoundRepository(private val context: Context) {
     data class BloodhoundEvent(
         val mapItem: MarkerMapItem,                      // to identify the event, calc trajectory,
         val uid: String = mapItem.uid,                   // unique identifier of the event
-        val server: TAKConnectService.TakServerDetail,   // so we can reply via chat to the proper socket  //TODO: Instead of passing the entire details, we can pass a uuid for a tak server detail map...
+        val server: String,                              // so we can reply via chat to the proper socket  //TODO: Instead of passing the entire details, we can pass a uuid for a tak server detail map...
         var issuer: Link = mapItem.link,                 // so we send the chat to the right person
         var timeIssued: Long?,                            // tell user on UI when it was sent.
         val timeCompleted: Long?,                         // tell the issuer how long it took.
@@ -184,11 +186,14 @@ class BloodhoundRepository(private val context: Context) {
         val distKmRounded = distKm?.round(2) ?: 0.0
         val needle = this.compass.targetBearingDeg ?: 0.0
 
+//        val eventMs = Utils.toMillis(bhEvent.timeIssued) ?: System.currentTimeMillis()
+        val eventMs = System.currentTimeMillis()
+
         return Utils.BloodhoundItem(
             target        = this.target.name,
             uid           = this.uid,
             callsign      = this.bhEvent.issuer.parentCallsign ?: "unknown",
-            timeReceived  = this.bhEvent.timeIssued ?: 0,
+            timeReceived  = eventMs,
             distance      = distKmRounded,
             orientation   = needle.round(1).toFloat(),
             bloodhounding = isActive
@@ -218,21 +223,21 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     // ---- API ----
-    fun addOrReplaceBloodhound(item: BloodhoundItem) {
-        _bloodhoundMap.update { prev -> prev + (item.uid to item) }
-    }
-
-    fun removeBloodhound(uid: String) {
-        _activeUid.value = null
-        _bloodhoundMap.update { prev -> prev - uid }
-    }
-
     fun updateBloodhoundItemVector(uid: String, vector: VectorToTarget) {
         updateBloodhound(uid) { it.copy(vector = vector) }
     }
 
-    fun updateAckState(uid: String, acknowledged: Boolean) {
-        updateBloodhound(uid) { it.copy(state = it.state.copy(acknowledged = acknowledged)) }
+    fun upsertFromEvent(e: BloodhoundEvent) {
+        _bloodhoundMap.update { prev ->
+            val curr = prev[e.uid]
+            val updated = if (curr == null) {
+                BloodhoundItem(e)
+            } else {
+                // Preserve state; refresh event payload
+                curr.copy(bhEvent = e)
+            }
+            prev + (e.uid to updated)
+        }
     }
 
     suspend fun storeActiveBloodhoundItems(list: List<BloodhoundItem>) {
@@ -243,60 +248,39 @@ class BloodhoundRepository(private val context: Context) {
     }
     val getLastActiveBloodhound: Flow<String> = context.dataStore.data.map { prefs -> prefs[ACTIVE_BLOOD_HOUND] ?: "" }
 
+    private val _requestActivateBloodhound = MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 1)
+    val requestActivateBloodhound = _requestActivateBloodhound.asSharedFlow()
 
-    private val _requestActivateBloodhound =  MutableStateFlow<String>("")
-    val requestActivateBloodhound: StateFlow<String> = _requestActivateBloodhound
+    private val _requestAcknowledgement = MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 1)
+    val requestAcknowledgement = _requestAcknowledgement.asSharedFlow()
+
+    private val _requestInPosition = MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 1)
+    val requestInPosition = _requestInPosition.asSharedFlow()
+
+    fun requestInPosition(uid: String) {
+        _requestInPosition.tryEmit(uid)
+    }
 
     fun requestActivateBloodhound(uid: String) {
-        if (isUidValid(uid)) {
-            _requestActivateBloodhound.update { uid }
-        }
-    }
-
-    private val _requestAcknowledgement = MutableStateFlow<String>("")
-    val requestAcknowledgement: StateFlow<String> = _requestAcknowledgement     // Collected by the ChatService to send out a chat message to the issuer
-    fun requestAcknowledgement(uid: String) {
-        if (isUidValid(uid)) {
-            _requestAcknowledgement.update { uid }
-        }
-    }
-
-    private val _requestInPosition = MutableStateFlow<String>("")
-    val requestInPosition: StateFlow<String> = _requestInPosition  // Collected by the ChatService to send out a chat message to the issuer
-    fun requestInPosition(uid: String) {
-        _requestInPosition.update { uid }
-    }
-
-    fun setAcknowledged(uid: String, acknowledged: Boolean) {
-        updateBloodhound(uid) { it.copy(state = it.state.copy(acknowledged = acknowledged)) }
+        if (isUidValid(uid)) _requestActivateBloodhound.tryEmit(uid)
     }
 
     fun setActive(uid: String, active: Boolean) {
         if (!isUidValid(uid)) return
-        val currentActive = _activeUid.value
-        if (currentActive != null && currentActive != uid) {
-            Log.i(TAG, "Clearing previous active Bloodhound: $currentActive")
-            clearActive()
+        _bloodhoundMap.update { prev ->
+            prev.mapValues { (k, v) ->
+                val makeActive = active && (k == uid)
+                v.copy(state = v.state.copy(active = makeActive))
+            }
         }
-
-        _activeUid.value = uid
-        Log.i(TAG, "Active Bloodhound set: $uid")
-
-        updateBloodhound(uid) { it.copy(state = it.state.copy(active = active)) }
+        _activeUid.value = if (active) uid else null
     }
 
-    fun clearActive() {
-        val prev = _activeUid.value
-        if (prev != null) {
-            Log.i(TAG, "Active Bloodhound cleared: $prev")
-            _activeUid.value = null
-        }
-    }
-
-    fun setInPos(uid: String, inPos: Boolean) {
-        updateBloodhound(uid) { it.copy(state = it.state.copy(active = false)) }
-        updateBloodhound(uid) { it.copy(state = it.state.copy(inPos = inPos)) }
-        removeBloodhound(uid)
+    fun setInPos(uid: String) {
+        // (emit any side-effects first, if needed)
+        val wasActive = (_activeUid.value == uid)
+        _bloodhoundMap.update { prev -> prev - uid }
+        if (wasActive) _activeUid.value = null
     }
 
     fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)
@@ -319,17 +303,17 @@ class BloodhoundRepository(private val context: Context) {
         prefs[ENABLE] ?: false
     }
 
+    suspend fun storeEnableBloodhoundService(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE] = enable
+        }
+    }
+
     private val _bloodhoundEvent = MutableStateFlow<BloodhoundEvent?>(null)
     val bloodhoundEvent: StateFlow<BloodhoundEvent?> = _bloodhoundEvent
 
     suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
         _bloodhoundEvent.emit(event)
-    }
-
-    suspend fun storeEnableBloodhoundService(enable: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE] = enable
-        }
     }
 
     // ===== Compass section START =====

@@ -18,6 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 
@@ -85,7 +88,7 @@ class BloodhoundService: Service() {
     }
 
     private fun collectBloodhoundFlows() {
-        collectBloodMapFlow()
+//        collectBloodMapFlow()
         collectBloodEventFlow()
         collectAzimuthFlow()
         collectAckReqFlow()
@@ -111,74 +114,53 @@ class BloodhoundService: Service() {
 
     private fun collectBloodEventFlow() {
         scope.launch {
-            bhRepo.bloodhoundEvent.collect { event ->
-                Log.i(TAG, "Bloodhound Event updated: \n $event")
-                if (event != null ) {
-                    val map = bhRepo.bloodhoundMap.value
-                    if (!map.contains(event.uid)) {
-                        val item = BloodhoundItem(event)
-                        bhRepo.addOrReplaceBloodhound(item)
-                    }
+            bhRepo.bloodhoundEvent
+                .filterNotNull()
+                .collect { event ->
+                    Log.i(TAG, "Bloodhound Event updated:\n$event")
+                    bhRepo.upsertFromEvent(event)
                     updateVectors()
                 }
-            }
         }
     }
 
-    private fun collectBloodMapFlow() {
-        scope.launch {
-            bhRepo.bloodhoundMap.collect { map ->
-//                Log.i(TAG, "Bloodhound Map changed: \n $map")
-            }
-        }
-    }
+//    private fun collectBloodMapFlow() {
+//        scope.launch {
+//            bhRepo.bloodhoundMap.collect { map ->
+////                Log.i(TAG, "Bloodhound Map changed: \n $map")
+//            }
+//        }
+//    }
 
     private fun collectAckReqFlow() {
         scope.launch {
-            bhRepo.requestAcknowledgement.collect { uid ->
-                if (uid.isNotBlank()) {
-                    bhRepo.requestActivateBloodhound(uid)
-                }
+            bhRepo.requestAcknowledgement
+                .filter { uid -> uid.isNotBlank()}
+                .collect { uid ->
+                    Log.i(TAG, "Request for Ack Received...")
+                    if (uid.isNotBlank()) {
+                        Log.i(TAG, "Requesting for Activation.")
+                        bhRepo.requestActivateBloodhound(uid)
+                    }
             }
         }
     }
 
     private fun collectActivationReqFlow() {
-        // When UI requests activate, backend clears any previous and sets new active
         scope.launch {
             bhRepo.requestActivateBloodhound.collect { uid ->
-                if (uid.isNotBlank() && bhRepo.isUidValid(uid)) {
-                    logBloodhoundTable()
-                    // clear any currently active
-                    Log.i(TAG, "Request for Activation: $uid")
-                    val map = bhRepo.bloodhoundMap.value
-                    map.keys.forEach { k ->
-                        bhRepo.setActive(k, active = (k == uid))
-                    }
-
-                    val curr = bhRepo.activeUid.value
-                    if (curr != null && curr != uid) {
-                        bhRepo.setActive(curr, false)
-                    }
-                    bhRepo.setAcknowledged(uid, acknowledged = true) // For ACK states
+                if (bhRepo.isUidValid(uid)) {
                     bhRepo.setActive(uid, true)
-                    logBloodhoundTable()
                 }
-
             }
         }
     }
 
     private fun collectInPosReqFlow() {
-        // When UI requests NPOS, backend executes the desired policy
         scope.launch {
             bhRepo.requestInPosition.collect { uid ->
                 if (uid.isNotBlank()) {
-                    logBloodhoundTable()
-                    // mark in position and remove from list
-                    bhRepo.setInPos(uid, true)
-                    logBloodhoundTable()
-                    // TODO: Send Chat message flow
+                    bhRepo.setInPos(uid) // removes immediately
                 }
             }
         }

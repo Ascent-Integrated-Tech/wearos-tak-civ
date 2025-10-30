@@ -51,7 +51,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     titleText = getString(R.string.compass),
                     0F
                 )
-                else -> return when (active) {
+                else -> return when (active != null) {
                     true -> createComplicationData(
                         text = active.distance.toString() + " km",
                         contentDescription = getString(R.string.watch_callsign),
@@ -86,7 +86,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     //TODO: WEAR-161: Change this back and add code to bloodhoundcomplicationservice when its made
 
     //TODO: WEAR-161: See if this is more or less jank than referencing the 360 images vvvv
-    private fun getRotatedCompassBitmap(
+   private fun getRotatedCompassBitmap(
         context: Context,
         @DrawableRes drawableResId: Int,
         rotationDegrees: Float

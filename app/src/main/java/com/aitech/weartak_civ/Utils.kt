@@ -528,6 +528,9 @@ object Utils {
         }
     }
 
+    fun toMillis(x: Long?): Long? =
+        x?.let { if (it < 1_000_000_000_000L) it * 1000 else it }
+
     object CotUtils {
 
         object Bloodhound {
@@ -584,6 +587,7 @@ object Utils {
                     detail = detail
                 )
             }
+
 
             // --- Marker classification (MVP) ---
 
