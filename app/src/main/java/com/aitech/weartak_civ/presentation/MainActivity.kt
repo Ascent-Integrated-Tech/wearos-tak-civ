@@ -26,7 +26,6 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -92,7 +91,6 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.getString
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -159,23 +157,15 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BatteryService
-import com.aitech.weartak_civ.service.BleBeaconService
-import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CustomAccessibilityService
-import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
-import com.aitech.weartak_civ.service.LocationService
-import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
-import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
 import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
-import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.delay
@@ -196,7 +186,6 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import com.aitech.weartak_civ.service.PassiveDataService
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.google.gson.Gson
@@ -206,15 +195,14 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.util.EnumMap
-import kotlin.math.min
-
 
 class MainActivity : ComponentActivity() {
 
@@ -258,6 +246,8 @@ class MainActivity : ComponentActivity() {
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
+        lateinit var bhRepo: BloodhoundRepository
+
         @SuppressLint("StaticFieldLeak")
         var networkManager : NetworkManager? = null
         var takConnectService : TAKConnectService? = null
@@ -915,6 +905,7 @@ class MainActivity : ComponentActivity() {
 
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
+        bhRepo = (context.applicationContext as WearTakApplication).bhRepo
 
         seedVariablesFromRepo()
         refreshUI(context)
@@ -2050,7 +2041,6 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         }
     }
 
-
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
         navController = navController,
@@ -2061,6 +2051,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
                 navController = navController,
                 callsignState = callsignLiveDataState,
                 dataRepository = dataRepository,
+                bhRepo = bhRepo,
                 context = context
             )
         }
@@ -2080,7 +2071,8 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 fun MainScreen(
     navController: NavController,
     callsignState: MutableLiveData<String>,
-    dataRepository: DataRepository, // Add dataRepository parameter
+    dataRepository: DataRepository, // Add dataRepository parameter,
+    bhRepo: BloodhoundRepository,
     context: Context // Add context parameter
 ) {
     //Log.d(TAG, "MainScreen called")
@@ -2088,7 +2080,7 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
-    val activeBhound by BloodhoundActivity.activeBhoundItem.observeAsState()
+    val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2201,7 +2193,7 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ){
-                        BloodhoundButton(context, activeBhound, chatCheckedLive)
+                        BloodhoundButton(context, activeItem, chatCheckedLive)
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -2668,9 +2660,13 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
     }
 }
 @Composable
-fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?, chatChecked: Boolean?){
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatChecked: Boolean?){
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+    val needleOrientation = activeItem?.orientation ?: properNorthBearing
     requestBloodhoundComplicationUpdate(context)
-    Row(
+ Row(
         modifier = Modifier.clickable(
             onClick = {
                 if (chatChecked == true) {
@@ -2689,31 +2685,23 @@ fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?, chat
                 .size(35.dp)
                 .graphicsLayer {
                     rotationZ =
-                        if (chatChecked == true) {
-                            if (BloodhoundActivity.activeBhoundItem.value != null) {
-                                activeBhound!!.orientation
-                            } else {
-                                0F
-                            }
-                        } else {
-                            0F
-                        }
+                        needleOrientation.toFloat()
                 }
         )
         Column (
             modifier = Modifier.padding(start = 13.dp)
         ) {
             if (chatChecked == true) {
-                if (BloodhoundActivity.activeBhoundItem.value != null) {
+                if (activeItem != null) {
                     Text(
-                        text = activeBhound!!.target,
+                        text = activeItem.target,
                         fontSize = 13.sp,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.Medium,
                     )
 
                     Text(
-                        text = activeBhound.distance.toString(),
+                        text = (activeItem.distance.toString() + " km"),
                         fontSize = 15.sp,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.SemiBold,
@@ -2733,22 +2721,8 @@ fun BloodhoundButton(context: Context, activeBhound: Utils.BloodhoundItem?, chat
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
-            } else {
-                Text(
-                    text = stringResource(R.string.compass),
-                    fontSize = 13.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Medium,
-                )
-
-                Text(
-                    text = "---",
-                    fontSize = 15.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                )
             }
-        }
+                        }
     }
 }
 

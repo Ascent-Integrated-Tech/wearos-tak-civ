@@ -27,11 +27,10 @@ import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.receiver.AlarmReceiver
-import com.google.common.math.IntMath
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -419,6 +418,9 @@ object Utils {
         val bloodhounding: Boolean
     )
 
+    fun normalize0to360(deg: Double): Double =
+        ((deg % 360.0) + 360.0) % 360.0
+
     /** Minimal data models for physio alerts. */
     enum class AlertChipState { None, Warning, Emergency }
 
@@ -527,6 +529,158 @@ object Utils {
     }
 
     object CotUtils {
+
+        object Bloodhound {
+
+            /**
+             * MVP entrypoint:
+             * Returns a MarkerCotEvent if the raw XML is a *marker* CoT; otherwise null.
+             * - No side effects
+             * - Minimal fields only
+             */
+            fun parseMarkerCotOrNull(rawXml: String): BloodhoundRepository.MarkerCotEvent? {
+                // 1) Fast-guard: extract event@type and decide if this is a marker
+                val typeStr = attrOfEvent(rawXml, "type") ?: return null
+                if (!isMarkerType(typeStr)) return null
+
+                // 2) Extract event-level attrs (uid/how/version/time/start/stale/access)
+                val uid = attrOfEvent(rawXml, "uid") ?: return null
+                val how = attrOfEvent(rawXml, "how") ?: ""
+                val version = attrOfEvent(rawXml, "version") ?: ""
+                val access = attrOfEvent(rawXml, "access")
+
+                val timeIso = attrOfEvent(rawXml, "time") ?: return null
+                val startIso = attrOfEvent(rawXml, "start") ?: timeIso
+                val staleIso = attrOfEvent(rawXml, "stale") ?: timeIso
+
+                val timeEpoch = parseIsoToEpochMs(timeIso)
+                val startEpoch = parseIsoToEpochMs(startIso)
+                val staleEpoch = parseIsoToEpochMs(staleIso)
+
+                // 3) Extract <point .../>
+                val point = pointOf(rawXml) ?: return null
+
+                // 4) Extract <detail> bits we care about
+                val callsign = contactCallsign(rawXml) ?: "" // keep empty-string safe for UI
+                val creator = creatorOf(rawXml)
+                val link = linkOf(rawXml)
+
+                val detail = BloodhoundRepository.MarkerDetail(
+                    markerCallsign = callsign,
+                    creator = creator,
+                    link = link
+                )
+
+                return BloodhoundRepository.MarkerCotEvent(
+                    version = version,
+                    uid = uid,
+                    type = typeStr,
+                    how = how,
+                    time = timeEpoch,
+                    start = startEpoch,
+                    stale = staleEpoch,
+                    access = access,
+                    point = point,
+                    detail = detail
+                )
+            }
+
+            // --- Marker classification (MVP) ---
+
+            /**
+             * Returns true if CoT `type` represents one of your supported marker types.
+             * Start strict and widen later as needed.
+             */
+            fun isMarkerType(typeStr: String): Boolean {
+                val types = listOf("a-f-G","a-h-G","a-u-G","a-n-G")
+//                val isMarker = types.contains(typeStr)
+//                if (!isMarker) {
+//                    Log.i(TAG, "Marker not suspected: \n $typeStr")
+//                }
+                return types.contains(typeStr)
+            }
+
+            // --- XML extractors (MVP, single-pass regex per getter) ---
+
+            /** Extract an attribute from the first <event ...> element. */
+            private fun attrOfEvent(xml: String, name: String): String? {
+                return extractAttr(xml, "event", name)
+            }
+
+            /** Extract <point ...> as Point (requires lat/lon/hae/ce/le). */
+            private fun pointOf(xml: String): BloodhoundRepository.Point? {
+                val lat = extractAttr(xml, "point", "lat")?.toDoubleOrNull() ?: return null
+                val lon = extractAttr(xml, "point", "lon")?.toDoubleOrNull() ?: return null
+                val hae = extractAttr(xml, "point", "hae")?.toDoubleOrNull() ?: return null
+                val ce  = extractAttr(xml, "point", "ce")?.toDoubleOrNull() ?: return null
+                val le  = extractAttr(xml, "point", "le")?.toDoubleOrNull() ?: return null
+                return BloodhoundRepository.Point(lat, lon, hae, ce, le)
+            }
+
+            /** Extract contact@callsign inside <detail>. */
+            private fun contactCallsign(xml: String): String? {
+                return extractAttr(xml, "contact", "callsign")
+            }
+
+            /** Extract <creator .../> attributes. */
+            private fun creatorOf(xml: String): BloodhoundRepository.Creator {
+                val uid  = extractAttr(xml, "creator", "uid")
+                val cs   = extractAttr(xml, "creator", "callsign")
+                val type = extractAttr(xml, "creator", "type")
+                val timeIso = extractAttr(xml, "creator", "time")
+                val time = timeIso?.let { parseIsoToEpochMs(it) }
+                return BloodhoundRepository.Creator(uid = uid, callsign = cs, type = type, time = time)
+            }
+
+            /** Extract <link .../> attributes. */
+            private fun linkOf(xml: String): BloodhoundRepository.Link {
+                val uid   = extractAttr(xml, "link", "uid")
+                val type  = extractAttr(xml, "link", "type")
+                val parent= extractAttr(xml, "link", "parent_callsign")
+                val rel   = extractAttr(xml, "link", "relation")
+                val prodIso = extractAttr(xml, "link", "production_time")
+                val prod   = prodIso?.let { parseIsoToEpochMs(it) }
+                return BloodhoundRepository.Link(
+                    uid = uid,
+                    type = type,
+                    parentCallsign = parent,
+                    relation = rel,
+                    productionTime = prod
+                )
+            }
+
+            /**
+             * Very small helper to extract an attribute of the *first* matching element name.
+             * Uses a small, anchored regex and returns the first capture group if found.
+             *
+             * - Matches both single and double quoted attribute values.
+             * - Case-sensitive tag/attr names (as in your samples).
+             * - Does not parse nested structures; intentionally MVP-simple.
+             */
+            private fun extractAttr(xml: String, elementName: String, attrName: String): String? {
+                val pattern = """<${Regex.escape(elementName)}\b[^>]*?\b${Regex.escape(attrName)}\s*=\s*(['"])(.*?)\1""".toRegex(RegexOption.DOT_MATCHES_ALL)
+                val m = pattern.find(xml) ?: return null
+                return m.groupValues.getOrNull(2)
+            }
+
+            /** ISO8601 (e.g., 2025-10-22T17:54:57Z or ...11:00:11.065Z) → epoch millis. */
+            private fun parseIsoToEpochMs(iso: String): Long {
+                // Try direct parse
+                try {
+                    return java.time.Instant.parse(iso).toEpochMilli()
+                } catch (_: Exception) {
+                    // Fallbacks: ensure trailing Z, trim subsecond if needed
+                    val withZ = if (iso.endsWith("Z", ignoreCase = true)) iso else iso + "Z"
+                    try {
+                        return java.time.Instant.parse(withZ).toEpochMilli()
+                    } catch (_: Exception) {
+                        val trimMillis = withZ.substringBefore('.', withZ)
+                        return try { java.time.Instant.parse(trimMillis).toEpochMilli() } catch (_: Exception) { 0L }
+                    }
+                }
+            }
+        }
+
         /** Quick screen for chat‐related COTs. */
         fun isChatMessage(raw: String): Boolean =
             raw.contains("<__chat") && raw.contains("<remarks")

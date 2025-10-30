@@ -36,7 +36,8 @@ class ServiceRegistry() {
         ServiceType.ACTIVITY_RECOGNITION to ActivityRecognitionService::class.java,
         ServiceType.OFF_BODY_DETECT to OffBodyDetectService::class.java,
         ServiceType.BATTERY to BatteryService::class.java,
-        ServiceType.POWER_MGR to PowerManagerService::class.java
+        ServiceType.POWER_MGR to PowerManagerService::class.java,
+        ServiceType.BLOOD_HOUND to BloodhoundService::class.java
     )
 
     private val serviceRunningStateMap = mapOf(
@@ -54,7 +55,8 @@ class ServiceRegistry() {
         ServiceType.ACTIVITY_RECOGNITION to ActivityRecognitionService.isRunning,
         ServiceType.OFF_BODY_DETECT to OffBodyDetectService.isRunning,
         ServiceType.BATTERY to BatteryService.isRunning,
-        ServiceType.POWER_MGR to PowerManagerService.isRunning
+        ServiceType.POWER_MGR to PowerManagerService.isRunning,
+        ServiceType.BLOOD_HOUND to BloodhoundService.isRunning
     )
 
     /**

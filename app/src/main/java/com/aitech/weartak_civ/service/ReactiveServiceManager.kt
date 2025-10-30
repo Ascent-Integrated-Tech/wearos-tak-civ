@@ -848,6 +848,7 @@ class ReactiveServiceManager : Service() {
         MOVEMENT_DETECTION(true, isKnoxMgdService = false),
         OFF_BODY_DETECT(true, isKnoxMgdService = false),
         BATTERY(true, isKnoxMgdService = false),
-        POWER_MGR(true, isKnoxMgdService = false)
+        POWER_MGR(true, isKnoxMgdService = false),
+        BLOOD_HOUND(true, isKnoxMgdService = false)
     }
 }

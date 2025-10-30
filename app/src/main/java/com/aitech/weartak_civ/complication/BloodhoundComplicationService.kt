@@ -4,11 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.Icon
 import androidx.annotation.DrawableRes
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.core.graphics.drawable.IconCompat
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationText
@@ -16,16 +12,13 @@ import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
-import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.complication.SosComplicationService.Companion.isAlertActive
-import com.aitech.weartak_civ.presentation.BloodhoundActivity
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
-import com.aitech.weartak_civ.presentation.isAnyBloodhoundingActive
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
@@ -43,6 +36,9 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+        val bhRepo = (applicationContext as WearTakApplication).bhRepo
+        val active = bhRepo.activeBhItemUi.value
+
         if (null == mainActivityIsInit) {
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
         }
@@ -55,13 +51,13 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     titleText = getString(R.string.compass),
                     0F
                 )
-                else -> return when (isAnyBloodhoundingActive()) {
+                else -> return when (active) {
                     true -> createComplicationData(
-                        BloodhoundActivity.activeBhoundItem.value?.distance.toString(),
-                        getString(R.string.watch_callsign),
+                        text = active.distance.toString() + " km",
+                        contentDescription = getString(R.string.watch_callsign),
                         icon = R.drawable.compass_1,
-                        titleText = BloodhoundActivity.activeBhoundItem.value!!.target,
-                        BloodhoundActivity.activeBhoundItem.value!!.orientation
+                        titleText = active.target,
+                        orientation = active.orientation
                     )
 
                     false -> createComplicationData(
@@ -90,7 +86,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     //TODO: WEAR-161: Change this back and add code to bloodhoundcomplicationservice when its made
 
     //TODO: WEAR-161: See if this is more or less jank than referencing the 360 images vvvv
-   private fun getRotatedCompassBitmap(
+    private fun getRotatedCompassBitmap(
         context: Context,
         @DrawableRes drawableResId: Int,
         rotationDegrees: Float

@@ -81,6 +81,8 @@ class ServiceConfiguration(
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
 
+        ServiceType.BLOOD_HOUND -> dataRepository.getEnableChatService.distinctUntilChanged()
+
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
         ServiceType.COT_DISPATCH,
@@ -127,6 +129,7 @@ class ServiceConfiguration(
         )
 
         ServiceType.CHAT -> emptyList()
+        ServiceType.BLOOD_HOUND -> emptyList()
 
         ServiceType.TAK_CONNECT,
         ServiceType.CUST_ACCESS,

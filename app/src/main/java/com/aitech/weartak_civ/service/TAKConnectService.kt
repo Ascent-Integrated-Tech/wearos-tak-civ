@@ -74,7 +74,10 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -134,6 +137,7 @@ class TAKConnectService: Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+
     }
 
     private fun startMulticastCollector() {
@@ -157,6 +161,7 @@ class TAKConnectService: Service() {
             }
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             esriEndpoint = dataRepository.getEsriEndpoint.first()
+
         }
     }
 
@@ -476,6 +481,14 @@ class TAKConnectService: Service() {
 
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
+
+        private val bhRepo by lazy {
+            try {
+                (context as WearTakApplication).bhRepo
+            } catch (_: Throwable) {
+                BloodhoundRepository(context)
+            }
+        }
 
         private val TAK_CONNECT_SERVICE = TAKConnectService()
         public fun getInstance() : TAKConnectService {
@@ -1109,7 +1122,6 @@ class TAKConnectService: Service() {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
-
                     // start a background COT‐reader on the same socket
                     CoroutineScope(Dispatchers.IO).launch {
                         try {
@@ -1144,6 +1156,20 @@ class TAKConnectService: Service() {
                                         && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
                                         Log.d(TAG, "Received Chat for me:\n$rawXml")
                                         EventBus.getDefault().post(TakChatEvent(rawXml))
+                                    }
+                                    val markerCotEvent: BloodhoundRepository.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
+
+                                    if (markerCotEvent != null) {
+                                        Log.i(TAG, "We read a marker message!: \n $markerCotEvent")
+//                                        Log.i(TAG, "XML XML XML: $rawXml")
+                                        val mapItem = BloodhoundRepository.MarkerMapItem(markerCotEvent)
+                                        val bhEvent = BloodhoundRepository.BloodhoundEvent(
+                                            mapItem = mapItem,
+                                            server = takServerDetail,
+                                            timeIssued = mapItem.link.productionTime,
+                                            timeCompleted = null
+                                        )
+                                        bhRepo.updateBloodhoundEvent(bhEvent)
                                     }
                                 }
                             }
