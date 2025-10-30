@@ -96,11 +96,14 @@ class BloodhoundService: Service() {
     private fun collectAzimuthFlow() {
         scope.launch {
             bhRepo.azimuthTrueDegSmoothed.collect { azimuth ->
-                Log.i(TAG, "New Smooth Azimuth")
+//                Log.i(TAG, "New Smooth Azimuth")
                 val map = bhRepo.bloodhoundMap.value
                 map.values.forEach { item ->
                     val vector = calculateVectorKm(item)
                     bhRepo.updateBloodhoundItemVector(uid = item.uid, vector)
+                    if (azimuth != null) {
+                        calculateCompassAngle(azimuth, item)
+                    }
                 }
             }
         }
@@ -125,7 +128,7 @@ class BloodhoundService: Service() {
     private fun collectBloodMapFlow() {
         scope.launch {
             bhRepo.bloodhoundMap.collect { map ->
-                Log.i(TAG, "Bloodhound Map changed: \n $map")
+//                Log.i(TAG, "Bloodhound Map changed: \n $map")
             }
         }
     }
@@ -156,11 +159,8 @@ class BloodhoundService: Service() {
                     if (curr != null && curr != uid) {
                         bhRepo.setActive(curr, false)
                     }
-                    // set this one active
+                    bhRepo.setAcknowledged(uid, acknowledged = true) // For ACK states
                     bhRepo.setActive(uid, true)
-                    // also record active uid for other consumers
-                    bhRepo.setAcknowledged(uid, acknowledged = true)
-                    bhRepo.setActiveBloodhound(uid)
                 }
             }
         }
@@ -173,7 +173,6 @@ class BloodhoundService: Service() {
                 if (uid.isNotBlank()) {
                     // mark in position and remove from list
                     bhRepo.setInPos(uid, true)
-                    bhRepo.removeBloodhound(uid)
                     // TODO: Send Chat message flow
                 }
             }

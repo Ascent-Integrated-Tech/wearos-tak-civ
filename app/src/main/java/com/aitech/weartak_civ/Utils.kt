@@ -418,6 +418,9 @@ object Utils {
         val bloodhounding: Boolean
     )
 
+    fun normalize0to360(deg: Double): Double =
+        ((deg % 360.0) + 360.0) % 360.0
+
     /** Minimal data models for physio alerts. */
     enum class AlertChipState { None, Warning, Emergency }
 
@@ -589,11 +592,12 @@ object Utils {
              * Start strict and widen later as needed.
              */
             fun isMarkerType(typeStr: String): Boolean {
-                // Example from your sample: exactly "a-f-G"
-                if (typeStr == "a-f-G") return true
-                // Loosen later if needed:
-                // return typeStr.startsWith("a-f-G")
-                return false
+                val types = listOf("a-f-G","a-h-G","a-u-G","a-n-G")
+//                val isMarker = types.contains(typeStr)
+//                if (!isMarker) {
+//                    Log.i(TAG, "Marker not suspected: \n $typeStr")
+//                }
+                return types.contains(typeStr)
             }
 
             // --- XML extractors (MVP, single-pass regex per getter) ---

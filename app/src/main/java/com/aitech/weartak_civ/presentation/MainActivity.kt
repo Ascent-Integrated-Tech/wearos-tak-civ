@@ -2080,7 +2080,7 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
-    val activeItem by bhRepo.activeBloodhoundUi.collectAsState()
+    val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2661,7 +2661,10 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
 }
 @Composable
 fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatChecked: Boolean?){
-    Log.i(TAG, "activeItem: $activeItem \n ")
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+    val needleOrientation = activeItem?.orientation ?: properNorthBearing
     Row(
         modifier = Modifier.clickable(
             onClick = {
@@ -2681,7 +2684,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatCh
                 .size(35.dp)
                 .graphicsLayer {
                     rotationZ =
-                        activeItem?.orientation ?: 0F
+                        needleOrientation.toFloat()
                 }
         )
         Column (

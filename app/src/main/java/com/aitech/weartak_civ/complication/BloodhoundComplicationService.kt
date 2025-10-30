@@ -4,11 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.Icon
 import androidx.annotation.DrawableRes
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.core.graphics.drawable.IconCompat
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationText
@@ -16,7 +12,6 @@ import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
-import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
@@ -42,7 +37,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         val bhRepo = (applicationContext as WearTakApplication).bhRepo
-        val active = bhRepo.activeBloodhoundUi.value
+        val active = bhRepo.activeBhItemUi.value
 
         if (null == mainActivityIsInit) {
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
