@@ -2691,13 +2691,13 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatCh
             modifier = Modifier.padding(start = 13.dp)
         ){
             if (chatChecked == true) {
-                if (activeItem != null) {
-                    Text(
-                        text = activeItem.callsign,
-                        fontSize = 13.sp,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.Medium,
-                    )
+            if (activeItem != null) {
+                Text(
+                    text = activeItem.target,
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
 
                     Text(
                         text = activeItem.distance.toString() + " km",
