@@ -26,6 +26,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -35,6 +36,8 @@ import android.provider.Settings
 import android.provider.Settings.Secure
 import android.text.format.DateFormat
 import android.util.Log
+import android.view.Display
+import android.view.Surface
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -129,6 +132,7 @@ import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFrom
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
 import com.aitech.weartak_civ.Utils.secureRandom
+import androidx.compose.runtime.State as ComposeState
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
@@ -174,6 +178,8 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.wear.compose.material.Chip
@@ -2098,7 +2104,7 @@ fun MainScreen(
                     .padding(5.dp)
                     .unswipeable()
             ) {
-
+                OrientationAware()
                 Column(
                     modifier = Modifier
                         .background(colors.background)
@@ -2691,20 +2697,20 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatCh
             modifier = Modifier.padding(start = 13.dp)
         ){
             if (chatChecked == true) {
-            if (activeItem != null) {
-                Text(
-                    text = activeItem.target,
-                    fontSize = 13.sp,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Medium,
-                )
-
+                if (activeItem != null) {
                     Text(
-                        text = activeItem.distance.toString() + " km",
-                        fontSize = 15.sp,
+                        text = activeItem.target,
+                        fontSize = 13.sp,
                         overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Medium,
                     )
+
+                        Text(
+                            text = activeItem.distance.toString() + " km",
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                 } else {
                     Text(
                         text = stringResource(R.string.compass),
@@ -2720,6 +2726,20 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatCh
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+            } else {
+                Text(
+                    text = stringResource(R.string.compass),
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = "---",
+                    fontSize = 15.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -2881,6 +2901,55 @@ fun ActivityDisabledScreen(
             }
         }
     }
+}
+
+@Composable
+fun rememberDisplayRotation(): ComposeState<Int> {
+    val context = LocalContext.current
+    val rotationState = rememberSaveable { mutableIntStateOf(currentRotation(context)) }
+
+    DisposableEffect(Unit) {
+        val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val listener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) = Unit
+            override fun onDisplayRemoved(displayId: Int) = Unit
+            override fun onDisplayChanged(displayId: Int) {
+                // Most watches are single-display (DEFAULT_DISPLAY), but we refresh from whichever fired
+                val disp = dm.getDisplay(displayId) ?: dm.getDisplay(Display.DEFAULT_DISPLAY)
+                val newRotation = disp?.rotation ?: return
+                if (rotationState.intValue != newRotation) {
+                    rotationState.intValue = newRotation
+                }
+            }
+        }
+        // Register on the main thread
+        dm.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { dm.unregisterDisplayListener(listener) }
+    }
+
+    return rotationState
+}
+
+private fun currentRotation(context: Context): Int {
+    val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+    val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
+    return display?.rotation ?: Surface.ROTATION_0
+}
+
+@Composable
+fun OrientationAware() {
+    val rotation by rememberDisplayRotation()
+    // Log, send analytics, or update UI
+    val label = when (rotation) {
+        Surface.ROTATION_0 -> "ROTATION_0"
+        Surface.ROTATION_90 -> "ROTATION_90"
+        Surface.ROTATION_180 -> "ROTATION_180"
+        Surface.ROTATION_270 -> "ROTATION_270"
+        else -> "UNKNOWN"
+    }
+
+    // Example UI
+    Log.d(TAG, "Screen Rotation: $label")
 }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)

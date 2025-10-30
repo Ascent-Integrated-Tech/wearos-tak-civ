@@ -79,8 +79,6 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
-import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.activeBhoundItem
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -224,6 +222,7 @@ fun BloodhoundScreen(
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center
         ) {
+            OrientationAware()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -393,6 +392,7 @@ fun BloodhoundScreenDetailed(
 
     WearTakCivScreenDimensions(
         columnContent = {
+            OrientationAware()
             Text(
                 //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
                 text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
@@ -569,7 +569,7 @@ fun RotatingArrowIcon(
     modifier: Modifier = Modifier
 ) {
     val rotation by animateFloatAsState(
-        targetValue = degrees.mod(360f),
+        targetValue = degrees.mod(359f),
         label = "bearing-rotation"
     )
 
