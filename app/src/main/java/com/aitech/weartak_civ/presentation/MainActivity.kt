@@ -2684,7 +2684,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
         ){
             if (activeItem != null) {
                 Text(
-                    text = activeItem.callsign,
+                    text = activeItem.target,
                     fontSize = 13.sp,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Medium,
