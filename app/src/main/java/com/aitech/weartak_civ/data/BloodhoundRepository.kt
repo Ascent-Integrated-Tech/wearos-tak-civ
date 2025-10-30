@@ -45,11 +45,9 @@ class BloodhoundRepository(private val context: Context) {
     data class BloodhoundItem(
         val bhEvent: BloodhoundEvent,
 
-        // fields you want to update/react to in UI:
+        // fields you want to update/react to in UI and service:
         val vector: VectorToTarget = VectorToTarget(),
         val state: State = State(),
-
-        // precomputed, but kept in constructor so copy stays ergonomic if needed later
         val target: Target = Target(bhEvent.mapItem),
         val origin: Origin = Origin(bhEvent),
         val compass: Compass = Compass()
@@ -72,7 +70,7 @@ class BloodhoundRepository(private val context: Context) {
         )
 
         data class Compass(
-            var needleAngleDeg: Double? = null   // <-- for UI rendering
+            var targetBearingDeg: Double? = null,
         )
 
         data class Origin(
@@ -159,12 +157,6 @@ class BloodhoundRepository(private val context: Context) {
     private val _bloodhoundMap = MutableStateFlow<Map<String, BloodhoundItem>>(emptyMap())
     val bloodhoundMap: StateFlow<Map<String, BloodhoundItem>> = _bloodhoundMap
 
-    // Derived: UI consumes a flat list of items
-    val selectableBloodhounds: StateFlow<List<BloodhoundItem>> =
-        _bloodhoundMap
-            .map { it.values.toList() }
-            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
     private inline fun updateBloodhound(
         uid: String,
         crossinline transform: (BloodhoundItem) -> BloodhoundItem
@@ -175,29 +167,36 @@ class BloodhoundRepository(private val context: Context) {
         }
     }
 
-    // ---------- Helper: choose a "received" timestamp ----------
+    // So we can filter da list of hounds
     private fun BloodhoundItem.receivedAt(): Long {
-        // Adjust if you prefer a different source of truth
-        return this.origin.bhEvent.timeIssued
+        return this.origin.bhEvent.timeIssued // comes from cot event time
             ?: this.target.mapItem.cotEvent.time
     }
 
-    // ---------- Sorted domain list for UI (most recent first) ----------
-    val selectableBloodhoundsSorted: StateFlow<List<BloodhoundItem>> =
-        _bloodhoundMap
-            .map { map -> map.values.sortedByDescending { it.receivedAt() } }
-            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-// ---------- Active UID already exists ----------
+    // Detail screen activates a uid, downstream updates UI list and active
     private val _activeUid = MutableStateFlow<String?>(null)
     val activeUid: StateFlow<String?> = _activeUid
 
-    private val _selectedUid = MutableStateFlow<String?>(null)
-    val selectedUid: StateFlow<String?> = _selectedUid
+    // --- UI Adapter function
+    //  - backend domain item -> frontend UI model item (Utils.BloodhoundItem)
+    private fun BloodhoundItem.toUi(isActive: Boolean): Utils.BloodhoundItem {
+        val distKm = this.vector.distance
+        val distKmRounded = distKm?.round(2) ?: 0.0
+        val needle = this.compass.targetBearingDeg ?: 0.0
 
-    // ---------- UI adapter: List<Utils.BloodhoundItem> ----------
-    // "active first, then by received time desc", and adapt to Utils.BloodhoundItem
-    val listBloodhoundsUi: StateFlow<List<Utils.BloodhoundItem>> =
+        return Utils.BloodhoundItem(
+            target        = this.target.name,
+            uid           = this.uid,
+            callsign      = this.bhEvent.issuer.parentCallsign ?: "unknown",
+            timeReceived  = this.bhEvent.timeIssued ?: 0,
+            distance      = distKmRounded,
+            orientation   = needle.round(1).toFloat(),
+            bloodhounding = isActive
+        )
+    }
+
+    // UI adapter, list to populate chips in the bloodhounds screen
+    val listBhItemsUi: StateFlow<List<Utils.BloodhoundItem>> =
         combine(_bloodhoundMap, _activeUid) { map, active ->
             map.values
                 .sortedWith(
@@ -207,39 +206,16 @@ class BloodhoundRepository(private val context: Context) {
                 .map { it.toUi(isActive = (it.uid == active)) }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    // Convenience to expose the active UI item (null if none)
-// replace your previous activeBloodhoundUi with this:
-    val activeBloodhoundUi: StateFlow<Utils.BloodhoundItem?> =
+    // UI adapter, BloodhoundItem used by Main Screen button and Complication
+    val activeBhItemUi: StateFlow<Utils.BloodhoundItem?> =
         combine(activeUid, _bloodhoundMap) { uid, map ->
             uid?.let { map[it] }?.toUi(isActive = true)
         }.stateIn(scope, SharingStarted.Eagerly, null)
-
-    // --- Mapper: domain -> UI model (reuse everywhere)
-    private fun BloodhoundItem.toUi(isActive: Boolean): Utils.BloodhoundItem {
-        val distKm = this.vector.distance
-        val distKmRounded = distKm?.round(2) ?: 0.0
-        val needle = (this.compass.needleAngleDeg ?: 0.0).toFloat()
-
-        return Utils.BloodhoundItem(
-            target        = this.target.name,
-            uid           = this.uid,
-            callsign      = this.target.name,
-            timeReceived  = this.bhEvent.timeIssued ?: 0,
-            distance      = distKmRounded,
-            orientation   = needle,
-            bloodhounding = isActive
-        )
-    }
 
     fun Double.round(decimals: Int): Double {
         val factor = 10.0.pow(decimals)
         return (this * factor).roundToInt() / factor
     }
-
-//    // ---------- Convenience: active BloodHoundItem (derived) ----------
-//    val activeBloodhound: StateFlow<BloodhoundItem?> =
-//        combine(_activeUid, _bloodhoundMap) { uid, map -> uid?.let { map[it] } }
-//            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     // ---- API ----
     fun addOrReplaceBloodhound(item: BloodhoundItem) {
@@ -250,11 +226,6 @@ class BloodhoundRepository(private val context: Context) {
         _bloodhoundMap.update { prev -> prev - uid }
     }
 
-    fun upsertAll(items: Iterable<BloodhoundItem>) {
-        _bloodhoundMap.update { prev -> prev + items.associateBy { it.uid } }
-    }
-    val getLastActiveBloodhound: Flow<String> = context.dataStore.data.map { prefs -> prefs[ACTIVE_BLOOD_HOUND] ?: "" }
-
     fun updateBloodhoundItemVector(uid: String, vector: VectorToTarget) {
         updateBloodhound(uid) { it.copy(vector = vector) }
     }
@@ -263,15 +234,14 @@ class BloodhoundRepository(private val context: Context) {
         updateBloodhound(uid) { it.copy(state = it.state.copy(acknowledged = acknowledged)) }
     }
 
-    suspend fun storeActiveBloodhoundItem(active: BloodhoundItem) {
+    suspend fun storeActiveBloodhoundItems(list: List<BloodhoundItem>) {
         // TODO: Convert BloodHoundMapItem to Json string and store json string.
         context.dataStore.edit { prefs ->
-            prefs[ACTIVE_BLOOD_HOUND] = active.toString()
+            prefs[ACTIVE_BLOOD_HOUND] = list.toString()
         }
     }
+    val getLastActiveBloodhound: Flow<String> = context.dataStore.data.map { prefs -> prefs[ACTIVE_BLOOD_HOUND] ?: "" }
 
-//    private val _activeBloodhound =  MutableStateFlow<BloodHoundItem?>(null)
-//    val activeBloodhound: StateFlow<BloodHoundItem?> = _activeBloodhound
 
     private val _requestActivateBloodhound =  MutableStateFlow<String>("")
     val requestActivateBloodhound: StateFlow<String> = _requestActivateBloodhound
@@ -301,34 +271,20 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     fun setActive(uid: String, active: Boolean) {
-        updateBloodhound(uid) { it.copy(state = it.state.copy(active = active)) }
-    }
-
-    fun setInPos(uid: String, inPos: Boolean) {
-        updateBloodhound(uid) { it.copy(state = it.state.copy(inPos = inPos)) }
-    }
-
-    fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)
-
-    sealed interface BloodhoundCommand {
-        data class InPosition(val uid: String): BloodhoundCommand
-    }
-
-    fun setActiveBloodhound(uid: String): Boolean {
-        if (!isUidValid(uid)) return false
-
+        if (!isUidValid(uid)) return
         val currentActive = _activeUid.value
         if (currentActive != null && currentActive != uid) {
             Log.i(TAG, "Clearing previous active Bloodhound: $currentActive")
-            _activeUid.value = null
+            clearActive()
         }
 
         _activeUid.value = uid
         Log.i(TAG, "Active Bloodhound set: $uid")
-        return true
+
+        updateBloodhound(uid) { it.copy(state = it.state.copy(active = active)) }
     }
 
-    fun clearActiveBloodhound() {
+    fun clearActive() {
         val prev = _activeUid.value
         if (prev != null) {
             Log.i(TAG, "Active Bloodhound cleared: $prev")
@@ -336,23 +292,26 @@ class BloodhoundRepository(private val context: Context) {
         }
     }
 
+    fun setInPos(uid: String, inPos: Boolean) {
+        updateBloodhound(uid) { it.copy(state = it.state.copy(inPos = inPos)) }
+        removeBloodhound(uid)
+    }
+
+    fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)
+
     fun updateBloodhoundCompassNeedle(uid: String, needleDeg: Double) {
         _bloodhoundMap.update { currentMap ->
             val item = currentMap[uid] ?: return@update currentMap  // nothing to change
-
             // If angle is unchanged, avoid emitting a new map
-            if (item.compass.needleAngleDeg == needleDeg) return@update currentMap
+            if (item.compass.targetBearingDeg == needleDeg) return@update currentMap
 
             val updated = HashMap(currentMap)
             updated[uid] = item.copy(
-                compass = item.compass.copy(needleAngleDeg = needleDeg)
+                compass = item.compass.copy(targetBearingDeg = needleDeg)
             )
             updated
         }
     }
-
-    private val _pendingBloodHounds = MutableStateFlow<List<BloodhoundItem>?>(null)
-    val pendingBloodhounds: StateFlow<List<BloodhoundItem>?> = _pendingBloodHounds
 
     val getEnableBloodhoundService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE] ?: false
@@ -379,10 +338,10 @@ class BloodhoundRepository(private val context: Context) {
     fun setUseGpsCogAsHeading(enabled: Boolean) { _useGpsCogAsHeading.value = enabled }
 
     // --- Magnetometer TRUE azimuth (degrees). Origin: MovementDetectionService should pass TRUE (declination applied upstream)
-    private val _magTrueDeg = MutableStateFlow<Double?>(null)
-    val magTrueDeg: StateFlow<Double?> = _magTrueDeg
+    private val _magAzTrueDeg = MutableStateFlow<Double?>(null)
+    val magAzTrueDeg: StateFlow<Double?> = _magAzTrueDeg
     fun updateMagAzimuthTrue(angleTrueDeg: Double?) {
-        _magTrueDeg.value = angleTrueDeg?.let(::normalize0to360)
+        _magAzTrueDeg.value = angleTrueDeg?.let(::normalize0to360)
     }
 
     // --- Auto rule: when moving with valid COG, prefer GPS
@@ -411,7 +370,7 @@ class BloodhoundRepository(private val context: Context) {
 
     // --- Fused azimuth (TRUE degrees)
     val azimuthTrueDeg: StateFlow<Double?> =
-        combine(useGpsFinal, gpsCogTrueDeg, magTrueDeg) { useGps, gps, mag ->
+        combine(useGpsFinal, gpsCogTrueDeg, magAzTrueDeg) { useGps, gps, mag ->
             val chosen = if (useGps) (gps ?: mag) else (mag ?: gps)
             chosen?.let(::normalize0to360)
         }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)

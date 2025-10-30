@@ -68,7 +68,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.res.stringResource
-import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
@@ -76,7 +75,6 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
-import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 
 class BloodhoundActivity  : ComponentActivity() {
@@ -139,7 +137,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
-    val uiList by bhRepo.listBloodhoundsUi.collectAsState(initial = emptyList())
+    val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -173,7 +171,6 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             val uidFromIndex = uiList[index].uid
-            Log.d(TAG, "bloodhound_screen_detailed index: $index, uidFromIndex: $uidFromIndex")
             BloodhoundScreenDetailed(navController, index, uiList, context,{ exitActivity() })
         }
 
@@ -338,11 +335,9 @@ fun BloodhoundScreenDetailed(
     context: Context,
     exitActivity: () -> Unit,
 ) {
-    Log.i(TAG, "Got here 0")
     val app = context.applicationContext as WearTakApplication
     val bhRepo = app.bhRepo
-    Log.i(TAG, "Got here 1")
-    val list = bhRepo.listBloodhoundsUi.collectAsState().value
+    val list = bhRepo.listBhItemsUi.collectAsState().value
     // 2) resolve uid *once* from the index, but guard
     val initialUid = remember(index, list.size) {
         list.getOrNull(index)?.uid

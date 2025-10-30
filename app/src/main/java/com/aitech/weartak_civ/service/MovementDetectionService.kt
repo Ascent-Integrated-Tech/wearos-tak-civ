@@ -160,9 +160,19 @@ class MovementDetectionService : Service(), SensorEventListener {
             // updateCotInterval(isStill = true, newInterval = INTERVAL_STILL)
         }
     }
+    private var lastPublishAtMs: Long = 0L
+    private val PUBLISH_INTERVAL_MS: Long = 100L   // ~3 times/sec
+    private var count: Long = 0L   // if you still want to track events
+// private var cachedDeclinationDeg: Double? = null // optional cache
 
-    // --- Rotation vector → TRUE azimuth (deg) ---
     private fun handleRotationVector(values: FloatArray) {
+        count += 1
+
+        // Throttle: only proceed ~3 Hz (monotonic clock)
+        val nowMs = android.os.SystemClock.elapsedRealtime()
+        if (nowMs - lastPublishAtMs < PUBLISH_INTERVAL_MS) return
+        lastPublishAtMs = nowMs
+
         // Build rotation matrix
         val R = FloatArray(9)
         SensorManager.getRotationMatrixFromVector(R, values)
@@ -188,12 +198,13 @@ class MovementDetectionService : Service(), SensorEventListener {
 
         val azimuthTrue = normalize0to360(azimuthMagDeg + declinationDeg)
 
-        // Smooth and publish
-        val smoothed = lastAzimuthTrueDeg?.let { smoothAngle(it, azimuthTrue, HEADING_SMOOTH_ALPHA) } ?: azimuthTrue
+        // Smooth and publish at throttled rate
+        val smoothed = lastAzimuthTrueDeg?.let {
+            smoothAngle(it, azimuthTrue, HEADING_SMOOTH_ALPHA)
+        } ?: azimuthTrue
         lastAzimuthTrueDeg = smoothed
         bhRepo.updateMagAzimuthTrue(smoothed)
     }
-
     // --- Helpers ---
 
     private fun normalize0to360(deg: Double): Double =
@@ -220,7 +231,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     // --- Required by your manager / project conventions ---
     companion object {
         val isRunning = AtomicBoolean(false)
-        private val TAG = "WearTAK-" + MovementDetectionService::class.java.simpleName
+        private val TAG = "WearTAK-MvmtService"
 
         private const val MOVEMENT_DETECTION_SERVICE_NOTIFICATION_ID = 112
         private const val ACCELEROMETER_DELAY_US = 100_000 // 100 ms (~10 Hz)

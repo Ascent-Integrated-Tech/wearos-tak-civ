@@ -1161,7 +1161,7 @@ class TAKConnectService: Service() {
 
                                     if (markerCotEvent != null) {
                                         Log.i(TAG, "We read a marker message!: \n $markerCotEvent")
-
+//                                        Log.i(TAG, "XML XML XML: $rawXml")
                                         val mapItem = BloodhoundRepository.MarkerMapItem(markerCotEvent)
                                         val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                             mapItem = mapItem,
@@ -1171,7 +1171,6 @@ class TAKConnectService: Service() {
                                         )
                                         bhRepo.updateBloodhoundEvent(bhEvent)
                                     }
-
                                 }
                             }
                         } catch (e: Exception) {
