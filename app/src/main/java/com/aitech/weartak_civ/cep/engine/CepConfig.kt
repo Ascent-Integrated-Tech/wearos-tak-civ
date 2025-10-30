@@ -53,7 +53,13 @@ data class RuleAction(
     val type: String,
     val severity: String,
     val message: String,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val category: String? = null,     // e.g., "CAT_HR_EMERGENCY"
+    val isTak: Boolean = false,
+    val isLocal: Boolean = false,
+    val priorityFrom: String? = "severity", // "severity" or null
+    val priority: Int? = null,        // explicit fallback if not deriving
+    val sendSms: Boolean = false
 )
 
 

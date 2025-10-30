@@ -29,7 +29,18 @@ class RuleEngine(
                 }
                 val ctx = TriggerContext(
                     ruleId = r.id,
-                    action = ActionDef(r.action.type, sev, r.action.message, r.action.tags),
+                    action = ActionDef(
+                        type        = r.action.type,
+                        severity    = sev,
+                        message     = r.action.message,
+                        tags        = r.action.tags,
+                        category    = r.action.category,
+                        isTak       = r.action.isTak,
+                        isLocal     = r.action.isLocal,
+                        priorityFrom= r.action.priorityFrom,
+                        priority    = r.action.priority,
+                        sendSms     = r.action.sendSms
+                    ),
                     snapshot = snapshot,
                     ts = now
                 )
