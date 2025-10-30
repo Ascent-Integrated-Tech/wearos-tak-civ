@@ -223,6 +223,7 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     fun removeBloodhound(uid: String) {
+        _activeUid.value = null
         _bloodhoundMap.update { prev -> prev - uid }
     }
 
@@ -293,6 +294,7 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     fun setInPos(uid: String, inPos: Boolean) {
+        updateBloodhound(uid) { it.copy(state = it.state.copy(active = false)) }
         updateBloodhound(uid) { it.copy(state = it.state.copy(inPos = inPos)) }
         removeBloodhound(uid)
     }

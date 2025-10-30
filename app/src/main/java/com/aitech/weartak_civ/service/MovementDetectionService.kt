@@ -74,8 +74,8 @@ class MovementDetectionService : Service(), SensorEventListener {
         rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
         // Register listeners
-        accelerometer?.let { sensorManager.registerListener(this, it, ACCELEROMETER_DELAY_US) }
-        rotationVector?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+//        accelerometer?.let { sensorManager.registerListener(this, it, ACCELEROMETER_DELAY_US) } // not currently using for compass
+        rotationVector?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
 
         // Initial state
         isUserMoving = false
@@ -161,7 +161,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         }
     }
     private var lastPublishAtMs: Long = 0L
-    private val PUBLISH_INTERVAL_MS: Long = 100L   // ~3 times/sec
+    private val PUBLISH_INTERVAL_MS: Long = 333L   // ~3 times/sec
     private var count: Long = 0L   // if you still want to track events
 // private var cachedDeclinationDeg: Double? = null // optional cache
 

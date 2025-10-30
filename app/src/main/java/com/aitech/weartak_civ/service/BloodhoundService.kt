@@ -148,6 +148,7 @@ class BloodhoundService: Service() {
         scope.launch {
             bhRepo.requestActivateBloodhound.collect { uid ->
                 if (uid.isNotBlank() && bhRepo.isUidValid(uid)) {
+                    logBloodhoundTable()
                     // clear any currently active
                     Log.i(TAG, "Request for Activation: $uid")
                     val map = bhRepo.bloodhoundMap.value
@@ -161,7 +162,9 @@ class BloodhoundService: Service() {
                     }
                     bhRepo.setAcknowledged(uid, acknowledged = true) // For ACK states
                     bhRepo.setActive(uid, true)
+                    logBloodhoundTable()
                 }
+
             }
         }
     }
@@ -171,8 +174,10 @@ class BloodhoundService: Service() {
         scope.launch {
             bhRepo.requestInPosition.collect { uid ->
                 if (uid.isNotBlank()) {
+                    logBloodhoundTable()
                     // mark in position and remove from list
                     bhRepo.setInPos(uid, true)
+                    logBloodhoundTable()
                     // TODO: Send Chat message flow
                 }
             }
@@ -243,47 +248,46 @@ class BloodhoundService: Service() {
                 bhRepo.updateBloodhoundItemVector(uid = item.uid, vector)
             }
 
-            // Log new vs old values
-            logBloodhoundTable(TAG, bhRepo.bloodhoundMap.value, previousVectors)
-
             // Save current vectors for next comparison
             previousVectors = map.values.associateBy({ it.uid }, { it.vector }).toMutableMap()
         }
     }
 
-    private fun logBloodhoundTable(
-        tag: String = TAG,
-        map: Map<String, BloodhoundItem>,
-        previousVectors: Map<String, VectorToTarget> = emptyMap()
-    ) {
-        val header = """
-        |────────────────────────────────────────────────────────────────────────────
-        | UID                | CALLSIGN           | TARGET (lat,lon)      | VECTOR (d,b)       | PREV (d,b)
-        |────────────────────────────────────────────────────────────────────────────
-    """.trimMargin()
+    private fun logBloodhoundTable() {
+        fun fmtBool(b: Boolean) = if (b) "Y" else "N"
 
+        val header = """
+        |────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        | UID                 | CALLSIGN            | TARGET (lat,lon)         | VECTOR (d,b)        | PREV (d,b)       | ACTIVE | INPOS |
+        |────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    """.trimMargin()
+        val map = bhRepo.bloodhoundMap.value
         val body = buildString {
             map.values.forEach { item ->
-                val uid = item.uid.padEnd(18).take(18)
-                val name = item.target.name.padEnd(18).take(18)
+                val uid = item.uid.padEnd(20).take(20)
+                val name = item.target.name.padEnd(20).take(20)
 
                 val lat = String.format("%.5f", item.target.point.lat)
                 val lon = String.format("%.5f", item.target.point.lon)
+                val target = "($lat,$lon)".padEnd(24)
 
                 val dist = item.vector.distance?.let { String.format("%.1f", it) } ?: "null"
                 val bear = item.vector.bearing?.let { String.format("%.1f", it) } ?: "null"
+                val vector = "(${dist.padEnd(4)},${bear.padEnd(4)})".padEnd(20)
 
                 val prev = previousVectors[item.uid]
                 val prevDist = prev?.distance?.let { String.format("%.1f", it) } ?: "-"
                 val prevBear = prev?.bearing?.let { String.format("%.1f", it) } ?: "-"
+                val prevVec = "(${prevDist.padEnd(4)},${prevBear.padEnd(4)})".padEnd(20)
 
-                appendLine(
-                    "| $uid | $name | ($lat,$lon) | ($dist,$bear) | ($prevDist,$prevBear)"
-                )
+                val active = fmtBool(item.state.active).padEnd(6)
+                val inPos = fmtBool(item.state.inPos).padEnd(5)
+
+                appendLine("| $uid | $name | $target | $vector | $prevVec | $active | $inPos |")
             }
         }
 
-        Log.i(tag, "$header\n$body────────────────────────────────────────────────────────────────────────────")
+        Log.i(TAG, "$header\n$body────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     }
 
     private fun toDegrees(rads: Double): Double {
