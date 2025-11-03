@@ -1313,6 +1313,19 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    private val _bloodhoundItemsFlow = MutableStateFlow<List<Utils.BloodhoundItem>>(emptyList())
+    val bloodhoundItemsFlow: StateFlow<List<Utils.BloodhoundItem>> = _bloodhoundItemsFlow
+
+    fun addBloodhoundItemToFront(bloodhound: Utils.BloodhoundItem) {
+        _bloodhoundItemsFlow.value = listOf(bloodhound) + _bloodhoundItemsFlow.value
+    }
+
+    //TODO WEAR-161: Is this the best metric to use here?
+    fun removeBloodhound(bloodhoundStr: String) {
+        _bloodhoundItemsFlow.value = _bloodhoundItemsFlow.value
+            .filterNot { it.target == bloodhoundStr }
+    }
+
 //    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
