@@ -39,7 +39,7 @@ class SosComplicationService : SuspendingComplicationDataSourceService() {
         return createComplicationData(
             Icon.createWithResource(
                 applicationContext,
-                R.drawable.sos_inactive
+                R.drawable.sos_active
             ), getString(R.string.sos_inactive)
         )
     }

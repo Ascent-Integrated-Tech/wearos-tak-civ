@@ -2512,6 +2512,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         requestStatusIconsComplicationUpdate(context)
                         requestChatComplicationUpdate(context)
                         requestPhysioComplicationUpdate(context)
+                        requestBloodhoundComplicationUpdate(context)
 
                         Log.d(TAG, "Sending License for Validation.")
                     } else {
@@ -3893,6 +3894,8 @@ fun SettingsScreen(
                         //restartTAKConnectService()
                         //TODO: Find out if we actually need to restart the tak connect service (manager should handle)
                         requestChatComplicationUpdate(context)
+                        requestBloodhoundComplicationUpdate(context)
+
                     }
 
                     if (enableHailService != enableHailServiceSettingsState.value) {
