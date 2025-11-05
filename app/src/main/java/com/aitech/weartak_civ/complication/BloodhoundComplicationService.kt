@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import androidx.annotation.DrawableRes
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.graphics.drawable.IconCompat
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationText
@@ -15,6 +17,7 @@ import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
@@ -38,6 +41,9 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         val bhRepo = (applicationContext as WearTakApplication).bhRepo
         val active = bhRepo.activeBhItemUi.value
+        val northBearing = bhRepo.azimuthTrueDegSmoothed.value
+        val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+        val needleOrientation = active?.orientation ?: properNorthBearing
 
         if (null == mainActivityIsInit) {
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
@@ -49,7 +55,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     getString(R.string.watch_callsign),
                     icon = R.drawable.compass_1,
                     titleText = getString(R.string.compass),
-                    0F
+                    needleOrientation.toFloat()
                 )
                 else -> return when (active != null) {
                     true -> createComplicationData(
@@ -65,7 +71,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                         getString(R.string.watch_callsign),
                         icon = R.drawable.compass_1,
                         titleText = getString(R.string.compass),
-                        0F
+                        needleOrientation.toFloat()
                     )
                 }
             }
