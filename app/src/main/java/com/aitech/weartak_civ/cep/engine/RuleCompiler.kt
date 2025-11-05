@@ -97,7 +97,8 @@ object RuleCompiler {
                     isLocal = action.optBoolean("isLocal", false),
                     priorityFrom = action.optString("priority_from", "severity"),
                     priority = if (action.has("priority")) action.optInt("priority") else null,
-                    sendSms = action.optBoolean("sendSms", false)
+                    sendSms = action.optBoolean("sendSms", false),
+                    timeoutSec = if (action.has("timeout")) action.optLong("timeout") else null
                 ),
                 snapshotKeys = o.optJSONArray("snapshot_keys")?.let { ja ->
                     List(ja.length()) { idx -> ja.getString(idx) }

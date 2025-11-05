@@ -30,7 +30,7 @@ object CepProvider {
         return dispatcher ?: synchronized(this) {
             dispatcher ?: CepActionDispatcher(
                 scope = scope,
-                handlers = listOf(LogActionHandler())
+                handlers = listOf(LogActionHandler(appScope = scope))
             ).also { dispatcher = it }
         }
     }

@@ -2,9 +2,17 @@ package com.aitech.weartak_civ.cep.engine.action
 
 import android.util.Log
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.service.CotDispatchService
 import org.greenrobot.eventbus.EventBus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import java.util.UUID
 
-class LogActionHandler: ActionHandler {
+
+class LogActionHandler(
+    private val appScope: CoroutineScope
+): ActionHandler {
     override val type: String = "log"
     override suspend fun handle(ctx: TriggerContext) {
         val prefix = "[CEP][${ctx.action.severity}][${ctx.ruleId}]"
@@ -28,14 +36,39 @@ class LogActionHandler: ActionHandler {
                 else -> ctx.action.priority ?: 0
             }
 
+            val uid = (ctx.action.uid?.takeIf { it.isNotBlank() }) ?: UUID.randomUUID().toString()
+
             EventBus.getDefault().post(
                 CustomEmergencyEvent(
+                    uid = uid,
                     category = ctx.action.category ?: "CAT_HEALTH_GENERIC",
                     description = ctx.action.message.ifEmpty { ctx.ruleId },
                     priority = priority,
-                    sendSms = ctx.action.sendSms
+                    sendSms = ctx.action.sendSms,
+                    isCancel = false
                 )
             )
+
+            // 3) Optional auto-cancel after timeout using the SAME uid
+            ctx.action.timeoutSec?.let { seconds ->
+                if (seconds > 0) {
+                    appScope.launch {
+                        delay(seconds * 1000L)
+                        EventBus.getDefault().post(
+                            CustomEmergencyEvent(
+                                uid = uid, // <-- same UID so TAK cancels the exact marker
+                                // You can keep legacy category cancel for backward compatibility:
+                                category = CustomEmergencyEvent.CAT_SOS_ALERT_CANCELLED,
+                                description = "Cancel ${ctx.ruleId}",
+                                priority = 0,
+                                sendSms = false,
+                                isCancel = true // new path; your dispatch will also look at category for legacy
+                            )
+                        )
+                    }
+                }
+            }
+
         }
     }
 

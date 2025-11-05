@@ -59,7 +59,9 @@ data class RuleAction(
     val isLocal: Boolean = false,
     val priorityFrom: String? = "severity", // "severity" or null
     val priority: Int? = null,        // explicit fallback if not deriving
-    val sendSms: Boolean = false
+    val sendSms: Boolean = false,
+    val timeoutSec: Long? = null,
+    val uid: String? = ""
 )
 
 

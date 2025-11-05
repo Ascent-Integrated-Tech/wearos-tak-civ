@@ -12,7 +12,9 @@ data class ActionDef(
     val isLocal: Boolean = false,          // true → trigger local on-watch feedback
     val priorityFrom: String? = "severity",// "severity" or null
     val priority: Int? = null,             // fallback explicit priority
-    val sendSms: Boolean = false           // optional SMS flag
+    val sendSms: Boolean = false,          // optional SMS flag
+    val timeoutSec: Long? = null,
+    val uid: String? = ""
 )
 
 data class TriggerContext(

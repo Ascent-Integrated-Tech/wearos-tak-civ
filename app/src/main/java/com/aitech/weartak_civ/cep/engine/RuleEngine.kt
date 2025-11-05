@@ -39,7 +39,9 @@ class RuleEngine(
                         isLocal     = r.action.isLocal,
                         priorityFrom= r.action.priorityFrom,
                         priority    = r.action.priority,
-                        sendSms     = r.action.sendSms
+                        sendSms     = r.action.sendSms,
+                        timeoutSec  = r.action.timeoutSec,
+                        uid         = r.action.uid
                     ),
                     snapshot = snapshot,
                     ts = now
