@@ -255,6 +255,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRa
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
@@ -325,6 +327,7 @@ fun loadSettingsValues(){
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
     enableHailServiceSettingsState.postValue(enableHailService)
+    enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
     callsignSettingsState.postValue(callsign)
     teamSettingsState.postValue(team)
     categorySettingsState.postValue(category)
@@ -3376,6 +3379,8 @@ fun SettingsScreen(
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
+
     Log.d(TAG, "Hail License State: $hailLicenseState")
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
@@ -3517,6 +3522,14 @@ fun SettingsScreen(
                 { enableChatServiceSettingsState.postValue(it) },
                 {},
                 stringResource(R.string.chat),
+                stringResource(R.string.service_on_off)
+            )
+
+            SettingSwitchToggleLiveData(
+                bloodhoundCompassCheckedLive,
+                { enableBloodhoundCompassServiceSettingsState.postValue(it) },
+                {},
+                "Bloodhound & Compass",
                 stringResource(R.string.service_on_off)
             )
 
@@ -3689,6 +3702,7 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var bloodhoundCompassCheckedChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
                     var constantReportingIntervalChanged: Boolean = false
                     var stationaryReportingIntervalChanged: Boolean = false
@@ -3898,6 +3912,14 @@ fun SettingsScreen(
 
                     }
 
+                    if (enableBloodhoundCompassService != enableBloodhoundCompassServiceSettingsState.value) {
+                        settingsChanged = true; bloodhoundCompassCheckedChanged = true
+                        enableBloodhoundCompassService = enableBloodhoundCompassServiceSettingsState.value ?: enableBloodhoundCompassService
+                        runBlocking {
+                            enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+                        }
+                    }
+
                     if (enableHailService != enableHailServiceSettingsState.value) {
                         settingsChanged = true; hailCheckedChanged = true
                         enableHailService = enableHailServiceSettingsState.value ?: enableHailService
@@ -4052,6 +4074,10 @@ fun SettingsScreen(
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (bloodhoundCompassCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
+                                 dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
                              }
                              if (hailCheckedChanged) {
                                  Log.d(TAG, "Storing enableHailService $enableHailService")

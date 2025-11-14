@@ -203,6 +203,7 @@ import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -232,6 +233,8 @@ class MainActivity : ComponentActivity() {
         var enableSkinTempService: Boolean = true
         var enableDittoService : Boolean = false
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableBloodhoundCompassService : Boolean = false
+        var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableHailService: Boolean = false
@@ -677,6 +680,7 @@ class MainActivity : ComponentActivity() {
             tabletCommandEndpoint = dataRepository.getTabletCommandEndpoint.first()
             tabletCommandApikey = dataRepository.getTabletCommandApikey.first()
             tabletCommandReportingUpdateInterval = dataRepository.getTabletCommandReportingUpdateInterval.first()
+            enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
 
             // Initially on start ActivityRecognized is UNKNOWN
             val dynamicReportingInterval = calcDynamicReportingInterval(false, ActivityRecognized.UNKNOWN,
@@ -1027,6 +1031,8 @@ class MainActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+
         enableHailServiceSettingsState.postValue(enableHailService)
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
@@ -2085,6 +2091,7 @@ fun MainScreen(
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val bloodhoundCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
@@ -2199,7 +2206,7 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ){
-                        BloodhoundButton(context, activeItem, chatCheckedLive)
+                        BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -2666,7 +2673,7 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
     }
 }
 @Composable
-fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatChecked: Boolean?){
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
     val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
     val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
@@ -2675,12 +2682,12 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatCh
  Row(
         modifier = Modifier.clickable(
             onClick = {
-                if (chatChecked == true) {
+                if (bloodhoundChecked == true) {
                     context.startActivity(Intent(context, BloodhoundActivity::class.java))
                 } else {
                     Toast.makeText(
                         context,
-                        "Bloodhound is disabled. Please enable Chat in Settings.",
+                        "Bloodhound is disabled. Please enable it in Settings.",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -2701,7 +2708,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, chatCh
         Column (
             modifier = Modifier.padding(start = 13.dp)
         ) {
-            if (chatChecked == true) {
+            if (bloodhoundChecked == true) {
                 if (activeItem != null) {
                     Text(
                         text = activeItem.target,
