@@ -255,6 +255,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRa
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
@@ -322,6 +324,7 @@ fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
+    enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
     enableHailServiceSettingsState.postValue(enableHailService)
@@ -3187,9 +3190,9 @@ fun InvalidHailScreen(navController: NavController) {
     WearTAKCIVTheme {
         Column(
             modifier = Modifier
-                    .fillMaxSize()
-                    .background(colors.background)
-                    .padding(10.dp),
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -3371,6 +3374,7 @@ fun SettingsScreen(
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
     var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
@@ -3567,6 +3571,14 @@ fun SettingsScreen(
                         )
                     )
                 }
+
+            SettingSwitchToggleLiveData(
+                batteryAlertsCheckedLive,
+                { enableBatteryAlertsSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.battery_alerts),
+                stringResource(R.string.on_off)
+            )
                 Spacer(modifier = Modifier.height(10.dp))
 
             Text(
@@ -3689,6 +3701,7 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var batteryAlertsCheckedChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
                     var constantReportingIntervalChanged: Boolean = false
                     var stationaryReportingIntervalChanged: Boolean = false
@@ -3898,6 +3911,15 @@ fun SettingsScreen(
 
                     }
 
+                    if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
+                        settingsChanged = true; batteryAlertsCheckedChanged = true
+                        enableBatteryAlerts = enableBatteryAlertsSettingsState.value ?: enableBatteryAlerts
+                        runBlocking {
+                            enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
+                        }
+
+                    }
+
                     if (enableHailService != enableHailServiceSettingsState.value) {
                         settingsChanged = true; hailCheckedChanged = true
                         enableHailService = enableHailServiceSettingsState.value ?: enableHailService
@@ -4048,10 +4070,13 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                  dataRepository.storeEnableDittoService(enableDittoService)
                              }
-
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (batteryAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
+                                 dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
                              }
                              if (hailCheckedChanged) {
                                  Log.d(TAG, "Storing enableHailService $enableHailService")

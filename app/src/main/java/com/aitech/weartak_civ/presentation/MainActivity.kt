@@ -234,6 +234,8 @@ class MainActivity : ComponentActivity() {
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableBatteryAlerts: Boolean = false
+        var enableBatteryAlertsSettingsState = MutableLiveData<Boolean>(false)
         var enableHailService: Boolean = false
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableMulticastOnWifi: Boolean = true
@@ -655,6 +657,7 @@ class MainActivity : ComponentActivity() {
             enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             enableChatService = dataRepository.getEnableChatService.first()
+            enableBatteryAlerts = dataRepository.getEnableBatteryAlerts.first()
             // TODO: For some reason, DataRepository's enableHailService is true in onCreate of CotDispatchService even if enableHailService here is false
             enableHailService = dataRepository.getEnableHailService.first()
             enableBatdokCot = dataRepository.getEnableBatdokCot.first()
@@ -799,6 +802,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Battery Alerts:", enableBatteryAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
                     ${String.format("%-25s %-30s", "Enable Batdok COT:", enableBatdokCot.toString())}
                     ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
@@ -1031,6 +1035,7 @@ class MainActivity : ComponentActivity() {
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableChatServiceSettingsState.postValue(enableChatService)
+        enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts) // ephemeral ui value
         enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
         enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)

@@ -136,6 +136,7 @@ class CotDispatchService : Service() {
         CoroutineScope(Dispatchers.Main).launch {
             setValuesFromCustomDeveloperConfig()
         }
+        //TODO: WEAR-312: Prevent this from calling when battery alerts disabled vvv
         startBatteryAlerts()
 
         if (!EventBus.getDefault().isRegistered(this)) {
@@ -151,7 +152,9 @@ class CotDispatchService : Service() {
         // TODO: We should only send this when the device is NOT charging... And change to CEP rule
         serviceScope.launch(Dispatchers.IO) {
             dataRepository.latestBatteryPercentage.collect { batt ->
-                if ((null != batt) && TAKConnectService.isAnyTakConnected) {
+                val batteryAlertsEnabled = (dataRepository.getEnableBatteryAlerts.first())
+                val endpointsToSendTo: Boolean = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first())
+                if ((null != batt) && endpointsToSendTo && batteryAlertsEnabled) {
                     if (batt <= MainActivity.battWarnPercent) {
                         Log.d(TAG, "battery: $batt")
                         if (batt > MainActivity.battAlertPercent) {
@@ -189,7 +192,7 @@ class CotDispatchService : Service() {
                                 }
                                 val chatMessage = buildChatCotMessage(
                                     loc,
-                                    "Battery ALERT: ${MainActivity.callsign} battery less than $${MainActivity.battAlertPercent}% (actual=$batt%)",
+                                    "Battery ALERT: ${MainActivity.callsign} battery less than ${MainActivity.battAlertPercent}% (actual=$batt%)",
                                     "All Chat Rooms",
                                     "All Chat Rooms"
                                 )
