@@ -2696,6 +2696,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
     ){
         Image(
             painter = painterResource(R.drawable.compass_1),
+            alpha = if (bloodhoundChecked == true) 1F else 0.5F,
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterVertically)
@@ -2740,15 +2741,17 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                 }
             } else {
                 Text(
-                    text = stringResource(R.string.compass),
-                    fontSize = 13.sp,
+                    text = stringResource(R.string.compass_disabled),
+                    fontSize = 12.sp,
                     overflow = TextOverflow.Ellipsis,
+                    color = Color.Gray,
                     fontWeight = FontWeight.Medium,
                 )
 
                 Text(
                     text = "---",
                     fontSize = 15.sp,
+                    color = Color.Gray,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )

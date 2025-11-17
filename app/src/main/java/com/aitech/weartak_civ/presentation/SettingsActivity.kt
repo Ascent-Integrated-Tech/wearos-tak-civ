@@ -3908,7 +3908,6 @@ fun SettingsScreen(
                         //restartTAKConnectService()
                         //TODO: Find out if we actually need to restart the tak connect service (manager should handle)
                         requestChatComplicationUpdate(context)
-                        requestBloodhoundComplicationUpdate(context)
 
                     }
 
@@ -3918,6 +3917,7 @@ fun SettingsScreen(
                         runBlocking {
                             enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
                         }
+                        requestBloodhoundComplicationUpdate(context)
                     }
 
                     if (enableHailService != enableHailServiceSettingsState.value) {
