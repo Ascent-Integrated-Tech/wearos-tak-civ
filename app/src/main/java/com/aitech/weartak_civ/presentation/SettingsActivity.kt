@@ -257,6 +257,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReport
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
@@ -328,6 +330,7 @@ fun loadSettingsValues(){
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
     enableHailServiceSettingsState.postValue(enableHailService)
+    enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
     callsignSettingsState.postValue(callsign)
     teamSettingsState.postValue(team)
     categorySettingsState.postValue(category)
@@ -3380,6 +3383,8 @@ fun SettingsScreen(
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
+
     Log.d(TAG, "Hail License State: $hailLicenseState")
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
@@ -3521,6 +3526,14 @@ fun SettingsScreen(
                 { enableChatServiceSettingsState.postValue(it) },
                 {},
                 stringResource(R.string.chat),
+                stringResource(R.string.service_on_off)
+            )
+
+            SettingSwitchToggleLiveData(
+                bloodhoundCompassCheckedLive,
+                { enableBloodhoundCompassServiceSettingsState.postValue(it) },
+                {},
+                "Bloodhound & Compass",
                 stringResource(R.string.service_on_off)
             )
 
@@ -3702,6 +3715,7 @@ fun SettingsScreen(
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
+                    var bloodhoundCompassCheckedChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
                     var constantReportingIntervalChanged: Boolean = false
                     var stationaryReportingIntervalChanged: Boolean = false
@@ -3907,7 +3921,6 @@ fun SettingsScreen(
                         //restartTAKConnectService()
                         //TODO: Find out if we actually need to restart the tak connect service (manager should handle)
                         requestChatComplicationUpdate(context)
-                        requestBloodhoundComplicationUpdate(context)
 
                     }
 
@@ -3918,6 +3931,13 @@ fun SettingsScreen(
                             enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
                         }
 
+                    if (enableBloodhoundCompassService != enableBloodhoundCompassServiceSettingsState.value) {
+                        settingsChanged = true; bloodhoundCompassCheckedChanged = true
+                        enableBloodhoundCompassService = enableBloodhoundCompassServiceSettingsState.value ?: enableBloodhoundCompassService
+                        runBlocking {
+                            enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+                        }
+                        requestBloodhoundComplicationUpdate(context)
                     }
 
                     if (enableHailService != enableHailServiceSettingsState.value) {
@@ -4077,6 +4097,9 @@ fun SettingsScreen(
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
                                  dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
+                             if (bloodhoundCompassCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
+                                 dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
                              }
                              if (hailCheckedChanged) {
                                  Log.d(TAG, "Storing enableHailService $enableHailService")

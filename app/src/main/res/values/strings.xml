@@ -124,7 +124,7 @@
     <string name="no_connect_server_disconnected_location_disabled" translatable="false">No Connection, Server Disconnected, Location Disabled</string>
 
     <string name="not_capturing_connectivitystatuscomplication" translatable="false">not capturing connectivityStatusComplication: %1$s</string>
-    <string name="heart_rate" translatable="false">Heart Rate</string>
+    <string name="heart_rate" translatable="true">Heart Rate</string>
     <string name="heart_rate_could_not_be_found" translatable="false">Heart rate could not be found</string>
 
     <string name="chat_disabled" translatable="false">Chat Disabled</string>
@@ -511,4 +511,11 @@
     <string name="bloodhound_disabled">Bloodhound Disabled</string>
     <string name="compass">Compass</string>
     <string name="battery_alerts">Battery Alerts</string>
+    <string name="compass_disabled">Compass Disabled</string>
+    <string name="exertion">Exertion</string>
+    <string name="floors">Floors</string>
+    <string name="calories">Calories</string>
+    <string name="steps">Steps</string>
+    <string name="skin_temp">Skin Temp</string>
+    <string name="current_metrics">Current Metrics</string>
 </resources>

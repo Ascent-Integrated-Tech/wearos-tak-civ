@@ -21,7 +21,10 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
+import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
@@ -49,6 +52,48 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
         }
         return when (isLicenseValid()) {
+            true -> return when (enableBloodhoundCompassServiceSettingsState.value) {
+                true -> return when (active != null) {
+                    true -> createComplicationData(
+                        text = active.distance.toString() + " km",
+                        contentDescription = getString(R.string.watch_callsign),
+                        icon = R.drawable.compass_1,
+                        titleText = active.target,
+                        orientation = active.orientation
+                    )
+
+                    false -> createComplicationData(
+                        "---",
+                        getString(R.string.watch_callsign),
+                        icon = R.drawable.compass_1,
+                        titleText = getString(R.string.compass),
+                        needleOrientation.toFloat()
+                    )
+                }
+                //TODO: WEAR 309 - change to disabled
+                false -> createComplicationData(
+                    "---",
+                    getString(R.string.watch_callsign),
+                    icon = R.drawable.disabled_compass_gray,
+                    titleText = getString(R.string.compass_disabled),
+                    needleOrientation.toFloat()
+                )
+                //TODO: WEAR 309 - change to disabled
+                else -> createComplicationData(
+                    "---",
+                    getString(R.string.watch_callsign),
+                    icon = R.drawable.disabled_compass_gray,
+                    titleText = getString(R.string.compass_disabled),
+                    needleOrientation.toFloat()
+                )
+            }
+            false -> createComplicationData(
+                getString(R.string.invalid_license), getString(R.string.invalid_license_key),
+                icon = R.drawable.disabled_compass_gray,
+                titleText = getString(R.string.invalid_license),
+                0F
+            )
+            /*
             true -> return when (chatComplication) {
                 CHAT_DISABLED -> createComplicationData(
                     "---",
@@ -81,6 +126,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                 titleText = getString(R.string.invalid_license),
                 0F
             )
+            */
         }
     }
 
@@ -125,7 +171,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
         // Create a rotated version of your PNG
         val rotatedBitmap = getRotatedCompassBitmap(
             context = this,
-            drawableResId = R.drawable.compass_1, // your one compass PNG
+            drawableResId = icon, // your one compass PNG
             rotationDegrees = rotation
         )
 

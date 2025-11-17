@@ -81,7 +81,7 @@ class ServiceConfiguration(
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
 
-        ServiceType.BLOOD_HOUND -> dataRepository.getEnableChatService.distinctUntilChanged()
+        ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
@@ -129,7 +129,12 @@ class ServiceConfiguration(
         )
 
         ServiceType.CHAT -> emptyList()
-        ServiceType.BLOOD_HOUND -> emptyList()
+        ServiceType.BLOOD_HOUND -> listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.BODY_SENSORS,
+            android.Manifest.permission.BODY_SENSORS_BACKGROUND
+        )
 
         ServiceType.TAK_CONNECT,
         ServiceType.CUST_ACCESS,

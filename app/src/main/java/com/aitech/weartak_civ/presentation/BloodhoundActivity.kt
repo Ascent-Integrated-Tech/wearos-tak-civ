@@ -78,6 +78,7 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -153,25 +154,25 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
-    val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
+    val bloodhoundEnabledLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
         val currentDestination = navController.currentBackStackEntry?.destination?.route
         val isValid = isLicenseValid()
 
-        Log.i(TAG, "isValid: $isValid, currentDest: $currentDestination, chatEnabledLive: $chatEnabledLive")
+        Log.i(TAG, "isValid: $isValid, currentDest: $currentDestination, chatEnabledLive: $bloodhoundEnabledLive")
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
                 exitActivity()
             }
-            isValid && chatEnabledLive == true && currentDestination != "bloodhound_screen" -> {
+            isValid && bloodhoundEnabledLive == true && currentDestination != "bloodhound_screen" -> {
                 navController.navigate("bloodhound_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
                 }
             }
-            isValid && chatEnabledLive == false && currentDestination != "bloodhound_disabled_screen" -> {
+            isValid && bloodhoundEnabledLive == false && currentDestination != "bloodhound_disabled_screen" -> {
                 navController.navigate("bloodhound_disabled_screen") {
                     popUpTo(0) { inclusive = true }
                 }
