@@ -1290,6 +1290,16 @@ class DataRepository(private val context: Context) {
         _whileAlertingReportingInterval.emit(interval)
     }
 
+    val getEnableBatteryAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BATTERY_ALERTS] ?: false
+    }
+
+    suspend fun storeEnableBatteryAlerts(enableBatteryAlerts: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BATTERY_ALERTS] = enableBatteryAlerts
+        }
+    }
+
     val getEnableSmsForAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_SMS_FOR_ALERTS] ?: false
     }
@@ -1560,6 +1570,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
+        private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
