@@ -120,6 +120,13 @@
     <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
     <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
     <string name="high_exertion_alert_string">HIGH Exertion</string>
+    <string name="exertion">Exertion</string>
+    <string name="floors">Floors</string>
+    <string name="calories">Calories</string>
+    <string name="steps">Steps</string>
+    <string name="skin_temp">Skin Temp</string>
+    <string name="current_metrics">Current Metrics</string>
+    <string name="heart_rate">Kalp atış hızı</string>
     <string name="view_chat">View Chat</string>
     <string name="rgr">RGR</string>
     <string name="npos">nPos</string>
