@@ -370,14 +370,18 @@ class ReactiveServiceManager : Service() {
                 continue
             }
 
+            val c = ctx(t) // uses desired, running, available, depsSatisfied
+
+            val shouldStop = c.running && (!c.desired || !c.available || !c.depsSatisfied)
+
             val desired = desiredServicesStateMap[t] == true
             val running = registry.isServiceRunning(t)
             val available = config.isServiceAvailable(t)
 
-            if (running && (!desired || !available)) {
+            if (shouldStop) {
                 Log.w(TAG, "Stopping $t (desired=$desired, available=${config.isServiceAvailable(t)})")
-                stopOne(t)
-                changedTypes += t
+                stopOne(c.type)
+                changedTypes += c.type
                 changed = true
             }
         }
@@ -811,6 +815,8 @@ class ReactiveServiceManager : Service() {
         }
     }
 
+
+
     fun has(requiredPerms: List<String>): Boolean {
         val missingPerms = requiredPerms.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -845,10 +851,10 @@ class ReactiveServiceManager : Service() {
         HAIL(isKnoxMgdService = true, isNotRunnable = true),
         DITTO(true, isKnoxMgdService = true),
         BLE_BEACON(true, isKnoxMgdService = true),
-        MOVEMENT_DETECTION(true, isKnoxMgdService = false),
         OFF_BODY_DETECT(true, isKnoxMgdService = false),
         BATTERY(true, isKnoxMgdService = false),
         POWER_MGR(true, isKnoxMgdService = false),
-        BLOOD_HOUND(true, isKnoxMgdService = false)
+        BLOOD_HOUND(true, isKnoxMgdService = false),
+        MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND))
     }
 }

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">WearTAK-CIV</string>
+    <string name="app_name" translatable="false">WearTAK-Tommy</string>
     <!--
     This string is used for square devices and overridden by hello_world in
     values-round/strings.xml for round devices.
@@ -510,4 +510,5 @@
     <string name="bloodhound">Bloodhound</string>
     <string name="bloodhound_disabled">Bloodhound Disabled</string>
     <string name="compass">Compass</string>
+    <string name="compass_disabled">Compass Disabled</string>
 </resources>

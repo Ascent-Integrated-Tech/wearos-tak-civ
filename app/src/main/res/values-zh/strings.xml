@@ -130,4 +130,5 @@
     <string name="bloodhound">Bloodhound</string>
     <string name="bloodhound_disabled">Bloodhound Disabled</string>
     <string name="compass">Compass</string>
+    <string name="compass_disabled">Compass Disabled</string>
 </resources>

@@ -415,6 +415,16 @@ class DataRepository(private val context: Context) {
 
     // -------- End of Service State Debugging ----------
 
+    val getEnableBloodhoundCompassService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BLOODHOUND_COMPASS_SERVICE] ?: false
+    }
+
+    suspend fun storeEnableBloodhoundCompassService(enableBloodhoundService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BLOODHOUND_COMPASS_SERVICE] = enableBloodhoundService
+        }
+    }
+
     private val _getEnableTakConnectService = MutableStateFlow<Boolean>(true)
     var getEnableTakConnectService: MutableStateFlow<Boolean> = _getEnableTakConnectService
 
@@ -1550,6 +1560,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
+        private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")

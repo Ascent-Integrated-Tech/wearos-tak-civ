@@ -224,6 +224,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         Log.d(TAG, "MovementDetectionService onDestroy()")
         isRunning.set(false)
         sensorManager.unregisterListener(this)
+        bhRepo.updateMagAzimuthTrue(null) // clear compass needle
         scope.coroutineContext.cancel()
         stopForeground(STOP_FOREGROUND_DETACH)
     }
