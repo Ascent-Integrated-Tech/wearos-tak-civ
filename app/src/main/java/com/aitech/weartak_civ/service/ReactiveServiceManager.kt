@@ -855,6 +855,7 @@ class ReactiveServiceManager : Service() {
         BATTERY(true, isKnoxMgdService = false),
         POWER_MGR(true, isKnoxMgdService = false),
         BLOOD_HOUND(true, isKnoxMgdService = false),
-        MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND))
+        MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND)),
+        COMPANION_APP(isForegroundService = true, isKnoxMgdService = false)
     }
 }

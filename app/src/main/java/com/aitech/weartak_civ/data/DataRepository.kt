@@ -1167,6 +1167,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableCompanionAppService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_COMPANION_APP_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableCompanionAppService(enableCompanionAppService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_COMPANION_APP_SERVICE] = enableCompanionAppService
+        }
+    }
+
     data class LocalizationBleBeaconItem(
         val uuid: String,
         val major: Int,
@@ -1597,6 +1607,7 @@ class DataRepository(private val context: Context) {
         private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
+        private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
