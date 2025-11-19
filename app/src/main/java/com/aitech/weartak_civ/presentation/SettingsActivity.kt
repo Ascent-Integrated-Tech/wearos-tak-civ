@@ -3389,6 +3389,7 @@ fun SettingsScreen(
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
+
     WearTakCivScreenDimensions(
         columnContent = {
             CallsignRoleTeamChip(
@@ -3926,10 +3927,12 @@ fun SettingsScreen(
 
                     if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
                         settingsChanged = true; batteryAlertsCheckedChanged = true
-                        enableBatteryAlerts = enableBatteryAlertsSettingsState.value ?: enableBatteryAlerts
+                        enableBatteryAlerts = enableBatteryAlertsSettingsState.value
+                            ?: enableBatteryAlerts
                         runBlocking {
                             enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
                         }
+                    }
 
                     if (enableBloodhoundCompassService != enableBloodhoundCompassServiceSettingsState.value) {
                         settingsChanged = true; bloodhoundCompassCheckedChanged = true
@@ -4097,6 +4100,7 @@ fun SettingsScreen(
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
                                  dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
+                             }
                              if (bloodhoundCompassCheckedChanged) {
                                  Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
                                  dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
