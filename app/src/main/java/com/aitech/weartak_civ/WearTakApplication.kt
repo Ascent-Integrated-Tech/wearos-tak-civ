@@ -20,6 +20,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import live.ditto.Ditto
 import live.ditto.DittoError
@@ -30,6 +31,7 @@ class WearTakApplication : Application() {
 
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
+    lateinit var capRepo: CompanionAppRepository; private set
 
     companion object {
         val TAG = "WearTAK-Applicaton"
@@ -39,6 +41,7 @@ class WearTakApplication : Application() {
         super.onCreate()
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
+        capRepo = CompanionAppRepository(applicationContext)
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
     }

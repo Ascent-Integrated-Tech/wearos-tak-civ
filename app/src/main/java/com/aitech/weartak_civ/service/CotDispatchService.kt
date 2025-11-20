@@ -58,8 +58,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -288,7 +286,7 @@ class CotDispatchService : Service() {
         val type: String,
         val icon: String
     )
-    private val cotInfoByUid = java.util.concurrent.ConcurrentHashMap<String, CotMarkerInfo>()
+    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, CotMarkerInfo>()
 
     private val pendingDropQueue = ArrayDeque<DataRepository.DropRequest>()
 
@@ -1005,7 +1003,7 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun handleClearUid(uid: String) {
-        val info = cotInfoByUid[uid]  // may be null for very old markers
+        val info = markerDropMap[uid]  // may be null for very old markers
         // TODO: Need to check if info is NOT null
         // TODO: Also check logic of NOT remove it from dataRepository (wait if NOT TAKConnectService.isAnyTakConnected)
         val clearXml = buildClearMarkerCotMessage(uid, info)
@@ -1023,7 +1021,7 @@ class CotDispatchService : Service() {
         if (!sent) return
 
         dataRepository.removeByUid(uid)
-        cotInfoByUid.remove(uid)
+        markerDropMap.remove(uid)
     }
 
     private suspend fun handleClearAll() {
@@ -1258,9 +1256,10 @@ class CotDispatchService : Service() {
             sendDataTAKServers(xml, true)
             sent = true
         }
+
         if (!sent) return  // don’t reflect in UI until actually sent/meshed
 
-        cotInfoByUid[uid] = CotMarkerInfo(loc.latitude, loc.longitude, loc.altitude, loc.accuracy, loc.verticalAccuracyMeters, type, iconSetPath)
+        markerDropMap[uid] = CotMarkerInfo(loc.latitude, loc.longitude, loc.altitude, loc.accuracy, loc.verticalAccuracyMeters, type, iconSetPath)
         Log.i(TAG, "=== ===> sending marker type ${type} with uid = [ $uid ] ")
 
         dataRepository.appendDroppedMarker(

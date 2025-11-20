@@ -15,6 +15,15 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.CompanionAppRepository
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.LocationUpdateRequired
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -28,6 +37,25 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 
 class CompanionAppService : Service() {
+
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+
+    private val capRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).capRepo
+        } catch (_: Throwable) {
+            CompanionAppRepository(applicationContext)
+        }
+    }
+
+    private val repo by lazy {
+        try {
+            (applicationContext as WearTakApplication).repo
+        } catch (_: Throwable) {
+            DataRepository(applicationContext)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()

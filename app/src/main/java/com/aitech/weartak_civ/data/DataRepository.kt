@@ -486,6 +486,7 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.emit(droppedMarkerList)
     }
 
+
     enum class MarkerType(
         val type: String,
         val icon: String
@@ -507,7 +508,10 @@ class DataRepository(private val context: Context) {
     }
 
     // --- request flows (UI -> backend) ---
-    data class DropRequest(val markerType: MarkerType, val timeMillis: Long)
+    data class DropRequest(
+        val markerType: MarkerType,
+        val timeMillis: Long
+    )
 
     sealed interface ClearRequest {
         data class Specific(val uid: String) : ClearRequest
