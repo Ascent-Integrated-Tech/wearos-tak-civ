@@ -20,6 +20,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -112,9 +113,12 @@ class SkinTempService : Service() {
             // 1️⃣  Stop sensor immediately (but keep queue)
             stopSkinTracker(false)
 
+            //val cep = CepProvider.getOrCreateEngine(applicationContext)
+
             // 2️⃣  Collect temp data point  ──────────────────────────────
             dataPoints.firstOrNull()?.let { dp ->
                 val status = dp.getValue(ValueKey.SkinTemperatureSet.STATUS)
+                val nowMs = System.currentTimeMillis()
 
                 if (status >= 0) {
                     val objectTemp = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE)
@@ -125,6 +129,18 @@ class SkinTempService : Service() {
                     //val logLine = "SkinTemp status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
                     //            "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
                     //writeToLogFileLocation(logFile, logLine)
+
+                    // 2️⃣  Emit both to CEP engine ──────────────────────────────
+                    /*try {
+                        val cep = CepProvider.getOrCreateEngine(applicationContext)
+                        cep.ingest("skin_temp.c_peripheral", tempF.toFahrenheit().toDouble(), nowMs)
+                        cep.ingest("ambient.temp_c", 1.0, nowMs)
+
+                        //Log.d(TAG, "CEP emit → skin_temp.c_peripheral=$objectTempC°C, ambient.temp_c=$ambientTempC°C")
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Failed to emit temp data to CEP", ex)
+                    }*/
+                    
                 } else {
                     tempF = -1f
                     skinTempLiveData.postValue("N/A")

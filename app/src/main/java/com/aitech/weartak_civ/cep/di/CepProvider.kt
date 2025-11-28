@@ -6,9 +6,11 @@ import com.aitech.weartak_civ.cep.engine.ProfileStore
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
 import com.aitech.weartak_civ.cep.engine.action.CepActionDispatcher
 import com.aitech.weartak_civ.cep.engine.action.LogActionHandler
+import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 
 object CepProvider {
     private lateinit var appCtx: Context
@@ -43,7 +45,14 @@ object CepProvider {
 
     private fun buildEngine(context: Context): CepEngine {
         val config = RuleCompiler.loadFromRaw(context)
-        return CepEngine(context.applicationContext, scope, config)
+
+        val dataRepo = DataRepository(context.applicationContext)
+
+        val yearOfBirth = kotlinx.coroutines.runBlocking {
+            dataRepo.getYearOfBirth.first()
+        }
+
+        return CepEngine(context.applicationContext, scope, config, yearOfBirth = yearOfBirth)
     }
 }
 

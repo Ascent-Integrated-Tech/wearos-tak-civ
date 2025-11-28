@@ -61,7 +61,18 @@ data class RuleAction(
     val priority: Int? = null,        // explicit fallback if not deriving
     val sendSms: Boolean = false,
     val timeoutSec: Long? = null,
-    val uid: String? = ""
+    val uid: String? = "",
+    val monitor: List<ExitCondition> = emptyList(),
+    val exitSustainSec: Long? = null,
+    val exitLogic: String? = null // "AND" or "OR", default to "AND" if null
 )
+
+data class ExitCondition(
+    val feature: String,
+    val exitBelow: Double? = null,
+    val exitAbove: Double? = null,
+    val hysteresis: Double = 0.0
+)
+
 
 

@@ -291,10 +291,10 @@ fun SuccessDialogActivity(
 
 fun SOSButtonEmergencyMessage(isAlertingLiveData: MutableLiveData<Boolean>){
     if (isAlertingLiveData.value != true) {
-        EventBus.getDefault().post(CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true))
+        EventBus.getDefault().post(CustomEmergencyEvent(category = CAT_MANUAL, description = DESC_SOS_ALERT, priority = 1, sendSms = true))
         Log.d(MainActivity.Constants.TAG, "Manual Alert Triggered")
     } else {
-        EventBus.getDefault().post(CustomEmergencyEvent(CAT_SOS_ALERT_CANCELLED, DESC_SOS_ALERT_CANCELLED, 1, true))
+        EventBus.getDefault().post(CustomEmergencyEvent(category = CAT_SOS_ALERT_CANCELLED, description = DESC_SOS_ALERT_CANCELLED, priority = 1, sendSms = true))
         Log.d(MainActivity.Constants.TAG, "Cancel Alert Triggered")
     }
 }

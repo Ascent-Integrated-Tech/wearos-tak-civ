@@ -30,7 +30,7 @@ class LogActionHandler(
         }
 
         // TAK via EventBus if requested by the rule
-        if (ctx.action.isTak) {
+        /*if (ctx.action.isTak) {
             val priority = when (ctx.action.priorityFrom) {
                 "severity" -> sevToPriority(ctx.action.severity)
                 else -> ctx.action.priority ?: 0
@@ -69,6 +69,70 @@ class LogActionHandler(
                 }
             }
 
+        }*/
+
+        if (ctx.action.isTak) {
+            val priority = when (ctx.action.priorityFrom) {
+                "severity" -> sevToPriority(ctx.action.severity)
+                else -> ctx.action.priority ?: 0
+            }
+
+            // Always derive a UID for this rule firing
+            val rawUid = ctx.action.uid?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+            val exitConditions = ctx.action.monitor
+            val exitLogic = (ctx.action.exitLogic ?: "AND").uppercase()
+            val sustainSec = ctx.action.exitSustainSec ?: 0L
+
+            // --- NEW: de-duplicate alerts per ruleId while active ---
+            val isFirstActivation = AlertRegistry.tryActivate(
+                ruleId = ctx.ruleId,
+                uid = rawUid,
+                exitConditions = exitConditions,
+                exitLogic = exitLogic,
+                exitSustainSec = sustainSec
+            )
+
+
+            if (!isFirstActivation) {
+                // We already have an active alert for this rule; don't spam TAK
+                Log.d("CEP", "[AlertRegistry] Suppressing duplicate alert for rule=${ctx.ruleId}")
+                return
+            }
+            // --------------------------------------------------------
+
+            val uid = rawUid
+
+            EventBus.getDefault().post(
+                CustomEmergencyEvent(
+                    uid = uid,
+                    category = ctx.action.category ?: "CAT_HEALTH_GENERIC",
+                    description = ctx.action.message.ifEmpty { ctx.ruleId },
+                    priority = priority,
+                    sendSms = ctx.action.sendSms,
+                    isCancel = false
+                )
+            )
+
+            // Optional auto-cancel after timeout using the SAME uid
+            /*ctx.action.timeoutSec?.let { seconds ->
+                if (seconds > 0) {
+                    appScope.launch {
+                        delay(seconds * 1000L)
+                        EventBus.getDefault().post(
+                            CustomEmergencyEvent(
+                                uid = uid, // same UID so TAK cancels the exact marker
+                                category = CustomEmergencyEvent.CAT_SOS_ALERT_CANCELLED,
+                                description = "Cancel ${ctx.ruleId}",
+                                priority = 0,
+                                sendSms = false,
+                                isCancel = true
+                            )
+                        )
+                        // Note: when we implement exit-based clearing, we will also call:
+                        // AlertRegistry.clear(ctx.ruleId)
+                    }
+                }
+            }*/
         }
     }
 

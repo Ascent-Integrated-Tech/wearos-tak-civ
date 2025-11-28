@@ -159,7 +159,7 @@ class EnvSensorService : Service(), SensorEventListener {
         val tStr = lastTempC?.let { "${round1(it)}°C" } ?: "—"
         val pStr = lastPressureHpa?.let { "${round1(it)} hPa" } ?: "—"
         val lStr = lastLux?.let { "${round1(it)} lux" } ?: "—"
-        Log.d(TAG, "ts=$tsMs | ambientTemp=$tStr | pressure=$pStr | light=$lStr")
+        //Log.d(TAG, "ts=$tsMs | ambientTemp=$tStr | pressure=$pStr | light=$lStr")
     }
 
     private fun round1(v: Float): String {

@@ -95,6 +95,7 @@ class CotDispatchService : Service() {
     private var manualSosReceivedCategory: String = ""
     private var manualSosReceivedDescription: String  = ""
     private var manualSosReceivedSendSms: Boolean = false
+    private var manualSosReceivedUid: String = ""
     private var iconSetPath: String = ""
     private var markerType: String = ""
     private var alertOrCancel = false
@@ -754,9 +755,21 @@ class CotDispatchService : Service() {
         manualSosReceivedCategory = event.category
         manualSosReceivedDescription = event.description
         manualSosReceivedSendSms = event.sendSms
+        manualSosReceivedUid = event.uid
+
         val currTime = System.currentTimeMillis()
-        alertOrCancel = event.category == CAT_SOS_ALERT_CANCELLED
-        if (manualSosReceivedCategory == DESC_SOS_ALERT) {
+        val legacyCancel = manualSosReceivedCategory == CAT_SOS_ALERT_CANCELLED
+        val isCancel = event.isCancel || legacyCancel
+
+        //NEW FIELDS
+        val eventUid = event.uid
+        if (!eventUid.isNullOrBlank()) {
+            sosAlertUid = eventUid // remember so delayed (GPS) sends reuse the same UID
+        }
+
+        alertOrCancel = isCancel
+
+        if (!isCancel) {
             inManualAlertingState = true
             serviceScope.launch {
                 dataRepository.storeIsAlerting(inManualAlertingState)
@@ -771,7 +784,7 @@ class CotDispatchService : Service() {
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
             Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             manualSosReceivedTime = currTime
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, alertOrCancel) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, alertOrCancel, eventUid) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
         } else {
             if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
                 Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
@@ -852,7 +865,7 @@ class CotDispatchService : Service() {
         """.trimIndent()
     }
 
-    private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
+    private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean, eventUid: String): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -888,14 +901,16 @@ class CotDispatchService : Service() {
         }
 
 //        val uid = UUID.randomUUID().toString()
-        val uid = if (!alertOrCancel) {
-            // Generate and store a new UID
-            val newUid = UUID.randomUUID().toString()
-            sosAlertUid = newUid
-            newUid
-        } else {
-            // Use the previously stored UID
-            sosAlertUid
+        val uid = when {
+            // 1) If caller provided a non-blank eventUid, use it and remember it
+            !eventUid.isNullOrBlank() -> {
+                sosAlertUid = eventUid
+                eventUid
+            }
+            // 2) If this is an ALERT (not cancel), generate a new UID and remember it
+            !alertOrCancel -> UUID.randomUUID().toString().also { sosAlertUid = it }
+            // 3) If this is a CANCEL and no eventUid passed, reuse the previously stored UID
+            else -> sosAlertUid
         }
         val linkUid = MainActivity.device_uid
 
@@ -1141,7 +1156,7 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean, eventUid: String) {
         serviceScope.launch(Dispatchers.IO) {
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
@@ -1155,7 +1170,7 @@ class CotDispatchService : Service() {
             }
 
             // build the CoT XML for this alert
-            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
+            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel, eventUid)
             val takGptChatMessage = buildChatCotMessage(loc, "$emergencyCategory: $emergencyDesc", "TAKBOT-12345","takGPT")
 
             // only forward to TAK if we’re connected
@@ -1263,7 +1278,7 @@ class CotDispatchService : Service() {
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         if (manualSosToBeSent.get() == true) {
             Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, alertOrCancel)
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, alertOrCancel, manualSosReceivedUid)
         }
         lastLocationUpdateRcvd = System.currentTimeMillis()
         serviceScope.launch {

@@ -1362,6 +1362,16 @@ class DataRepository(private val context: Context) {
         )
     }
 
+    val getYearOfBirth: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[YEAR_OF_BIRTH] ?: 1997
+    }
+
+    suspend fun storeYearOfBirth(year: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[YEAR_OF_BIRTH] = year
+        }
+    }
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -1427,5 +1437,6 @@ class DataRepository(private val context: Context) {
         private val TABLET_COMMAND_ENDPOINT = stringPreferencesKey("tablet_command_endpoint")
         private val TABLET_COMMAND_APIKEY = stringPreferencesKey("tablet_command_apikey")
         private val TABLET_COMMAND_REPORTING_UPDATE_INTERVAL = intPreferencesKey("tablet_command_reporting_update_interval")
+        private val YEAR_OF_BIRTH = intPreferencesKey("year_of_birth")
     }
 }

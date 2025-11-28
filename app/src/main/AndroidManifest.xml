@@ -28,7 +28,8 @@
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE"/>
-
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -258,6 +259,10 @@
             android:exported="false"
             android:foregroundServiceType="specialUse" />
         <service
+            android:name=".service.CEPSimulationService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|dataSync" />
+        <service
             android:name=".service.HeartrateService"
             android:enabled="true"
             android:exported="false"
@@ -317,7 +322,10 @@
 			android:name=".service.EnvSensorService"
 			android:exported="false"
 			android:foregroundServiceType="dataSync" />
-
+        <service
+            android:name=".service.MovementDetectionService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
        <service
            android:name=".service.PassiveDataService"
            android:exported="true"

@@ -42,6 +42,20 @@ class FeatureStore {
         kv.remove(k); ts.remove(k)
     }
 
+    fun latestAsDouble(id: String): Double? {
+        val v = kv[id] ?: return null
+
+        return when (v) {
+            is Double -> v
+            is Float  -> v.toDouble()
+            is Int    -> v.toDouble()
+            is Long   -> v.toDouble()
+            is Number -> v.toDouble()
+            is String -> v.toDoubleOrNull()
+            else      -> null
+        }
+    }
+
     /** Age in seconds of a key (for freshness guards). */
     fun ageSeconds(key: String, nowMs: Long = System.currentTimeMillis()): Double? {
         val k = resolve(key)

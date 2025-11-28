@@ -79,6 +79,40 @@ object RuleCompiler {
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val action = o.getJSONObject("action")
+
+            // Parse monitor[]
+            val monitorArray = action.optJSONArray("monitor")
+            val monitorList = mutableListOf<ExitCondition>()
+            if (monitorArray != null) {
+                for (i in 0 until monitorArray.length()) {
+                    val m = monitorArray.getJSONObject(i)
+                    val feature = m.getString("feature")
+                    val exitBelow =
+                        if (m.has("exit_below") && !m.isNull("exit_below")) m.getDouble("exit_below") else null
+                    val exitAbove =
+                        if (m.has("exit_above") && !m.isNull("exit_above")) m.getDouble("exit_above") else null
+                    val hysteresis =
+                        if (m.has("hysteresis") && !m.isNull("hysteresis")) m.getDouble("hysteresis") else 0.0
+
+                    monitorList += ExitCondition(
+                        feature = feature,
+                        exitBelow = exitBelow,
+                        exitAbove = exitAbove,
+                        hysteresis = hysteresis
+                    )
+                }
+            }
+
+            // Parse exit_sustain_sec and optional exit_logic
+            val exitSustainSec =
+                if (action.has("exit_sustain_sec") && !action.isNull("exit_sustain_sec"))
+                    action.getLong("exit_sustain_sec") else null
+
+            val exitLogic =
+                if (action.has("exit_logic") && !action.isNull("exit_logic"))
+                    action.getString("exit_logic") else null
+
+
             out += RuleDef(
                 id = o.getString("id"),
                 description = o.optString("description", null),
@@ -98,7 +132,10 @@ object RuleCompiler {
                     priorityFrom = action.optString("priority_from", "severity"),
                     priority = if (action.has("priority")) action.optInt("priority") else null,
                     sendSms = action.optBoolean("sendSms", false),
-                    timeoutSec = if (action.has("timeout")) action.optLong("timeout") else null
+                    timeoutSec = if (action.has("timeout")) action.optLong("timeout") else null,
+                    monitor = monitorList,
+                    exitSustainSec = exitSustainSec,
+                    exitLogic = exitLogic
                 ),
                 snapshotKeys = o.optJSONArray("snapshot_keys")?.let { ja ->
                     List(ja.length()) { idx -> ja.getString(idx) }

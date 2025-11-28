@@ -1,5 +1,7 @@
 package com.aitech.weartak_civ.cep.engine.action
 
+import com.aitech.weartak_civ.cep.engine.ExitCondition
+
 enum class Severity { INFO, WARN, ALERT, EMERGENCY }
 
 data class ActionDef(
@@ -14,7 +16,10 @@ data class ActionDef(
     val priority: Int? = null,             // fallback explicit priority
     val sendSms: Boolean = false,          // optional SMS flag
     val timeoutSec: Long? = null,
-    val uid: String? = ""
+    val uid: String? = "",
+    val monitor: List<ExitCondition> = emptyList(),
+    val exitLogic: String? = null,         // "AND" or "OR", default to "AND" if null,
+    val exitSustainSec: Long? = null
 )
 
 data class TriggerContext(

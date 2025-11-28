@@ -29,6 +29,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.presentation.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -71,6 +78,7 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val REQUIRED_CONSECUTIVE_HIGHS = 3
     private val REQUIRED_CONSECUTIVE_LOWS = 3
 
+
     private val confirmStillRunnable = Runnable {
         if (isUserMoving) {
             isUserMoving = false
@@ -81,6 +89,13 @@ class MovementDetectionService : Service(), SensorEventListener {
         }
     }
 
+    // --- at class level ---
+    private val cepScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var simJob: Job? = null
+    private var simLoopJob: Job? = null
+    private var lastSimMs: Long = 0L
+    private val SIM_INTERVAL_MS = 1000L // run at most once per second
+
     override fun onCreate() {
         super.onCreate()
     }
@@ -90,6 +105,9 @@ class MovementDetectionService : Service(), SensorEventListener {
             isRunning.set(true)
             startForeground(MOVEMENT_DETECTION_SERVICE_NOTIFICAITON_ID, createNotification())
             Log.d(TAG, "Movement detection service started")
+
+            // DATA SIMULATION LOOP
+            //startSimulationLoop()
 
             sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
             accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -124,7 +142,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         //val currentTime = System.currentTimeMillis()
         //Log.d(TAG, "onSensorChanged: name(${event.sensor.name}) type:${event.sensor.type}")
 
-        when (event.sensor.type) {
+        /*when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
                 // Gravity filtering
                 val alpha = 0.8f
@@ -216,7 +234,171 @@ class MovementDetectionService : Service(), SensorEventListener {
             }
 
              */
+        }*/
+    }
+
+    private fun startSimulationLoop() {
+        if (simLoopJob?.isActive == true) return
+        simLoopJob = cepScope.launch {
+            Log.i(TAG, "CEP simulation loop started, interval=${SIM_INTERVAL_MS}ms")
+            while (isActive) {
+                try {
+                    simulateValues() // your suspend function below
+                } catch (t: Throwable) {
+                    Log.e(TAG, "simulateValues() failed: ${t.message}", t)
+                }
+                delay(SIM_INTERVAL_MS)
+            }
         }
+    }
+
+    suspend fun simulateValues(){
+
+        Log.d("CEP", "starting simulation")
+
+        val now = System.currentTimeMillis()
+
+        // Basic toggles & randomization
+        val rnd = kotlin.random.Random(now)
+        val activity = listOf("STILL", "WALK", "RUN").random()
+        val onWrist = true
+        val isSleeping = false
+        val covered = rnd.nextBoolean()
+
+        // Environment
+        val ambientC = 12.0 + rnd.nextDouble(-0.5, 0.5)
+        val windMps = 3.0 + rnd.nextDouble(-0.3, 0.3)
+        val humidityPct = 65.0 + rnd.nextDouble(-2.0, 2.0)
+        val lux = if (covered) 5.0 else 300.0 + rnd.nextDouble(-20.0, 20.0)
+
+        // Cardiovascular
+        val hr = listOf(72.0, 100.0, 140.0).random()
+        val hrv = listOf(40.0, 25.0, 10.0).random()
+        val spo2 = 97.0 + rnd.nextDouble(-1.0, 1.0)
+        val ppgAmp = 1.0 - rnd.nextDouble(0.0, 0.3)
+
+        // Motion / orientation
+        val accelMag = listOf(0.02, 0.4, 1.2).random()
+        val cadence = listOf(null, 110.0, 170.0).random()
+        val gyroRms = listOf(1.0, 10.0, 40.0).random()
+
+        // Skin / water
+        val skinWrist = 32.0 + rnd.nextDouble(-1.0, 1.0)
+        val skinHand  = 30.0 + rnd.nextDouble(-1.0, 1.0)
+        val wet = rnd.nextInt(0, 10) == 0
+        val immersion = wet && rnd.nextBoolean()
+        val waterTemp = if (immersion) 8f else null
+
+        // ---- Emit all Topics ----
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.ACTIVITY,
+            com.aitech.weartak_civ.cep.model.payloads.ActivityPayload(activity)
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.OFFBODY,
+            com.aitech.weartak_civ.cep.model.payloads.OffBodyPayload(true)
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.SLEEP,
+            com.aitech.weartak_civ.cep.model.payloads.SleepPayload(true)
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.HEART_RATE,
+            com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload(bpm = hr)
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.HRV,
+            com.aitech.weartak_civ.cep.model.payloads.HrvPayload(rmssd_ms = hrv)
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.SPO2,
+            com.aitech.weartak_civ.cep.model.payloads.Spo2Payload(pct = spo2)
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.PPG,
+            com.aitech.weartak_civ.cep.model.payloads.PpgPayload(
+                amplitude = ppgAmp.toFloat(),
+                quality = 1.0f,
+                wavelength = "green"
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.ACCEL,
+            com.aitech.weartak_civ.cep.model.payloads.AccelPayload(
+                magnitude_g = accelMag,
+                cadence_spm = cadence
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.GYRO,
+            com.aitech.weartak_civ.cep.model.payloads.GyroPayload(
+                x = rnd.nextFloat() * 2f - 1f,
+                y = rnd.nextFloat() * 2f - 1f,
+                z = rnd.nextFloat() * 2f - 1f,
+                rms = gyroRms.toFloat()
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.AMBIENT,
+            com.aitech.weartak_civ.cep.model.payloads.AmbientPayload(
+                temp_c = ambientC,
+                wind_mps = windMps,
+                humidity_pct = humidityPct
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.WIND,
+            com.aitech.weartak_civ.cep.model.payloads.WindPayload(
+                speedMps = windMps.toFloat(),
+                directionDeg = rnd.nextInt(0, 360).toFloat()
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.HUMIDITY,
+            com.aitech.weartak_civ.cep.model.payloads.HumidityPayload(relativePercent = humidityPct.toFloat())
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.LIGHT,
+            com.aitech.weartak_civ.cep.model.payloads.LightPayload(
+                lux = lux.toFloat(),
+                covered = covered
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.SKIN_TEMP,
+            com.aitech.weartak_civ.cep.model.payloads.SkinTempPayload(
+                c_peripheral = listOf(skinWrist, skinHand)
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.IMMERSION,
+            com.aitech.weartak_civ.cep.model.payloads.ImmersionPayload(
+                wet_flag = wet,
+                immersion_flag = immersion
+            )
+        ))
+
+        com.aitech.weartak_civ.cep.bus.CepBus.emit(com.aitech.weartak_civ.cep.model.CepEvent(
+            com.aitech.weartak_civ.cep.model.Topics.WATER,
+            com.aitech.weartak_civ.cep.model.payloads.WaterPayload(
+                wet = wet,
+                temperatureC = waterTemp
+            )
+        ))
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {

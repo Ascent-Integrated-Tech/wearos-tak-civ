@@ -41,7 +41,10 @@ class RuleEngine(
                         priority    = r.action.priority,
                         sendSms     = r.action.sendSms,
                         timeoutSec  = r.action.timeoutSec,
-                        uid         = r.action.uid
+                        uid         = r.action.uid,
+                        monitor     = r.action.monitor,
+                        exitLogic   = r.action.exitLogic,
+                        exitSustainSec = r.action.exitSustainSec
                     ),
                     snapshot = snapshot,
                     ts = now

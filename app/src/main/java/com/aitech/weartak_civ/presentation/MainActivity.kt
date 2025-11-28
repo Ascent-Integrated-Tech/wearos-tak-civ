@@ -206,6 +206,8 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.lifecycle.lifecycleScope
+import com.aitech.weartak_civ.service.CEPSimulationService
+import com.aitech.weartak_civ.service.MovementDetectionService
 import kotlinx.coroutines.launch
 
 
@@ -754,11 +756,35 @@ class MainActivity : ComponentActivity() {
                 if (!EnvSensorService.isRunning.get()) {
                     Log.d(TAG, "Starting EnvSensorService")
                     mainActivity.startService(Intent(mainActivity, EnvSensorService::class.java))
+
+                    //
                 } else {
                     Log.d(TAG, "EnvSensorService is already running")
                 }
             }else{
                 Log.d(TAG, "EnvSensorService has not been enabled")
+            }
+        }
+
+        fun startMovementDetectionService() {
+            if (!MovementDetectionService.isRunning.get()) {
+                Log.d(TAG, "Starting MovementDetectionService")
+                mainActivity.startService(Intent(mainActivity, MovementDetectionService::class.java))
+
+                //
+            } else {
+                Log.d(TAG, "MovementDetectionService is already running")
+            }
+        }
+
+        fun startCEPSimulationService() {
+            if (!CEPSimulationService.isRunning.get()) {
+                Log.d(TAG, "Starting CEPSimulation")
+                mainActivity.startService(Intent(mainActivity, CEPSimulationService::class.java))
+
+                //
+            } else {
+                Log.d(TAG, "CEP Simulation is already running")
             }
         }
 
@@ -855,6 +881,8 @@ class MainActivity : ComponentActivity() {
                 //startPassiveDataService()
                 startCotDispatchService()
                 startEnviromentSensorService()
+                startMovementDetectionService()
+                startCEPSimulationService()
                 startDittoService()
                 startPowerManagerService()
                 startBleBeaconService()

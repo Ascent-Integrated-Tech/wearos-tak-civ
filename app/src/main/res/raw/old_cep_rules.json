@@ -1,0 +1,749 @@
+{
+  "schema_version": "1.0",
+  "generated_at_utc": "2025-10-15T10:20:02.995424Z",
+  "notes": "Patch file to be merged into existing cep_rules.json. Adds HRV suppression, SpO2/PPG perfusion loss, immersion detection, wind-chill/tactile overrides, HR flattening, ALS coverage, water/humidity corroborator, hand-specific skin temp, HR>HRmax guard, and a cold stress additive score + risk tiers.",
+  "merge_instructions": [
+    "Append all entries in `features` to your existing features array (ensure unique `id`s).",
+    "Append all entries in `rules` to your existing rules array.",
+    "If an `id` already exists in your file and you prefer our version, replace it; otherwise rename ours with a suffix."
+  ],
+  "features": [
+    {
+      "type": "window",
+      "id": "features.hrv.rmssd_recent_1m",
+      "source": "hrv.rmssd_ms",
+      "op": "avg",
+      "window_sec": 60
+    },
+    {
+      "type": "window",
+      "id": "features.hrv.rmssd_baseline_24h",
+      "source": "hrv.rmssd_ms",
+      "op": "avg",
+      "window_sec": 86400
+    },
+    {
+      "type": "derived",
+      "id": "features.hrv.rmssd_drop_ratio",
+      "expr": {
+        "div": [
+          {
+            "sub": [
+              { "key": "features.hrv.rmssd_baseline_24h" },
+              { "key": "features.hrv.rmssd_recent_1m" }
+            ]
+          },
+          { "max": [1.0, { "key": "features.hrv.rmssd_baseline_24h" }] }
+        ]
+      },
+      "units": "ratio"
+    },
+    {
+      "type": "window",
+      "id": "features.spo2.recent_120s",
+      "source": "spo2",
+      "op": "avg",
+      "window_sec": 120
+    },
+    {
+      "type": "window",
+      "id": "features.spo2.baseline_86400s",
+      "source": "spo2",
+      "op": "avg",
+      "window_sec": 86400
+    },
+    {
+      "type": "derived",
+      "id": "features.spo2.delta_pct",
+      "expr": {
+        "mul": [
+          100,
+          {
+            "div": [
+              {
+                "sub": [
+                  { "key": "features.spo2.recent_120s" },
+                  { "key": "features.spo2.baseline_86400s" }
+                ]
+              },
+              { "max": [0.1, { "key": "features.spo2.baseline_86400s" }] }
+            ]
+          }
+        ]
+      },
+      "units": "%"
+    },
+    {
+      "type": "window",
+      "id": "features.ppg.amplitude_recent_20s",
+      "source": "ppg.amplitude",
+      "op": "avg",
+      "window_sec": 20
+    },
+    {
+      "type": "window",
+      "id": "features.ppg.amplitude_baseline_600s",
+      "source": "ppg.amplitude",
+      "op": "avg",
+      "window_sec": 600
+    },
+    {
+      "type": "derived",
+      "id": "features.ppg.amplitude_ratio",
+      "expr": {
+        "div": [
+          { "key": "features.ppg.amplitude_recent_20s" },
+          { "max": [1e-6, { "key": "features.ppg.amplitude_baseline_600s" }] }
+        ]
+      },
+      "units": "ratio"
+    },
+    {
+      "type": "derived",
+      "id": "features.ppg.collapse_gt50pct",
+      "expr": { "lte": [{ "key": "features.ppg.amplitude_ratio" }, 0.5] },
+      "units": "bool"
+    },
+    {
+      "type": "slope_multi",
+      "id": "features.skin_temp.slope_c_per_s_20s",
+      "source": "skin_temp",
+      "multi_policy": "min_channel",
+      "window_sec": 20,
+      "units_per_sec": "per_second"
+    },
+    {
+      "type": "window_multi",
+      "id": "features.skin_temp.hand_min_c_1m",
+      "source": "skin_temp",
+      "multi_policy": "min",
+      "op": "min",
+      "window_sec": 60
+    },
+    {
+      "type": "derived",
+      "id": "features.immersion.suspected",
+      "expr": {
+        "and": [
+          { "lte": [{ "key": "features.skin_temp.slope_c_per_s_20s" }, -0.15] },
+          { "ref": "features.ppg.collapse_gt50pct", "is": true }
+        ]
+      }
+    },
+    {
+      "type": "derived",
+      "id": "features.wind_chill.c",
+      "expr": {
+        "wind_chill": {
+          "temp_key": "ambient.temp_c",
+          "wind_key": "ambient.wind_mps"
+        }
+      }
+    },
+    {
+      "type": "derived",
+      "id": "features.wind_chill.emergency_override",
+      "expr": { "lte": [{ "key": "features.wind_chill.c" }, -27.0] },
+      "units": "bool"
+    },
+    {
+      "type": "delta",
+      "id": "features.hr.delta_60s",
+      "source": "heart_rate",
+      "horizon_sec": 60
+    },
+    {
+      "type": "derived",
+      "id": "features.hr.slope_bpm_per_min_60s",
+      "expr": { "mul": [1.0, { "key": "features.hr.delta_60s" }] },
+      "units": "bpm/min"
+    },
+    {
+      "type": "derived",
+      "id": "features.hr.above_hrmax",
+      "expr": {
+        "gt": [
+          { "key": "features.heart_rate" },
+          { "key": "profile.hr_max_bpm" }
+        ]
+      },
+      "units": "bool"
+    },
+    {
+      "type": "derived",
+      "id": "features.coverage.exposed",
+      "expr": {
+        "or": [
+          { "eq": [{ "key": "als.covered" }, false] },
+          { "gte": [{ "key": "light.lux" }, 5.0] }
+        ]
+      }
+    },
+    {
+      "type": "derived",
+      "id": "features.env.wet_flag",
+      "expr": {
+        "or": [
+          { "eq": [{ "key": "water_sensor.wet" }, true] },
+          { "gte": [{ "key": "humidity.relative_percent" }, 95.0] }
+        ]
+      }
+    },
+    {
+      "type": "derived",
+      "id": "features.motion.active",
+      "expr": { "not": { "ref": "features.accel_low_motion" } }
+    },
+    {
+      "type": "derived",
+      "id": "features.cold.score",
+      "expr": {
+        "sum": [
+          {
+            "case": [
+              {
+                "lte": [{ "key": "features.skin_temp.hand_min_c_1m" }, 20.0],
+                "then": 4
+              },
+              {
+                "lte": [{ "key": "features.skin_temp.hand_min_c_1m" }, 28.0],
+                "then": 3
+              },
+              {
+                "lte": [{ "key": "features.skin_temp.hand_min_c_1m" }, 31.0],
+                "then": 2
+              },
+              { "else": 0 }
+            ]
+          },
+          {
+            "case": [
+              { "ref": "features.shiver_present", "is": true, "then": 2 },
+              {
+                "and": [
+                  { "ref": "features.shiver_present", "is": true },
+                  { "gte": [{ "key": "features.shiver_duration_s" }, 30] }
+                ],
+                "then": 3
+              },
+              {
+                "and": [
+                  { "ref": "features.motion.active", "is": false },
+                  { "ref": "features.shiver_present", "is": false }
+                ],
+                "then": 4
+              },
+              { "else": 0 }
+            ]
+          },
+          {
+            "case": [
+              { "gte": [{ "key": "features.hr.hrr" }, 0.3], "then": 1 },
+              {
+                "lte": [{ "key": "features.hr.slope_bpm_per_min_60s" }, 0.0],
+                "then": 2
+              },
+              { "lt": [{ "key": "features.heart_rate" }, 40], "then": 4 },
+              { "else": 0 }
+            ]
+          },
+          {
+            "case": [
+              {
+                "gte": [{ "key": "features.hrv.rmssd_drop_ratio" }, 0.2],
+                "then": 2
+              },
+              {
+                "gte": [{ "key": "features.hrv.rmssd_drop_ratio" }, 0.3],
+                "then": 3
+              },
+              { "else": 0 }
+            ]
+          },
+          {
+            "case": [
+              {
+                "lte": [{ "key": "features.spo2.delta_pct" }, -3.0],
+                "then": 2
+              },
+              { "ref": "features.ppg.collapse_gt50pct", "is": true, "then": 3 },
+              { "else": 0 }
+            ]
+          },
+          {
+            "case": [
+              { "lte": [{ "key": "features.wind_chill.c" }, -10.0], "then": 2 },
+              { "lte": [{ "key": "features.wind_chill.c" }, -27.0], "then": 4 },
+              { "else": 0 }
+            ]
+          }
+        ]
+      },
+      "units": "points"
+    },
+    {
+      "type": "derived",
+      "id": "features.cold.risk_state",
+      "expr": {
+        "categorical": {
+          "key": "features.cold.score",
+          "bins": [0, 4, 7, 11],
+          "labels": ["NORMAL", "WARN", "ALERT", "EMERGENCY"]
+        }
+      }
+    },
+    {
+      "type": "derived",
+      "id": "features.hr.rest_baseline_bpm",
+      "expr": { "key": "profile.hr_rest_bpm" },
+      "units": "bpm"
+    },
+    {
+      "type": "derived",
+      "id": "features.hr.max_baseline_bpm",
+      "expr": { "key": "profile.hr_max_bpm" },
+      "units": "bpm"
+    },
+    {
+      "type": "derived",
+      "id": "features.hr.hrr",
+      "expr": {
+        "div": [
+          {
+            "sub": [
+              { "key": "features.heart_rate" },
+              { "key": "profile.hr_rest_bpm" }
+            ]
+          },
+          {
+            "max": [
+              1.0,
+              {
+                "sub": [
+                  { "key": "profile.hr_max_bpm" },
+                  { "key": "profile.hr_rest_bpm" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "units": "ratio"
+    }
+  ],
+  "rules": [
+    {
+      "id": "hrv_drop_alert",
+      "when": {
+        "all": [
+          {
+            "gte_key": ["features.hrv.rmssd_drop_ratio", 0.2]
+          },
+          {
+            "ref": "features.accel_low_motion",
+            "is": true
+          }
+        ]
+      },
+      "sustained_for_sec": 120,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "HRV suppression \u226520% at rest \u2014 autonomic strain corroborator.",
+        "tags": ["hrv", "corroborator"]
+      }
+    },
+    {
+      "id": "spo2_drop_alert",
+      "when": {
+        "lte_key": ["features.spo2.delta_pct", -3.0]
+      },
+      "sustained_for_sec": 60,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "SpO\u2082 drop \u22653% vs baseline \u2014 possible perfusion/oxygenation issue.",
+        "tags": ["spo2", "perfusion"]
+      }
+    },
+    {
+      "id": "ppg_collapse_alert",
+      "when": {
+        "ref": "features.ppg.collapse_gt50pct",
+        "is": true
+      },
+      "sustained_for_sec": 20,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "PPG amplitude collapse >50% \u2014 low peripheral perfusion.",
+        "tags": ["ppg", "perfusion"]
+      }
+    },
+    {
+      "id": "immersion_suspected_alert",
+      "when": {
+        "ref": "features.immersion.suspected",
+        "is": true
+      },
+      "sustained_for_sec": 10,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Rapid cooling with PPG loss \u2014 immersion suspected.",
+        "tags": ["immersion", "cold"]
+      }
+    },
+    {
+      "id": "hr_above_hrmax_recalib_candidate",
+      "when": {
+        "all": [
+          {
+            "ref": "features.motion.active",
+            "is": true
+          },
+          {
+            "ref": "features.hr.above_hrmax",
+            "is": true
+          },
+          {
+            "lte_key": ["features.hrv.rmssd_recent_1m", 5.0]
+          }
+        ]
+      },
+      "sustained_for_sec": 60,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "HR sustained above HRmax with near-zero HRV \u2014 consider HRmax recalibration.",
+        "tags": ["hr", "recalibration"]
+      }
+    },
+    {
+      "id": "hr_rest_brady_10min_emergency",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "lt_key": ["features.heart_rate", 40.0] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "REST BRADY TRIGGER (<40 bpm for ≥10 min)",
+        "tags": ["hr", "rest", "brady"],
+        "category": "CAT_HR_REST_BRADY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 40.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone1_rest_10min_alert",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 124, 137] }
+        ]
+      },
+      "sustained_for_sec": 600,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "ZONE 1 TRIGGER (REST)",
+        "tags": ["hr", "zone1", "rest"],
+        "category": "CAT_HR_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 124.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone2_rest_60s_alert",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 137, 149] }
+        ]
+      },
+      "sustained_for_sec": 60,
+      "action": {
+        "type": "none",
+        "severity": "ALERT",
+        "message": "ZONE 2 TRIGGER (REST)",
+        "tags": ["hr", "zone2", "rest"],
+        "category": "CAT_HR_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 137.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone3_rest_30s_alert",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 149, 162] }
+        ]
+      },
+      "sustained_for_sec": 30,
+      "action": {
+        "type": "none",
+        "severity": "ALERT",
+        "message": "ZONE 3 TRIGGER (REST)",
+        "tags": ["hr", "zone3", "rest"],
+        "category": "CAT_HR_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 149.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone3_exercise_30s_warn",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 149, 162] }
+        ]
+      },
+      "sustained_for_sec": 300,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "ZONE 3 TRIGGER (EXERCISE)",
+        "tags": ["hr", "zone3", "exercise"],
+        "category": "CAT_HR_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 149.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone4_rest_immediate_emergency",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 162, 174] }
+        ]
+      },
+      "sustained_for_sec": 5,
+      "action": {
+        "type": "none",
+        "severity": "EMERGENCY",
+        "message": "ZONE 4 TRIGGER (REST)",
+        "tags": ["hr", "zone4", "rest"],
+        "category": "CAT_HR_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 162.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone4_exercise_10min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 162, 174] }
+        ]
+      },
+      "sustained_for_sec": 300,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "ZONE 4 TRIGGER (EXERCISE, ≥10 min)",
+        "tags": ["hr", "zone4", "exercise"],
+        "category": "CAT_HR_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 162.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone5_rest_immediate_emergency",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 174, 188] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "action": {
+        "type": "none",
+        "severity": "EMERGENCY",
+        "message": "ZONE 5 TRIGGER (REST)",
+        "tags": ["hr", "zone5", "rest"],
+        "category": "CAT_HR_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 174.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone5_exercise_5min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "between": ["features.heart_rate", 174, 188] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "ZONE 5 TRIGGER (EXERCISE, ≥5 min)",
+        "tags": ["hr", "zone5", "exercise"],
+        "category": "CAT_HR_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 174.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_hrmax_rest_immediate_emergency",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "gte_key": ["features.heart_rate", 188.0] }
+        ]
+      },
+      "sustained_for_sec": 120,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": ">HRmax TRIGGER (REST, ≥188 bpm)",
+        "tags": ["hr", ">hrmax", "rest"],
+        "category": "CAT_HR_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 188.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_hrmax_exercise_60s_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "gte_key": ["features.heart_rate", 188.0] }
+        ]
+      },
+      "sustained_for_sec": 300,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": ">HRmax TRIGGER (EXERCISE, ≥188 bpm for ≥5 min)",
+        "tags": ["hr", ">hrmax", "exercise"],
+        "category": "CAT_HR_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "exit_below_bpm": 188.0,
+    	"exit_hysteresis_bpm": 2.0,
+    	"exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_max_update_on_peak",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "gte_key": ["features.heart_rate", "profile.hr_max_bpm"] },
+          { "lte_key": ["features.hrv.rmssd_recent_1m", 5.0] }
+        ]
+      },
+      "sustained_for_sec": 30,
+      "action": {
+        "type": "update_profile",
+        "key": "profile.hr_max_bpm",
+        "value_key": "features.heart_rate",
+        "severity": "INFO",
+        "message": "New HRmax detected (HR ≥ current HRmax with suppressed HRV) — profile.hr_max_bpm updated.",
+        "tags": ["hr", "hrmax", "adaptive"]
+      }
+    },
+    {
+      "id": "hr_rest_update_when_still",
+      "when": {
+        "all": [
+          { "eq_key": ["activity.state", "STILL"] },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "lte_key": ["features.hr.slope_bpm_per_min_60s", 1.0] },
+          { "gt_key": ["features.heart_rate", 0.0] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "action": {
+        "type": "update_profile",
+        "key": "profile.hr_rest_bpm",
+        "value_key": "features.heart_rate",
+        "severity": "INFO",
+        "message": "Stable resting HR detected (STILL ≥3 min, HR stable) — profile.hr_rest_bpm updated.",
+        "tags": ["hr", "rest", "adaptive"]
+      }
+    }
+  ]
+}

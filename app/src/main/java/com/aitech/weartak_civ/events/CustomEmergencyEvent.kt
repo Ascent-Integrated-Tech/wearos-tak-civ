@@ -9,7 +9,7 @@
 
 package com.aitech.weartak_civ.events
 
-class CustomEmergencyEvent(val category: String, val description: String, val priority: Int, val sendSms: Boolean) {
+class CustomEmergencyEvent(val uid :String = "", val category: String, val description: String, val priority: Int, val sendSms: Boolean, val isCancel: Boolean = false) {
 
     companion object {
         val CAT_MANUAL = "Manual SOS Alert"

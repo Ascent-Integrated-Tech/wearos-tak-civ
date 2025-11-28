@@ -294,7 +294,7 @@ class HeartrateService: Service() {
                         if (!highAlertSent) {
                             val hrAlertDesc = "$DESC_HIGH_HEART_RATE_ALERT: Heartrate above $highAlertThreshold bpm for $highAlertNumSecs seconds"
                             Log.d(TAG, "Sending alert: ($hrAlertDesc)")
-                            EventBus.getDefault().post(CustomEmergencyEvent(CAT_Biometric, hrAlertDesc, 1, true))
+                            EventBus.getDefault().post(CustomEmergencyEvent(category = CAT_Biometric, description = hrAlertDesc, priority = 1, sendSms = true))
                             scope.launch {
                                 sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Warning, System.currentTimeMillis(), ""))
                                 requestPhysioComplicationUpdate(applicationContext)
@@ -325,7 +325,7 @@ class HeartrateService: Service() {
                     return
                 }
 
-                val tsMs = System.currentTimeMillis()
+                /*val tsMs = System.currentTimeMillis()
 
                 try {
                     val cep = CepProvider.getOrCreateEngine(applicationContext)
@@ -334,7 +334,7 @@ class HeartrateService: Service() {
                     //Log.d("CEP-HR", "Emitted HR=${hr} bpm @${tsMs}")
                 } catch (ex: Exception) {
                     Log.e("CEP-HR", "Failed to emit HR sample", ex)
-                }
+                }*/
 
                 hr = localHr
                 //Log.d(TAG, "Obtained heartrate: $hr")
