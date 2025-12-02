@@ -139,4 +139,5 @@
     <string name="compass">Compass</string>
     <string name="battery_alerts">Battery Alerts</string>
     <string name="compass_disabled">Compass Disabled</string>
+    <string name="bluetooth">Bluetooth</string>
 </resources>

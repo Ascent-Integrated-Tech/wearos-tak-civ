@@ -2393,19 +2393,22 @@ fun HeartRate(context: Context) {
     }
 }
 
-enum class Connectivity { CELL, WIFI, NONE }
+enum class Connectivity { CELL, WIFI, BLUETOOTH, NONE }
 enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     if (networkManager == null) return Connectivity.NONE
     networkManager.checkNetworkConnected()
 
+    //TODO WEAR-310: Add bluetooth check here
     val net = NetworkManager.isNetworkConnectedLiveData.value == true
     val cell = NetworkManager.isCellularConnectedLiveData.value == true
+    val btooth = true
 
     return when {
         net && cell -> Connectivity.CELL
         net && !cell -> Connectivity.WIFI
+        btooth -> Connectivity.BLUETOOTH
         else -> Connectivity.NONE
     }
 }
@@ -2438,6 +2441,7 @@ fun buildComplicationString(
     val connLabel = when (connectivity) {
         Connectivity.CELL -> getString(context, R.string.cell)
         Connectivity.WIFI -> getString(context, R.string.wifi)
+        Connectivity.BLUETOOTH -> getString(context,R.string.bluetooth)
         Connectivity.NONE -> getString(context, R.string.no_connection)
     }
     val takLabel = when (effectiveTak) {
@@ -2514,8 +2518,11 @@ fun TroubleshootingIcons() {
             if (isConnected == true) {
                 if (cellConnected == true) {
                     painterResource(R.drawable.cell)
-                } else {
+                } else if (wifiConnected == true){
                     painterResource(R.drawable.wifi) // Replace with your icon
+                } else {
+                    //TODO WEAR-310 add bluetooth check
+                    painterResource(R.drawable.bluetooth)
                 }
             } else {
                 painterResource(R.drawable.no_cell_wifi) // Replace with your icon

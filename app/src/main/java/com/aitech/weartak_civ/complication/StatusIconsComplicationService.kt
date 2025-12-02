@@ -38,6 +38,12 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
         var wifiServerConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var wifiServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var wifiServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var bluetoothServerConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var bluetoothServerConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var bluetoothServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var bluetoothServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var bluetoothServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var bluetoothServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var noConnectionServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
         var noConnectServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var noConnectServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
@@ -157,6 +163,55 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
                     return wifiServerDisconnectedLocationDisabledComplicationData
                 }
             }
+            "Bluetooth, Server Connected, Location Enabled" -> when (null != bluetoothServerConnectedLocationEnabledComplicationData) {
+                true -> bluetoothServerConnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new bluetoothServerConnectedLocationEnabledComplicationData")
+                    bluetoothServerConnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.bluetooth_server_connected_enabled), "Bluetooth, Server Connected, Location Enabled")
+                    return bluetoothServerConnectedLocationEnabledComplicationData
+                }
+            }
+            "Bluetooth, Server Connected, Location Disabled" -> when (null != bluetoothServerConnectedLocationDisabledComplicationData) {
+                true -> bluetoothServerConnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new bluetoothServerConnectedLocationDisabledComplicationData")
+                    bluetoothServerConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.bluetooth_server_connected_disabled), "Bluetooth, Server Connected, Location Disabled")
+                    return bluetoothServerConnectedLocationDisabledComplicationData
+                }
+            }
+            "Bluetooth, Server Connecting, Location Enabled" -> when (null != bluetoothServerConnectingLocationEnabledComplicationData) {
+                true -> bluetoothServerConnectingLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new bluetoothServerConnectingLocationEnabledComplicationData")
+                    bluetoothServerConnectingLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.bluetooth_server_connecting_enabled), "Bluetooth, Server Connecting, Location Enabled")
+                    return bluetoothServerConnectingLocationEnabledComplicationData
+                }
+            }
+            "Bluetooth, Server Connecting, Location Disabled" -> when (null != bluetoothServerConnectingLocationDisabledComplicationData) {
+                true -> bluetoothServerConnectingLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new bluetoothServerConnectingLocationDisabledComplicationData")
+                    bluetoothServerConnectingLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.bluetooth_server_connecting_disabled), "Bluetooth, Server Connecting, Location Disabled")
+                    return bluetoothServerConnectingLocationDisabledComplicationData
+                }
+            }
+            "Bluetooth, Server Disconnected, Location Enabled" -> when (null != bluetoothServerDisconnectedLocationEnabledComplicationData) {
+                true -> bluetoothServerDisconnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new bluetoothServerDisconnectedLocationEnabledComplicationData")
+                    bluetoothServerDisconnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.bluetooth_server_disconnected_enabled), "Bluetooth, Server Disconnected, Location Enabled")
+                    return bluetoothServerDisconnectedLocationEnabledComplicationData
+                }
+            }
+            "Bluetooth, Server Disconnected, Location Disabled" -> when (null != bluetoothServerDisconnectedLocationDisabledComplicationData) {
+                true -> bluetoothServerDisconnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new bluetoothServerDisconnectedLocationDisabledComplicationData")
+                    bluetoothServerDisconnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.bluetooth_server_disconnected_disabled), "Bluetooth, Server Disconnected, Location Disabled")
+                    return bluetoothServerDisconnectedLocationDisabledComplicationData
+                }
+            }
+
             getString(R.string.no_connect_server_connecting_location_enabled) -> when (null != noConnectionServerConnectingLocationEnabledComplicationData) {
                 true -> noConnectionServerConnectingLocationEnabledComplicationData
                 false -> {
