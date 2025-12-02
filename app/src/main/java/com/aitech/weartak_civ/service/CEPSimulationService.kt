@@ -69,6 +69,8 @@ class CEPSimulationService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + job)
     private var loopStarted = false
 
+    private val toggleCEP = true
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -78,14 +80,17 @@ class CEPSimulationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START, null -> if (!loopStarted) startLoop()
-            ACTION_STOP -> stopSelf()
+
+        if (toggleCEP){
+            when (intent?.action) {
+                ACTION_START, null -> if (!loopStarted) startLoop()
+                ACTION_STOP -> stopSelf()
+            }
         }
 
         Log.d(TAG, "CEPSimulationService STARTED")
 
-        testAlert()
+        //testAlert()
 
         return START_STICKY
     }

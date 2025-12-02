@@ -31,7 +31,11 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.di.CepProvider
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
@@ -325,19 +329,25 @@ class HeartrateService: Service() {
                     return
                 }
 
-                /*val tsMs = System.currentTimeMillis()
+                // --- NEW: feed real HR into CEP ---
+                scope.launch {
+                    try {
+                        CepBus.emit(
+                            CepEvent(
+                                topic = Topics.HEART_RATE,
+                                payload = HeartRatePayload(bpm = localHr.toDouble())
+                            )
+                        )
 
-                try {
-                    val cep = CepProvider.getOrCreateEngine(applicationContext)
-                    cep.ingest("heart_rate.bpm", hr.toDouble(), tsMs)
-                    // Optional: short debug line
-                    //Log.d("CEP-HR", "Emitted HR=${hr} bpm @${tsMs}")
-                } catch (ex: Exception) {
-                    Log.e("CEP-HR", "Failed to emit HR sample", ex)
-                }*/
+                        //Log.d("CEP-HR", "Emitted HR=${localHr} bpm to CEP")
+                    } catch (ex: Exception) {
+                        Log.e("CEP-HR", "Failed to emit HR sample to CEP", ex)
+                    }
+                }
 
                 hr = localHr
                 //Log.d(TAG, "Obtained heartrate: $hr")
+
                 generateAlerts()
 
                 val currTime = System.currentTimeMillis()
@@ -373,6 +383,10 @@ class HeartrateService: Service() {
                 }
             }
         }
+    }
+
+    private suspend fun emitHRValues(){
+
     }
 
     private fun checkPermissions(): Boolean {
