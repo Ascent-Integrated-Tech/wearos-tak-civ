@@ -6,12 +6,12 @@ import android.content.Intent
 import android.location.Location
 import android.os.IBinder
 import android.util.Log
+import com.aitech.weartak_civ.Utils
 import java.util.concurrent.atomic.AtomicBoolean
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
-import com.aitech.weartak_civ.data.BloodhoundRepository.Point
 import com.aitech.weartak_civ.data.BloodhoundRepository.VectorToTarget
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
@@ -177,16 +177,16 @@ class BloodhoundService: Service() {
 
     private var currLoc: Location? = null
     // …
-    private fun getCurrPoint(): Point =
+    private fun getCurrPoint(): Utils.CotUtils.Point =
         currLoc?.let { loc ->
-            Point(
+            Utils.CotUtils.Point(
                 lat = loc.latitude,
                 lon = loc.longitude,
                 hae = loc.altitude,
                 ce = loc.accuracy.toDouble(),
                 le = if (loc.hasVerticalAccuracy()) loc.verticalAccuracyMeters.toDouble() else 0.0
             )
-        } ?: Point(
+        } ?: Utils.CotUtils.Point(
             lat = 41.92288763956643,
             lon = -87.6454244503331,
             hae = 1700.0, ce = 0.0, le = 0.0
@@ -247,7 +247,7 @@ class BloodhoundService: Service() {
         val body = buildString {
             map.values.forEach { item ->
                 val uid = item.uid.padEnd(20).take(20)
-                val name = item.target.name.padEnd(20).take(20)
+                val name = item.target.name?.padEnd(20)?.take(20)
 
                 val lat = String.format("%.5f", item.target.point.lat)
                 val lon = String.format("%.5f", item.target.point.lon)

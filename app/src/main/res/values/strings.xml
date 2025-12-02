@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">WearTAK-CIV</string>
+    <string name="app_name" translatable="false">WearTAK</string>
     <!--
     This string is used for square devices and overridden by hello_world in
     values-round/strings.xml for round devices.
@@ -20,6 +20,7 @@
     <string name="service_on_off">Service ON/OFF</string>
     <string name="biometrics">Biometrics</string>
     <string name="ditto">Ditto</string>
+    <string name="companion_app" translatable="false">Companion Plugin</string>
     <string name="version">Version %1$s</string>
     <string name="tak_servers">TAK Servers</string>
     <string name="edit_server">Edit Server</string>
@@ -518,4 +519,5 @@
     <string name="steps">Steps</string>
     <string name="skin_temp">Skin Temp</string>
     <string name="current_metrics">Current Metrics</string>
+    <string name="bluetooth">Bluetooth</string>
 </resources>

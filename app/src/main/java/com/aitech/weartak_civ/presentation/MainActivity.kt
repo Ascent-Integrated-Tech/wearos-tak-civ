@@ -182,6 +182,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
@@ -259,10 +260,12 @@ class MainActivity : ComponentActivity() {
         var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
         var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES)
         var enableHeartrateService : Boolean = DEFAULT_ENABLE_HEART_RATE_SERVICE
-        var enableActivityRecognitionService: Boolean = DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
+        var enableActRecService: Boolean = DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
         var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
         var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
-        var enableDittoServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DITTO_SERVICE)
+        var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableCompanionAppService: Boolean = false
+        var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DITTO_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
         var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE)
         var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE
@@ -658,18 +661,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun seedVariablesFromRepo() {
+        fun seedVariablesFromRepo() {
         // This function reads in data from dataRepository and sets MainActivity settings (except those for UI settings screens) as well as other service settings
         runBlocking {
             Log.d(TAG, """=== === Initializing Settings === === ===""".trimIndent())
+
+            // --- Identity / Callsign ---
+
             // what is my callsign?
             callsign = dataRepository.getCallsign.first()
             // on the first install, callsign has no value, we need to fill it with a random number
             if (callsign.equals("")) {
-                callsign = "WEAROS-" + (secureRandom.nextInt(9999)+1).toString()
+                callsign = "WEAROS-" + (secureRandom.nextInt(9999) + 1).toString()
                 dataRepository.storeCallsign(callsign)
-                Log.v(TAG, "MainActivity seedVariablesFromRepo(): First install --> Assigning a random callsign: $callsign")
+                Log.v(
+                    TAG,
+                    "MainActivity seedVariablesFromRepo(): First install --> Assigning a random callsign: $callsign"
+                )
             }
+
+            // --- Team / Role configuration ---
 
             // what are the teams I can be?
             val teamNames = dataRepository.getTeamNames.first().split(",")
@@ -679,87 +690,103 @@ class MainActivity : ComponentActivity() {
 
             initCategoryAndRoleAndCategoryRolesList(dataRepository.getCategoryRolesList.first())
 
-            license = dataRepository.getLicense.first()
-
+            // --- License / TAK server list ---
+            license       = dataRepository.getLicense.first()
             takServerList = dataRepository.getTakServerList.first()
 
-            enableLocationService = dataRepository.getEnableLocationService.first()
-            enablePhysiologicalServices = dataRepository.getEnablePhysiologicalServices.first()
-            enableHeartrateService = dataRepository.getEnableHeartRateService.first()
-            enableActivityRecognitionService = dataRepository.getEnableActivityRecognitionService.first()
-            enableSkinTempService = dataRepository.getEnableSkinTempService.first()
-            enableDittoService = dataRepository.getEnableDittoService.first()
-            enableChatService = dataRepository.getEnableChatService.first()
-            enableBatteryAlerts = dataRepository.getEnableBatteryAlerts.first()
-            // TODO: For some reason, DataRepository's enableHailService is true in onCreate of CotDispatchService even if enableHailService here is false
-            enableHailService = dataRepository.getEnableHailService.first()
-            enableBatdokCot = dataRepository.getEnableBatdokCot.first()
-            enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
-
-            enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
-            constantReportingInterval = dataRepository.getConstantReportingInterval.first()
-            stationaryReportingInterval = dataRepository.getStationaryReportingInterval.first()
-            onFootReportingInterval = dataRepository.getOnFootReportingInterval.first()
-            vehicleReportingInterval = dataRepository.getVehicleReportingInterval.first()
-            whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
-
-            enableTakEndpoint = dataRepository.getEnableTakEndpoint.first()
-            enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
-            enableTabletCommandEndpoint = dataRepository.getEnableTabletCommandEndpoint.first()
-
-            esriEndpoint = dataRepository.getEsriEndpoint.first()
-            esriReportingUpdateInterval = dataRepository.getEsriReportingUpdateInterval.first()
-
-            tabletCommandEndpoint = dataRepository.getTabletCommandEndpoint.first()
-            tabletCommandApikey = dataRepository.getTabletCommandApikey.first()
-            tabletCommandReportingUpdateInterval = dataRepository.getTabletCommandReportingUpdateInterval.first()
+            // --- Core service enable flags ---
+            enableLocationService          = dataRepository.getEnableLocationService.first()
+            enablePhysiologicalServices    = dataRepository.getEnablePhysiologicalServices.first()
+            enableHeartrateService         = dataRepository.getEnableHeartRateService.first()
+            enableActRecService            = dataRepository.getEnableActRecService.first()
+            enableSkinTempService          = dataRepository.getEnableSkinTempService.first()
+            enableDittoService             = dataRepository.getEnableDittoService.first()
+            enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
+            enableChatService              = dataRepository.getEnableChatService.first()
+            enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
+            enableHailService              = dataRepository.getEnableHailService.first()
+            enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
+            enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
 
+            // --- Reporting intervals / strategy ---
+            enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
+            constantReportingInterval      = dataRepository.getConstantReportingInterval.first()
+            stationaryReportingInterval    = dataRepository.getStationaryReportingInterval.first()
+            onFootReportingInterval        = dataRepository.getOnFootReportingInterval.first()
+            vehicleReportingInterval       = dataRepository.getVehicleReportingInterval.first()
+            whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
+
             // Initially on start ActivityRecognized is UNKNOWN
-            val dynamicReportingInterval = calcDynamicReportingInterval(false, ActivityRecognized.UNKNOWN,
-                whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval, stationaryReportingInterval)
+            val dynamicReportingInterval = calcDynamicReportingInterval(
+                false,
+                ActivityRecognized.UNKNOWN,
+                whileAlertingReportingInterval,
+                onFootReportingInterval,
+                vehicleReportingInterval,
+                stationaryReportingInterval
+            )
             dataRepository.storeDynamicReportingInterval(dynamicReportingInterval)
-            val reportingUpdateInterval = if (enableDynamicReportingStrategy) {dynamicReportingInterval} else {constantReportingInterval}
-            Log.d(TAG, "enableDynamicReportingStrategy($enableDynamicReportingStrategy): reportingUpdateInterval=$reportingUpdateInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval (activity=${ActivityRecognized.UNKNOWN.name}, alert=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
+            val reportingUpdateInterval =
+                if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
+
             dataRepository.storeReportingUpdateInterval(reportingUpdateInterval)
             CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval
             CotDispatchService.currReportingIntervalInSecs = reportingUpdateInterval
 
-            enableWifiBatteryOptimization = dataRepository.getEnableWifiBatteryOptimization.first()
-            PowerManagerService.isWifiOpt = enableWifiBatteryOptimization
-            enableAllWifiBatteryOptimization = dataRepository.getEnableAllWifiBatteryOptimization.first()
-            PowerManagerService.isAllWifiOpt = enableAllWifiBatteryOptimization
-            wifiSsidList = dataRepository.getWifiSsidList.first()
+            // --- External endpoints / integrations ---
+            enableTakEndpoint              = dataRepository.getEnableTakEndpoint.first()
+            enableEsriEndpoint             = dataRepository.getEnableEsriEndpoint.first()
+            enableTabletCommandEndpoint    = dataRepository.getEnableTabletCommandEndpoint.first()
+            esriEndpoint                   = dataRepository.getEsriEndpoint.first()
+            esriReportingUpdateInterval    = dataRepository.getEsriReportingUpdateInterval.first()
+            tabletCommandEndpoint          = dataRepository.getTabletCommandEndpoint.first()
+            tabletCommandApikey            = dataRepository.getTabletCommandApikey.first()
+            tabletCommandReportingUpdateInterval = dataRepository.getTabletCommandReportingUpdateInterval.first()
+
+            // --- Wi-Fi / battery optimization ---
+            enableWifiBatteryOptimization      = dataRepository.getEnableWifiBatteryOptimization.first()
+            PowerManagerService.isWifiOpt      = enableWifiBatteryOptimization
+
+            enableAllWifiBatteryOptimization   = dataRepository.getEnableAllWifiBatteryOptimization.first()
+            PowerManagerService.isAllWifiOpt   = enableAllWifiBatteryOptimization
+
+            wifiSsidList         = dataRepository.getWifiSsidList.first()
             saveBattOnWifiString = generateSaveBattOnWifiString(enableWifiBatteryOptimization, enableAllWifiBatteryOptimization)
 
-            enableSmsForAlerts = dataRepository.getEnableSmsForAlerts.first()
-            smsNumbersList = dataRepository.getSmsNumbersList.first()
-            smsNumbersListString = convertSmsNumbersListToStringWithSeparator(dataRepository.getSmsNumbersList.first(), ",")
-
-            enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
-            hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
-            hrHighAlertNumSecsThreshold = dataRepository.getHrHighAlertNumSecsThreshold.first()
-
-            enableBleBeaconService = dataRepository.getEnableBleBeaconService.first()
-            localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
-
-            dittoAppId = dataRepository.getDittoAppId.first()
-            dittoAuthToken = dataRepository.getDittoAuthToken.first()
-
-            battWarnPercent = dataRepository.getBatteryWarnPercentage.first()
+            // --- Battery alert thresholds ---
+            battWarnPercent  = dataRepository.getBatteryWarnPercentage.first()
             battAlertPercent = dataRepository.getBatteryAlertPercentage.first()
 
-            ageValue = dataRepository.getPhysiologicalMetricAge.first()
-            heightFeetValue = dataRepository.getPhysiologicalMetricHeightFeet.first()
-            heightInchesValue = dataRepository.getPhysiologicalMetricHeightInches.first()
-            weightValue = dataRepository.getPhysiologicalMetricWeight.first()
-            sexValue = dataRepository.getPhysiologicalMetricSex.first()
-            bloodTypeValue = dataRepository.getPhysiologicalMetricBloodType.first()
-            allergyList = dataRepository.getPhysiologicalMetricAllergyList.first()
-            userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
-            restingHeartRate = dataRepository.getRestingHeartRate.first()
+            // --- SMS alerting ---
+            enableSmsForAlerts     = dataRepository.getEnableSmsForAlerts.first()
+            smsNumbersList         = dataRepository.getSmsNumbersList.first()
+            smsNumbersListString   =
+                convertSmsNumbersListToStringWithSeparator(dataRepository.getSmsNumbersList.first(), ",")
 
-//            Log.i(TAG, "MainActivity seedVariablesFromRepo(): End")
+            // --- Physiological alerts ---
+            enablePhysiologicalAlerts    = dataRepository.getEnablePhysiologicalAlerts.first()
+            hrHighAlertBpmThreshold      = dataRepository.getHrHighAlertBpmThreshold.first()
+            hrHighAlertNumSecsThreshold  = dataRepository.getHrHighAlertNumSecsThreshold.first()
+
+            // --- BLE beacons / localization ---
+            enableBleBeaconService       = dataRepository.getEnableBleBeaconService.first()
+            localizationBleBeaconItemList = dataRepository.getLocalizationBleBeaconItemList.first()
+
+            // --- Ditto configuration ---
+            dittoAppId    = dataRepository.getDittoAppId.first()
+            dittoAuthToken = dataRepository.getDittoAuthToken.first()
+
+            // --- Physiological profile / metrics ---
+            ageValue           = dataRepository.getPhysiologicalMetricAge.first()
+            heightFeetValue    = dataRepository.getPhysiologicalMetricHeightFeet.first()
+            heightInchesValue  = dataRepository.getPhysiologicalMetricHeightInches.first()
+            weightValue        = dataRepository.getPhysiologicalMetricWeight.first()
+            sexValue           = dataRepository.getPhysiologicalMetricSex.first()
+            bloodTypeValue     = dataRepository.getPhysiologicalMetricBloodType.first()
+            allergyList        = dataRepository.getPhysiologicalMetricAllergyList.first()
+            userTypeValue      = dataRepository.getPhysiologicalMetricUserType.first()
+            restingHeartRate   = dataRepository.getRestingHeartRate.first()
         }
     }
 
@@ -827,7 +854,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "While Alerting Reporting Interval (s):", whileAlertingReportingInterval.toString())}
                     ${String.format("%-25s %-30s", "Enable Loc:", enableLocationService.toString())}
                     ${String.format("%-25s %-30s", "Enable Physio:", enablePhysiologicalServices.toString())}
-                    ${String.format("%-25s %-30s", "Enable Activity Recognition:", enableActivityRecognitionService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Activity Recognition:", enableActRecService.toString())}
                     ${String.format("%-25s %-30s", "Enable Skin Temp:", enableSkinTempService.toString())}
                     ${String.format("%-25s %-30s", "Enable Ditto:", enableDittoService.toString())}
                     ${String.format("%-25s %-30s", "Enable wifi opt:", enableWifiBatteryOptimization.toString())}
@@ -1069,6 +1096,7 @@ class MainActivity : ComponentActivity() {
 
         enableHailServiceSettingsState.postValue(enableHailService)
         enableDittoServiceSettingsState.postValue(enableDittoService)
+        enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableChatServiceSettingsState.postValue(enableChatService)
         enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts) // ephemeral ui value
@@ -1363,7 +1391,7 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.LOCATION]   = enableLocationService
         localMap[ServiceType.PHYSIO]     = enablePhysiologicalServices
         localMap[ServiceType.HEART_RATE] = enableHeartrateService
-        localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActivityRecognitionService
+        localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActRecService
         localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
         localMap[ServiceType.DITTO]      = enableDittoService
         localMap[ServiceType.CHAT]       = enableChatService
@@ -1386,7 +1414,7 @@ class MainActivity : ComponentActivity() {
         val enableHeartrateServiceConfigUpdate =
             appRestrictions.getBoolean("heartrate_service_enabled", enableHeartrateService)
         val enableActivityRecognitionServiceConfigUpdate =
-            appRestrictions.getBoolean("activity_recognition_service_enabled", enableActivityRecognitionService)
+            appRestrictions.getBoolean("activity_recognition_service_enabled", enableActRecService)
         val enableSkinTempServiceConfigUpdate =
             appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
         val enableDittoServiceConfigUpdate =
@@ -1802,11 +1830,11 @@ class MainActivity : ComponentActivity() {
                     dataRepository.storeEnableHeartRateService(enableHeartrateService)
                 }
             }
-            if (enableActivityRecognitionServiceConfigUpdate != enableActivityRecognitionService) {
-                enableActivityRecognitionService = enableActivityRecognitionServiceConfigUpdate
-                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService")
+            if (enableActivityRecognitionServiceConfigUpdate != enableActRecService) {
+                enableActRecService = enableActivityRecognitionServiceConfigUpdate
+                Log.d(TAG, "enableActivityRecognitionService=$enableActRecService")
                 if (!calledOnCreate) dataRepository.storeEnableActivityRecognitionService(
-                    enableActivityRecognitionService
+                    enableActRecService
                 )
             }
             if (enableSkinTempServiceConfigUpdate != enableSkinTempService) {
@@ -2423,7 +2451,7 @@ fun HeartRate(context: Context) {
     }
 }
 
-enum class Connectivity { CELL, WIFI, NONE }
+enum class Connectivity { CELL, WIFI, BLUETOOTH, NONE }
 enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
@@ -2432,10 +2460,12 @@ fun readConnectivity(networkManager: NetworkManager?): Connectivity {
 
     val net = NetworkManager.isNetworkConnectedLiveData.value == true
     val cell = NetworkManager.isCellularConnectedLiveData.value == true
+    val btooth = dataRepository.isCompanionConnected.value
 
     return when {
         net && cell -> Connectivity.CELL
         net && !cell -> Connectivity.WIFI
+        btooth -> Connectivity.BLUETOOTH
         else -> Connectivity.NONE
     }
 }
@@ -2468,6 +2498,7 @@ fun buildComplicationString(
     val connLabel = when (connectivity) {
         Connectivity.CELL -> getString(context, R.string.cell)
         Connectivity.WIFI -> getString(context, R.string.wifi)
+        Connectivity.BLUETOOTH -> getString(context,R.string.bluetooth)
         Connectivity.NONE -> getString(context, R.string.no_connection)
     }
     val takLabel = when (effectiveTak) {
@@ -2521,11 +2552,27 @@ fun TroubleshootingIcons() {
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
+//        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
+//        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
+        val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
 
+        val painter = when {
+            companionConnected ->
+                painterResource(R.drawable.tak_companion_app_connected)
+
+            anyTakServerConnected == true ->
+                painterResource(R.drawable.tak_server_connected)
+
+            anyTakServerConnecting == true ->
+                painterResource(R.drawable.tak_server_connecting)
+
+            else ->
+                painterResource(R.drawable.tak_server_disconnected)
+        }
 
         // Icon on the top left curve
         Image(
-            painter = if (anyTakServerConnected == true) painterResource(R.drawable.tak_server_connected) else if (anyTakServerConnecting == true) painterResource(R.drawable.tak_server_connecting) else painterResource(R.drawable.tak_server_disconnected),
+            painter = painter,
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -2537,19 +2584,21 @@ fun TroubleshootingIcons() {
         )
         //Log.d(TAG, "AnyTakServerConnected = $anyTakServerConnected; AnyTakServerConnecting = $anyTakServerConnecting")
 
+        val wirelessConnPainter = when {
+            companionConnected -> painterResource(R.drawable.bluetooth)
+
+            cellConnected == true && wifiConnected == true ->
+                painterResource(R.drawable.no_cell_wifi) // or a "conflict/unknown" icon if you have one
+
+            cellConnected == true -> painterResource(R.drawable.cell)
+
+            wifiConnected == true -> painterResource(R.drawable.wifi)
+
+            else -> painterResource(R.drawable.no_cell_wifi)
+        }
 
 //         Icon on the bottom left curve
-        Icon(
-            painter =
-            if (isConnected == true) {
-                if (cellConnected == true) {
-                    painterResource(R.drawable.cell)
-                } else {
-                    painterResource(R.drawable.wifi) // Replace with your icon
-                }
-            } else {
-                painterResource(R.drawable.no_cell_wifi) // Replace with your icon
-            },
+        Icon(painter = wirelessConnPainter,
             contentDescription = "Bottom Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -2713,6 +2762,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
     val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
+    val activeTarget = activeItem?.target ?: ""
     requestBloodhoundComplicationUpdate(context)
  Row(
         modifier = Modifier.clickable(
@@ -2747,7 +2797,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
             if (bloodhoundChecked == true) {
                 if (activeItem != null) {
                     Text(
-                        text = activeItem.target,
+                        text = activeTarget,
                         fontSize = 13.sp,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.Medium,

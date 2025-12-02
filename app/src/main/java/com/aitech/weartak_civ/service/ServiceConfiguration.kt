@@ -71,7 +71,7 @@ class ServiceConfiguration(
 
         ServiceType.ACTIVITY_RECOGNITION -> combine(
             dataRepository.getEnablePhysiologicalServices.distinctUntilChanged(),
-            dataRepository.getEnableActivityRecognitionService.distinctUntilChanged()
+            dataRepository.getEnableActRecService.distinctUntilChanged()
         ) { physioOn, actOn ->
             if (!physioOn) { false } else { actOn }
         }.distinctUntilChanged()
@@ -92,6 +92,7 @@ class ServiceConfiguration(
         ServiceType.BATTERY,
         ServiceType.POWER_MGR -> flowOf(true).distinctUntilChanged()
         ServiceType.OFF_BODY_DETECT -> flowOf(true).distinctUntilChanged()
+        ServiceType.COMPANION_APP -> dataRepository.getEnableCompanionAppService.distinctUntilChanged()
     }
 
     private fun requiredPerms(type: ServiceType): List<String> = when (type) {
@@ -143,6 +144,11 @@ class ServiceConfiguration(
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.BATTERY,
         ServiceType.POWER_MGR -> emptyList()
+        ServiceType.COMPANION_APP -> buildList {
+            add(android.Manifest.permission.BLUETOOTH_SCAN)
+            add(android.Manifest.permission.BLUETOOTH_CONNECT)
+            add(android.Manifest.permission.BLUETOOTH_ADVERTISE)
+        }
     }
 
     // Add inside ServiceConfiguration
