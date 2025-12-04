@@ -14,6 +14,8 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
     private val arr = mutableMapOf<String, ArrayRing>()
     private val latest = mutableMapOf<String, Any?>()
 
+    private val accelMag = "accel.magnitude_g"
+
     private fun numCap() = ringConfig.maxSecondsNumeric * tickHz
     private fun arrCap() = ringConfig.maxSecondsArray * tickHz
 
@@ -39,9 +41,9 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 ))
             }
             is AccelPayload -> {
-                num.getOrPut("accel.magnitude_g") { DoubleRing(numCap()) }.add(p.magnitude_g)
-                latest["accel.magnitude_g"] = p.magnitude_g
-                fs.put("accel.magnitude_g", p.magnitude_g, tsMs)
+                num.getOrPut(accelMag) { DoubleRing(numCap()) }.add(p.magnitude_g)
+                latest[accelMag] = p.magnitude_g
+                fs.put(accelMag, p.magnitude_g, tsMs)
                 p.cadence_spm?.let {
                     num.getOrPut("accel.cadence_spm") { DoubleRing(numCap()) }.add(it)
                     latest["accel.cadence_spm"] = it

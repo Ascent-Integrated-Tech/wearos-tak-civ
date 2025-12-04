@@ -197,7 +197,7 @@ object DerivedEval {
     // ------------------------------------------------------------------------
     // Boolean evaluator: supports lte/gte/lt/gt/eq/and/or/not and { "ref":"k","is":true }
     // ------------------------------------------------------------------------
-    private fun evalBoolean(node: Any?, fs: FeatureStore): Boolean? {
+    /*private fun evalBoolean(node: Any?, fs: FeatureStore): Boolean? {
         return when (node) {
             null -> null
             is Boolean -> node
@@ -247,7 +247,113 @@ object DerivedEval {
             is JSONArray -> null
             else -> null
         }
+    }*/
+
+    private fun evalBoolean(node: Any?, fs: FeatureStore): Boolean? =
+        when (node) {
+            null        -> null
+            is Boolean  -> node
+            is JSONObject -> evalBooleanObject(node, fs)
+            is JSONArray -> null
+            else        -> null
+        }
+
+    private fun evalBooleanObject(node: JSONObject, fs: FeatureStore): Boolean? {
+        // Compatibility: { "ref": "features.xx", "is": true/false }
+        if (node.has("ref") && node.has("is")) {
+            val v = fs.any(node.getString("ref"))
+            return v == node.get("is")
+        }
+
+        // Single responsibility branches → low complexity
+        if (hasComparisonOp(node)) {
+            return evalComparison(node, fs)
+        }
+
+        if (node.has("eq")) {
+            return evalEquality(node, fs)
+        }
+
+        if (node.has("and")) {
+            return evalAnd(node.getJSONArray("and"), fs)
+        }
+
+        if (node.has("or")) {
+            return evalOr(node.getJSONArray("or"), fs)
+        }
+
+        if (node.has("not")) {
+            return evalNot(node.get("not"), fs)
+        }
+
+        return null
     }
+
+    /* ---------- comparison helpers ---------- */
+
+    private fun hasComparisonOp(node: JSONObject): Boolean =
+        node.has("lte") || node.has("gte") || node.has("lt") || node.has("gt")
+
+    private fun evalComparison(node: JSONObject, fs: FeatureStore): Boolean? {
+        val op = when {
+            node.has("lte") -> "lte"
+            node.has("gte") -> "gte"
+            node.has("lt")  -> "lt"
+            node.has("gt")  -> "gt"
+            else            -> return null
+        }
+
+        val arr = node.getJSONArray(op)
+        val a = evalNumber(arr.opt(0), fs) ?: return null
+        val b = evalNumber(arr.opt(1), fs) ?: return null
+
+        return when (op) {
+            "lte" -> a <= b
+            "gte" -> a >= b
+            "lt"  -> a <  b
+            "gt"  -> a >  b
+            else  -> null
+        }
+    }
+
+    /* ---------- equality helpers ---------- */
+
+    private fun evalEquality(node: JSONObject, fs: FeatureStore): Boolean? {
+        val arr = node.getJSONArray("eq")
+
+        // try numeric first, else raw compare
+        val ln = evalNumber(arr.opt(0), fs)
+        val rn = evalNumber(arr.opt(1), fs)
+        if (ln != null && rn != null) {
+            return ln == rn
+        }
+
+        return arr.opt(0) == arr.opt(1)
+    }
+
+    /* ---------- logical operator helpers ---------- */
+
+    private fun evalAnd(arr: JSONArray, fs: FeatureStore): Boolean {
+        for (i in 0 until arr.length()) {
+            if (evalBoolean(arr.opt(i), fs) != true) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun evalOr(arr: JSONArray, fs: FeatureStore): Boolean {
+        for (i in 0 until arr.length()) {
+            if (evalBoolean(arr.opt(i), fs) == true) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun evalNot(inner: Any?, fs: FeatureStore): Boolean? =
+        evalBoolean(inner, fs)?.let { !it }
+
 
     // ------------------------------------------------------------------------
     // Categorical: maps a numeric key to a label based on bin lower-bounds.

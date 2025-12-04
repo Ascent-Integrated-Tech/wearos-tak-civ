@@ -237,7 +237,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         }*/
     }
 
-    private fun startSimulationLoop() {
+    /*private fun startSimulationLoop() {
         if (simLoopJob?.isActive == true) return
         simLoopJob = cepScope.launch {
             Log.i(TAG, "CEP simulation loop started, interval=${SIM_INTERVAL_MS}ms")
@@ -250,9 +250,9 @@ class MovementDetectionService : Service(), SensorEventListener {
                 delay(SIM_INTERVAL_MS)
             }
         }
-    }
+    }*/
 
-    suspend fun simulateValues(){
+    /*suspend fun simulateValues(){
 
         Log.d("CEP", "starting simulation")
 
@@ -399,7 +399,7 @@ class MovementDetectionService : Service(), SensorEventListener {
                 temperatureC = waterTemp
             )
         ))
-    }
+    }*/
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
         Log.d(TAG, "MovementDetectionService onAccuracyChanged: sensor(${sensor?.name}) accuracy($accuracy)")
