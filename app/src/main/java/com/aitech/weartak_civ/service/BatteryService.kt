@@ -65,7 +65,15 @@ class BatteryService: Service() {
             val batteryStatus = context.registerReceiver(null, iFilter)
             val level = (batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1).toFloat()
             val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            //Log.d(LOG_TAG, "getBatteryPercentage: level ($level); scale ($scale)")
+            val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val charging =
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        status == BatteryManager.BATTERY_STATUS_FULL
+
+            CoroutineScope(Dispatchers.IO).launch {
+                // Implement this in dataRepository (see below)
+                dataRepository.updateChargingState(charging)
+            }
             return (level / scale) * 100
         } catch (e: RuntimeException) {
             Log.e(TAG, "Error in getBatteryPercentage: ", e)

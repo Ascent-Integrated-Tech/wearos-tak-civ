@@ -9,6 +9,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.Utils.CotUtils.Point
+import com.aitech.weartak_civ.Utils.CotUtils.MarkerMapItem
+import com.aitech.weartak_civ.Utils.CotUtils.Link
+import com.aitech.weartak_civ.Utils.CotUtils.MarkerCotEvent
+import com.aitech.weartak_civ.Utils.CotUtils.CotDetail
+import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.service.TAKConnectService
 import kotlinx.coroutines.CoroutineScope
@@ -58,7 +65,7 @@ class BloodhoundRepository(private val context: Context) {
         val uid = bhEvent.mapItem.uid
 
         data class Target(
-            val mapItem: MarkerMapItem
+            val mapItem: Utils.CotUtils.MarkerMapItem
         ) {
             val name: String = mapItem.cotEvent.detail.markerCallsign
             val point: Point = mapItem.point
@@ -95,59 +102,6 @@ class BloodhoundRepository(private val context: Context) {
         var issuer: Link = mapItem.link,                 // so we send the chat to the right person
         var timeIssued: Long?,                            // tell user on UI when it was sent.
         val timeCompleted: Long?,                         // tell the issuer how long it took.
-    )
-
-    data class MarkerCotEvent(
-        val version: String,
-        val uid: String,
-        val type: String,
-        val how: String,
-        val time: Long,
-        val start: Long,
-        val stale: Long,
-        val access: String?,
-        val point: Point,
-        val detail: MarkerDetail,
-    )
-
-    data class MarkerMapItem(
-        val cotEvent: MarkerCotEvent
-    ) {
-        val uid: String = cotEvent.uid
-        val type: String = cotEvent.type
-        val callsign: String = cotEvent.detail.markerCallsign
-        val point: Point = cotEvent.point
-        val creator: Creator = cotEvent.detail.creator   // who created this map item / marker?
-        val link: Link = cotEvent.detail.link            // who sent us this map item / marker?
-    }
-
-    data class Point(
-        val lat: Double,
-        val lon: Double,
-        val hae: Double,
-        val ce: Double,
-        val le: Double
-    )
-
-    data class MarkerDetail(
-        val markerCallsign: String,
-        val link: Link,
-        val creator: Creator,
-    )
-
-    data class Link(
-        var uid: String?,
-        var productionTime: Long?,
-        var type: String?,
-        var parentCallsign: String?,
-        var relation: String?
-    )
-
-    data class Creator(
-        var uid: String?,
-        var callsign: String?,
-        var time: Long?,
-        var type: String?,
     )
 
     /*

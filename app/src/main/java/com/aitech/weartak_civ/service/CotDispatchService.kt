@@ -23,9 +23,13 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
+import com.aitech.weartak_civ.Utils.getCotEventTimeSnapshot
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.DataRepository.PhysioData
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
@@ -90,7 +94,7 @@ class CotDispatchService : Service() {
     private var manualSosReceivedSendSms: Boolean = false
     private var iconSetPath: String = ""
     private var markerType: String = ""
-    private var alertOrCancel = false
+    private var cancelSosAlert = false
     private var inManualAlertingState = false
     private var sosAlertUid: String = ""
 
@@ -103,6 +107,14 @@ class CotDispatchService : Service() {
 
     private var sentBatteryWarnChatMsg = false
     private var sentBatteryAlertChatMsg = false
+
+    private val capRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).capRepo
+        } catch (_: Throwable) {
+            CompanionAppRepository(applicationContext)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -276,17 +288,7 @@ class CotDispatchService : Service() {
         }
     }
 
-    // Point used at DROP time, reused on CLEAR
-    data class CotMarkerInfo(
-        val lat: Double,
-        val lon: Double,
-        val hae: Double?,
-        val ce: Float?,
-        val le: Float?,
-        val type: String,
-        val icon: String
-    )
-    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, CotMarkerInfo>()
+    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, Utils.CotUtils.CotMarkerInfo>()
 
     private val pendingDropQueue = ArrayDeque<DataRepository.DropRequest>()
 
@@ -330,6 +332,7 @@ class CotDispatchService : Service() {
         val ce: Float // Horizontal Error
     )
 
+    /*
     private fun mapLocationAgainstClosestBleBeacon(startTimeInMs: Long, lat: Double, lon: Double, hae: Double, ce: Float): BleLocationOutput {
         var latActual = lat; var lonActual = lon; var haeActual = hae; var ceActual = ce
 
@@ -368,19 +371,7 @@ class CotDispatchService : Service() {
         }
         return BleLocationOutput(latActual, lonActual, haeActual, ceActual)
     }
-
-    data class PhysioData(
-        val heartRate: Int,
-        val skinTemp: Float,
-        val exertion: Double,
-        val battery: Int?,
-        val steps: Long,
-        val calories: Double,
-        val floors: Double,
-        val elevationM: Double?,
-        val weight: Int,
-        val age: Int
-    )
+    */
 
     private fun buildConciseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
         // Grab unique device identifier from MainActivity
@@ -410,12 +401,6 @@ class CotDispatchService : Service() {
         val leTrim     = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
         val courseTrim = location?.bearing?.toInt() ?: 0
         val speedTrim  = location?.speed?.toInt()   ?: 0
-
-        // Account for Ble Beacons
-        if (MainActivity.enableBleBeaconService == true) {
-            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, lat, lon, hae, ceTrim*1.0F)
-            lat = bleLocationOutput.lat; lon = bleLocationOutput.lon; hae = bleLocationOutput.hae; ceTrim = bleLocationOutput.ce.toInt()
-        }
 
         // Pull out physio values
         val hr          = physioData.heartRate
@@ -697,7 +682,13 @@ class CotDispatchService : Service() {
         manualSosReceivedDescription = event.description
         manualSosReceivedSendSms = event.sendSms
         val currTime = System.currentTimeMillis()
-        alertOrCancel = event.category == CAT_SOS_ALERT_CANCELLED
+        cancelSosAlert = event.category == CAT_SOS_ALERT_CANCELLED
+        val action = if (event.category == CAT_SOS_ALERT_CANCELLED) {
+            AlertState.CANCEL
+        } else {
+            AlertState.ALERT
+        }
+        
         if (manualSosReceivedCategory == DESC_SOS_ALERT) {
             inManualAlertingState = true
             serviceScope.launch {
@@ -713,7 +704,7 @@ class CotDispatchService : Service() {
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
             Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             manualSosReceivedTime = currTime
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, alertOrCancel) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, action) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
         } else {
             if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
                 Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
@@ -794,7 +785,7 @@ class CotDispatchService : Service() {
         """.trimIndent()
     }
 
-    private fun buildEmergencyAlertCotMessage(location: Location, emergencyCategory: String, emergencyDesc: String, alertOrCancel:Boolean): String {
+    private fun buildEmergencyAlertCotMessage(uid: String, location: Location, emergencyCategory: String, emergencyDesc: String, alertState: AlertState): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
 
@@ -829,19 +820,9 @@ class CotDispatchService : Service() {
             latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
         }
 
-//        val uid = UUID.randomUUID().toString()
-        val uid = if (!alertOrCancel) {
-            // Generate and store a new UID
-            val newUid = UUID.randomUUID().toString()
-            sosAlertUid = newUid
-            newUid
-        } else {
-            // Use the previously stored UID
-            sosAlertUid
-        }
         val linkUid = MainActivity.device_uid
 
-        if (alertOrCancel) {
+        if (alertState == AlertState.CANCEL) {
             return """
         <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
         <event version='2.0' uid='$uid' type='b-a-o-can' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
@@ -869,7 +850,32 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildMarkerCotMessage(uid: String, markerType: String, location: Location, heartRate: Int, battery: Int): String {
+    private fun buildMarkerSnapshot(marker: DataRepository.DropRequest): DataRepository.MarkerSnapshot {
+
+        val loc = dataRepository.latestLocation.value
+        val timeSnapshot: Utils.CotEventTimeSnapshot = getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),                // same as "now"
+            staleOffset = Utils.TimeOffset(years = 1)        // normal stale window for marker is 1 year.
+        )
+
+        val ss = DataRepository.MarkerSnapshot(
+            uid = UUID.randomUUID().toString(),
+            markerType = marker.markerType,
+            iconPath = marker.markerType.icon,
+            lat = loc.latitude,
+            lon = loc.longitude,
+            alt = loc.altitude,
+            le  = loc.accuracy,
+            ce  = loc.verticalAccuracyMeters,
+            time = timeSnapshot.time,          // when marker was clicked (millis)
+            startTime = timeSnapshot.start,    // start millis
+            startTimeCot = timeSnapshot.startCot,
+            staleTime = timeSnapshot.stale,
+            staleTimeCot = timeSnapshot.staleCot,
+            callsign = dataRepository.getCallsign.first()
+            hear
+        )
+
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
         calendar.setTime(Date()) // Set the current time
@@ -900,6 +906,7 @@ class CotDispatchService : Service() {
         }
 
         val linkUid = MainActivity.device_uid
+
 
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -949,7 +956,88 @@ class CotDispatchService : Service() {
          */
     }
 
-    private fun buildClearMarkerCotMessage(uid: String, cotInfo: CotMarkerInfo?): String {
+    private fun buildMarkerCotMessage(uid: String, markerType: String, location: Location, heartRate: Int, battery: Int): String {
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+        calendar.setTime(Date()) // Set the current time
+        val startTime = dateTimeFormatter.format(calendar.time)
+        val startTimeInMs = calendar.timeInMillis
+        calendar.add(Calendar.YEAR, 1) // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        // Marker with Time no Date.
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
+        markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
+        val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
+        val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
+
+        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
+        var latActual   = location.latitude
+        var lonActual   = location.longitude
+        var haeActual   = location.altitude
+        var ceActual    = location.accuracy
+        if (ceActual.isNaN()) ceActual = 9999999.0F
+        var leActual : Float = location.verticalAccuracyMeters
+        if (leActual.isNaN()) leActual = 9999999.0F
+
+        // Ble Beacon
+        if (MainActivity.enableBleBeaconService) {
+            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+        }
+
+        val linkUid = MainActivity.device_uid
+
+
+        return """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <event version="2.0" uid="$uid" type="$markerType" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
+            <point lat="$latActual" lon="$lonActual" hae="$haeActual" ce="$ceActual" le="$leActual"/>
+            <detail>
+                <status readiness="true" battery='$battery'/>
+                <precisionlocation altsrc="SRTM1"/>
+                <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
+                <color argb="-1"/>
+                <usericon iconsetpath="$iconSetPath"/>
+                <remarks>HeartRate: $heartRate bpm; Battery Level: $battery%</remarks>
+                <contact callsign="$markerCallsign_Time"/>
+            </detail>
+        </event>
+        """.trimIndent()
+        /*
+                <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+                <event version='2.0' uid='8b1c80ed-aa14-4747-9bdc-7f931807c9bd' type='a-u-G' time='2025-01-14T17:00:49.286Z' start='2025-01-14T17:00:49.286Z' stale='2025-01-14T17:05:49.286Z' how='h-g-i-g-o' access='Undefined'>
+                    <point lat='41.886874' lon='-87.659409' hae='126.631' ce='10.5' le='9999999.0' />
+                    <detail>
+                        <status readiness='true'/>
+                        <archive/>
+                        <color argb='-1'/>
+                        <remarks/>
+                        <link uid='ANDROID-4cbffc120e174b01' production_time='2024-10-31T16:41:29.018Z' type='a-f-G-U-C' parent_callsign='MAYHEMINDIA-TAB' relation='p-p'/>
+                        <archive/>
+                        <contact callsign='MAYHEMINDIA-TAB SSband_1031_164129'/>
+                    </detail>
+                </event>
+        */
+
+        /*
+                return """
+                    <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
+                    <event version="2.0" uid='${MainActivity.device_uid}' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
+                        <point lat='${location.latitude}' lon='${location.longitude}' hae='${location.altitude}' ce='${location.accuracy}' le='${location.verticalAccuracyMeters}' />
+                        <detail>
+                            <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
+                            <__group role='$role' name='$teamValue'/>
+                            <biometrics hr='$heartRate'/>
+                            <status battery='$battery' model='WEAROS'/>
+                            <track course='${location.bearing}' speed='${location.speed}'/>
+                        </detail>
+                    </event>
+                """.trimIndent()
+         */
+    }
+
+    private fun buildClearMarkerCotMessage(uid: String, cotInfo: Utils.CotUtils.CotMarkerInfo?): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
         calendar.setTime(Date())   // Set the current time
@@ -1000,6 +1088,12 @@ class CotDispatchService : Service() {
         """.trimIndent()
 
         return cot
+    }
+
+    private suspend fun companionAppAvailable(): Boolean {
+        val enabled = dataRepository.getEnableCompanionAppService.first()
+        val ready = capRepo.companionAppReady.first()
+        return enabled && ready
     }
 
     private suspend fun handleClearUid(uid: String) {
@@ -1083,7 +1177,17 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertOrCancel: Boolean) {
+    enum class AlertState {
+        ALERT,
+        CANCEL
+    }
+
+    enum class MarkerActionState {
+        DROP,
+        CLEAR
+    }
+
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertState: AlertState) {
         serviceScope.launch(Dispatchers.IO) {
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
@@ -1096,8 +1200,18 @@ class CotDispatchService : Service() {
                 return@launch
             }
 
+            val uid = if (alertState == AlertState.ALERT) {
+                // Generate and store a new UID
+                val newUid = UUID.randomUUID().toString()
+                sosAlertUid = newUid
+                newUid
+            } else {
+                // Use the previously stored UID for canceling
+                sosAlertUid
+            }
+
             // build the CoT XML for this alert
-            val cotMessage = buildEmergencyAlertCotMessage(loc, emergencyCategory, emergencyDesc, alertOrCancel)
+            val cotMessage = buildEmergencyAlertCotMessage(uid, loc, emergencyCategory, emergencyDesc, alertState)
             val takGptChatMessage = buildChatCotMessage(loc, "$emergencyCategory: $emergencyDesc", "TAKBOT-12345","takGPT")
 
             // only forward to TAK if we’re connected
@@ -1205,7 +1319,12 @@ class CotDispatchService : Service() {
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         if (manualSosToBeSent.get() == true) {
             Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, alertOrCancel)
+            val action = if (cancelSosAlert) {
+                AlertState.CANCEL
+            } else {
+                AlertState.ALERT
+            }
+            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, action)
         }
         lastLocationUpdateRcvd = System.currentTimeMillis()
         serviceScope.launch {
@@ -1240,11 +1359,32 @@ class CotDispatchService : Service() {
         val uid = UUID.randomUUID().toString() // backend owns UID
         val type = req.markerType.type
         iconSetPath = req.markerType.icon
+
+        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val calendar: Calendar = Calendar.getInstance()
+        calendar.setTime(Date()) // Set the current time
+        val startTime = dateTimeFormatter.format(calendar.time)
+        calendar.add(Calendar.YEAR, 1) // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
+        val staleTime = dateTimeFormatter.format(calendar.time)
+
+        val markerCot = CompanionAppRepository.MarkerCotEventCompApp(
+            uid = uid,
+            type = type,
+            time = staleTime,
+            start = startTime,
+            stale = staleTime,
+            detail = "blah"
+        )
+
         Log.i(TAG, "sendDropNow::markerType:: = [ ${type} ]")
         val xml = buildMarkerCotMessage(uid, type, loc, heartRate, battery)
         sendMulticastDatagram(xml)
 
         var sent = false
+        if (companionAppAvailable()) {
+            // TODO: Data repo emit flow from markerCot !
+            sent = true
+        }
         if (dataRepository.getEnableMulticast.first()) {
             sendMulticastDatagram(xml)
         }
@@ -1259,7 +1399,15 @@ class CotDispatchService : Service() {
 
         if (!sent) return  // don’t reflect in UI until actually sent/meshed
 
-        markerDropMap[uid] = CotMarkerInfo(loc.latitude, loc.longitude, loc.altitude, loc.accuracy, loc.verticalAccuracyMeters, type, iconSetPath)
+        markerDropMap[uid] = Utils.CotUtils.CotMarkerInfo(
+            loc.latitude,
+            loc.longitude,
+            loc.altitude,
+            loc.accuracy,
+            loc.verticalAccuracyMeters,
+            type,
+            iconSetPath
+        )
         Log.i(TAG, "=== ===> sending marker type ${type} with uid = [ $uid ] ")
 
         dataRepository.appendDroppedMarker(
@@ -1376,8 +1524,8 @@ class CotDispatchService : Service() {
         // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed
         private const val FRESH_GPS_INTERVAL = 3_000L
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
-        private var GPS_STALE_TIME_INTERVAL_MS = 10_000L
-        private var OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT = 30
+        var GPS_STALE_TIME_INTERVAL_MS = 10_000L
+        var OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT = 30
         private const val GPS_STALE_TIME_INTERVAL_MS_JSON_KEY = "gpsStaleTimeInterval"
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)

@@ -22,15 +22,25 @@ import android.content.Context
 import android.content.Context.ALARM_SERVICE
 import android.content.Intent
 import android.graphics.Color
+import android.location.Location
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.receiver.AlarmReceiver
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaconUpdateTime
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDistance
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
+import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
+import com.aitech.weartak_civ.service.CotDispatchService.BleLocationOutput
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.GPS_STALE_TIME_INTERVAL_MS
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
@@ -50,6 +60,11 @@ import org.xml.sax.InputSource
 import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 import java.security.SecureRandom
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 
 
 object Utils {
@@ -64,6 +79,107 @@ object Utils {
     private const val ACCESS_EXTERNAL_DTD    = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
 
+    // Exactly-one-place we define the CoT UTC formatter.
+    // [Unverified] Adjust the pattern here if your current dateTimeFormatter uses a different one.
+    private val cotUtcFormatter: DateFormat by lazy {
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+    }
+
+    /**
+     * Offset in human units, can be positive or negative.
+     * e.g. TimeOffset(seconds = -4) matches your "clear the cot" example.
+     */
+    data class TimeOffset(
+        val seconds: Int = 0,
+        val minutes: Int = 0,
+        val hours: Int = 0,
+        val days: Int = 0,
+        val years: Int = 0
+    )
+
+    /**
+     * One snapshot of all the time values you care about for a CoT event.
+     *
+     * - time    -> millis when the event actually happened (click, etc.)
+     * - start   -> millis used for <start>
+     * - stale   -> millis used for <stale>
+     * - timeCot -> ISO/Zulu string for <time>
+     * - startCot-> ISO/Zulu string for <start>
+     * - staleCot-> ISO/Zulu string for <stale>
+     */
+    data class CotEventTimeSnapshot(
+        val time: Long,
+        val start: Long,
+        val stale: Long,
+        val timeCot: String,
+        val startCot: String,
+        val staleCot: String
+    )
+
+    private fun Calendar.applyOffset(offset: TimeOffset) {
+        if (offset.seconds != 0) {
+            this.add(Calendar.SECOND, offset.seconds)
+        }
+        if (offset.minutes != 0) {
+            this.add(Calendar.MINUTE, offset.minutes)
+        }
+        if (offset.hours != 0) {
+            this.add(Calendar.HOUR_OF_DAY, offset.hours)
+        }
+        if (offset.days != 0) {
+            this.add(Calendar.DAY_OF_YEAR, offset.days)
+        }
+        if (offset.years != 0) {
+            this.add(Calendar.YEAR, offset.years)
+        }
+    }
+
+    /**
+     * Builds a CoT event time snapshot using UTC calendar math, same behavior
+     * as your existing code:
+     *
+     *   dateTimeFormatter.setTimeZone(UTC)
+     *   val calendar = Calendar.getInstance()
+     *   calendar.setTime(Date())
+     *   ...
+     *
+     * @param startOffset  how far <start> is from "now" (can be 0)
+     * @param staleOffset  how far <stale> is from "now" (can be negative or positive)
+     */
+    fun getCotEventTimeSnapshot(
+        startOffset: TimeOffset = TimeOffset(),             // usually "same as time"
+        staleOffset: TimeOffset = TimeOffset(minutes = 5)   // example default stale window
+    ): CotEventTimeSnapshot {
+
+        val nowMillis = System.currentTimeMillis()
+
+        // Base UTC calendar at "now"
+        val baseCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            timeInMillis = nowMillis
+        }
+
+        // time (no offset – when the action actually happened)
+        val timeCal = baseCal.clone() as Calendar
+
+        // start (with optional offset)
+        val startCal = baseCal.clone() as Calendar
+        startCal.applyOffset(startOffset)
+
+        // stale (with optional offset)
+        val staleCal = baseCal.clone() as Calendar
+        staleCal.applyOffset(staleOffset)
+
+        return CotEventTimeSnapshot(
+            time = timeCal.timeInMillis,
+            start = startCal.timeInMillis,
+            stale = staleCal.timeInMillis,
+            timeCot = cotUtcFormatter.format(timeCal.time),
+            startCot = cotUtcFormatter.format(startCal.time),
+            staleCot = cotUtcFormatter.format(staleCal.time)
+        )
+    }
 
     fun runTimerJob(timeMs: Long) {
         object : Thread() {
@@ -431,6 +547,48 @@ object Utils {
         val trigger: String
     )
 
+    object LocationUtils {
+        fun mapLocationAgainstClosestBleBeacon(loc: Location): BleLocationOutput {
+
+            var latActual = loc.latitude; var lonActual = loc.longitude; var haeActual = loc.altitude; var ceActual = loc.accuracy; val startTimeInMs = System.currentTimeMillis();
+
+            //Log.d(TAG, "closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})")
+            if ((closestBleBeaconUpdateTime > 0) && (abs(startTimeInMs - closestBleBeaconUpdateTime) <= GPS_STALE_TIME_INTERVAL_MS)) {
+                if (ceActual > closestBleDistance) {
+                    //val logString = "Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) > bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                    //Log.d(TAG, logString)
+                    //writeToLogFileLocation(logFile, logString)
+                    ceActual = closestBleDistance.toFloat()
+                    latActual = closestBleLat
+                    lonActual = closestBleLon
+                    haeActual = closestBleAlt
+                    closestBleBeacon?.overrideGPSWithBLECount = 0
+                } else {
+                    val currClosestBleBeacon = closestBleBeacon!!
+                    if (currClosestBleBeacon.overrideGPSWithBLECount++ < OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT) {
+                        //val logString = "GPS Hysteresis(${currClosestBleBeacon.overrideGPSWithBLECount}) Using BLE($closestBleLat, $closestBleLon, $closestBleAlt): gpsHorizError($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                        //Log.d(TAG, logString)
+                        //writeToLogFileLocation(logFile, logString)
+                        ceActual = closestBleDistance.toFloat()
+                        latActual = closestBleLat
+                        lonActual = closestBleLon
+                        haeActual = closestBleAlt
+                    } else {
+                        currClosestBleBeacon.overrideGPSWithBLECount = 0
+                        //val logString = "Using GPS: gpsHorizAcc($ceActual) <= bleClosestDist($closestBleDistance) w/ ble updated ${String.format("%.3f", abs(startTimeInMs - closestBleBeaconUpdateTime)/1000.0)}s ago"
+                        //Log.d(TAG, logString)
+                        //writeToLogFileLocation(logFile, logString)
+                    }
+                }
+            } else {
+                //val logString = "Using GPS: gpsHorizAcc($ceActual) w/ closestBleBeaconUpdateTime($closestBleBeaconUpdateTime); currTime($startTimeInMs); diff (${abs(startTimeInMs - closestBleBeaconUpdateTime)})"
+                //Log.d(TAG, logString)
+                //writeToLogFileLocation(logFile, logString)
+            }
+            return BleLocationOutput(latActual, lonActual, haeActual, ceActual)
+        }
+    }
+
     object PhysioUtils {
         private fun calculateMaxHeartRate(ageYears: Int): Double {
             return (208 - 0.7 * ageYears)
@@ -528,10 +686,88 @@ object Utils {
         }
     }
 
+    fun timeNowIsoUtc(): String {
+        return java.time.Instant.now().toString()
+    }
+
+    fun oneYearFromNowIsoUtc(): String {
+        return java.time.Instant.now()
+            .plus(java.time.Period.ofYears(1))
+            .toString()
+    }
+
     fun toMillis(x: Long?): Long? =
         x?.let { if (it < 1_000_000_000_000L) it * 1000 else it }
 
     object CotUtils {
+
+        // Point used at DROP time, reused on CLEAR
+        data class CotMarkerInfo(
+            val lat: Double,
+            val lon: Double,
+            val hae: Double?,
+            val ce: Float?,
+            val le: Float?,
+            val type: String,
+            val icon: String
+        )
+
+        data class MarkerCotEvent(
+            val version: String,
+            val uid: String,
+            val type: String,
+            val how: String,
+            val time: Long,
+            val start: Long,
+            val stale: Long,
+            val access: String?,
+            val point: Point?,
+            val detail: MarkerDetail,
+        )
+
+        data class MarkerMapItem(
+            val cotEvent: MarkerCotEvent
+        ) {
+            val uid: String = cotEvent.uid
+            val type: String = cotEvent.type
+            val callsign: String? = cotEvent.detail.markerCallsign
+            val point: Point? = cotEvent.point
+            val creator: Creator? = cotEvent.detail.creator   // who created this map item / marker?
+            val link: Link? = cotEvent.detail.link            // who sent us this map item / marker?
+        }
+
+        data class Point(
+            val lat: Double,
+            val lon: Double,
+            val hae: Double,
+            val ce: Double,
+            val le: Double
+        )
+
+        data class MarkerDetail(
+            val markerCallsign: String?,
+            val link: Link?,
+            val creator: Creator?,
+            val usericon: String?,
+            val remarks: String?,
+            val contact: String?
+        )
+
+        data class Link(
+            var uid: String?,
+            var productionTime: Long?,
+            var type: String?,
+            var parentCallsign: String?,
+            var relation: String?
+        )
+
+        data class Creator(
+            var uid: String?,
+            var callsign: String?,
+            var time: Long?,
+            var type: String?,
+        )
+
 
         object Bloodhound {
 
@@ -541,7 +777,7 @@ object Utils {
              * - No side effects
              * - Minimal fields only
              */
-            fun parseMarkerCotOrNull(rawXml: String): BloodhoundRepository.MarkerCotEvent? {
+            fun parseMarkerCotOrNull(rawXml: String): MarkerCotEvent? {
                 // 1) Fast-guard: extract event@type and decide if this is a marker
                 val typeStr = attrOfEvent(rawXml, "type") ?: return null
                 if (!isMarkerType(typeStr)) return null
@@ -568,13 +804,16 @@ object Utils {
                 val creator = creatorOf(rawXml)
                 val link = linkOf(rawXml)
 
-                val detail = BloodhoundRepository.MarkerDetail(
+                val detail = MarkerDetail(
                     markerCallsign = callsign,
                     creator = creator,
-                    link = link
+                    link = link,
+                    usericon = null,
+                    remarks = null,
+                    contact = null
                 )
 
-                return BloodhoundRepository.MarkerCotEvent(
+                return MarkerCotEvent(
                     version = version,
                     uid = uid,
                     type = typeStr,
@@ -612,13 +851,13 @@ object Utils {
             }
 
             /** Extract <point ...> as Point (requires lat/lon/hae/ce/le). */
-            private fun pointOf(xml: String): BloodhoundRepository.Point? {
+            private fun pointOf(xml: String): Point? {
                 val lat = extractAttr(xml, "point", "lat")?.toDoubleOrNull() ?: return null
                 val lon = extractAttr(xml, "point", "lon")?.toDoubleOrNull() ?: return null
                 val hae = extractAttr(xml, "point", "hae")?.toDoubleOrNull() ?: return null
                 val ce  = extractAttr(xml, "point", "ce")?.toDoubleOrNull() ?: return null
                 val le  = extractAttr(xml, "point", "le")?.toDoubleOrNull() ?: return null
-                return BloodhoundRepository.Point(lat, lon, hae, ce, le)
+                return Point(lat, lon, hae, ce, le)
             }
 
             /** Extract contact@callsign inside <detail>. */
@@ -627,24 +866,24 @@ object Utils {
             }
 
             /** Extract <creator .../> attributes. */
-            private fun creatorOf(xml: String): BloodhoundRepository.Creator {
+            private fun creatorOf(xml: String): Creator {
                 val uid  = extractAttr(xml, "creator", "uid")
                 val cs   = extractAttr(xml, "creator", "callsign")
                 val type = extractAttr(xml, "creator", "type")
                 val timeIso = extractAttr(xml, "creator", "time")
                 val time = timeIso?.let { parseIsoToEpochMs(it) }
-                return BloodhoundRepository.Creator(uid = uid, callsign = cs, type = type, time = time)
+                return Creator(uid = uid, callsign = cs, type = type, time = time)
             }
 
             /** Extract <link .../> attributes. */
-            private fun linkOf(xml: String): BloodhoundRepository.Link {
+            private fun linkOf(xml: String): Link {
                 val uid   = extractAttr(xml, "link", "uid")
                 val type  = extractAttr(xml, "link", "type")
                 val parent= extractAttr(xml, "link", "parent_callsign")
                 val rel   = extractAttr(xml, "link", "relation")
                 val prodIso = extractAttr(xml, "link", "production_time")
                 val prod   = prodIso?.let { parseIsoToEpochMs(it) }
-                return BloodhoundRepository.Link(
+                return Link(
                     uid = uid,
                     type = type,
                     parentCallsign = parent,

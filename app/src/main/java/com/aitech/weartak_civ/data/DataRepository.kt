@@ -36,6 +36,7 @@ import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
+import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.google.gson.Gson
@@ -54,6 +55,8 @@ import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceDebugState
+import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -308,6 +311,12 @@ class DataRepository(private val context: Context) {
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
 
+    suspend fun updateChargingState(charging: Boolean) {
+        _chargingState.emit(charging)
+    }
+    private val _chargingState = MutableStateFlow<Boolean>(false)
+    val chargingState: StateFlow<Boolean> = _chargingState
+
     private val _latestIsDeviceWorn = MutableStateFlow<Boolean>(false)
     val latestIsDeviceWorn: StateFlow<Boolean> = _latestIsDeviceWorn
 
@@ -463,7 +472,171 @@ class DataRepository(private val context: Context) {
         _restingHeartRate.emit(restHr)
     }
 
-    // --- authoritative list (unchanged) ---
+    suspend fun snapshotLocation(): LocationSnapshot? {
+        val baseLoc = latestLocation.value ?: return null
+        var latActual   = baseLoc.latitude
+        var lonActual   = baseLoc.longitude
+        var haeActual   = baseLoc.altitude
+        var ceActual    = baseLoc.accuracy
+        var leActual    = baseLoc.verticalAccuracyMeters
+
+        if (ceActual.isNaN()) ceActual = 9999999.0f
+        if (leActual.isNaN()) leActual = 9999999.0f
+
+        // Apply BLE-beacon override if enabled
+        if (getEnableBleBeaconService.first()) {
+            val bleOutput = Utils.LocationUtils.mapLocationAgainstClosestBleBeacon(baseLoc)
+            latActual = bleOutput.lat
+            lonActual = bleOutput.lon
+            haeActual = bleOutput.hae
+            ceActual  = bleOutput.ce
+        }
+
+        return LocationSnapshot(
+            timeMillis = baseLoc.time,
+            lat = latActual,
+            lon = lonActual,
+            alt = haeActual,
+            ce = ceActual,
+            le = leActual,
+            course = baseLoc.bearing.takeIf { !it.isNaN() },
+            speed = baseLoc.speed.takeIf { !it.isNaN() }
+        )
+    }
+
+    data class LocationSnapshot(
+        val timeMillis: Long,
+        val lat: Double,
+        val lon: Double,
+        val alt: Double?,
+        val ce: Float?,    // circular error (horizontal)
+        val le: Float?,    // linear error (vertical)
+        val course: Float?, // optional: bearing
+        val speed: Float?   // optional: m/s
+    )
+
+    data class PhysioDataBak(
+        val heartRate: Int,
+        val skinTemp: Float,
+        val exertion: Double,
+        val battery: Int?,
+        val steps: Long,
+        val calories: Double,
+        val floors: Double,
+        val elevationM: Double?,
+        val weight: Int,
+        val age: Int
+    )
+
+    data class PhysioData(
+        val heartRateBpm: Int?,          // current HR
+        val ageYears: Int?,              // physiological age used for calculations
+        val weightKg: Int?,              // settings
+        val restingHrBpm: Int?,          // baseline rest HR
+        val exertion: Double?,           // 0..1 or null if unknown
+        val exertionClass: String?,      // "LIGHT", "MODERATE", "VIGOROUS", "UNKNOWN"
+        val dailyMetrics: DailyMetrics?  // aggregated steps/calories/floors/elevation
+    )
+
+    data class PhysioSnapshot(
+        val timeMillis: Long,
+        val data: PhysioData
+    )
+
+    suspend fun snapshotPhysio(): PhysioSnapshot {
+        val now = System.currentTimeMillis()
+
+        val hr       = latestHeartRate.value
+        val skin     = latestSkinTemp.value
+        val exertion = latestExertion.value   // computed flow
+        val steps    = latestSteps.value
+        val calories = latestCalories.value
+        val floors   = latestFloors.value
+        val elevM    = latestElevationM.value
+        val weight   = userWeightKg.value     // however you store it
+        val age      = userAgeYears.value
+
+        return PhysioSnapshot(
+            timeMillis = now,
+            data = PhysioData(
+                heartRate = hr,
+                skinTemp = skin,
+                exertion = exertion,
+                steps = steps,
+                calories = calories,
+                floors = floors,
+                elevationM = elevM,
+                weightKg = weight,
+                ageYears = age
+            )
+        )
+    }
+
+    data class DailyMetrics(
+        val timestampHour: Instant,
+        val steps: Long       = 0L,
+        val calories: Double  = 0.0,
+        val floors: Double    = 0.0,
+        val elevationM: Double = 0.0
+    )
+
+    private val _latestDailyMetrics = MutableStateFlow<DailyMetrics?>(null)
+    val latestDailyMetrics: StateFlow<DailyMetrics?> = _latestDailyMetrics
+
+    fun updateDailyMetrics(
+        timestampHour: Instant,
+        steps: Long?,
+        calories: Double?,
+        floors: Double?,
+        elevationM: Double?
+    ) {
+        val prev = _latestDailyMetrics.value
+        _latestDailyMetrics.value = DailyMetrics(
+            timestampHour = timestampHour,
+            steps        = steps       ?: prev?.steps       ?: 0L,
+            calories     = calories    ?: prev?.calories    ?: 0.0,
+            floors       = floors      ?: prev?.floors      ?: 0.0,
+            elevationM   = elevationM  ?: prev?.elevationM  ?: 0.0
+        )
+    }
+
+    data class MarkerSnapshotAdaptor(
+        val uid: String,
+        val type: String?,
+        val iconSetPath: String?,
+        val lat: Double,
+        val lon: Double,
+        val alt: Double?,
+        val le: Float?,
+        val ce: Float?,
+        val time: Long,
+        val startTime: String,
+        val staleTime: Long,
+
+        // things you might want “frozen in time” with the event:
+        val callsign: String,
+        val heartRate: Int?,
+        val batteryPercent: Int?
+    )
+
+    data class SystemSnapshot(
+        val time: Long,
+        val battery: Int,
+        val charging: Boolean,
+        val callsign: String,
+        val isWorn: Boolean,
+        val deviceId: String
+    )
+
+    data class MarkerSnapshot(
+        val uid: String,
+        val markerType: DataRepository.MarkerType,
+        val loc: LocationSnapshot,
+        val time: Utils.CotEventTimeSnapshot,
+        val physioData: PhysioSnapshot,
+        val systemData: SystemSnapshot,
+    )
+
     data class DroppedMarker(
         val uid: String,
         val markerType: String,
@@ -485,7 +658,6 @@ class DataRepository(private val context: Context) {
     suspend fun storeDroppedMarkerList(droppedMarkerList: List<DroppedMarker>) {
         _droppedMarkerList.emit(droppedMarkerList)
     }
-
 
     enum class MarkerType(
         val type: String,
@@ -1534,34 +1706,6 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[USER_TYPE] = usertype
         }
-    }
-
-    data class DailyMetrics(
-        val timestampHour: Instant,
-        val steps: Long       = 0L,
-        val calories: Double  = 0.0,
-        val floors: Double    = 0.0,
-        val elevationM: Double = 0.0
-    )
-
-    private val _latestDailyMetrics = MutableStateFlow<DailyMetrics?>(null)
-    val latestDailyMetrics: StateFlow<DailyMetrics?> = _latestDailyMetrics
-
-    fun updateDailyMetrics(
-        timestampHour: Instant,
-        steps: Long?,
-        calories: Double?,
-        floors: Double?,
-        elevationM: Double?
-    ) {
-        val prev = _latestDailyMetrics.value
-        _latestDailyMetrics.value = DailyMetrics(
-            timestampHour = timestampHour,
-            steps        = steps       ?: prev?.steps       ?: 0L,
-            calories     = calories    ?: prev?.calories    ?: 0.0,
-            floors       = floors      ?: prev?.floors      ?: 0.0,
-            elevationM   = elevationM  ?: prev?.elevationM  ?: 0.0
-        )
     }
 
     companion object {
