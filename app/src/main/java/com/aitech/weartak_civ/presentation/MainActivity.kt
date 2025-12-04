@@ -427,12 +427,29 @@ class MainActivity : ComponentActivity() {
         var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
         var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
 
-        var hrHighAlertBpmThreshold : Int = DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
-        val hrHighAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD)
-        val hrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD)
-        var hrHighAlertNumSecsThreshold : Int = DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
-        val hrHighAlertNumSecsThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS)
-        val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS)
+        var restingHrHighAlertBpmThreshold: Int = 120
+        var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(120)
+        var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(120)
+        var restingHrLowAlertBpmThreshold: Int = 120
+        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(120)
+        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(120)
+        var restingHrAlertBpmThresholdLength: Int = 10
+        var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(10)
+        var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(10)
+        var exertionThresholdWarning: Int = 80
+        var exertionThresholdWarningState = MutableLiveData<Int>(80)
+        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(80)
+        var exertionThresholdAlert: Int = 90
+        var exertionThresholdAlertState = MutableLiveData<Int>(90)
+        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(90)
+
+        //TODO WEAR-313: Comment out these
+        var hrHighAlertBpmThreshold : Int = 140
+        val hrHighAlertBpmThresholdState = MutableLiveData<Int>(140)
+        val hrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(140)
+        var hrHighAlertNumSecsThreshold : Int = 30
+        val hrHighAlertNumSecsThresholdState = MutableLiveData<Int>(30)
+        val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null
@@ -792,10 +809,14 @@ class MainActivity : ComponentActivity() {
             smsNumbersListString   =
                 convertSmsNumbersListToStringWithSeparator(dataRepository.getSmsNumbersList.first(), ",")
 
-            // --- Physiological alerts ---
-            enablePhysiologicalAlerts    = dataRepository.getEnablePhysiologicalAlerts.first()
-            hrHighAlertBpmThreshold      = dataRepository.getHrHighAlertBpmThreshold.first()
-            hrHighAlertNumSecsThreshold  = dataRepository.getHrHighAlertNumSecsThreshold.first()
+            enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
+            restingHrHighAlertBpmThreshold = dataRepository.getRestingHrHighAlertBpmThreshold.first()
+            restingHrLowAlertBpmThreshold = dataRepository.getRestingHrLowAlertBpmThreshold.first()
+            restingHrAlertBpmThresholdLength = dataRepository.getRestingHrAlertBpmThresholdLength.first()
+            exertionThresholdWarning = dataRepository.getExertionThresholdWarning.first()
+            exertionThresholdAlert = dataRepository.getExertionThresholdAlert.first()
+            hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
+            hrHighAlertNumSecsThreshold = dataRepository.getHrHighAlertNumSecsThreshold.first()
 
             // --- BLE beacons / localization ---
             enableBleBeaconService       = dataRepository.getEnableBleBeaconService.first()
@@ -900,6 +921,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable Batdok COT:", enableBatdokCot.toString())}
                     ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
                     ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
+                    ${String.format("%-25s %-30s", "High Resting Heart Rate Alert Threshold:", restingHrHighAlertBpmThreshold.toString())}
+                    ${String.format("%-25s %-30s", "Low Resting Heart Rate Alert Threshold:", restingHrLowAlertBpmThreshold.toString())}
+                    ${String.format("%-25s %-30s", "Resting Heart Rate Threshold Length:", restingHrAlertBpmThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "Exertion Warning Threshold:", exertionThresholdWarning.toString())}
+                    ${String.format("%-25s %-30s", "Exertion Alert Threshold", exertionThresholdAlert.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
                     ${String.format("%-25s %-30s", "Battery Warn Percentage:", battWarnPercent.toString())}
@@ -1109,6 +1135,12 @@ class MainActivity : ComponentActivity() {
         enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
         enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
+        restingHrHighAlertBpmThresholdState.postValue(restingHrHighAlertBpmThreshold)
+        restingHrLowAlertBpmThresholdState.postValue(restingHrLowAlertBpmThreshold)
+        restingHrAlertBpmThresholdLengthState.postValue(restingHrAlertBpmThresholdLength)
+        exertionThresholdWarningState.postValue(exertionThresholdWarning)
+        exertionThresholdAlertState.postValue(exertionThresholdAlert)
+
         hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
