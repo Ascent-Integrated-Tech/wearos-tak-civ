@@ -59,6 +59,10 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.ActivityPayload
 
 
 class ActivityRecognitionService : Service() {
@@ -186,6 +190,28 @@ class ActivityRecognitionService : Service() {
 
             // TODO: Need to look at confidence and do sthg if confidence is less than 50? Maybe store in a data class
             if ((act?.confidence ?: 0) >= 50) {
+
+                val cepState = when (detectedActivity) {
+                    ActivityRecognized.RUNNING          -> "RUNNING"
+                    ActivityRecognized.WALKING,
+                    ActivityRecognized.ON_FOOT          -> "WALKING"
+                    ActivityRecognized.STILL            -> "STILL"
+                    ActivityRecognized.BICYCLING        -> "CYCLING"
+                    ActivityRecognized.IN_VEHICLE       -> "DRIVING"
+                    ActivityRecognized.TILTING,
+                    ActivityRecognized.UNKNOWN          -> "UNKNOWN"
+                }
+
+                // Emit to CEP inside coroutine scope
+                ioScope.launch {
+                    CepBus.emit(
+                        CepEvent(
+                            topic = Topics.ACTIVITY,
+                            payload = ActivityPayload(state = cepState)
+                        )
+                    )
+                }
+
                 // Persist in repo (backend-only)
                 ioScope.launch {
                     //RestingHrManager.onActivityRecognized(detectedActivity.name)

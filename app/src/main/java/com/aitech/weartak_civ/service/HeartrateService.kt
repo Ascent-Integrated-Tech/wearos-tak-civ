@@ -385,10 +385,6 @@ class HeartrateService: Service() {
         }
     }
 
-    private suspend fun emitHRValues(){
-
-    }
-
     private fun checkPermissions(): Boolean {
         return ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") == PackageManager.PERMISSION_GRANTED
     }
