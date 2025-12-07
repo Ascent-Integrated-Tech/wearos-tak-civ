@@ -367,7 +367,10 @@ class CEPSimulationService : Service() {
         val cfg = scenarioConfig(s, ageYears, hrRest)
 
         // Fixed seed keeps the simulation reproducible while satisfying S2245
-        val rnd = SecureRandom().apply { setSeed(42L) }
+        //val rnd = SecureRandom().apply { setSeed(42L) }
+
+        //SonarQube compliant
+        val rnd = SecureRandom()
 
         fun jitterD(d: Double, mag: Double): Double {
             // rnd.nextDouble() -> [0,1); map to [-mag, +mag]
