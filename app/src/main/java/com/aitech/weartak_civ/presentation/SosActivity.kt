@@ -358,7 +358,6 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
             //successBoolean = Success boolean (x or check)
             //isConfirmed = Was confirmation dialog confirm button pressed
 
-            //TODO: Works with SuccessfulCotSentCheck maybe?
             if (isConfirmed.value) {
                 if (takServer == true) {
                     if (location != null && locationChecked) {

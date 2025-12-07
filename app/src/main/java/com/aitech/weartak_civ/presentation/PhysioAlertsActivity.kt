@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ.presentation
 
 import android.annotation.SuppressLint
@@ -9,13 +18,24 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -23,20 +43,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavController
+import androidx.wear.compose.material.Card
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Text
@@ -49,15 +74,26 @@ import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.LOW_HEART_RATE_ALERT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.complication.PhysioAlertComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.alertListPreview
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.HeartrateService
+import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
+import com.aitech.weartak_civ.service.HeartrateService.Companion.hrStringLiveData
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
+import java.lang.Math.round
+import java.time.Instant
 
 class PhysioAlertsActivity : ComponentActivity() {
     companion object {
@@ -173,6 +209,9 @@ fun AlertsScreen(
     WearTakCivScreenDimensions(
         columnContent = {
             LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
+               item() {
+                   ExpandableCard()
+               }
                 itemsIndexed(alerts) { index, alert ->
                     // room.messageList is the List<ChatMessage>
 
@@ -222,77 +261,166 @@ fun AlertsScreen(
             BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
 
         },
-        text = "Active Alerts"
+        text = ""
     )
 }
 
-//TODO: WEAR-234 - Delete this
-//@Composable
-//fun AlertsDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
-//    WearTAKCIVTheme {
-//        Column(
-//            modifier = Modifier
-//                .fillMaxSize()
-//                .background(colors.background)
-//                .padding(16.dp),
-//            horizontalAlignment = Alignment.CenterHorizontally,
-//            verticalArrangement = Arrangement.Center
-//        ) {
-//            Text(
-//                text = "Alerts Disabled",
-//                fontWeight = FontWeight.SemiBold,
-//                textAlign = TextAlign.Center
-//            )
-//            Spacer(modifier = Modifier.size(5.dp))
-//            Text(
-//                text = "Please enable alerts in order to use this feature",
-//                textAlign = TextAlign.Center,
-//                fontSize = 14.sp
-//            )
-//            Spacer(modifier = Modifier.size(10.dp))
-//            Button(
-//                onClick = {
-//                    navController.navigate("invalid_license_screen") {
-//                        popUpTo("invalid_license_screen") { inclusive = true }
-//                    }
-//                },
-//                colors = ButtonDefaults.buttonColors(
-//                    containerColor = colors.primary,
-//                    contentColor = Color.Black
-//                )
-//            ) {
-//                Text(
-//                    text = "Go to Settings",
-//                    color = Color.Black,
-//                    fontWeight = FontWeight.SemiBold,
-//                    textAlign = TextAlign.Center
-//                )
-//            }
-//            Button(
-//                onClick = { exitActivity() },
-//                colors = ButtonDefaults.buttonColors(
-//                    containerColor = Color.DarkGray,
-//                    contentColor = Color.White
-//                ),
-//                modifier = Modifier.padding(top = 2.dp)
-//            ) {
-//                Text(
-//                    text = "Exit",
-//                    color = Color.White,
-//                    fontWeight = FontWeight.SemiBold,
-//                    textAlign = TextAlign.Center
-//                )
-//            }
-//        }
-//    }
-//}
+@Composable
+fun ExpandableCard() {
+    var expanded by remember { mutableStateOf(false) }
+    val heartRateFlow = dataRepository.latestHeartRate.collectAsState()
+    val exertionFlow = dataRepository.exertionFlow.collectAsState()
+    val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
+    val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
+    val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
 
-//fun requestPhysioAlertIconComplicationUpdate(context: Context) {
-//    val componentName = ComponentName(context, PhysioAlertIconComplicationService::class.java)
-//
-//    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
-//    requester.requestUpdateAll()
-//}
+
+    Card(
+//        shape = RoundedCornerShape(8.dp),
+        onClick = { expanded = !expanded },
+    ) {
+        if (expanded) {
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.current_metrics))
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    tint = Color.White,
+                    contentDescription = "",
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column() {
+                    MetricItem(
+                        painterResource(id = R.drawable.heart_rate),
+                        stringResource(R.string.heart_rate),
+                        if (deviceWorn.value) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
+                    )
+                    MetricItem(
+                        painterResource(id = R.drawable.steps),
+                        stringResource(R.string.steps),
+                        if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"
+                    )
+                    MetricItem(
+                        painterResource(id = R.drawable.skin_temp),
+                        stringResource(R.string.skin_temp),
+                        if (deviceWorn.value) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"
+                    )
+                }
+                Spacer(modifier = Modifier.width(7.dp))
+                Column() {
+                    MetricItem(
+                        painterResource(id = R.drawable.exertion),
+                        stringResource(R.string.exertion),
+                        if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"
+                    )
+                    MetricItem(
+                        painterResource(id = R.drawable.floors),
+                        stringResource(R.string.floors),
+                        if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
+                    )
+                    MetricItem(
+                        painterResource(id = R.drawable.calories),
+                        stringResource(R.string.calories),
+                        if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.current_metrics))
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    tint = Color.White,
+                    contentDescription = "",
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.heart_rate),
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(23.dp),
+                    contentDescription = "",
+                )
+                Text(
+                    text = if (deviceWorn.value) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---",
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(start = 5.dp)
+                )
+                Spacer(modifier = Modifier.width(7.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.exertion),
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(23.dp),
+                    contentDescription = "",
+                )
+                Text(
+                    text = if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---",
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(start = 5.dp)
+                )
+            }
+        }
+    }
+}
+
+fun Float.formatDecimal(numberOfDecimals: Int = 2): String = "%.${numberOfDecimals}f".format(this)
+
+@Composable
+fun MetricItem(
+    icon: Painter,
+    metricTitle: String,
+    metricVal: String
+) {
+    Row(
+        modifier = Modifier.padding(bottom = 6.dp)
+    ) {
+        Icon(
+            painter = icon,
+            tint = Color.Unspecified,
+            modifier = Modifier.size(23.dp),
+            contentDescription = "",
+        )
+        Column(
+            modifier = Modifier.padding(start = 5.dp)
+        ) {
+            Text(
+                text = metricTitle,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+            )
+            Text(
+                text = metricVal,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                fontSize = 15.sp)
+        }
+    }
+}
+
+
 fun requestPhysioComplicationUpdate(context: Context) {
     val componentName = ComponentName(context, PhysioAlertComplicationService::class.java)
 
@@ -310,4 +438,13 @@ fun AlertsScreenPreview() {
 @Composable
 fun AlertsDisabledPreview() {
 //    AlertsDisabledScreen(rememberSwipeDismissableNavController(), {})
+}
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun MetricItemPreview() {
+MetricItem(
+    painterResource(id = R.drawable.heart_rate),
+    "Heart Rate",
+    "100bpm"
+    )
 }

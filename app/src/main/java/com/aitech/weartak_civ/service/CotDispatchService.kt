@@ -9,26 +9,22 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
-import android.graphics.Color
 import android.location.Location
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
-import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
 import com.aitech.weartak_civ.Utils.getValueFromJson
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
@@ -47,7 +43,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
 import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaconUpdateTime
@@ -81,14 +76,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-
 class CotDispatchService : Service() {
     private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private var lastLocationUpdateRcvd: Long = 0L
     //private var lastHandledMarkerId = 0  // # of button clicks for differentiating multiple clicks in a row
-//    private val markerDropToBeSent = AtomicBoolean(false)
+    private val ioScope = CoroutineScope(Dispatchers.IO)
+    //    private val markerDropToBeSent = AtomicBoolean(false)
 //    private var markerDropReceivedTime: Long = 0L
     private val manualSosToBeSent = AtomicBoolean(false)
     private var manualSosReceivedTime: Long = 0L
@@ -104,58 +99,21 @@ class CotDispatchService : Service() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
-    private var buildHailDetail: Boolean = false
-    @Volatile private var hailEnabled: Boolean = false
     private var combatId: Int = 0
 
     // Acquire DataRepository from a global or singleton reference
     private lateinit var dataRepository: DataRepository
+
+    private var sentBatteryWarnChatMsg = false
+    private var sentBatteryAlertChatMsg = false
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-//        Log.v(TAG, "CotDispatchService onStartCommand()")
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-            startDispatchScheduler()
-            CoroutineScope(Dispatchers.Main).launch {
-                setValuesFromCustomDeveloperConfig()
-            }
-            startBatteryAlerts()
-        }
+        Log.v(TAG, "CotDispatchService onStartCommand()")
         return START_NOT_STICKY
-    }
-
-    // starting requires notification to the user
-    private fun startForegroundService() {
-//        Log.v(TAG, "Starting $TAG as a ForegroundService")
-        val channelId = createNotificationChannel()
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-        val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
-            .setContentText("WearTAK-CIV Cot Dispatch service running")
-            .setPriority(BIND_WAIVE_PRIORITY)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-        try {
-            startForeground(COT_DISPATCH_SERVICE_NOTIFICATION_ID, notification)
-        } catch (e: NullPointerException) {
-            Log.e(TAG, "Failed to set CotDispatcher ForegroundService", e)
-        }
-    }
-
-    private fun createNotificationChannel(): String {
-        val channelId = "Cot_Dispatch_Service"
-        val channelName = "Cot Dispatch Background Service"
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-        chan.lightColor = Color.GRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
-        chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-        val service = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        service.createNotificationChannel(chan)
-        return channelId
     }
 
     @Volatile private var lastLicenseState: HailService.HailLicenseStates = HailService.HailLicenseStates.INVALID
@@ -165,119 +123,53 @@ class CotDispatchService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "CotDispatchService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            notificationId = COT_DISPATCH_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
+
         instance = this
-        Log.v(TAG, "CotDispatchService onCreate()")
         dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
+
+        startDispatchScheduler()
+        CoroutineScope(Dispatchers.Main).launch {
+            setValuesFromCustomDeveloperConfig()
+        }
+        //TODO: WEAR-312: Prevent this from calling when battery alerts disabled vvv
+        startBatteryAlerts()
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
 
-        serviceScope.launch {
-            dataRepository.hailLicenseInfoFlow.first()?.let { HailService.hailLicenseInfo = it }
-        }
-
-        serviceScope.launch {
-            combine(
-                dataRepository.enableHailService,                 // Boolean
-                dataRepository.hailLicenseState                   // HailLicenseStates
-            ) { enable, state ->
-                lastLicenseState = state
-                enable && (state == HailService.HailLicenseStates.VALID ||
-                        state == HailService.HailLicenseStates.SOFT_EXPIRED)
-            }
-                .distinctUntilChanged() // stops identical re-triggers
-                .collect { gate ->
-                    buildHailDetail = gate
-                    lgGate("[buildHailDetail]=$gate [state]=$lastLicenseState")
-                }
-        }
-
-        // Initialize the SDK only when enable becomes true (keep this simple & idempotent)
-        serviceScope.launch {
-            dataRepository.enableHailService
-                .collect { enable ->
-                    Log.d(TAG, "enableHailService: $enable")
-                    if (enable) {
-                        HailService.initialize(
-                            appId = "com.rain.hail",
-                            context = applicationContext,
-                            deviceUid = MainActivity.device_uid
-                        )
-                    }
-                }
-        }
-
-        // @Molly this is how we can collect the button state, so you know when it becomes false again.
-        serviceScope.launch {
-            dataRepository.hailCheckLicenseButtonPressed
-                .collect { pressed ->
-                    if (pressed) {
-                        dataRepository.hailCheckLicenseButtonPressed.emit(false)
-                        if (!dataRepository.getEnableHailService.first()) {
-                            return@collect
-                        }
-                        Log.d(TAG,"Hail Check Button pressed ... Entering CHECKING state")
-                        checkLicense {
-                            checkLocalHailLicense()
-                        }
-                    }
-                }
-        }
-
-        // gives the dispatchers
-        serviceScope.launch {
-            dataRepository.getCombatId
-                .collect { id -> combatId = id ?: 0 }
-        }
-
-        serviceScope.launch {
-            dataRepository.hailInfoStateFlow
-                .collect { info ->
-                    lgGate("""
-                    hailInfoStateFlow changed:
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    """.trimIndent().format(
-                                            "Pairing code:", info?.pairingCode ?: "null",
-                                            "Expiration date:", info?.expirationDate ?: "null",
-                                            "Soft exp. date:", info?.softExpirationDate ?: "null",
-                                            "Account number:", info?.accountNumber ?: "null",
-                                            "License ID:", info?.licenseId ?: "null",
-                                            "Device ID:", info?.deviceId ?: "null"
-                                            )
-                    )
-                }
-        }
+        collectHailFlows()
 
         startMarkerPipelines()
     }
-
-    private var sentBatteryWarnChatMsg = false
-    private var sentBatteryAlertChatMsg = false
 
     private fun startBatteryAlerts() {
         // TODO: We should only send this when the device is NOT charging... And change to CEP rule
         serviceScope.launch(Dispatchers.IO) {
             dataRepository.latestBatteryPercentage.collect { batt ->
-                if ((null != batt) && TAKConnectService.isAnyTakConnected) {
+                val batteryAlertsEnabled = (dataRepository.getEnableBatteryAlerts.first())
+                val endpointsToSendTo: Boolean = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first())
+                if ((null != batt) && endpointsToSendTo && batteryAlertsEnabled) {
                     if (batt <= MainActivity.battWarnPercent) {
                         Log.d(TAG, "battery: $batt")
                         if (batt > MainActivity.battAlertPercent) {
                             if (!sentBatteryWarnChatMsg) {
                                 Log.d(TAG, "battery: $batt")
                                 val loc = //dataRepository.latestLocation.value ?:
-                                Location("manual").apply {
-                                    latitude = 0.0
-                                    longitude = 0.0
-                                    altitude = 0.0
-                                    accuracy = 999999.0f
-                                    verticalAccuracyMeters = 999999.0f
-                                    time = System.currentTimeMillis()
-                                }
+                                    Location("manual").apply {
+                                        latitude = 0.0
+                                        longitude = 0.0
+                                        altitude = 0.0
+                                        accuracy = 999999.0f
+                                        verticalAccuracyMeters = 999999.0f
+                                        time = System.currentTimeMillis()
+                                    }
                                 val chatMessage = buildChatCotMessage(
                                     loc,
                                     "Battery Warning: ${MainActivity.callsign} battery less than ${MainActivity.battWarnPercent}% (actual=$batt%)",
@@ -301,7 +193,7 @@ class CotDispatchService : Service() {
                                 }
                                 val chatMessage = buildChatCotMessage(
                                     loc,
-                                    "Battery ALERT: ${MainActivity.callsign} battery less than $${MainActivity.battAlertPercent}% (actual=$batt%)",
+                                    "Battery ALERT: ${MainActivity.callsign} battery less than ${MainActivity.battAlertPercent}% (actual=$batt%)",
                                     "All Chat Rooms",
                                     "All Chat Rooms"
                                 )
@@ -631,9 +523,61 @@ class CotDispatchService : Service() {
         return cot
     }
 
+    private fun collectHailFlows() {
+        serviceScope.launch {
+            dataRepository.hailLicenseInfoFlow.first()?.let { HailService.hailLicenseInfo = it }
+        }
+
+        // @Molly this is how we can collect the button state, so you know when it becomes false again.
+        serviceScope.launch {
+            dataRepository.hailCheckLicenseButtonPressed
+                .collect { pressed ->
+                    if (pressed) {
+                        dataRepository.hailCheckLicenseButtonPressed.emit(false)
+                        if (!dataRepository.getEnableHailService.first()) {
+                            return@collect
+                        }
+                        Log.d(TAG,"Hail Check Button pressed ... Entering CHECKING state")
+                        checkLicense {
+                            checkLocalHailLicense()
+                        }
+                    }
+                }
+        }
+
+        // gives the dispatchers
+        serviceScope.launch {
+            dataRepository.getCombatId
+                .collect { id -> combatId = id ?: 0 }
+        }
+
+        serviceScope.launch {
+            dataRepository.hailInfoStateFlow
+                .collect { info ->
+                    lgGate("""
+                    hailInfoStateFlow changed:
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    %-20s %s
+                    """.trimIndent().format(
+                        "Pairing code:", info?.pairingCode ?: "null",
+                        "Expiration date:", info?.expirationDate ?: "null",
+                        "Soft exp. date:", info?.softExpirationDate ?: "null",
+                        "Account number:", info?.accountNumber ?: "null",
+                        "License ID:", info?.licenseId ?: "null",
+                        "Device ID:", info?.deviceId ?: "null"
+                    )
+                    )
+                }
+        }
+    }
+
     private fun buildHailDetail(physioData: PhysioData): String {
         val licenseValid = HailService.isHailLicenseValid() // so we call this everytime.
-        if (!buildHailDetail || !licenseValid) {
+        if (!dataRepository.buildHailDetail.value || !licenseValid) {
             return ""
         } else {
             val hailEncoded: Result<String> = HailService.encodeHailDetail(combatId, callsign) { hail ->
@@ -1315,8 +1259,12 @@ class CotDispatchService : Service() {
         iconSetPath = req.markerType.icon
         Log.i(TAG, "sendDropNow::markerType:: = [ ${type} ]")
         val xml = buildMarkerCotMessage(uid, type, loc, heartRate, battery)
+        sendMulticastDatagram(xml)
 
         var sent = false
+        if (dataRepository.getEnableMulticast.first()) {
+            sendMulticastDatagram(xml)
+        }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
             sent = true
@@ -1333,6 +1281,7 @@ class CotDispatchService : Service() {
         dataRepository.appendDroppedMarker(
             DataRepository.DroppedMarker(uid = uid, markerType = type, timeDropped = req.timeMillis)
         )
+
     }
 
 //    @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -1402,8 +1351,9 @@ class CotDispatchService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "CotDispatchService onDestroy called")
-
+        Log.d(TAG, "CotDispatchService onDestroy()")
+        isRunning.set(false)
+        stopForeground(STOP_FOREGROUND_DETACH)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
@@ -1436,6 +1386,7 @@ class CotDispatchService : Service() {
     }
 
     companion object {
+        private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
         // Time interval within which GPS is considered "fresh"
         // We will send out SOS and marker drop if last time GPS was received is within 3 seconds of receiving the Event to send marker or SOS respectively, else we will get new GPS location and then send out marker or SOS as needed

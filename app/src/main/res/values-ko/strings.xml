@@ -91,7 +91,9 @@
     <string name="sos_active">SOS Active</string>
     <string name="sos_alert_sent">SOS Alert SENT</string>
     <string name="sos_alert_cancelled">SOS Alert CANCELLED</string>
+    <string name="sos_complication_service" />
     <string name="sos_inactive">SOS Inactive</string>
+    <string name="sos_text_complication_service">sos text complication service</string>
     <string name="on_off">ON/OFF</string>
     <string name="sms_recipients">SMS Recipients</string>
     <string name="invalid_characters">Invalid characters, please only enter numbers, commas(,) and dashes(-)</string>
@@ -118,4 +120,23 @@
     <string name="high_heart_rate_alert_string">HIGH Heart Rate</string>
     <string name="low_heart_rate_alert_string">LOW Heart Rate</string>
     <string name="high_exertion_alert_string">HIGH Exertion</string>
+    <string name="view_chat">View Chat</string>
+    <string name="rgr">RGR</string>
+    <string name="npos">nPos</string>
+    <string name="km">km</string>
+    <string name="bloodhounding">Bloodhounding</string>
+    <string name="not_bloodhounding">Not Bloodhounding</string>
+    <string name="sent">"Sent: "</string>
+    <string name="bloodhound">Bloodhound</string>
+    <string name="bloodhound_disabled">Bloodhound Disabled</string>
+    <string name="compass">Compass</string>
+    <string name="battery_alerts">Battery Alerts</string>
+    <string name="compass_disabled">Compass Disabled</string>
+    <string name="exertion">Exertion</string>
+    <string name="floors">Floors</string>
+    <string name="calories">Calories</string>
+    <string name="steps">Steps</string>
+    <string name="skin_temp">Skin Temp</string>
+    <string name="current_metrics">Current Metrics</string>
+    <string name="heart_rate">심박수</string>
 </resources>

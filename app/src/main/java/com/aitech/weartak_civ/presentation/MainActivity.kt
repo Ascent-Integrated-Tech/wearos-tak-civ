@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ * Copyright (C) 2024-2025, Ascent Integrated Tech. All rights reserved.
  *
  * The copyright to the computer software herein is the property of Ascent Integrated Tech.
  * This software may not be used and/or copied without the explicit written permission
@@ -26,7 +26,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.os.Build
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -36,6 +36,8 @@ import android.provider.Settings
 import android.provider.Settings.Secure
 import android.text.format.DateFormat
 import android.util.Log
+import android.view.Display
+import android.view.Surface
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -44,6 +46,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -91,7 +94,6 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.getString
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -130,6 +132,7 @@ import com.aitech.weartak_civ.Utils.SettingsUtils.defaultRoleCategoryEntriesFrom
 import com.aitech.weartak_civ.Utils.isStringEmptyJson
 import com.aitech.weartak_civ.Utils.listEqualsIgnoreOrder
 import com.aitech.weartak_civ.Utils.secureRandom
+import androidx.compose.runtime.State as ComposeState
 import com.aitech.weartak_civ.complication.CallsignComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_DISABLED
@@ -158,23 +161,15 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.ActivityRecognitionService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.BatteryService
-import com.aitech.weartak_civ.service.BleBeaconService
-import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CustomAccessibilityService
-import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
-import com.aitech.weartak_civ.service.LocationService
-import com.aitech.weartak_civ.service.OffBodyDetectService
 import com.aitech.weartak_civ.service.PowerManagerService
-import com.aitech.weartak_civ.service.ReportingIntervalStrategyService
 import com.aitech.weartak_civ.service.ReportingIntervalStrategyService.Companion.calcDynamicReportingInterval
-import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.beust.klaxon.Klaxon
 import kotlinx.coroutines.delay
@@ -183,7 +178,10 @@ import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
@@ -194,7 +192,6 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import com.aitech.weartak_civ.service.PassiveDataService
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.aitech.weartak_civ.service.EnvSensorService
@@ -210,11 +207,25 @@ import com.aitech.weartak_civ.service.CEPSimulationService
 import com.aitech.weartak_civ.service.MovementDetectionService
 import kotlinx.coroutines.launch
 
+import com.aitech.weartak_civ.service.ReactiveServiceManager
+import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
+import com.aitech.weartak_civ.Utils.getNullableBoolean
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
+import java.util.EnumMap
 
 class MainActivity : ComponentActivity() {
 
     companion object Constants {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         const val EVENT_SEND_DELAY_MS = 1000L
         const val MOVEMENT_DETECTION_SERVICE_START_DELAY = 20_000L
         lateinit var mainActivity : MainActivity
@@ -228,11 +239,17 @@ class MainActivity : ComponentActivity() {
         var enablePhysiologicalServices : Boolean = true
         var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(true)
         var enableActivityRecognitionService: Boolean = true
+        var enableHeartrateService : Boolean = true
+        var enableActivityRecognitionService: Boolean = false
         var enableSkinTempService: Boolean = true
         var enableDittoService : Boolean = false
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableBloodhoundCompassService : Boolean = false
+        var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableChatService : Boolean =  false
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableBatteryAlerts: Boolean = false
+        var enableBatteryAlertsSettingsState = MutableLiveData<Boolean>(false)
         var enableHailService: Boolean = false
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableMulticastOnWifi: Boolean = true
@@ -252,6 +269,8 @@ class MainActivity : ComponentActivity() {
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
+        lateinit var bhRepo: BloodhoundRepository
+
         @SuppressLint("StaticFieldLeak")
         var networkManager : NetworkManager? = null
         var takConnectService : TAKConnectService? = null
@@ -308,6 +327,8 @@ class MainActivity : ComponentActivity() {
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
 
+        var bloodhoundList : List<Utils.BloodhoundItem> = listOf()
+        val bloodhoundListState = MutableLiveData<List<Utils.BloodhoundItem>>(listOf())
         var SOME_WIFI_NETWORKS = "Some WiFi Networks"
         var ALL_WIFI_NETWORKS = "All WiFi Networks"
         var NO_WIFI_NETWORKS = "No WiFi Networks"
@@ -887,56 +908,29 @@ class MainActivity : ComponentActivity() {
                 startPowerManagerService()
                 startBleBeaconService()
                 startChatService()
+        fun startReactiveServiceManager(context: Context) {
+            val intent = Intent(context, ReactiveServiceManager::class.java)
+            if (!ReactiveServiceManager.isRunning.get()) {
+                Log.i(TAG, "MainActivity startReactiveServiceManager(): Starting ReactiveServiceManager")
+                ContextCompat.startForegroundService(context, intent)
             } else {
-                Log.d(TAG, """
-                            ===   Application Services Info   ===                                
-                            """.trimIndent())
-                if (TAKConnectService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-                }
-                if (ReportingIntervalStrategyService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
-                }
-                if (OffBodyDetectService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-                }
-                if (HeartrateService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                }
-                if (SkinTempService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-                }
-                if (ActivityRecognitionService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-                }
-                if (BatteryService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
-                }
-                if (LocationService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                }
-                if (CotDispatchService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
-                }
-                if (enableDittoService && DittoService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                }
-                if (PowerManagerService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
-                }
-                if (BleBeaconService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, BleBeaconService::class.java))
-				}
-                if (enableChatService && ChatService.isRunning.get()) {
-                    mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-                }
-                //if (enablePassiveDataService && PassiveDataService.isRunning.get()) {
-                //    mainActivity.stopService(Intent(mainActivity, PassiveDataService::class.java))
-                //}
+                Log.i(
+                    TAG,
+                    "MainActivity startReactiveServiceManager(): ReactiveManager is already Running!"
+                )
+            }
+        }
+
+        fun stopReactiveServiceManager(context: Context) {
+            val intent = Intent(context, ReactiveServiceManager::class.java)
+            if (ReactiveServiceManager.isRunning.get()) {
+                Log.i(TAG, "MainActivity stopReactiveServiceManager(): Stopping ReactiveServiceManager")
+                context.stopService(intent)
+            } else {
+                Log.i(TAG, "MainActivity stopReactiveServiceManager(): ReactiveServiceManager is not Running!")
             }
         }
     }
-
 
     val callsignState = MutableLiveData<String>("")
     val licenseState = MutableLiveData<String>("")
@@ -994,91 +988,41 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.d(TAG, "onNewIntent called w/ categories (${intent.categories}) and action (${intent.action})")
+        Log.i(TAG, "MainActivity onNewIntent(): categories = (${intent.categories}), action = (${intent.action})")
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d(TAG, "MainActivity onPause called")
-        /*
-        if (OffBodyDetectService.isRunning.get()) {
-            Log.d(TAG, "Stopping OffBodyDetectService onPause")
-            mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-        }
-        if (HeartrateService.isRunning.get()) {
-            Log.d(TAG, "Stopping HeartrateService onPause")
-            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-        }
-
-         */
+        Log.i(TAG, "MainActivity onPause()")
     }
 
     override fun onRestart() {
         super.onRestart()
-        Log.d(TAG, "MainActivity onRestart called")
+        Log.i(TAG, "MainActivity onRestart()")
     }
 
     override fun onStart() {
         super.onStart()
-        Log.d(TAG, "MainActivity onStart called")
+        try { registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED)) } catch (_: Exception) {}
+        Log.i(TAG, "MainActivity onStart()")
     }
 
     override fun onStop() {
         super.onStop()
-        Log.d(TAG, "MainActivity onStop called")
+        Log.i(TAG, "MainActivity onStop()")
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d(TAG, "MainActivity onResume called")
-
-        Handler(Looper.getMainLooper()).postDelayed( { startOffBodyDetectService();startHeartrateService();startSkinTempService();startActivityRecognitionService() }, 1500L)
+        Log.i(TAG, "MainActivity onResume()")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "MainActivity onDestroy called")
-        /*
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this)
-        }
-
-         */
-        mainActivity.stopService(Intent(mainActivity, CotDispatchService::class.java))
-        mainActivity.stopService(Intent(mainActivity, BatteryService::class.java))
-        mainActivity.stopService(Intent(mainActivity, PowerManagerService::class.java))
-        if (enablePhysiologicalServices) {
-            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-            mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-            mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-        }
-        mainActivity.stopService(Intent(mainActivity, OffBodyDetectService::class.java))
-        if (enableLocationService) {
-            mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-        }
-        mainActivity.stopService(Intent(mainActivity, ReportingIntervalStrategyService::class.java))
-        mainActivity.stopService(Intent(mainActivity, TAKConnectService::class.java))
-        if (DittoService.isRunning.get()) {mainActivity.stopService(Intent(mainActivity, DittoService::class.java)) }
-
+        Log.d(TAG, "MainActivity onDestroy()")
+        stopReactiveServiceManager(applicationContext)
         networkManager?.deInit()
-
-        unregisterReceiver(restrictionReceiver)
-
-        /*
-        // Unregister the callback.
-        runBlocking {
-            measureClient.unregisterMeasureCallbackAsync(
-                DataType.Companion.HEART_RATE_BPM,
-                heartRateCallback
-            )
-        }
-        lifecycleScope.launch {
-            healthServicesRepository.unregisterForHeartRateData()
-        }
-
-         */
-
-        //fusedLocationClient?.removeLocationUpdates(locationCallback)
+        try { unregisterReceiver(restrictionReceiver) } catch (_: Exception) {}
     }
 
     fun printSensorDetails(context: Context?) {
@@ -1170,7 +1114,6 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "About to init category and role")
             initCategoryAndRole()
 
-            // … rest of your initSettings()
         } catch (e: Exception) {
             Log.e(TAG, "Uncaught error in initCategoryAndRoleAndCatogoryRolesList(): ${e.message}", e)
             // At this point you can either rethrow or fall back to a minimal safe state:
@@ -1180,7 +1123,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun initSettings() {
+    fun seedVariablesFromRepo() {
         // This function reads in data from dataRepository and sets MainActivity settings (except those for UI settings screens) as well as other service settings
         runBlocking {
             Log.d(TAG, """=== === Initializing Settings === === ===""".trimIndent())
@@ -1190,7 +1133,7 @@ class MainActivity : ComponentActivity() {
             if (callsign.equals("")) {
                 callsign = "WEAROS-" + (secureRandom.nextInt(9999)+1).toString()
                 dataRepository.storeCallsign(callsign)
-                Log.v(TAG, "First install --> Assigning a random callsign: $callsign")
+                Log.v(TAG, "MainActivity seedVariablesFromRepo(): First install --> Assigning a random callsign: $callsign")
             }
 
             // what are the teams I can be?
@@ -1207,10 +1150,12 @@ class MainActivity : ComponentActivity() {
 
             enableLocationService = dataRepository.getEnableLocationService.first()
             enablePhysiologicalServices = dataRepository.getEnablePhysiologicalServices.first()
+            enableHeartrateService = dataRepository.getEnableHeartRateService.first()
             enableActivityRecognitionService = dataRepository.getEnableActivityRecognitionService.first()
             enableSkinTempService = dataRepository.getEnableSkinTempService.first()
             enableDittoService = dataRepository.getEnableDittoService.first()
             enableChatService = dataRepository.getEnableChatService.first()
+            enableBatteryAlerts = dataRepository.getEnableBatteryAlerts.first()
             // TODO: For some reason, DataRepository's enableHailService is true in onCreate of CotDispatchService even if enableHailService here is false
             enableHailService = dataRepository.getEnableHailService.first()
             enableBatdokCot = dataRepository.getEnableBatdokCot.first()
@@ -1233,6 +1178,7 @@ class MainActivity : ComponentActivity() {
             tabletCommandEndpoint = dataRepository.getTabletCommandEndpoint.first()
             tabletCommandApikey = dataRepository.getTabletCommandApikey.first()
             tabletCommandReportingUpdateInterval = dataRepository.getTabletCommandReportingUpdateInterval.first()
+            enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
 
             // Initially on start ActivityRecognized is UNKNOWN
             val dynamicReportingInterval = calcDynamicReportingInterval(false, ActivityRecognized.UNKNOWN,
@@ -1278,11 +1224,12 @@ class MainActivity : ComponentActivity() {
             userTypeValue = dataRepository.getPhysiologicalMetricUserType.first()
             restingHeartRate = dataRepository.getRestingHeartRate.first()
 
-            Log.d(TAG, "============= Done Initializing Settings ===============")
+//            Log.i(TAG, "MainActivity seedVariablesFromRepo(): End")
         }
     }
 
     private fun logSettings() {
+        seedVariablesFromRepo()
         var logOutput = """
                     === === Configuration Settings === ===
                     ${String.format("%-25s %-30s", "[Settings]", "[Value]")}
@@ -1354,6 +1301,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Battery Alerts:", enableBatteryAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
                     ${String.format("%-25s %-30s", "Enable Batdok COT:", enableBatdokCot.toString())}
                     ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
@@ -1412,6 +1360,15 @@ class MainActivity : ComponentActivity() {
     private fun isHealthConnectAvailable(): Boolean {
         val status = HealthConnectClient.getSdkStatus(this)
         return status == HealthConnectClient.SDK_AVAILABLE
+    private fun collectMissingPermissionsFlow() {
+        scope.launch {
+            dataRepository.missingPermissions
+                .filter{ perms -> perms.isNotEmpty() }
+                .collect { perms ->
+                    Log.i(TAG, "Launching permission request (flow): size=${perms.size} -> $perms")
+                    requestPermissionsLauncher.launch(perms.toTypedArray())
+            }
+        }
     }
 
     private fun checkAndRequestPermissions() {
@@ -1425,23 +1382,25 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.BLUETOOTH_ADVERTISE,
             Manifest.permission.ACCESS_BACKGROUND_LOCATION,
             Manifest.permission.ACTIVITY_RECOGNITION,
-            Manifest.permission.SEND_SMS)
+            Manifest.permission.SEND_SMS
+        )
 
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
+        Log.d(TAG, "=== === ===  Permissions  === === ===)")
         if (missingPermissions.isNotEmpty()) {
-            Log.d(TAG, """
-                === === ===  Permissions  === === ===
-                Missing: $missingPermissions
+            Log.d(TAG,
+                """Missing: $missingPermissions
+                =====================================
                 """.trimIndent()
             )
+            Log.i(TAG, "Launching permission request (manual): size=${missingPermissions.size} -> $missingPermissions")
             requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
             //refreshPermissions()
         } else {
             Log.d(TAG, """
-                === === ===  Permissions  === === ===
                 All Permissions already granted.
                 =====================================
                 """.trimIndent()
@@ -1495,25 +1454,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "MainActivity onCreate called")
+        Log.i(TAG, "MainActivity onCreate(): Start...")
         mainActivity = this
         mainActivityIsInit = this
-        //device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
-        device_uid = "WEAROS-" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
-        dataRepository = DataRepository(this)
-        initSettings()
-        logSettings()
+        dataRepository = (context.applicationContext as WearTakApplication).repo
+        bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+
+        seedVariablesFromRepo()
         refreshUI(context)
 
         restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
-        // Register BroadcastReceiver to listen for changes
         restrictionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                Log.d(TAG, "onReceive Broadcast: ${intent?.action}")
                 if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
-                    Log.d(TAG, "Managed Configurations Updated")
+                    Log.i(TAG, "MainActivity onCreate() restrictionReceiver: Received new Managed Configurations from Knox")
                     handleManagedConfigUpdate(false)
                 }
             }
@@ -1521,16 +1478,6 @@ class MainActivity : ComponentActivity() {
         registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED))
         // Handle the initial configuration when the app starts
         handleManagedConfigUpdate(true)
-
-//        Log.d(TAG, "Device UID is $device_uid")
-        /*
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this)
-        }
-
-         */
-        //val file: File? = null
-        //logFile = java.io.File(file, "/sdcard/Download/WearTAK_logs.txt")
 
         networkManager = NetworkManager.getInstance()
         networkManager?.init()
@@ -1555,13 +1502,13 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
         //startHealthCapabilitiesCollection()
         validateLicense(license)
-        startStopServicesLicense(context)
-
+        startReactiveServiceManager(applicationContext)
+        collectMissingPermissionsFlow()
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
-        Log.d(TAG, "isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
+//        Log.d(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
         if (!isAccessibilityServiceEnabled) {
-            Log.d(TAG, "isAccessibilityServiceEnabled false and trying to open Accessibility Settings")
+            Log.w(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled=false. trying to open Accessibility Settings")
             /*
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1595,10 +1542,11 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "NOT Able to set ACCESSIBILITY_ENABLED to 1")
         }
          */
+        Log.i(TAG, "MainActivity onCreate(): End.")
     }
 
     private fun refreshUI(context: Context) {
-        Log.v(TAG, "=== === Refreshing UI  === === ")
+        Log.d(TAG, "=== === Refreshing UI  === === ")
         callsignState.postValue(callsign)
         callsignSettingsState.postValue(callsign)
         teamState.postValue(team) // liveData used by UI
@@ -1629,10 +1577,13 @@ class MainActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+
         enableHailServiceSettingsState.postValue(enableHailService)
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableChatServiceSettingsState.postValue(enableChatService)
+        enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts) // ephemeral ui value
         enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
         enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
@@ -1666,6 +1617,7 @@ class MainActivity : ComponentActivity() {
         requestStatusIconsComplicationUpdate(context)
         requestChatComplicationUpdate(context)
         requestPhysioComplicationUpdate(context)
+        requestBloodhoundComplicationUpdate(context)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -1746,7 +1698,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
-        Log.v(TAG, " === === Handling Managed Config Update ===")
+        Log.v(TAG, "=== === Handling Managed Config Update (calledOnCreate: $calledOnCreate) ===")
+        seedVariablesFromRepo()
 
         val context = mainActivity.applicationContext
         val appRestrictions = restrictionsManager.applicationRestrictions
@@ -1789,7 +1742,6 @@ class MainActivity : ComponentActivity() {
         val prevLicenseIsValid = isLicenseValid()
         // Get the new settings from the restrictions manager or null, so that we only change dataRepository if there are changes
         license = appRestrictions.getString("license_key", license)
-
         val teamsNames = appRestrictions.getString("custom_teams_names", null)
         val teamsColors = appRestrictions.getString("custom_teams_colors", null)
         val categoryRolesJsonStr = appRestrictions.getString("custom_roles", null)
@@ -1884,21 +1836,104 @@ class MainActivity : ComponentActivity() {
             .filter { it.isNotEmpty() } // Remove any empty values
             .map { DataRepository.WifiSsidItem(it) } // Map each SSID to a WifiSsidItem
 
-        val enableLocationServiceConfigUpdate = appRestrictions.getBoolean("location_service_enabled", enableLocationService)
-        val enablePhysiologicalServicesConfigUpdate = appRestrictions.getBoolean("physiological_services_enabled", enablePhysiologicalServices)
-        val enableActivityRecognitionServiceConfigUpdate = appRestrictions.getBoolean("activity_recognition_service_enabled", enableActivityRecognitionService)
-        val enableSkinTempServiceConfigUpdate = appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
-        val enableDittoServiceConfigUpdate = appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
-        val enableChatServiceConfigUpdate = appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        /*
+         *  Maps are used for debugging the status of all the Services.
+         *   - knoxMap gives us the Knox Manage config value for each restriction.
+         *        Null means it is unconfigured.
+         *   - localMap gives the local companion object that we fall back to.
+         *        This will be deprecated, but useful for the time being.
+         *   - CfgUpdateMap gives use Boolean that is stored persistently in the
+         *        data repository. If Knox is null, fall back on the companion object,
+         *        which we recently obtained from persistent store in seedVariablesFromRepo()
+         *
+         *    Note that unconfigurable services will always be null (e.g. TakConnectService, CotDispatch).
+         */
+
+        val knoxMap      = EnumMap<ServiceType, Boolean?>(ServiceType::class.java)
+        val localMap     = EnumMap<ServiceType, Boolean?>(ServiceType::class.java)
+        val cfgUpdateMap = EnumMap<ServiceType, Boolean?>(ServiceType::class.java)
+
+        knoxMap[ServiceType.LOCATION] = appRestrictions.getNullableBoolean("location_service_enabled")
+        knoxMap[ServiceType.PHYSIO] =  appRestrictions.getNullableBoolean("physiological_services_enabled")
+        knoxMap[ServiceType.HEART_RATE] = appRestrictions.getNullableBoolean("heartrate_service_enabled")
+        knoxMap[ServiceType.ACTIVITY_RECOGNITION] = appRestrictions.getNullableBoolean("activity_recognition_service_enabled")
+        knoxMap[ServiceType.SKIN_TEMP] = appRestrictions.getNullableBoolean("skin_temp_service_enabled")
+        knoxMap[ServiceType.DITTO] = appRestrictions.getNullableBoolean("ditto_service_enabled")
+        knoxMap[ServiceType.CHAT] = appRestrictions.getNullableBoolean("chat_service_enabled")
+        knoxMap[ServiceType.BLE_BEACON] = appRestrictions.getNullableBoolean("ble_beacon_service_enabled")
+        knoxMap[ServiceType.HAIL]       = appRestrictions.getNullableBoolean("hail_service_enabled")
+        knoxMap[ServiceType.TAK_CONNECT]           = null
+        knoxMap[ServiceType.COT_DISPATCH]          = null
+        knoxMap[ServiceType.MOVEMENT_DETECTION]    = null
+        knoxMap[ServiceType.BATTERY]               = null
+        knoxMap[ServiceType.POWER_MGR]             = null
+
+        runBlocking {
+            dataRepository.updateDebugStageRemoteKnox(knoxMap)
+        }
+
+        localMap[ServiceType.LOCATION]   = enableLocationService
+        localMap[ServiceType.PHYSIO]     = enablePhysiologicalServices
+        localMap[ServiceType.HEART_RATE] = enableHeartrateService
+        localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActivityRecognitionService
+        localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
+        localMap[ServiceType.DITTO]      = enableDittoService
+        localMap[ServiceType.CHAT]       = enableChatService
+        localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
+        localMap[ServiceType.HAIL]        = enableHailService
+        localMap[ServiceType.TAK_CONNECT]           = null
+        localMap[ServiceType.COT_DISPATCH]          = null
+        localMap[ServiceType.MOVEMENT_DETECTION]    = null
+        localMap[ServiceType.BATTERY]               = null
+        localMap[ServiceType.POWER_MGR]             = null
+
+        runBlocking {
+            dataRepository.updateDebugStageLocalPersisted(localMap)
+        }
+
+        val enableLocationServiceConfigUpdate =
+            appRestrictions.getBoolean("location_service_enabled", enableLocationService)
+        val enablePhysiologicalServicesConfigUpdate =
+            appRestrictions.getBoolean("physiological_service_enabled", enablePhysiologicalServices)
+        val enableHeartrateServiceConfigUpdate =
+            appRestrictions.getBoolean("heartrate_service_enabled", enableHeartrateService)
+        val enableActivityRecognitionServiceConfigUpdate =
+            appRestrictions.getBoolean("activity_recognition_service_enabled", enableActivityRecognitionService)
+        val enableSkinTempServiceConfigUpdate =
+            appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
+        val enableDittoServiceConfigUpdate =
+            appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+        val enableChatServiceConfigUpdate =
+            appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        val enableBleBeaconServiceConfigUpdate =
+            appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
         val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
         val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
+
+        cfgUpdateMap[ServiceType.LOCATION] = enableLocationServiceConfigUpdate
+        cfgUpdateMap[ServiceType.PHYSIO]   = enablePhysiologicalServicesConfigUpdate
+        cfgUpdateMap[ServiceType.HEART_RATE] = enableHeartrateServiceConfigUpdate
+        cfgUpdateMap[ServiceType.ACTIVITY_RECOGNITION] = enableActivityRecognitionServiceConfigUpdate
+        cfgUpdateMap[ServiceType.SKIN_TEMP] = enableSkinTempServiceConfigUpdate
+        cfgUpdateMap[ServiceType.DITTO] = enableDittoServiceConfigUpdate
+        cfgUpdateMap[ServiceType.CHAT] = enableChatServiceConfigUpdate
+        cfgUpdateMap[ServiceType.BLE_BEACON] = enableBleBeaconServiceConfigUpdate
+        cfgUpdateMap[ServiceType.HAIL]       = enableHailServiceConfigUpdate
+        cfgUpdateMap[ServiceType.TAK_CONNECT]           = null
+        cfgUpdateMap[ServiceType.COT_DISPATCH]          = null
+        cfgUpdateMap[ServiceType.MOVEMENT_DETECTION]    = null
+        cfgUpdateMap[ServiceType.BATTERY]               = null
+        cfgUpdateMap[ServiceType.POWER_MGR]             = null
+
+        runBlocking {
+            dataRepository.updateDebugStageConfigUpdate(cfgUpdateMap)
+        }
 
         val configJson = appRestrictions.getString("custom_developer_config_json", "")
 
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
-        Log.v(TAG, "Ditto App ID: $dittoAppIdConfigUpdate | Auth Token: $dittoAuthTokenConfigUpdate")
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
         val constantReportingIntervalConfigUpdate = appRestrictions.getInt("constant_reporting_interval", constantReportingInterval)
@@ -1933,8 +1968,6 @@ class MainActivity : ComponentActivity() {
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
-        val enableBleBeaconServiceConfigUpdate = appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
-
         // NEW: GeoJSON-based iBeacon parsing (replaces parcel/bundle array)
         val bleBeaconMutableList: MutableList<DataRepository.LocalizationBleBeaconItem> = mutableListOf()
         val geoJsonStr = appRestrictions.getString("localization_iBeacon_geojson", null)
@@ -1954,7 +1987,7 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Failed to parse iBeacon GeoJSON: ${t.message}", t)
             }
         } else {
-            Log.d(TAG, "localization_iBeacon_geojson is null or empty.")
+//            Log.d(TAG, "localization_iBeacon_list is null or empty.")
         }
 
         // store settings persistently & send out events as necessary
@@ -1965,7 +1998,10 @@ class MainActivity : ComponentActivity() {
             if (enableWifiBatteryOptimization != enableWifiBatteryOptimizationConfigUpdate) {
                 enableWifiBatteryOptimization = enableWifiBatteryOptimizationConfigUpdate
                 dataRepository.storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization)
-                Log.d(TAG, "enableWifiBatteryOptimization changed to $enableWifiBatteryOptimization")
+                Log.d(
+                    TAG,
+                    "enableWifiBatteryOptimization changed to $enableWifiBatteryOptimization"
+                )
                 changed = true
             }
             if (enableAllWifiBatteryOptimization != enableAllWifiBatteryOptimizationConfigUpdate) {
@@ -1973,25 +2009,32 @@ class MainActivity : ComponentActivity() {
                 dataRepository.storeEnableAllWifiBatteryOptimization(
                     enableAllWifiBatteryOptimization
                 )
-                Log.d(TAG, "enableAllWifiBatteryOptimization changed to $enableAllWifiBatteryOptimization")
+                Log.d(
+                    TAG,
+                    "enableAllWifiBatteryOptimization changed to $enableAllWifiBatteryOptimization"
+                )
                 changed = true
             }
             if (wifiSsidList != wifiOptimizationSsidList) {
-                Log.d(TAG, "MC wifiSsidList($wifiOptimizationSsidList), wifiSsidList($wifiSsidList)")
+                Log.d(
+                    TAG,
+                    "MC wifiSsidList($wifiOptimizationSsidList), wifiSsidList($wifiSsidList)"
+                )
                 wifiSsidList = wifiOptimizationSsidList
                 dataRepository.storeWifiSsidList(wifiSsidList)
                 changed = true
             }
             if (changed) {
                 // Send PowerManager Event only if there is a change in wifi optimization settings
-                EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+                EventBus.getDefault()
+                    .post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
             }
 
             if (categoryRolesJsonStr != null) {
                 // 1. Prepare a Gson instance and the List<RoleCategoryEntry> type token
                 val gson = Gson()
                 val listType = object : TypeToken<List<CategoryRolesEntry>>() {}.type
-                lateinit var entries : List<CategoryRolesEntry>
+                lateinit var entries: List<CategoryRolesEntry>
 
                 try {
                     // 2. Parse the managed‐config JSON into your model class
@@ -2005,13 +2048,13 @@ class MainActivity : ComponentActivity() {
                     Log.w(TAG, "Failed to parse managed‐config JSON, falling back", e)
 
                     // 4. Fallback to last‐stored in DataStore or to raw‐resource defaults
-                        val fallback = dataRepository.getCategoryRolesList.first()
-                        entries = if (fallback.isNotEmpty()) {
-                            fallback
-                        } else {
-                            applicationContext.defaultRoleCategoryEntriesFromRaw()
-                        }
-                        dataRepository.storeCategoryRolesList(entries)
+                    val fallback = dataRepository.getCategoryRolesList.first()
+                    entries = if (fallback.isNotEmpty()) {
+                        fallback
+                    } else {
+                        applicationContext.defaultRoleCategoryEntriesFromRaw()
+                    }
+                    dataRepository.storeCategoryRolesList(entries)
                 }
                 initCategoryAndRoleAndCategoryRolesList(entries)
             }
@@ -2019,8 +2062,12 @@ class MainActivity : ComponentActivity() {
             if ((null != teamsNames) && (null != teamsColors)) {
                 Log.v(TAG, "teamsNames: $teamsNames")
                 Log.v(TAG, "teamsColors: $teamsColors")
-                if (null != teamsNames) { dataRepository.storeTeamNames(teamsNames) }
-                if (null != teamsColors) { dataRepository.storeTeamColors(teamsColors) }
+                if (null != teamsNames) {
+                    dataRepository.storeTeamNames(teamsNames)
+                }
+                if (null != teamsColors) {
+                    dataRepository.storeTeamColors(teamsColors)
+                }
                 initTeamEntriesValuesList(teamsNames.split(","), teamsColors.split(","))
                 initTeamAndTeamValue()
             }
@@ -2037,13 +2084,23 @@ class MainActivity : ComponentActivity() {
                         val takServer = takServerList.get(i)
                         // Server already present
                         if (takServerConfig != takServer) {
-                            Log.d(TAG, "takServerListConfig.get($i).toString(): ${takServerListConfig.get(i).toString()}")
+                            Log.d(
+                                TAG,
+                                "takServerListConfig.get($i).toString(): ${
+                                    takServerListConfig.get(i).toString()
+                                }"
+                            )
                             changed = true
                             dataRepository.updateTakServerItem(i, takServerListConfig.get(i))
                             if (takServerConnDetailsChanged(takServer, takServerConfig)) {
-                                Log.d(TAG, "takServerListConfig.get($i) connection details has changed. Sending SERVER_DETAILS_CHANGED")
+                                Log.d(
+                                    TAG,
+                                    "takServerListConfig.get($i) connection details has changed. Sending SERVER_DETAILS_CHANGED"
+                                )
                                 // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
-                                handler.postDelayed({ EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, i)) }, EVENT_SEND_DELAY_MS)
+                                handler.postDelayed({
+                                    EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, i))
+                                }, EVENT_SEND_DELAY_MS)
                             }
                         }
                     } else {
@@ -2051,7 +2108,9 @@ class MainActivity : ComponentActivity() {
                         Log.d(TAG, "Additional server($i) added. Sending SERVER_ADDED")
                         dataRepository.addTakServerItem(takServerListConfig.get(i))
 
-                        handler.postDelayed({ EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i)) }, EVENT_SEND_DELAY_MS)
+                        handler.postDelayed({
+                            EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i))
+                        }, EVENT_SEND_DELAY_MS)
                     }
                 }
                 if (changed) {
@@ -2060,7 +2119,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         val mutableTakServerList = takServerList.toMutableList()
                         for (i in takServerListConfig.indices) {
-                            mutableTakServerList.set(i,takServerListConfig.get(i))
+                            mutableTakServerList.set(i, takServerListConfig.get(i))
                         }
                         takServerList = mutableTakServerList.toList()
                         Log.d(TAG, "takServerList: ${takServerList}")
@@ -2091,11 +2150,15 @@ class MainActivity : ComponentActivity() {
             }
             if ((0 != tabletCommandReportingIntervalConfigUpdate) && (tabletCommandReportingUpdateInterval != tabletCommandReportingIntervalConfigUpdate)) {
                 tabletCommandReportingUpdateInterval = tabletCommandReportingIntervalConfigUpdate
-                dataRepository.storeTabletCommandReportingUpdateInterval(tabletCommandReportingIntervalConfigUpdate)
+                dataRepository.storeTabletCommandReportingUpdateInterval(
+                    tabletCommandReportingIntervalConfigUpdate
+                )
             }
             if (enableTabletCommandEndpointConfigUpdate != enableTabletCommandEndpoint) {
                 enableTabletCommandEndpoint = enableTabletCommandEndpointConfigUpdate
-                dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpointConfigUpdate)
+                dataRepository.storeEnableTabletCommandEndpoint(
+                    enableTabletCommandEndpointConfigUpdate
+                )
             }
 
             if (enableTakEndpointConfigUpdate != enableTakEndpoint) {
@@ -2116,7 +2179,8 @@ class MainActivity : ComponentActivity() {
                             (bleBeaconUpdate.minor != locBleBeacon.minor) ||
                             (bleBeaconUpdate.lat != locBleBeacon.lat) ||
                             (bleBeaconUpdate.lon != locBleBeacon.lon) ||
-                            (bleBeaconUpdate.alt != locBleBeacon.alt)) {
+                            (bleBeaconUpdate.alt != locBleBeacon.alt)
+                        ) {
                             changed = true
                             break
                         }
@@ -2125,7 +2189,9 @@ class MainActivity : ComponentActivity() {
                 if (true == changed) {
                     localizationBleBeaconItemList = bleBeaconMutableList.toList()
                     dataRepository.storeLocalizationBleBeaconList(localizationBleBeaconItemList)
-                    Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(LOCALIZATION_BEACONS_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        EventBus.getDefault().post(MessageEvent(LOCALIZATION_BEACONS_CHANGED, 0))
+                    }, EVENT_SEND_DELAY_MS)
                 }
             }
 
@@ -2145,7 +2211,10 @@ class MainActivity : ComponentActivity() {
 
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
             dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServicesConfigUpdate)
-            dataRepository.storeEnableActivityRecognitionService(enableActivityRecognitionServiceConfigUpdate)
+            dataRepository.storeEnableHeartRateService(enableHeartrateServiceConfigUpdate)
+            dataRepository.storeEnableActivityRecognitionService(
+                enableActivityRecognitionServiceConfigUpdate
+            )
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
@@ -2155,7 +2224,9 @@ class MainActivity : ComponentActivity() {
             }
             if (whileAlertingReportingInterval != whileAlertingReportingIntervalConfigUpdate) {
                 whileAlertingReportingInterval = whileAlertingReportingIntervalConfigUpdate
-                dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingIntervalConfigUpdate)
+                dataRepository.storeWhileAlertingReportingInterval(
+                    whileAlertingReportingIntervalConfigUpdate
+                )
             }
             if (onFootReportingInterval != onFootReportingIntervalConfigUpdate) {
                 onFootReportingInterval = onFootReportingIntervalConfigUpdate
@@ -2167,10 +2238,14 @@ class MainActivity : ComponentActivity() {
             }
             if (stationaryReportingInterval != stationaryReportingIntervalConfigUpdate) {
                 stationaryReportingInterval = stationaryReportingIntervalConfigUpdate
-                dataRepository.storeStationaryReportingInterval(stationaryReportingIntervalConfigUpdate)
+                dataRepository.storeStationaryReportingInterval(
+                    stationaryReportingIntervalConfigUpdate
+                )
             }
             if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
-                dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategyConfigUpdate)
+                dataRepository.storeEnableDynamicReportingStrategy(
+                    enableDynamicReportingStrategyConfigUpdate
+                )
             }
 
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
@@ -2184,18 +2259,28 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
             dataRepository.storeRestingHeartRate(physiologicalMetricsRestingHeartRateConfigUpdate)
             dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricHeightFeet(physiologicalMetricsHeightFeetServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricHeightInches(physiologicalMetricsHeightInchesServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricWeight(physiologicalMetricsWeightServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricHeightFeet(
+                physiologicalMetricsHeightFeetServiceConfigUpdate
+            )
+            dataRepository.storePhysiologicalMetricHeightInches(
+                physiologicalMetricsHeightInchesServiceConfigUpdate
+            )
+            dataRepository.storePhysiologicalMetricWeight(
+                physiologicalMetricsWeightServiceConfigUpdate
+            )
             dataRepository.storePhysiologicalMetricSex(physiologicalMetricsSexServiceConfigUpdate)
-            dataRepository.storePhysiologicalMetricBloodType(physiologicalMetricsBloodTypeServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricBloodType(
+                physiologicalMetricsBloodTypeServiceConfigUpdate
+            )
             if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
                 dataRepository.storePhysiologicalMetricAllergyList(
                     physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
                         DataRepository.AllergyItem(name = str)
                     } ?: listOf(DataRepository.AllergyItem("N/A")))
             }
-            dataRepository.storePhysiologicalMetricUserType(physiologicalMetricsUserTypeServiceConfigUpdate)
+            dataRepository.storePhysiologicalMetricUserType(
+                physiologicalMetricsUserTypeServiceConfigUpdate
+            )
 
             dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
             dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
@@ -2203,64 +2288,68 @@ class MainActivity : ComponentActivity() {
             if (!isStringEmptyJson(configJson)) {
                 // Currently don't check for any changes but just post to dataRepository
                 dataRepository.storeCustomDeveloperConfigJson(configJson)
-                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED, 0)) }, EVENT_SEND_DELAY_MS)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault()
+                        .post(MessageEvent(CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED, 0))
+                }, EVENT_SEND_DELAY_MS)
             }
 
             // At the end, enable / disable services and then enable/disable based on license
             if (enableLocationServiceConfigUpdate != enableLocationService) {
                 enableLocationService = enableLocationServiceConfigUpdate
                 Log.d(TAG, "enableLocationService=$enableLocationService")
-                if (!calledOnCreate) startStopLocationService()
+                if (!calledOnCreate) dataRepository.storeEnableLocationService(enableLocationService)
             }
             if (enablePhysiologicalServicesConfigUpdate != enablePhysiologicalServices) {
                 enablePhysiologicalServices = enablePhysiologicalServicesConfigUpdate
                 Log.d(TAG, "enablePhysiologicalServices=$enablePhysiologicalServices")
                 if (!calledOnCreate) {
-                    startStopHeartrateService()
-                    if (enableSkinTempServiceConfigUpdate == enableSkinTempService) {
-                        startStopSkinTempService()
-                    }
-                    if ((enableActivityRecognitionServiceConfigUpdate == enableActivityRecognitionService) &&
-                        (enableDynamicReportingStrategy == enableDynamicReportingStrategyConfigUpdate)) {
-                        startStopActivityRecognitionService()
-                    }
+                    dataRepository.storeEnablePhysioServices(enablePhysiologicalServices)
                 }
             }
-            var activityRecognitionServiceChanged = false
+            if (enableHeartrateServiceConfigUpdate != enableHeartrateService) {
+                enableHeartrateService = enableHeartrateServiceConfigUpdate
+                Log.d(TAG, "enableHeartRateService=$enableHeartrateService")
+                if (!calledOnCreate) {
+                    dataRepository.storeEnableHeartRateService(enableHeartrateService)
+                }
+            }
             if (enableActivityRecognitionServiceConfigUpdate != enableActivityRecognitionService) {
                 enableActivityRecognitionService = enableActivityRecognitionServiceConfigUpdate
-                activityRecognitionServiceChanged = true
-            }
-            var dynamicReportStrategyChanged = false
-            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
-                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
-                dynamicReportStrategyChanged = true
-            }
-            if (activityRecognitionServiceChanged || dynamicReportStrategyChanged) {
-                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService and enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
-                if (!calledOnCreate) startStopActivityRecognitionService()
+                Log.d(TAG, "enableActivityRecognitionService=$enableActivityRecognitionService")
+                if (!calledOnCreate) dataRepository.storeEnableActivityRecognitionService(
+                    enableActivityRecognitionService
+                )
             }
             if (enableSkinTempServiceConfigUpdate != enableSkinTempService) {
                 enableSkinTempService = enableSkinTempServiceConfigUpdate
                 Log.d(TAG, "enableSkinTempService=$enableSkinTempService")
-                if (!calledOnCreate) startStopSkinTempService()
+                if (!calledOnCreate) dataRepository.storeEnableSkinTempService(enableSkinTempService)
             }
             if (enableDittoServiceConfigUpdate != enableDittoService) {
                 enableDittoService = enableDittoServiceConfigUpdate
                 Log.d(TAG, "enableDittoService=$enableDittoService")
-                if (!calledOnCreate) startStopDittoService()
+                if (!calledOnCreate) dataRepository.storeEnableDittoService(enableDittoService)
             }
             if (enableBleBeaconServiceConfigUpdate != enableBleBeaconService) {
                 enableBleBeaconService = enableBleBeaconServiceConfigUpdate
                 Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
-                if (!calledOnCreate) startStopBleBeaconService()
+                if (!calledOnCreate) dataRepository.storeEnableBleBeaconService(
+                    enableBleBeaconService
+                )
+            }
+            if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
+                enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
+                Log.d(TAG, "enableDynamicReportingStrategy=$enableDynamicReportingStrategy")
+                if (!calledOnCreate) dataRepository.getEnableMovementDetectionService.emit(
+                    enableDynamicReportingStrategy
+                )
             }
             if (enableChatServiceConfigUpdate != enableChatService) {
                 enableChatService = enableChatServiceConfigUpdate
                 Log.d(TAG, "enableChatService=$enableChatService")
                 if (!calledOnCreate) {
-                    startStopChatService()
-                    restartTAKConnectService()
+                    dataRepository.storeEnableChatService(enableChatService)
                 }
             }
             enableHailService = enableHailServiceConfigUpdate
@@ -2274,69 +2363,119 @@ class MainActivity : ComponentActivity() {
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
                 enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
-                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault().post(
+                        MessageEvent(
+                            PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED,
+                            if (enablePhysiologicalAlerts) {
+                                1
+                            } else {
+                                0
+                            }
+                        )
+                    )
+                }, EVENT_SEND_DELAY_MS)
             }
             if (restingHeartRate != physiologicalMetricsRestingHeartRateConfigUpdate) {
-                Log.d(TAG, "Changed detected restingHeartRate(prev=$restingHeartRate, curr=$physiologicalMetricsRestingHeartRateConfigUpdate")
+                Log.d(
+                    TAG,
+                    "Changed detected restingHeartRate(prev=$restingHeartRate, curr=$physiologicalMetricsRestingHeartRateConfigUpdate"
+                )
                 restingHeartRate = physiologicalMetricsRestingHeartRateConfigUpdate
             }
             if (ageValue != physiologicalMetricsAgeServiceConfigUpdate) {
-                Log.d(TAG, "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)"
+                )
                 ageValue = physiologicalMetricsAgeServiceConfigUpdate
             }
             if (heightFeetValue != physiologicalMetricsHeightFeetServiceConfigUpdate) {
-                Log.d(TAG, "Change detected heightFeetValue(prev=$heightFeetValue, curr=$physiologicalMetricsHeightFeetServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected heightFeetValue(prev=$heightFeetValue, curr=$physiologicalMetricsHeightFeetServiceConfigUpdate)"
+                )
                 heightFeetValue = physiologicalMetricsHeightFeetServiceConfigUpdate
             }
             if (heightInchesValue != physiologicalMetricsHeightInchesServiceConfigUpdate) {
-                Log.d(TAG, "Change detected heightInchesValue(prev=$heightInchesValue, curr=$physiologicalMetricsHeightInchesServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected heightInchesValue(prev=$heightInchesValue, curr=$physiologicalMetricsHeightInchesServiceConfigUpdate)"
+                )
                 heightInchesValue = physiologicalMetricsHeightInchesServiceConfigUpdate
             }
             if (weightValue != physiologicalMetricsWeightServiceConfigUpdate) {
-                Log.d(TAG, "Change detected weightValue(prev=$weightValue, curr=$physiologicalMetricsWeightServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected weightValue(prev=$weightValue, curr=$physiologicalMetricsWeightServiceConfigUpdate)"
+                )
                 weightValue = physiologicalMetricsWeightServiceConfigUpdate
             }
             if (sexValue != physiologicalMetricsSexServiceConfigUpdate) {
-                Log.d(TAG, "Change detected sexValue(prev=$sexValue, curr=$physiologicalMetricsSexServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected sexValue(prev=$sexValue, curr=$physiologicalMetricsSexServiceConfigUpdate)"
+                )
                 sexValue = physiologicalMetricsSexServiceConfigUpdate
             }
             if (bloodTypeValue != physiologicalMetricsBloodTypeServiceConfigUpdate) {
-                Log.d(TAG, "Change detected bloodTypeValue(prev=$bloodTypeValue, curr=$physiologicalMetricsBloodTypeServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected bloodTypeValue(prev=$bloodTypeValue, curr=$physiologicalMetricsBloodTypeServiceConfigUpdate)"
+                )
                 bloodTypeValue = physiologicalMetricsBloodTypeServiceConfigUpdate
             }
             if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
-                val allergyListConfigUpdate = physiologicalMetricsAllergiesServiceConfigUpdate.map { str -> DataRepository.AllergyItem(name = str) } ?: listOf(DataRepository.AllergyItem("N/A"))
+                val allergyListConfigUpdate =
+                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
+                        DataRepository.AllergyItem(name = str)
+                    } ?: listOf(DataRepository.AllergyItem("N/A"))
                 if (!listEqualsIgnoreOrder(allergyList, allergyListConfigUpdate)) {
-                    Log.d(TAG, "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)")
+                    Log.d(
+                        TAG,
+                        "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)"
+                    )
                     allergyList = allergyListConfigUpdate
                 }
 
             }
             if (userTypeValue != physiologicalMetricsUserTypeServiceConfigUpdate) {
-                Log.d(TAG, "Change detected userTypeValue(prev=$userTypeValue, curr=$physiologicalMetricsUserTypeServiceConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected userTypeValue(prev=$userTypeValue, curr=$physiologicalMetricsUserTypeServiceConfigUpdate)"
+                )
                 userTypeValue = physiologicalMetricsUserTypeServiceConfigUpdate
             }
 
             if ((hrHighAlertBpmThreshold != hrHighAlertBpmThresholdConfigUpdate) || (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdConfigUpdate)) {
-                Log.d(TAG, "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)")
+                Log.d(
+                    TAG,
+                    "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)"
+                )
                 hrHighAlertBpmThreshold = hrHighAlertBpmThresholdConfigUpdate
                 hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdConfigUpdate
-                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
-            }
-
-            if (!calledOnCreate) {
-                if (prevLicenseIsValid != isLicenseValid()) {
-                    Log.d(TAG, "isLicenseValid=${isLicenseValid()}: Going to startStopServicesLicense")
-                    startStopServicesLicense(context)
-                }
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault().post(
+                        MessageEvent(
+                            HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {
+                                1
+                            } else {
+                                0
+                            }
+                        )
+                    )
+                }, EVENT_SEND_DELAY_MS)
             }
         }
+
+
         // ui needs to be refreshed with new settings changes
         refreshUI(context)
 
         // Log all settings to logcat
-        logSettings()
+        //logSettings()
     }
+
 
     /*
      * geoJson format example:
@@ -2461,7 +2600,6 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         }
     }
 
-
     //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
         navController = navController,
@@ -2472,6 +2610,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
                 navController = navController,
                 callsignState = callsignLiveDataState,
                 dataRepository = dataRepository,
+                bhRepo = bhRepo,
                 context = context
             )
         }
@@ -2491,14 +2630,17 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 fun MainScreen(
     navController: NavController,
     callsignState: MutableLiveData<String>,
-    dataRepository: DataRepository, // Add dataRepository parameter
+    dataRepository: DataRepository, // Add dataRepository parameter,
+    bhRepo: BloodhoundRepository,
     context: Context // Add context parameter
 ) {
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val bloodhoundCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
+    val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2516,30 +2658,31 @@ fun MainScreen(
                     .padding(5.dp)
                     .unswipeable()
             ) {
-
+                OrientationAware()
                 Column(
                     modifier = Modifier
                         .background(colors.background)
+                        .padding(top = 20.dp)
                         .padding(5.dp),
                     //                horizontalAlignment = Alignment.CenterHorizontally,
                     //                verticalArrangement = Arrangement.Center
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(top = 30.dp)
                             .fillMaxWidth()
                             .weight(0.8f)
+                            .padding(vertical = 3.dp)
                     ) {
                         HeartRate(context)
                     }
-                    Spacer(
-                        modifier = Modifier.height(10.dp)
-                    )
+//                    Spacer(
+//                        modifier = Modifier.height(10.dp)
+//                    )
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(.9f),
+                            .weight(1f),
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -2554,7 +2697,7 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(top = 0.dp),
+                            .padding(vertical = 5.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         requestChatComplicationUpdate(context)
@@ -2603,7 +2746,16 @@ fun MainScreen(
                         )
                         Callsign(context, callsignState)
                     }
-
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+//                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ){
+                        BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
                 TroubleshootingIcons()
 
@@ -3067,6 +3219,93 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
         }
     }
 }
+@Composable
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+    val needleOrientation = activeItem?.orientation ?: properNorthBearing
+    requestBloodhoundComplicationUpdate(context)
+ Row(
+        modifier = Modifier.clickable(
+            onClick = {
+                if (bloodhoundChecked == true) {
+                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Bloodhound is disabled. Please enable it in Settings.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }),
+        verticalAlignment = Alignment.CenterVertically
+    ){
+        Image(
+            painter = painterResource(R.drawable.compass_1),
+            alpha = if (bloodhoundChecked == true) 1F else 0.5F,
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .size(35.dp)
+                .graphicsLayer {
+                    rotationZ =
+                        needleOrientation.toFloat()
+                }
+        )
+        Column (
+            modifier = Modifier.padding(start = 13.dp)
+        ) {
+            if (bloodhoundChecked == true) {
+                if (activeItem != null) {
+                    Text(
+                        text = activeItem.target,
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                        Text(
+                            text = activeItem.distance.toString() + " km",
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                } else {
+                    Text(
+                        text = stringResource(R.string.compass),
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = "---",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.compass_disabled),
+                    fontSize = 12.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = "---",
+                    fontSize = 15.sp,
+                    color = Color.Gray,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
 
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")
 @Composable
@@ -3169,6 +3408,7 @@ fun ActivityDisabledScreen(
     titleText: String,
     description: String) {
     WearTAKCIVTheme {
+        val ctx = LocalContext.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -3191,9 +3431,12 @@ fun ActivityDisabledScreen(
             Spacer(modifier = Modifier.size(10.dp))
             Button(
                 onClick = {
-                    navController.navigate("invalid_license_screen") {
-                        popUpTo("invalid_license_screen") { inclusive = true }
-                    }
+                    Log.i(TAG, "Navigating to settings screen license valid: ${isLicenseValid()}")
+                    ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                    exitActivity()
+//                    navController.navigate("invalid_license_screen") {
+//                        popUpTo("invalid_license_screen") { inclusive = true }
+//                    }
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.primary,
@@ -3226,6 +3469,55 @@ fun ActivityDisabledScreen(
     }
 }
 
+@Composable
+fun rememberDisplayRotation(): ComposeState<Int> {
+    val context = LocalContext.current
+    val rotationState = rememberSaveable { mutableIntStateOf(currentRotation(context)) }
+
+    DisposableEffect(Unit) {
+        val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val listener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) = Unit
+            override fun onDisplayRemoved(displayId: Int) = Unit
+            override fun onDisplayChanged(displayId: Int) {
+                // Most watches are single-display (DEFAULT_DISPLAY), but we refresh from whichever fired
+                val disp = dm.getDisplay(displayId) ?: dm.getDisplay(Display.DEFAULT_DISPLAY)
+                val newRotation = disp?.rotation ?: return
+                if (rotationState.intValue != newRotation) {
+                    rotationState.intValue = newRotation
+                }
+            }
+        }
+        // Register on the main thread
+        dm.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { dm.unregisterDisplayListener(listener) }
+    }
+
+    return rotationState
+}
+
+private fun currentRotation(context: Context): Int {
+    val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+    val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
+    return display?.rotation ?: Surface.ROTATION_0
+}
+
+@Composable
+fun OrientationAware() {
+    val rotation by rememberDisplayRotation()
+    // Log, send analytics, or update UI
+    val label = when (rotation) {
+        Surface.ROTATION_0 -> "ROTATION_0"
+        Surface.ROTATION_90 -> "ROTATION_90"
+        Surface.ROTATION_180 -> "ROTATION_180"
+        Surface.ROTATION_270 -> "ROTATION_270"
+        else -> "UNKNOWN"
+    }
+
+    // Example UI
+    Log.d(TAG, "Screen Rotation: $label")
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true, showBackground = true)
 @Composable
 fun DefaultPreview() {
@@ -3234,6 +3526,7 @@ fun DefaultPreview() {
 
     WearTAKCivApp(callsignState, licenseState)
 }
+
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable

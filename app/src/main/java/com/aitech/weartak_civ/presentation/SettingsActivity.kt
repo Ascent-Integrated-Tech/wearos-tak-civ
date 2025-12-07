@@ -196,7 +196,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.hrHighAlertNum
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.license
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.licenseSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.restartTAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.roleState
@@ -208,13 +207,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startActivityRecognitionService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startHeartrateService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startChatService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startDittoService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startLocationService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startSkinTempService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.startStopServicesLicense
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
@@ -239,14 +231,9 @@ import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsAc
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.ActivityRecognitionService
-import com.aitech.weartak_civ.service.ChatService
-import com.aitech.weartak_civ.service.DittoService
-import com.aitech.weartak_civ.service.HeartrateService
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
-import com.aitech.weartak_civ.service.LocationService
-import com.aitech.weartak_civ.service.SkinTempService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
@@ -268,6 +255,10 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRa
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
@@ -280,6 +271,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingR
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
@@ -304,6 +298,7 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i(TAG, "SettingsActivity onCreate()")
         settingsActivity = this
         loadSettingsValues()
         //TODO: Is there a reason this is called here? Is the same thing done through main activity?
@@ -331,9 +326,11 @@ fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
+    enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
     enableHailServiceSettingsState.postValue(enableHailService)
+    enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
     callsignSettingsState.postValue(callsign)
     teamSettingsState.postValue(team)
     categorySettingsState.postValue(category)
@@ -2521,6 +2518,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                         requestStatusIconsComplicationUpdate(context)
                         requestChatComplicationUpdate(context)
                         requestPhysioComplicationUpdate(context)
+                        requestBloodhoundComplicationUpdate(context)
 
                         Log.d(TAG, "Sending License for Validation.")
                     } else {
@@ -2551,7 +2549,7 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             popUpTo("settings_screen") { inclusive = true }
                         }
                     }
-                    startStopServicesLicense(context)
+//                    startStopServicesLicense(context)
                 }
             )
         }
@@ -3195,9 +3193,9 @@ fun InvalidHailScreen(navController: NavController) {
     WearTAKCIVTheme {
         Column(
             modifier = Modifier
-                    .fillMaxSize()
-                    .background(colors.background)
-                    .padding(10.dp),
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -3379,15 +3377,19 @@ fun SettingsScreen(
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
     var smsListTextFieldValue by remember { mutableStateOf(TextFieldValue(smsNumbersListString)) }
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
+
     Log.d(TAG, "Hail License State: $hailLicenseState")
 
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     //Log.d(TAG, "SettingsScreen called")
+
     WearTakCivScreenDimensions(
         columnContent = {
             CallsignRoleTeamChip(
@@ -3529,6 +3531,14 @@ fun SettingsScreen(
             )
 
             SettingSwitchToggleLiveData(
+                bloodhoundCompassCheckedLive,
+                { enableBloodhoundCompassServiceSettingsState.postValue(it) },
+                {},
+                "Bloodhound & Compass",
+                stringResource(R.string.service_on_off)
+            )
+
+            SettingSwitchToggleLiveData(
                 enableSmsCheckedLive,
                 { enableSmsForAlertsSettingsState.postValue(it) },
                 {},
@@ -3575,6 +3585,14 @@ fun SettingsScreen(
                         )
                     )
                 }
+
+            SettingSwitchToggleLiveData(
+                batteryAlertsCheckedLive,
+                { enableBatteryAlertsSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.battery_alerts),
+                stringResource(R.string.on_off)
+            )
                 Spacer(modifier = Modifier.height(10.dp))
 
             Text(
@@ -3697,6 +3715,8 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var batteryAlertsCheckedChanged: Boolean = false
+                    var bloodhoundCompassCheckedChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
                     var constantReportingIntervalChanged: Boolean = false
                     var stationaryReportingIntervalChanged: Boolean = false
@@ -3879,13 +3899,6 @@ fun SettingsScreen(
                         settingsChanged = true; locationCheckedChanged = true
                         enableLocationService = enableLocationServiceSettingsState.value ?: enableLocationService
                         requestStatusIconsComplicationUpdate(context)
-                        if (enableLocationService) {
-                            Log.d(TAG, "Trying to start location service")
-                            startLocationService()
-                        } else {
-                            Log.d(TAG, "Trying to stop location service")
-                            mainActivity.stopService(Intent(mainActivity, LocationService::class.java))
-                        }
                         runBlocking {
                             // This is in case enableLocationService above is NOT set to enableLocationServiceSettingsState.value
                             enableLocationServiceSettingsState.postValue(enableLocationService)
@@ -3895,13 +3908,6 @@ fun SettingsScreen(
                     if (enableDittoService != enableDittoServiceSettingsState.value) {
                         settingsChanged = true; dittoCheckedChanged = true
                         enableDittoService = enableDittoServiceSettingsState.value ?: enableDittoService
-                        if (enableDittoService) {
-                            Log.d(TAG, "Trying to start ditto service")
-                            startDittoService()
-                        } else {
-                            Log.d(TAG, "Trying to stop ditto service")
-                            mainActivity.stopService(Intent(mainActivity, DittoService::class.java))
-                        }
                         runBlocking {
                             enableDittoServiceSettingsState.postValue(enableDittoService)
                         }
@@ -3910,18 +3916,31 @@ fun SettingsScreen(
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
                         enableChatService = enableChatServiceSettingsState.value ?: enableChatService
-                        if (enableChatService) {
-                            Log.d(TAG, "Trying to start chat service")
-                            startChatService()
-                        } else {
-                            Log.d(TAG, "Trying to stop chat service")
-                            mainActivity.stopService(Intent(mainActivity, ChatService::class.java))
-                        }
                         runBlocking {
                             enableChatServiceSettingsState.postValue(enableChatService)
                         }
-                        restartTAKConnectService()
+                        //restartTAKConnectService()
+                        //TODO: Find out if we actually need to restart the tak connect service (manager should handle)
                         requestChatComplicationUpdate(context)
+
+                    }
+
+                    if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
+                        settingsChanged = true; batteryAlertsCheckedChanged = true
+                        enableBatteryAlerts = enableBatteryAlertsSettingsState.value
+                            ?: enableBatteryAlerts
+                        runBlocking {
+                            enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
+                        }
+                    }
+
+                    if (enableBloodhoundCompassService != enableBloodhoundCompassServiceSettingsState.value) {
+                        settingsChanged = true; bloodhoundCompassCheckedChanged = true
+                        enableBloodhoundCompassService = enableBloodhoundCompassServiceSettingsState.value ?: enableBloodhoundCompassService
+                        runBlocking {
+                            enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+                        }
+                        requestBloodhoundComplicationUpdate(context)
                     }
 
                     if (enableHailService != enableHailServiceSettingsState.value) {
@@ -3955,17 +3974,6 @@ fun SettingsScreen(
                     if (enablePhysiologicalServices != enablePhysiologicalServicesSettingsState.value) {
                         settingsChanged = true; physioCheckedChanged = true
                         enablePhysiologicalServices = enablePhysiologicalServicesSettingsState.value ?: enablePhysiologicalServices
-                        if (enablePhysiologicalServices) {
-                            Log.d(TAG, "Trying to start physiological services")
-                            startHeartrateService()
-                            startActivityRecognitionService()
-                            startSkinTempService()
-                        } else {
-                            Log.d(TAG, "Trying to stop physiological services")
-                            mainActivity.stopService(Intent(mainActivity, HeartrateService::class.java))
-                            mainActivity.stopService(Intent(mainActivity, ActivityRecognitionService::class.java))
-                            mainActivity.stopService(Intent(mainActivity, SkinTempService::class.java))
-                        }
                         runBlocking {
                             enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
                         }
@@ -3975,12 +3983,11 @@ fun SettingsScreen(
                     if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState.value) {
                         settingsChanged = true; physiologicalAlertsCheckedChanged = true
                         enablePhysiologicalAlerts = enablePhysiologicalAlertsSettingState.value ?: enablePhysiologicalAlerts
-                        requestPhysioComplicationUpdate(context)
                         runBlocking {
                             enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
                         }
+                        requestPhysioComplicationUpdate(context)
                     }
-
 
                      if (settingsChanged) {
                          CoroutineScope(Dispatchers.Main).launch {
@@ -4086,10 +4093,17 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                  dataRepository.storeEnableDittoService(enableDittoService)
                              }
-
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (batteryAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
+                                 dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
+                             }
+                             if (bloodhoundCompassCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
+                                 dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
                              }
                              if (hailCheckedChanged) {
                                  Log.d(TAG, "Storing enableHailService $enableHailService")

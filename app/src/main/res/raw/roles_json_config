@@ -1,46 +1,30 @@
-[
-  {
-      "category": "MIL",
-      "roles": [
-        "Forward Observer",
-        "HQ",
-        "K9",
-        "Medic",
-        "RTO",
-        "Sniper",
+{
+    "lrEntries": [
+        "E01FF01",
+        "E01FF02",
+        "EOD Team Lead",
+        "SF Team Lead",
+        "Team Member",
         "Team Lead",
-        "Team Member"
-      ]
-  },
-  {
-      "category": "LEO",
-      "roles": [
-        "Armed Surveillance",
-        "Assistant Team Leader",
-        "Aviation",
-        "Bomb Tech",
-        "Command Post",
-        "Critical Response",
-        "Hazards",
-        "Negotiator",
-        "Surveillance",
-        "Tactical Communicator",
-        "TOC"
-      ]
-    },
-    {
-        "category": "FES",
-        "roles": [
-          "Assistant Chief",
-          "Battalion Chief",
-          "Captain",
-          "Deputy Chief",
-          "District Chief",
-          "Engineer",
-          "Fire Chief",
-          "Firefighter",
-          "Lieutenant",
-          "Safety Officer"
-        ]
-    }
-]
+        "HQ",
+        "Sniper",
+        "Medic",
+        "Forward Observer",
+        "RTO",
+        "K9"
+    ],
+    "lrValues": [
+        "E01FF01",
+        "E01FF02",
+        "EOD Team Lead",
+        "SF Team Lead",
+        "Team Member",
+        "Team Lead",
+        "HQ",
+        "Sniper",
+        "Medic",
+        "Forward Observer",
+        "RTO",
+        "K9"
+    ]
+}

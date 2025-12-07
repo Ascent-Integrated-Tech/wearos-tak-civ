@@ -126,7 +126,7 @@ adb install -r app/build/path/to/debug/apk
 adb shell am start -n com.aitech.weartak_civ/.presentation.MainActivity
 ```
 ### Build Types
-Currently, we build `armeabi-v7a` and `universal`. For the Galaxy watches, we use `armeabi-v7a`  
+Currently, we build `armeabi-v7a` and `universal`. For the Galaxy watches, we use `armeabi-v7a`
 
 ### Developer Switches
 
@@ -143,8 +143,8 @@ Currently, we build `armeabi-v7a` and `universal`. For the Galaxy watches, we us
 
 Import file logging utility in Utils.kt & java File:
 ```kotlin
-import com.aitech.weartak_civ.Utils
-import java.io.File
+//import com.aitech.weartak_civ.Utils
+//import java.io.File
 ```
 
 ```kotlin
@@ -156,13 +156,13 @@ private val logFile: File by lazy {                  // Make sure the log file's
 }
 
 writeToLogFileLocation(logFile, "---------------New Session of ExampleService ---------------")
-writeToLogFileLocation(logFile, " -- This will be the next line!
+writeToLogFileLocation(logFile, " -- This will be the next line! ")
 ```
 
 ##### Following the logs live:
 `adb shell`
 
-In adb shell: 
+In adb shell:
 `run-as com.aitech.weartak_civ`
 
 Follow the log:
@@ -247,7 +247,7 @@ app/src/main/java/com/aitech/weartak_civ
 
 ## 7. Troubleshooting & FAQ
 
-// TODO 
+// TODO
 
 ---
 

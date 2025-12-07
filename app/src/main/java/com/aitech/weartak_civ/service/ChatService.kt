@@ -9,49 +9,34 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.graphics.Color
-import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
 import android.text.format.DateFormat
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.ChatRoom
 import com.aitech.weartak_civ.Utils.CotUtils
-import com.aitech.weartak_civ.Utils.ChatMessage
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.service.TAKConnectService.Companion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import org.w3c.dom.Document
-import org.w3c.dom.Element
-import org.xml.sax.InputSource
-import java.io.StringReader
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.xml.parsers.DocumentBuilderFactory
 
 class ChatService : Service() {
-    private val TAG = "WearTAK-${ChatService::class.java.simpleName}"
     private lateinit var dataRepository: DataRepository
     private val chatRoomMap = LinkedHashMap<String, ChatRoom>() // in memory "inbox" roomId → ChatRoom
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private val TAG = "WearTAK-${ChatService::class.java.simpleName}"
         private const val CHAT_SERVICE_NOTIFICATION_ID = 101
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         @Volatile private var _instance: ChatService? = null
@@ -61,26 +46,32 @@ class ChatService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "ChatService onCreate()")
+        isRunning.set(true)
+        startForegroundServiceCompat(
+            CHAT_SERVICE_NOTIFICATION_ID,
+            importance = NotificationManager.IMPORTANCE_LOW
+        )
         _instance = this
-        Log.d(TAG, "Oncreate for ChatService called")
         EventBus.getDefault().register(this)
         dataRepository = MainActivity.dataRepository
     }
 
     override fun onDestroy() {
-        _instance = null
         super.onDestroy()
-        EventBus.getDefault().unregister(this)
+        Log.d(TAG, "ChatService onDestroy()")
         isRunning.set(false)
+        EventBus.getDefault().unregister(this)
+        _instance = null
+        stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!isRunning.getAndSet(true)) {
-            startForegroundService()
-        }
+        Log.d(TAG, "ChatService onStartCommand()")
         return START_NOT_STICKY
     }
 
+    /*
     private fun startForegroundService() {
         Log.d(TAG, "Starting $TAG as a ForegroundService")
         val channelId = createNotificationChannel()
@@ -109,6 +100,7 @@ class ChatService : Service() {
         manager.createNotificationChannel(chan)
         return channelId
     }
+    */
 
     // update the inbox
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -231,7 +223,7 @@ class ChatService : Service() {
     /**
      * Call this when the user opens a room to mark everything up to now as “read.”
      */
-    public fun markRoomRead(roomId: String) = synchronized(chatRoomMap) {
+    fun markRoomRead(roomId: String) = synchronized(chatRoomMap) {
         chatRoomMap[roomId]?.let { room ->
             room.timeLastClosed = System.currentTimeMillis()
             room.newMessagesPresent = false
@@ -243,7 +235,5 @@ class ChatService : Service() {
      * Returns true if the send was queued/succeeded locally.
      */
     fun sendMessage(roomId: String, text: String): Boolean { return false}
-
-
 
 }
