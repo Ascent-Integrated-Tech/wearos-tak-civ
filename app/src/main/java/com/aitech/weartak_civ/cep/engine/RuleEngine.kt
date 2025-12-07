@@ -18,7 +18,10 @@ class RuleEngine(
     suspend fun processTick(now: Long = System.currentTimeMillis()) {
         config.rules.forEach { r ->
             val cond = JsonLogic.eval(r.condition, fs)
-            val fired = compiledTimers[r.id]!!.tick(cond, now)
+            //val fired = compiledTimers[r.id]!!.tick(cond, now)
+
+            val fired = compiledTimers[r.id]?.tick(cond, now) ?: false
+
             if (fired) {
                 val snapshot = fs.snapshot(r.snapshotKeys)
                 val sev = when (r.action.severity.uppercase()) {
