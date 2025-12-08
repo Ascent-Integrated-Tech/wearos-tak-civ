@@ -28,7 +28,6 @@ import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
-import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.receiver.AlarmReceiver
@@ -525,7 +524,7 @@ object Utils {
 
     /** Minimal data models for bloodhound. */
     data class BloodhoundItem(
-        val target: String,
+        val target: String?,
         val uid: String,
         val callsign: String,
         val timeReceived: Long,
@@ -614,8 +613,8 @@ object Utils {
             else            -> "LIGHT"
         }
 
-        fun convertFarenheitToCelsius(f: Float): Float {
-            return (f-32) * 5/9
+        fun convertFarenheitToCelsius(f: Float?): Float {
+            return (f?.minus(32))?.times(5)?.div(9) ?: 0F
         }
 
         sealed class PhysioEvent {
@@ -703,8 +702,8 @@ object Utils {
 
         // Point used at DROP time, reused on CLEAR
         data class CotMarkerInfo(
-            val lat: Double,
-            val lon: Double,
+            val lat: Double?,
+            val lon: Double?,
             val hae: Double?,
             val ce: Float?,
             val le: Float?,

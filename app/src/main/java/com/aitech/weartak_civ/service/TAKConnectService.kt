@@ -1157,16 +1157,16 @@ class TAKConnectService: Service() {
                                         Log.d(TAG, "Received Chat for me:\n$rawXml")
                                         EventBus.getDefault().post(TakChatEvent(rawXml))
                                     }
-                                    val markerCotEvent: BloodhoundRepository.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
+                                    val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
                                     if (markerCotEvent != null) {
                                         Log.i(TAG, "We read a marker message!: \n $markerCotEvent")
 //                                        Log.i(TAG, "XML XML XML: $rawXml")
-                                        val mapItem = BloodhoundRepository.MarkerMapItem(markerCotEvent)
+                                        val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                                         val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                             mapItem = mapItem,
                                             server = takServerDetail.address,
-                                            timeIssued = mapItem.link.productionTime,
+                                            timeIssued = mapItem.link?.productionTime,
                                             timeCompleted = null
                                         )
                                         bhRepo.updateBloodhoundEvent(bhEvent)

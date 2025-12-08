@@ -21,7 +21,6 @@ import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
 import com.aitech.weartak_civ.Utils.getCotEventTimeSnapshot
 import com.aitech.weartak_civ.Utils.getValueFromJson
@@ -47,12 +46,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleAlt
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeacon
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleBeaconUpdateTime
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleDistance
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLat
-import com.aitech.weartak_civ.service.BleBeaconService.Companion.closestBleLon
 import com.aitech.weartak_civ.service.HailService.checkLicense
 import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -65,7 +58,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -75,7 +67,6 @@ import java.util.Date
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class CotDispatchService : Service() {
@@ -373,47 +364,43 @@ class CotDispatchService : Service() {
     }
     */
 
-    private fun buildConciseLocationPhysioCot(location: Location?, physioData: PhysioData): String {
-        // Grab unique device identifier from MainActivity
-        val uid = MainActivity.device_uid
+    // TODO: Fix this shit so we don't have to repeat the snapshot logic.
+    private suspend fun buildConciseLocationPhysioCot(): String {
+        val staleOffset = 3 * currReportingIntervalInSecs
 
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
-        val calendar: Calendar = Calendar.getInstance()
+        val physSnap     = dataRepository.snapshotPhysio()
+        val locSnap      = dataRepository.snapshotLocation()
+        val timeSnap     = getCotEventTimeSnapshot(staleOffset = Utils.TimeOffset(staleOffset))
+        val sysSnap      = dataRepository.snapshotSystem()
+        val dailyMetrics = physSnap.data.dailyMetrics
 
-        // Set the current time
-        calendar.setTime(Date())
+        val startTime     = timeSnap.startCot
+        val staleTime     = timeSnap.staleCot
+        val startTimeInMs = timeSnap.time
 
-        // Format and set the startTime with the currentTime
-        val startTime = dateTimeFormatter.format(calendar.time)
-        val startTimeInMs = calendar.timeInMillis
-
-        // add 3* Update interval seconds to the current time for 'stale time', ie when the cot expires
-        calendar.add(Calendar.SECOND, 3*currReportingIntervalInSecs)
-        val staleTime = dateTimeFormatter.format(calendar.time)
-
-        // Raw coords & altitude
-        var lat = location?.latitude  ?: 0.0
-        var lon = location?.longitude ?: 0.0
-        var hae = location?.altitude  ?: 0.0
+        val lat = locSnap?.lat  ?: 0.0
+        val lon = locSnap?.lon  ?: 0.0
+        val hae = locSnap?.alt  ?: 0.0
 
         // Strip precision & default to “9999” if NaN
-        var ceTrim     = location?.accuracy?.takeIf { !it.isNaN() }?.toInt() ?: 9999
-        val leTrim     = location?.verticalAccuracyMeters?.takeIf { !it.isNaN() }?.toInt() ?: 9999
-        val courseTrim = location?.bearing?.toInt() ?: 0
-        val speedTrim  = location?.speed?.toInt()   ?: 0
+        val ceTrim     = locSnap?.ce?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val leTrim     = locSnap?.le?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val courseTrim = locSnap?.course?.toInt()  ?: 0
+        val speedTrim  = locSnap?.speed?.toInt()   ?: 0
 
         // Pull out physio values
-        val hr          = physioData.heartRate
-        val skt         = String.format("%.1f", physioData.skinTemp).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
-        val exert       = String.format("%.2f", physioData.exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
-        val bat         = physioData.battery
-        val steps       = physioData.steps
-        val calories    = physioData.calories
-        val floors      = physioData.floors
-        val elevationM  = physioData.elevationM
+        val uid         = sysSnap.deviceId
+        val hr          = physSnap.data.heartRateBpm
+        val skt         = String.format("%.1f", physSnap.data.skinTempF).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
+        val exert       = String.format("%.2f", physSnap.data.exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
+        val bat         = sysSnap.batteryPercent
+        val steps       = dailyMetrics?.steps
+        val calories    = dailyMetrics?.calories
+        val floors      = dailyMetrics?.floors
+        val elevationM  = dailyMetrics?.elevationM
+        val age         = physSnap.data.ageYears
 
         // Inject physio data into remarks
-
         val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
             /*
             var activity : ActivityRecognized = ActivityRecognized.UNKNOWN
@@ -428,8 +415,8 @@ class CotDispatchService : Service() {
                 append("Exert:$exert;")
                 append("Bat:${bat ?: -1};")
                 append("Steps:$steps;")
-                append("Cals:${calories.roundToInt()};")
-                append("Floors:${floors.roundToInt()};")
+                append("Cals:${calories?.roundToInt()};")
+                append("Floors:${floors?.roundToInt()};")
                 append("ElevGain(m):${elevationM?.roundToInt() ?: 0}")
                 //append(";Act:${activity.name}($currReportingIntervalInSecs)")
             }
@@ -442,24 +429,25 @@ class CotDispatchService : Service() {
             }
         }
 
-        val hailCotDetailString = buildHailDetail(physioData)
+
+        val hailCotDetailString = buildHailDetail(physSnap.data)
 
         // Build the cot XML
         val cot = if (enableBatdokCot) {
-            val sktCelcius = String.format("%.1f", convertFarenheitToCelsius(physioData.skinTemp)).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
-            var batdokStr = if (-1 == physioData.heartRate) {
-                if (-1F == physioData.skinTemp) {
+            val sktCelcius = String.format("%.1f", convertFarenheitToCelsius(physSnap.data.skinTempF)).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
+            var batdokStr = if (-1 == hr) {
+                if (-1F == physSnap.data.skinTempF) {
                     ""
                 } else {
-                    """<_atmist_ age="${physioData.age}" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
+                    """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
 
                 }
             } else {
-                if (-1F == physioData.skinTemp) {
-                    """<_atmist_ age="${physioData.age}" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
+                if (-1F == physSnap.data.skinTempF) {
+                    """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
 
                 } else {
-                    """<_atmist_ age="${physioData.age}" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign><vitalSign index="1" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
+                    """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign><vitalSign index="1" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
                 }
             }
             """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks>$batdokStr<contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
@@ -471,16 +459,16 @@ class CotDispatchService : Service() {
 
 
         if (enableEsriEndpoint) {
-            val isWorn = if (-1 == physioData.heartRate) { false } else { true }
+            val isWorn = if (-1 == physSnap.data.heartRateBpm) { false } else { true }
             esriGeojsonMsg =
                 if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
                     """
-        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${physioData.battery}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": ${physioData.heartRate}, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": ${physioData.steps}, "floors": ${physioData.floors.roundToInt()}, "calories": ${physioData.calories.roundToInt()}, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": ${physioData.battery} } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${bat}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": $hr, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": $steps, "floors": ${floors?.roundToInt()}, "calories": ${calories?.roundToInt()}, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": $bat } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
         """.trimIndent()
 
                 } else {
                     """
-        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${physioData.battery}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": ${physioData.heartRate}, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": ${physioData.battery} } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${bat}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": $hr, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": $bat } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
         """.trimIndent()
                 }
 
@@ -488,14 +476,14 @@ class CotDispatchService : Service() {
         }
 
         if (enableTabletCommandEndpoint) {
-            val isWorn = if (-1 == physioData.heartRate) { false } else { true }
+            val isWorn = if (-1 == physSnap.data.heartRateBpm) { false } else { true }
             tabletCommandJsonMsg = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
                 """
-                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${physioData.battery},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${physioData.heartRate},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":${physioData.steps},"floors":${physioData.floors.roundToInt()},"calories":${physioData.calories.roundToInt()},"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${physioData.battery}}],"alerts":[],"resolvedalerts":[]}
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${bat},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${bat},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":${steps},"floors":${dailyMetrics?.floors?.roundToInt()},"calories":${dailyMetrics?.calories?.roundToInt()},"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${bat}}],"alerts":[],"resolvedalerts":[]}
                 """.trimIndent()
             } else {
                 """
-                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${physioData.battery},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${physioData.heartRate},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":-1,"floors":-1,"calories":-1,"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${physioData.battery}}],"alerts":[],"resolvedalerts":[]}
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${bat},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${bat},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":-1,"floors":-1,"calories":-1,"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${bat}}],"alerts":[],"resolvedalerts":[]}
                 """.trimIndent()
             }
             //Log.d(TAG, "tabletCommandJsonMsg: $tabletCommandJsonMsg")
@@ -563,10 +551,10 @@ class CotDispatchService : Service() {
             return ""
         } else {
             val hailEncoded: Result<String> = HailService.encodeHailDetail(combatId, callsign) { hail ->
-                hail.setHeartRate(physioData.heartRate.toShort())
-                hail.setSkinTemp(physioData.skinTemp.toInt().toShort())
-                hail.setWeight(physioData.weight.toShort())
-                hail.setAge(physioData.age.toByte())
+                hail.setHeartRate(physioData.heartRateBpm?.toShort() ?: 0)
+                hail.setSkinTemp(physioData.skinTempF?.toInt()?.toShort() ?: 0)
+                hail.setWeight(physioData.weightKg?.toShort() ?: -1)
+                hail.setAge(physioData.ageYears?.toByte() ?: -1)
                 if (inManualAlertingState) {
                     hail.setMedevent(true)
                 } else {
@@ -589,6 +577,7 @@ class CotDispatchService : Service() {
         }
     }
 
+    /*
     /*
      * Full GeoJSON sent to ESRI:
      * { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "WEAROS_cffb09973cda1813", "properties": { "timeutc": "2025-05-14T19:21:51.401Z", "staletimeutc": "2025-05-14T19:27:57.401Z", "callsign": "SIERRAPAPA-WTC-1", "role": "Engine 1 - Firefighter", "color": "orange", "phone": "+13014058648", "model": "WEAROS", "device": "Samsung Galaxy Watch 7", "hae": 161.3000030517578, "horizaccuracy": 12.191, "vertaccuracy": 1.9328669, "heading": 359.3, "speed": 1.3, "batt": 17, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch 7 (44mm)", "isworn": true, "hr": 78, "hribi": -1, "hrv": -1, "skintemp": -1, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": -1, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": 17 } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ -87.6590724, 41.8870087 ] } } ] }
@@ -620,12 +609,6 @@ class CotDispatchService : Service() {
         if (leActual.isNaN() == true) leActual = 9999999.0F
         val bearingActual = location?.bearing ?: 0.0F
         val speedActual = location?.speed ?: 0.0F
-
-        // Ble Beacon
-        if (MainActivity.enableBleBeaconService == true) {
-            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
-            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
-        }
 
         val uid = MainActivity.device_uid
         val skinTempStr = String.format("%.2f", physioData.skinTemp).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
@@ -675,6 +658,7 @@ class CotDispatchService : Service() {
         //Log.i(TAG, "Size: ${cot.length} Bytes \n$cot")
         return cot
     }
+    */
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onEmergencyMessageEvent(event: CustomEmergencyEvent) {
@@ -745,11 +729,11 @@ class CotDispatchService : Service() {
         var leActual : Float = location.verticalAccuracyMeters
         if (leActual.isNaN()) leActual = 9999999.0F
 
-        // Ble Beacon
-        if (MainActivity.enableBleBeaconService) {
-            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
-            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
-        }
+//        // Ble Beacon
+//        if (MainActivity.enableBleBeaconService) {
+//            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+//            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+//        }
 
         val uid = UUID.randomUUID().toString()
         val linkUid = MainActivity.device_uid
@@ -815,10 +799,10 @@ class CotDispatchService : Service() {
         if (leActual.isNaN()) leActual = 9999999.0F
 
         // Ble Beacon
-        if (MainActivity.enableBleBeaconService) {
-            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
-            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
-        }
+//        if (MainActivity.enableBleBeaconService) {
+//            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
+//            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
+//        }
 
         val linkUid = MainActivity.device_uid
 
@@ -850,113 +834,54 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildMarkerSnapshot(marker: DataRepository.DropRequest): DataRepository.MarkerSnapshot {
+    private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot): String {
+        val uid         = ms.uid
+        val markerType  = ms.markerType.type
+        val battery     = ms.system.batteryPercent
 
-        val loc = dataRepository.latestLocation.value
-        val timeSnapshot: Utils.CotEventTimeSnapshot = getCotEventTimeSnapshot(
-            startOffset = Utils.TimeOffset(),                // same as "now"
-            staleOffset = Utils.TimeOffset(years = 1)        // normal stale window for marker is 1 year.
-        )
+        val hr          = ms.physio?.data?.heartRateBpm
 
-        val ss = DataRepository.MarkerSnapshot(
-            uid = UUID.randomUUID().toString(),
-            markerType = marker.markerType,
-            iconPath = marker.markerType.icon,
-            lat = loc.latitude,
-            lon = loc.longitude,
-            alt = loc.altitude,
-            le  = loc.accuracy,
-            ce  = loc.verticalAccuracyMeters,
-            time = timeSnapshot.time,          // when marker was clicked (millis)
-            startTime = timeSnapshot.start,    // start millis
-            startTimeCot = timeSnapshot.startCot,
-            staleTime = timeSnapshot.stale,
-            staleTimeCot = timeSnapshot.staleCot,
-            callsign = dataRepository.getCallsign.first()
-            hear
-        )
-
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
-        val calendar: Calendar = Calendar.getInstance()
-        calendar.setTime(Date()) // Set the current time
-        val startTime = dateTimeFormatter.format(calendar.time)
-        val startTimeInMs = calendar.timeInMillis
-        calendar.add(Calendar.YEAR, 1) // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
-        val staleTime = dateTimeFormatter.format(calendar.time)
+        val startTime   = ms.time.startCot
+        val staleTime   = ms.time.staleCot
+        val loc         = ms.loc
 
         // Marker with Time no Date.
+        val calendar: Calendar = Calendar.getInstance()
+        calendar.setTime(Date()) // Set the current time
         val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
         markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
         val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
         val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
 
-        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
-        var latActual   = location.latitude
-        var lonActual   = location.longitude
-        var haeActual   = location.altitude
-        var ceActual    = location.accuracy
-        if (ceActual.isNaN()) ceActual = 9999999.0F
-        var leActual : Float = location.verticalAccuracyMeters
-        if (leActual.isNaN()) leActual = 9999999.0F
-
-        // Ble Beacon
-        if (MainActivity.enableBleBeaconService) {
-            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
-            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
-        }
+        val lat   = loc?.lat
+        val lon   = loc?.lon
+        val hae   = loc?.alt
+        val ce    = loc?.ce ?: 9999999.0F
+        val le    = loc?.le ?: 9999999.0F
 
         val linkUid = MainActivity.device_uid
-
 
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <event version="2.0" uid="$uid" type="$markerType" time="$startTime" start="$startTime" stale="$staleTime" how="h-g-i-g-o" access="Undefined">
-            <point lat="$latActual" lon="$lonActual" hae="$haeActual" ce="$ceActual" le="$leActual"/>
+            <point lat="$lat" lon="$lon" hae="$hae" ce="$ce" le="$le"/>
             <detail>
                 <status readiness="true" battery='$battery'/>
                 <precisionlocation altsrc="SRTM1"/>
                 <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
                 <usericon iconsetpath="$iconSetPath"/>
-                <remarks>HeartRate: $heartRate bpm; Battery Level: $battery%</remarks>
+                <remarks>HeartRate: $hr bpm; Battery Level: $battery%</remarks>
                 <contact callsign="$markerCallsign_Time"/>
             </detail>
         </event>
         """.trimIndent()
-        /*
-                <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
-                <event version='2.0' uid='8b1c80ed-aa14-4747-9bdc-7f931807c9bd' type='a-u-G' time='2025-01-14T17:00:49.286Z' start='2025-01-14T17:00:49.286Z' stale='2025-01-14T17:05:49.286Z' how='h-g-i-g-o' access='Undefined'>
-                    <point lat='41.886874' lon='-87.659409' hae='126.631' ce='10.5' le='9999999.0' />
-                    <detail>
-                        <status readiness='true'/>
-                        <archive/>
-                        <color argb='-1'/>
-                        <remarks/>
-                        <link uid='ANDROID-4cbffc120e174b01' production_time='2024-10-31T16:41:29.018Z' type='a-f-G-U-C' parent_callsign='MAYHEMINDIA-TAB' relation='p-p'/>
-                        <archive/>
-                        <contact callsign='MAYHEMINDIA-TAB SSband_1031_164129'/>
-                    </detail>
-                </event>
-        */
-
-        /*
-                return """
-                    <?xml version="1.0" encoding="UTF-8" standalone='yes'?>
-                    <event version="2.0" uid='${MainActivity.device_uid}' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g' access='Undefined'>
-                        <point lat='${location.latitude}' lon='${location.longitude}' hae='${location.altitude}' ce='${location.accuracy}' le='${location.verticalAccuracyMeters}' />
-                        <detail>
-                            <contact endpoint='*:-1:stcp' phone='11234567890' callsign='$callsign'/>
-                            <__group role='$role' name='$teamValue'/>
-                            <biometrics hr='$heartRate'/>
-                            <status battery='$battery' model='WEAROS'/>
-                            <track course='${location.bearing}' speed='${location.speed}'/>
-                        </detail>
-                    </event>
-                """.trimIndent()
-         */
     }
 
+
+    /*
     private fun buildMarkerCotMessage(uid: String, markerType: String, location: Location, heartRate: Int, battery: Int): String {
+
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
         calendar.setTime(Date()) // Set the current time
@@ -971,7 +896,6 @@ class CotDispatchService : Service() {
         val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
         val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
 
-        // TODO: Check if these really don't need the null safety check. If not, direct injection into the cot XML is more readable.
         var latActual   = location.latitude
         var lonActual   = location.longitude
         var haeActual   = location.altitude
@@ -979,15 +903,7 @@ class CotDispatchService : Service() {
         if (ceActual.isNaN()) ceActual = 9999999.0F
         var leActual : Float = location.verticalAccuracyMeters
         if (leActual.isNaN()) leActual = 9999999.0F
-
-        // Ble Beacon
-        if (MainActivity.enableBleBeaconService) {
-            val bleLocationOutput = mapLocationAgainstClosestBleBeacon(startTimeInMs, latActual, lonActual, haeActual, ceActual)
-            latActual = bleLocationOutput.lat; lonActual = bleLocationOutput.lon; haeActual = bleLocationOutput.hae; ceActual = bleLocationOutput.ce
-        }
-
         val linkUid = MainActivity.device_uid
-
 
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1036,6 +952,7 @@ class CotDispatchService : Service() {
                 """.trimIndent()
          */
     }
+*/
 
     private fun buildClearMarkerCotMessage(uid: String, cotInfo: Utils.CotUtils.CotMarkerInfo?): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
@@ -1248,71 +1165,19 @@ class CotDispatchService : Service() {
         }
     }
 
-    private data class PhysioPli(
-        val loc: Location?,
-        val phys: PhysioData
-    )
-
-    private suspend fun getPhsyioAndPliData(): PhysioPli = withContext(Dispatchers.IO) {
-        val heartRate  = dataRepository.latestHeartRate.value ?: -1
-        val skinTempF  = dataRepository.latestSkinTemp.value ?: -1f
-        val exertion   = calculateExertion(heartRate, dataRepository.getPhysiologicalMetricAge.first(), dataRepository.getRestingHeartRate.first())
-        val battery    = dataRepository.latestBatteryPercentage.value
-        val daily      = dataRepository.latestDailyMetrics.value
-
-        val calories   = daily?.calories   ?: -1.0
-        val floors     = daily?.floors     ?: -1.0
-        val elevationM = daily?.elevationM ?: -1.0
-        val steps      = daily?.steps ?: -1L
-
-        val weight     = dataRepository.getPhysiologicalMetricWeight.first()
-        val age        = dataRepository.getPhysiologicalMetricAge.first()
-
-        val location   = dataRepository.latestLocation.value
-        val physioData = PhysioData(
-            heartRate  = heartRate,
-            skinTemp   = skinTempF,
-            exertion   = exertion,
-            battery    = battery,
-            steps      = steps,
-            calories   = calories,
-            floors     = floors,
-            elevationM = elevationM,
-            weight     = weight,
-            age        = age
-        )
-
-        PhysioPli(location, physioData)
-    }
-
     fun buildAndSendPhysioLocationCotMsg() {
         // Blocks the current (scheduler) thread until the work is done.
         runBlocking(Dispatchers.IO) {
-            val data = getPhsyioAndPliData() // suspending
-            val location   = data.loc
-            val physioData = data.phys
+            val xml = buildConciseLocationPhysioCot()
 
             if (!TAKConnectService.isAnyTakConnected) {
                 Log.w(TAG, "Not connected to a TAK Server. Not sending to TAK Server. Attempting Multicast…")
             } else {
-                sendPhsyioLocationCotMsg(location, physioData)
+                sendDataTAKServers(xml, false)
             }
 
-            multicastPhysioPliCot(data) // always try multicast; helper handles Wi-Fi
+            NetworkUtils.MulticastPublisher.send(xml) // always multicast
         }
-    }
-
-    private fun multicastPhysioPliCot(physioPli: PhysioPli) {
-        val cotMessage = buildConciseLocationPhysioCot(physioPli.loc, physioPli.phys)
-        NetworkUtils.MulticastPublisher.send(cotMessage)
-    }
-
-    private fun sendPhsyioLocationCotMsg(location: Location?, physioData: PhysioData) {
-        val cotMessage = buildConciseLocationPhysioCot(location, physioData)
-        sendDataTAKServers(cotMessage, false)
-        //val logString = "Location/Biometric CoT message sent ($currReportingIntervalInSecs): $cotMessage"
-        //Log.d(TAG, logString)
-        //writeToLogFileLocation(logFile, logString)
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -1353,36 +1218,24 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun sendDropNow(req: DataRepository.DropRequest, loc: Location) {
-        val heartRate = dataRepository.latestHeartRate.value ?: -1
-        val battery   = dataRepository.latestBatteryPercentage.value ?: -1
 
-        val uid = UUID.randomUUID().toString() // backend owns UID
-        val type = req.markerType.type
-        iconSetPath = req.markerType.icon
-
-        dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
-        val calendar: Calendar = Calendar.getInstance()
-        calendar.setTime(Date()) // Set the current time
-        val startTime = dateTimeFormatter.format(calendar.time)
-        calendar.add(Calendar.YEAR, 1) // add 1 year to the current time for 'stale time', ie when the cot expires. Markers should last for a long time.
-        val staleTime = dateTimeFormatter.format(calendar.time)
-
-        val markerCot = CompanionAppRepository.MarkerCotEventCompApp(
-            uid = uid,
-            type = type,
-            time = staleTime,
-            start = startTime,
-            stale = staleTime,
-            detail = "blah"
+        val snapshot = DataRepository.MarkerSnapshot(
+            uid         = UUID.randomUUID().toString(),
+            markerType  = req.markerType,
+            iconSetPath = req.markerType.icon,
+            time        = getCotEventTimeSnapshot(staleOffset = Utils.TimeOffset(years = 1)),
+            loc         = dataRepository.snapshotLocation(),
+            physio      = dataRepository.snapshotPhysio(),
+            system      = dataRepository.snapshotSystem()
         )
 
-        Log.i(TAG, "sendDropNow::markerType:: = [ ${type} ]")
-        val xml = buildMarkerCotMessage(uid, type, loc, heartRate, battery)
+        Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot.markerType.type} ]")
+        val xml = buildMarkerCotMessage(snapshot)
         sendMulticastDatagram(xml)
 
         var sent = false
         if (companionAppAvailable()) {
-            // TODO: Data repo emit flow from markerCot !
+            capRepo.sendCot(snapshot)
             sent = true
         }
         if (dataRepository.getEnableMulticast.first()) {
@@ -1399,55 +1252,34 @@ class CotDispatchService : Service() {
 
         if (!sent) return  // don’t reflect in UI until actually sent/meshed
 
-        markerDropMap[uid] = Utils.CotUtils.CotMarkerInfo(
+        markerDropMap[snapshot.uid] = Utils.CotUtils.CotMarkerInfo(
             loc.latitude,
             loc.longitude,
             loc.altitude,
             loc.accuracy,
             loc.verticalAccuracyMeters,
-            type,
+            snapshot.markerType.type,
             iconSetPath
         )
-        Log.i(TAG, "=== ===> sending marker type ${type} with uid = [ $uid ] ")
+
+        val loc = snapshot.loc
+
+        markerDropMap[snapshot.uid] = Utils.CotUtils.CotMarkerInfo(
+            loc?.lat,
+            loc?.lon,
+            loc?.alt,
+            loc?.ce,
+            loc?.le,
+            snapshot.markerType.type,
+            iconSetPath
+        )
+        Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = uid, markerType = type, timeDropped = req.timeMillis)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, timeDropped = req.timeMillis)
         )
 
     }
-
-//    @Subscribe(threadMode = ThreadMode.ASYNC)
-//    public fun onMarkerEvent(event: MarkerEvent) {
-//        val msg = event.message
-//
-//        if (HOSTILE == msg) {
-//            iconSetPath = "COT_MAPPING_2525C/a-h/a-h-G"
-//            markerType = "a-h-G"
-//        } else if (FRIENDLY == msg) {
-//            iconSetPath = "COT_MAPPING_2525C/a-f/a-f-G"
-//            markerType = "a-f-G"
-//        } else if (NEUTRAL == msg) {
-//            iconSetPath = "COT_MAPPING_2525C/a-n/a-n-G"
-//            markerType = "a-n-G"
-//        } else { // UNKNOWN or any other
-//            iconSetPath = "COT_MAPPING_2525C/a-u/a-u-G"
-//            markerType = "a-u-G"
-//        }
-//        val currTime = System.currentTimeMillis()
-//        if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
-//            Log.d(TAG, "MarkerEvent with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-//            markerDropReceivedTime = currTime
-//            sendMarkerCotMessage() // iSAnyTakConnected is taken care of inside sendMarkerCotMessage()
-//        } else {
-//            if (markerDropToBeSent.getAndSet(true) == false) {
-//                Log.d(TAG, "MarkerEvent with markerDropToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-//                markerDropReceivedTime = currTime
-//                EventBus.getDefault().post(LocationUpdateRequired())
-//            } else {
-//                Log.d(TAG, "MarkerEvent with markerDropToBeSent true & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
-//            }
-//        }
-//    }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -1467,20 +1299,6 @@ class CotDispatchService : Service() {
         }
     }
 
-    /*
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onTakConnectionSuccess(event: TakServerConnStatusEvent) {
-        if (event.connEvent == CONNECTION_SUCCESS) {
-            Log.d(TAG, "TAKConnectService connected. Starting to dispatch cots...")
-            startDispatchScheduler()
-        } else {
-            Log.v(TAG, "Disconnected from TAK Server. Wasn't Success message. Not dispatching Cots.")
-            stopDispatchScheduler()
-        }
-    }
-
-     */
-
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "CotDispatchService onDestroy()")
@@ -1495,7 +1313,7 @@ class CotDispatchService : Service() {
         isRunning.set(false)
     }
 
-    suspend private fun setValuesFromCustomDeveloperConfig() {
+    private suspend fun setValuesFromCustomDeveloperConfig() {
         val jsonString = MainActivity.Constants.dataRepository.getCustomDeveloperConfigJson.first()
         // Check for BLE_EXIT_HYSTERESIS_COUNT and BLE_STALE_TIME_INTERVAL_MS
         // Json could be {"bleExitHysteresisCount" : "20", "bleStaleTimeIntervalMs" : "5000", "overrideGpsWithBleExitHysteresisCount" : "30", "gpsStaleTimeInterval" : "10000" }

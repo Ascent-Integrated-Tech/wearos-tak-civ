@@ -36,7 +36,6 @@ import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
-import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.google.gson.Gson
@@ -52,15 +51,15 @@ import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
-import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceDebugState
-import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import java.util.EnumMap
+import java.util.UUID
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -452,7 +451,6 @@ class DataRepository(private val context: Context) {
     private val _getEnableOffBodyDetectService = MutableStateFlow<Boolean>(true)
     var getEnableOffBodyDetectService: MutableStateFlow<Boolean> = _getEnableOffBodyDetectService
 
-
     @Entity(tableName = "daily_health_metrics")
     data class DailyHealthMetrics(
         @PrimaryKey val timestampHour: Instant,  // truncated to the top of the hour
@@ -515,21 +513,9 @@ class DataRepository(private val context: Context) {
         val speed: Float?   // optional: m/s
     )
 
-    data class PhysioDataBak(
-        val heartRate: Int,
-        val skinTemp: Float,
-        val exertion: Double,
-        val battery: Int?,
-        val steps: Long,
-        val calories: Double,
-        val floors: Double,
-        val elevationM: Double?,
-        val weight: Int,
-        val age: Int
-    )
-
     data class PhysioData(
         val heartRateBpm: Int?,          // current HR
+        val skinTempF: Float?,           // Temp of skin in Deg F
         val ageYears: Int?,              // physiological age used for calculations
         val weightKg: Int?,              // settings
         val restingHrBpm: Int?,          // baseline rest HR
@@ -544,30 +530,31 @@ class DataRepository(private val context: Context) {
     )
 
     suspend fun snapshotPhysio(): PhysioSnapshot {
-        val now = System.currentTimeMillis()
+        val nowMillis = System.currentTimeMillis()
 
-        val hr       = latestHeartRate.value
-        val skin     = latestSkinTemp.value
-        val exertion = latestExertion.value   // computed flow
-        val steps    = latestSteps.value
-        val calories = latestCalories.value
-        val floors   = latestFloors.value
-        val elevM    = latestElevationM.value
-        val weight   = userWeightKg.value     // however you store it
-        val age      = userAgeYears.value
+        val hr          = latestHeartRate.value
+        val skinT       = latestSkinTemp.value
+        val ageYears    = getPhysiologicalMetricAge.first()
+        val weightKg    = getPhysiologicalMetricWeight.first()
+        val restingHr   = getRestingHeartRate.first()
+        val exertion    = latestExertion.value
+        val daily       = latestDailyMetrics.value
+
+        val exertionClass: String? = exertion.let {
+            Utils.PhysioUtils.classifyExertion(it)
+        }
 
         return PhysioSnapshot(
-            timeMillis = now,
+            timeMillis = nowMillis,
             data = PhysioData(
-                heartRate = hr,
-                skinTemp = skin,
-                exertion = exertion,
-                steps = steps,
-                calories = calories,
-                floors = floors,
-                elevationM = elevM,
-                weightKg = weight,
-                ageYears = age
+                heartRateBpm  = hr,
+                skinTempF     = skinT,
+                ageYears      = ageYears,
+                weightKg      = weightKg,
+                restingHrBpm  = restingHr,
+                exertion      = exertion,
+                exertionClass = exertionClass,
+                dailyMetrics  = daily
             )
         )
     }
@@ -600,41 +587,71 @@ class DataRepository(private val context: Context) {
         )
     }
 
-    data class MarkerSnapshotAdaptor(
-        val uid: String,
-        val type: String?,
-        val iconSetPath: String?,
-        val lat: Double,
-        val lon: Double,
-        val alt: Double?,
-        val le: Float?,
-        val ce: Float?,
-        val time: Long,
-        val startTime: String,
-        val staleTime: Long,
-
-        // things you might want “frozen in time” with the event:
-        val callsign: String,
-        val heartRate: Int?,
-        val batteryPercent: Int?
-    )
-
     data class SystemSnapshot(
-        val time: Long,
-        val battery: Int,
-        val charging: Boolean,
-        val callsign: String,
-        val isWorn: Boolean,
-        val deviceId: String
+        val timeMillis: Long,     // When the snapshot was taken
+        val batteryPercent: Int?, // nullable because sensors can fail or race
+        val isCharging: Boolean?, // nullable for same reason
+        val callsign: String,     // always available from DataStore
+        val isWorn: Boolean?,     // optional wearable state (sensor-specific)
+        val deviceId: String      // MainActivity.device_uid
     )
+
+    suspend fun snapshotSystem(): SystemSnapshot {
+        val now = System.currentTimeMillis()
+
+        val battery = latestBatteryPercentage.value
+        val charging = chargingState.value
+        val wornState = latestIsDeviceWorn.value
+        val callsign = getCallsign.first()
+        val deviceId = MainActivity.device_uid
+
+        return SystemSnapshot(
+            timeMillis = now,
+            batteryPercent = battery,
+            isCharging = charging,
+            callsign = callsign,
+            isWorn = wornState,
+            deviceId = deviceId
+        )
+    }
 
     data class MarkerSnapshot(
         val uid: String,
-        val markerType: DataRepository.MarkerType,
+        val markerType: MarkerType,
+        val iconSetPath: String?,
+        val loc: LocationSnapshot?,
+        val time: Utils.CotEventTimeSnapshot,
+        val physio: PhysioSnapshot?,
+        val system: SystemSnapshot
+    )
+
+    suspend fun snapshotMarker(req: DropRequest): MarkerSnapshot? {
+        val loc = snapshotLocation() ?: return null
+        val timeSnapshot = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(years = 1)
+        )
+
+        val physioSnapshot = snapshotPhysio()
+        val systemSnapshot = snapshotSystem()
+
+        return MarkerSnapshot(
+            uid = UUID.randomUUID().toString(),
+            markerType = req.markerType,
+            iconSetPath = req.markerType.icon,
+            loc = loc,
+            time = timeSnapshot,
+            physio = physioSnapshot,
+            system = systemSnapshot
+        )
+    }
+
+    data class PliSnapshot(
+        val uid: String,
         val loc: LocationSnapshot,
         val time: Utils.CotEventTimeSnapshot,
         val physioData: PhysioSnapshot,
-        val systemData: SystemSnapshot,
+        val systemData: SystemSnapshot
     )
 
     data class DroppedMarker(
@@ -1398,6 +1415,8 @@ class DataRepository(private val context: Context) {
     private val _constantReportingInterval = MutableStateFlow<Int?>(null)
     val constantReportingInterval: StateFlow<Int?> = _constantReportingInterval
 
+    val androidDeviceUid: String = MainActivity.device_uid
+
     val getConstantReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
     }
@@ -1611,7 +1630,7 @@ class DataRepository(private val context: Context) {
         initialValue = DEFAULT_AGE
     )
 
-    val exertionFlow: StateFlow<Double> = combine(
+    val latestExertion: StateFlow<Double> = combine(
         latestHeartRate.filterNotNull(),
         physiologicalMetricAge.filterNotNull(),
         restingHeartRate.filterNotNull()

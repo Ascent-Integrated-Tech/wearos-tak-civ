@@ -11,17 +11,11 @@ package com.aitech.weartak_civ.data
 
 import android.content.Context
 import android.location.Location
-import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.preferencesDataStore
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
-import com.aitech.weartak_civ.Utils.CotUtils.Point
-import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.DataRepository.ClearRequest
 import com.aitech.weartak_civ.data.DataRepository.DropRequest
-import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.presentation.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +34,13 @@ private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 class CompanionAppRepository(private val context: Context) {
     private val TAG = "WearTAK-CompanAppRepo"
 
+    val COMPANION_SERVICE_UUID   = java.util.UUID.fromString("0000A11A-0000-1000-8000-00805F9B34FB")
+    val TX_TO_COMPANION_UUID     = java.util.UUID.fromString("0000A11B-0000-1000-8000-00805F9B34FB")
+    val RX_FROM_COMPANION_UUID   = java.util.UUID.fromString("0000A11C-0000-1000-8000-00805F9B34FB")
+
+    val CLIENT_CHARACTERISTIC_CONFIG_UUID =
+        java.util.UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
     enum class BleConnectionState {
         NOT_CONNECTED,
         ADVERTISING,
@@ -51,6 +52,11 @@ class CompanionAppRepository(private val context: Context) {
         CONNECTION_FAILED,
         ERROR
     }
+
+    suspend fun sendCot(snapshot: DataRepository.MarkerSnapshot) {
+
+    }
+
 
     private val _bleConnectionState =
         MutableStateFlow(BleConnectionState.NOT_CONNECTED)
@@ -101,7 +107,6 @@ class CompanionAppRepository(private val context: Context) {
         val os_version: String,
         val mac_address: String?,
         val battery_percent: Int?,
-        val hr_bpm: Int?,
         val is_charging: Boolean?
     )
 
@@ -112,8 +117,8 @@ class CompanionAppRepository(private val context: Context) {
         val lat: Double,
         val lon: Double,
         val alt: Double?,
-        val h_accuracy: Double?,
-        val v_accuracy: Double?,
+        val ce: Double?,
+        val le: Double?,
         val time_start: String,
         val time_stale: String,
         val callsign: String,
@@ -144,7 +149,6 @@ class CompanionAppRepository(private val context: Context) {
                 os_version = "",
                 mac_address = "",
                 battery_percent = dataRepository.latestBatteryPercentage.value,
-                hr_bpm = dataRepository.latestHeartRate.value,
                 is_charging = dataRepository.chargingState.value
             )
 
@@ -169,8 +173,8 @@ class CompanionAppRepository(private val context: Context) {
                 lat = loc.latitude,
                 lon = loc.longitude,
                 alt = loc.altitude,
-                h_accuracy = loc.accuracy.toDouble(),
-                v_accuracy = loc.verticalAccuracyMeters.toDouble(),
+                ce = loc.accuracy.toDouble(),
+                le = loc.verticalAccuracyMeters.toDouble(),
                 time_start = nowIso,
                 time_stale = staleIso,
                 callsign = dataRepository.getCallsign.first(),

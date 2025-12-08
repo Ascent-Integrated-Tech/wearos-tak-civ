@@ -179,7 +179,7 @@ class HeartrateService: Service() {
 
     init {
         scope.launch {
-            sharedRepository.exertionFlow
+            sharedRepository.latestExertion
                 .collect { exertion ->
                     val logString = "Exertion updated: $exertion"
                     Log.d(TAG, logString)
