@@ -2298,6 +2298,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getYearOfBirth: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[YEAR_OF_BIRTH] ?: 1997
+    }
+
+    suspend fun storeYearOfBirth(year: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[YEAR_OF_BIRTH] = year
+        }
+    }
+
     val getPhysiologicalMetricUniformWaistSize: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[UNIFORM_WAIST_SIZE] ?: DEFAULT_UNIFORM_WAIST_SIZE
     }
@@ -2419,5 +2429,6 @@ class DataRepository(private val context: Context) {
         private val TABLET_COMMAND_ENDPOINT = stringPreferencesKey("tablet_command_endpoint")
         private val TABLET_COMMAND_APIKEY = stringPreferencesKey("tablet_command_apikey")
         private val TABLET_COMMAND_REPORTING_UPDATE_INTERVAL = intPreferencesKey("tablet_command_reporting_update_interval")
+        private val YEAR_OF_BIRTH = intPreferencesKey("year_of_birth")
     }
 }
