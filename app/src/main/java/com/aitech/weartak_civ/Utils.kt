@@ -524,7 +524,7 @@ object Utils {
 
     /** Minimal data models for bloodhound. */
     data class BloodhoundItem(
-        val target: String?,
+        val target: String,
         val uid: String,
         val callsign: String,
         val timeReceived: Long,
@@ -720,7 +720,7 @@ object Utils {
             val start: Long,
             val stale: Long,
             val access: String?,
-            val point: Point?,
+            val point: Point,
             val detail: MarkerDetail,
         )
 
@@ -730,7 +730,7 @@ object Utils {
             val uid: String = cotEvent.uid
             val type: String = cotEvent.type
             val callsign: String? = cotEvent.detail.markerCallsign
-            val point: Point? = cotEvent.point
+            val point: Point = cotEvent.point
             val creator: Creator? = cotEvent.detail.creator   // who created this map item / marker?
             val link: Link? = cotEvent.detail.link            // who sent us this map item / marker?
         }

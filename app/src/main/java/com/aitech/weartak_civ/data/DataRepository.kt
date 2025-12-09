@@ -588,30 +588,27 @@ class DataRepository(private val context: Context) {
     }
 
     data class SystemSnapshot(
-        val timeMillis: Long,     // When the snapshot was taken
-        val batteryPercent: Int?, // nullable because sensors can fail or race
-        val isCharging: Boolean?, // nullable for same reason
-        val callsign: String,     // always available from DataStore
-        val isWorn: Boolean?,     // optional wearable state (sensor-specific)
-        val deviceId: String      // MainActivity.device_uid
+        val timeMillis: Long,      // When the snapshot was taken
+        val batteryPercent: Int?,  // nullable because sensors can fail or race
+        val callsign: String,      // always available from DataStore
+        val deviceId: String,      // MainActivity.device_uid
+        val wearTakVersion: String //
     )
 
     suspend fun snapshotSystem(): SystemSnapshot {
         val now = System.currentTimeMillis()
 
-        val battery = latestBatteryPercentage.value
-        val charging = chargingState.value
-        val wornState = latestIsDeviceWorn.value
+        val battery  = latestBatteryPercentage.value
         val callsign = getCallsign.first()
         val deviceId = MainActivity.device_uid
+        val version  = MainActivity.versionNumber
 
         return SystemSnapshot(
             timeMillis = now,
             batteryPercent = battery,
-            isCharging = charging,
             callsign = callsign,
-            isWorn = wornState,
-            deviceId = deviceId
+            deviceId = deviceId,
+            wearTakVersion = version
         )
     }
 

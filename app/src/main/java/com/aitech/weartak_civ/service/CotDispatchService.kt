@@ -279,7 +279,8 @@ class CotDispatchService : Service() {
         }
     }
 
-    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, Utils.CotUtils.CotMarkerInfo>()
+//    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, Utils.CotUtils.CotMarkerInfo>()
+    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
 
     private val pendingDropQueue = ArrayDeque<DataRepository.DropRequest>()
 
@@ -834,16 +835,16 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot): String {
-        val uid         = ms.uid
-        val markerType  = ms.markerType.type
-        val battery     = ms.system.batteryPercent
+    private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot?): String {
+        val uid         = ms?.uid
+        val markerType  = ms?.markerType?.type
+        val battery     = ms?.system?.batteryPercent
 
-        val hr          = ms.physio?.data?.heartRateBpm
+        val hr          = ms?.physio?.data?.heartRateBpm
 
-        val startTime   = ms.time.startCot
-        val staleTime   = ms.time.staleCot
-        val loc         = ms.loc
+        val startTime   = ms?.time?.startCot
+        val staleTime   = ms?.time?.staleCot
+        val loc         = ms?.loc
 
         // Marker with Time no Date.
         val calendar: Calendar = Calendar.getInstance()
@@ -954,6 +955,31 @@ class CotDispatchService : Service() {
     }
 */
 
+
+    private fun makeMarkerSnapshotStale(snapshot: DataRepository.MarkerSnapshot): DataRepository.MarkerSnapshot {
+        // If the staleTime < startTime, TAK assumes the marker is expired and clears it. This is a little hack to do that.
+        val clearTime = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(seconds = 0),
+            staleOffset = Utils.TimeOffset(seconds = -1)
+        )
+
+        // Inject only the new clearTime.
+        val clearedSnapshot = snapshot.copy(
+            time = clearTime
+        )
+
+        return clearedSnapshot
+    }
+    private fun buildClearMarkerCotMessage(snapshot: DataRepository.MarkerSnapshot?): String {
+        if (snapshot == null) return ""
+
+        // failsafe to ensure the snapshot is stale, in case this function is called without a stale snapshot
+        val clearedSnapshot = makeMarkerSnapshotStale(snapshot)
+
+        return buildMarkerCotMessage(clearedSnapshot)
+    }
+
+    /*
     private fun buildClearMarkerCotMessage(uid: String, cotInfo: Utils.CotUtils.CotMarkerInfo?): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
@@ -1006,6 +1032,7 @@ class CotDispatchService : Service() {
 
         return cot
     }
+    */
 
     private suspend fun companionAppAvailable(): Boolean {
         val enabled = dataRepository.getEnableCompanionAppService.first()
@@ -1014,13 +1041,17 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun handleClearUid(uid: String) {
-        val info = markerDropMap[uid]  // may be null for very old markers
-        // TODO: Need to check if info is NOT null
-        // TODO: Also check logic of NOT remove it from dataRepository (wait if NOT TAKConnectService.isAnyTakConnected)
-        val clearXml = buildClearMarkerCotMessage(uid, info)
-        Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${info?.type}")
+        val snapshot = markerDropMap[uid]  // may be null for very old markers
+        // TODO: How do we inject clearing via stale time flip?
+        if (snapshot == null) return
+        val staleSnapshot = makeMarkerSnapshotStale(snapshot)
+        val clearXml = buildClearMarkerCotMessage(snapshot)
+        Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${snapshot?.markerType?.type}")
 
         var sent = false
+        if (companionAppAvailable()) {
+            capRepo.enqueueMarkerSnapshotForBle(staleSnapshot)
+        }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", clearXml))
             sent = true
@@ -1219,23 +1250,28 @@ class CotDispatchService : Service() {
 
     private suspend fun sendDropNow(req: DataRepository.DropRequest, loc: Location) {
 
-        val snapshot = DataRepository.MarkerSnapshot(
-            uid         = UUID.randomUUID().toString(),
-            markerType  = req.markerType,
-            iconSetPath = req.markerType.icon,
-            time        = getCotEventTimeSnapshot(staleOffset = Utils.TimeOffset(years = 1)),
-            loc         = dataRepository.snapshotLocation(),
-            physio      = dataRepository.snapshotPhysio(),
-            system      = dataRepository.snapshotSystem()
-        )
+//        val snapshot = DataRepository.MarkerSnapshot(
+//            uid         = UUID.randomUUID().toString(),
+//            markerType  = req.markerType,
+//            iconSetPath = req.markerType.icon,
+//            time        = getCotEventTimeSnapshot(staleOffset = Utils.TimeOffset(years = 1)),
+//            loc         = dataRepository.snapshotLocation(),
+//            physio      = dataRepository.snapshotPhysio(),
+//            system      = dataRepository.snapshotSystem()
+//        )
 
-        Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot.markerType.type} ]")
+        val snapshot = dataRepository.snapshotMarker(req)
+
+        Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot?.markerType?.type} ]")
         val xml = buildMarkerCotMessage(snapshot)
         sendMulticastDatagram(xml)
 
         var sent = false
         if (companionAppAvailable()) {
-            capRepo.sendCot(snapshot)
+            //capRepo.sendCot(snapshot)
+            if (snapshot == null ) return
+            Log.i(TAG, "Send Marker payload via BLE ...")
+            capRepo.enqueueMarkerSnapshotForBle(snapshot)
             sent = true
         }
         if (dataRepository.getEnableMulticast.first()) {
@@ -1252,33 +1288,13 @@ class CotDispatchService : Service() {
 
         if (!sent) return  // don’t reflect in UI until actually sent/meshed
 
-        markerDropMap[snapshot.uid] = Utils.CotUtils.CotMarkerInfo(
-            loc.latitude,
-            loc.longitude,
-            loc.altitude,
-            loc.accuracy,
-            loc.verticalAccuracyMeters,
-            snapshot.markerType.type,
-            iconSetPath
-        )
+        markerDropMap[snapshot?.uid as String] = snapshot
 
-        val loc = snapshot.loc
-
-        markerDropMap[snapshot.uid] = Utils.CotUtils.CotMarkerInfo(
-            loc?.lat,
-            loc?.lon,
-            loc?.alt,
-            loc?.ce,
-            loc?.le,
-            snapshot.markerType.type,
-            iconSetPath
-        )
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
         dataRepository.appendDroppedMarker(
             DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, timeDropped = req.timeMillis)
         )
-
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)

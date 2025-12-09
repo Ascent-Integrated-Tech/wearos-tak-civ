@@ -18,10 +18,12 @@ package com.aitech.weartak_civ
 
 import android.app.Application
 import android.content.Context
+import android.provider.Settings.Secure
 import android.util.Log
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -39,6 +41,7 @@ class WearTakApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
         capRepo = CompanionAppRepository(applicationContext)

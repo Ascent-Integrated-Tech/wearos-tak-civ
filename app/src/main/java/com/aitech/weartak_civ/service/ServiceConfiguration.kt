@@ -147,6 +147,7 @@ class ServiceConfiguration(
         ServiceType.COMPANION_APP -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)
             add(android.Manifest.permission.BLUETOOTH_CONNECT)
+            add(android.Manifest.permission.BLUETOOTH_ADVERTISE)
         }
     }
 

@@ -2683,6 +2683,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
     val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
+    val activeTarget = activeItem?.target ?: ""
     requestBloodhoundComplicationUpdate(context)
  Row(
         modifier = Modifier.clickable(
@@ -2717,7 +2718,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
             if (bloodhoundChecked == true) {
                 if (activeItem != null) {
                     Text(
-                        text = activeItem.target,
+                        text = activeTarget,
                         fontSize = 13.sp,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.Medium,

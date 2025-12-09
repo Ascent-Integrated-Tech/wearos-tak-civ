@@ -62,7 +62,7 @@ class BloodhoundRepository(private val context: Context) {
             val mapItem: Utils.CotUtils.MarkerMapItem
         ) {
             val name: String? = mapItem.cotEvent.detail.markerCallsign
-            val point: Point? = mapItem.point
+            val point: Point = mapItem.point
             val type: String = mapItem.type
         }
 
@@ -138,7 +138,7 @@ class BloodhoundRepository(private val context: Context) {
         val eventMs = System.currentTimeMillis()
 
         return Utils.BloodhoundItem(
-            target = this.target.name,
+            target = this.target.name ?: "unknown",
             uid = this.uid,
             callsign = this.bhEvent.issuer?.parentCallsign ?: "unknown",
             timeReceived = eventMs,

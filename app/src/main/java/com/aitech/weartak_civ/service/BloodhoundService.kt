@@ -247,7 +247,7 @@ class BloodhoundService: Service() {
         val body = buildString {
             map.values.forEach { item ->
                 val uid = item.uid.padEnd(20).take(20)
-                val name = item.target.name.padEnd(20).take(20)
+                val name = item.target.name?.padEnd(20)?.take(20)
 
                 val lat = String.format("%.5f", item.target.point.lat)
                 val lon = String.format("%.5f", item.target.point.lon)
