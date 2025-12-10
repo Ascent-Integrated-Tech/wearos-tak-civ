@@ -107,7 +107,7 @@ class CompanionAppService : Service() {
         )
 
         initBle()
-        startMarkerBleCollector()
+        startBleOutboundCollector()
 
         serviceScope.launch {
             val sys = repo.snapshotSystem()
@@ -132,23 +132,50 @@ class CompanionAppService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startMarkerBleCollector() {
+    private fun startBleOutboundCollector() {
         serviceScope.launch {
-            capRepo.markerSnapshotsForBle.collect { snapshot ->
+            capRepo.outboundBleEvents.collect { event ->
                 if (!capRepo.companionAppReady.value) {
-                    Log.i(TAG, "Companion not ready; dropping marker snapshot")
+                    Log.i(TAG, "Companion not ready; dropping BLE event $event")
                     return@collect
                 }
 
-                // Build envelope + JSON and send
-                val env  = capRepo.buildMarkerEnvelopeFromSnapshot(snapshot)
-                val json = capRepo.envelopeToJson(env)
+                val json = when (event) {
+                    is CompanionAppRepository.BleOutboundEvent.Marker -> {
+                        val env = capRepo.buildMarkerEnvelopeFromSnapshot(event.snapshot)
+                        capRepo.envelopeToJson(env)
+                    }
 
-                Log.d(TAG, "Sending marker over BLE: $json")
+                    is CompanionAppRepository.BleOutboundEvent.Emergency -> {
+                        val env = capRepo.buildEmergencyEnvelopeFromSnapshot(event.snapshot)
+                        capRepo.envelopeToJson(env)
+                    }
+                }
+
+                Log.d(TAG, "Sending over BLE: $json")
                 sendJsonToCompanion(json)
             }
         }
     }
+
+//    @SuppressLint("MissingPermission")
+//    private fun startMarkerBleCollector() {
+//        serviceScope.launch {
+//            capRepo.markerSnapshotsForBle.collect { snapshot ->
+//                if (!capRepo.companionAppReady.value) {
+//                    Log.i(TAG, "Companion not ready; dropping marker snapshot")
+//                    return@collect
+//                }
+//
+//                // Build envelope + JSON and send
+//                val env  = capRepo.buildMarkerEnvelopeFromSnapshot(snapshot)
+//                val json = capRepo.envelopeToJson(env)
+//
+//                Log.d(TAG, "Sending marker over BLE: $json")
+//                sendJsonToCompanion(json)
+//            }
+//        }
+//    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "CompanionAppService onStartCommand()")

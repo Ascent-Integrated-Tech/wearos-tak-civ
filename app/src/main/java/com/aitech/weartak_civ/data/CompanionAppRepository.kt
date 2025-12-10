@@ -95,19 +95,28 @@ class CompanionAppRepository(private val context: Context) {
         val payload: T
     )
 
-    enum class PayloadType {
-        MARKER_DROP,
-        MARKER_CLEAR,
-        EMERGENCY_ALERT
+    sealed class BleOutboundEvent {
+        data class Marker(val snapshot: DataRepository.MarkerSnapshot) : BleOutboundEvent()
+        data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : BleOutboundEvent()
+//        data class BatteryAlert(val snapshot: DataRepository.BatteryAlert) : BleOutboundEvent()
+        // later: WatchInfo, BatteryAlert, etc.
+    }
+
+    private val _outboundBleEvents =
+        MutableSharedFlow<BleOutboundEvent>(extraBufferCapacity = 64)
+    val outboundBleEvents: SharedFlow<BleOutboundEvent> = _outboundBleEvents
+
+    suspend fun enqueueMarkerSnapshotForBle(snapshot: DataRepository.MarkerSnapshot) {
+        _outboundBleEvents.emit(BleOutboundEvent.Marker(snapshot))
+    }
+
+    suspend fun enqueueEmergencySnapshotForBle(snapshot: DataRepository.EmergencyEventSnapshot) {
+        _outboundBleEvents.emit(BleOutboundEvent.Emergency(snapshot))
     }
 
     private val _markerSnapshotsForBle =
         MutableSharedFlow<DataRepository.MarkerSnapshot>(extraBufferCapacity = 64)
     val markerSnapshotsForBle: SharedFlow<DataRepository.MarkerSnapshot> = _markerSnapshotsForBle
-
-    suspend fun enqueueMarkerSnapshotForBle(snapshot: DataRepository.MarkerSnapshot) {
-        _markerSnapshotsForBle.emit(snapshot)
-    }
 
     data class MarkerPayload(
         val marker_id: String,       // == msg_id
@@ -126,11 +135,65 @@ class CompanionAppRepository(private val context: Context) {
     )
 
     data class EmergencyAlertPayload(
+        val uid: String,
+        val state: String,          // alert or cancel
         val category: String,
         val description: String,
-        val uuid: String,
-        val cancel: Boolean
+
+        val lat: Double,
+        val lon: Double,
+        val alt: Double?,
+        val ce: Double?,
+        val le: Double?,
+
+        val time_start: String,
+        val time_stale: String,
+
+        val callsign: String,
+        val heart_rate: Int?,
+        val battery_percent: Int?
     )
+
+    fun buildEmergencyEnvelopeFromSnapshot(
+        snapshot: DataRepository.EmergencyEventSnapshot
+    ): Envelope<EmergencyAlertPayload> {
+
+        val timeSnap = snapshot.time
+        val loc      = snapshot.location
+        val sys      = snapshot.system
+        val phys     = snapshot.physio
+
+        val payload = EmergencyAlertPayload(
+            uid              = snapshot.uid,
+            state            = snapshot.alertState.name,   // "ALERT" or "CANCEL"
+            category         = snapshot.category,
+            description      = snapshot.description,
+
+            lat              = loc.lat,
+            lon              = loc.lon,
+            alt              = loc.alt,
+            ce               = loc.ce?.toDouble(),
+            le               = loc.le?.toDouble(),
+
+            time_start       = timeSnap.startCot,
+            time_stale       = timeSnap.staleCot,
+
+            callsign         = sys.callsign,
+            heart_rate       = phys?.data?.heartRateBpm,
+            battery_percent  = sys.batteryPercent
+        )
+
+        val nowIso = Utils.timeNowIsoUtc()
+
+        return Envelope(
+            proto_version = 1,
+            msg_type      = "emergency",
+            msg_id        = snapshot.uid,   // same UID is used for alert + cancel
+            timestamp     = nowIso,
+            source        = "wearos",
+            payload       = payload
+        )
+    }
 
     data class WatchInfoPayload(
         val deviceId: String,

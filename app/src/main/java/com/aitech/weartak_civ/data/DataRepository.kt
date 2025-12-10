@@ -472,6 +472,7 @@ class DataRepository(private val context: Context) {
 
     suspend fun snapshotLocation(): LocationSnapshot? {
         val baseLoc = latestLocation.value ?: return null
+
         var latActual   = baseLoc.latitude
         var lonActual   = baseLoc.longitude
         var haeActual   = baseLoc.altitude
@@ -642,6 +643,73 @@ class DataRepository(private val context: Context) {
             system = systemSnapshot
         )
     }
+
+    enum class AlertState {
+        ALERT,
+        CANCEL
+    }
+
+    data class EmergencyEventSnapshot(
+        val uid: String,                     // stable per alert thread
+        val alertState: AlertState,          // ALERT or CANCEL
+        val category: String,
+        val description: String,
+        val sendSms: Boolean,
+
+        val time: Utils.CotEventTimeSnapshot,
+        val location: LocationSnapshot,
+        val physio: PhysioSnapshot?,
+        val system: SystemSnapshot
+    )
+
+    private var sosAlertUid: String? = null
+
+    suspend fun snapshotEmergencyEvent(
+        category: String,
+        description: String,
+        sendSms: Boolean,
+        alertState: AlertState
+    ): EmergencyEventSnapshot? {
+        val loc = latestLocation.value
+        if (loc == null) {
+            // Let caller decide what to do (set manualSosToBeSent, etc.)
+            return null
+        }
+
+        // UID logic: new for ALERT, reuse for CANCEL
+        val uid = if (alertState == AlertState.ALERT) {
+            val fresh = UUID.randomUUID().toString()
+            sosAlertUid = fresh
+            fresh
+        } else {
+            sosAlertUid ?: run {
+                // No previous alert -> nothing to cancel; you can log if you want
+                return null
+            }
+        }
+
+        val timeSnap = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(minutes = 15) // or whatever SOS stale you want
+        )
+
+        val locSnap = snapshotLocation() ?: return null
+        val systemSnap = snapshotSystem()
+        val physioSnap = snapshotPhysio()
+
+        return EmergencyEventSnapshot(
+            uid         = uid,
+            alertState  = alertState,
+            category    = category,
+            description = description,
+            sendSms     = sendSms,
+            time        = timeSnap,
+            location    = locSnap,
+            physio      = physioSnap,
+            system      = systemSnap
+        )
+    }
+
 
     data class PliSnapshot(
         val uid: String,

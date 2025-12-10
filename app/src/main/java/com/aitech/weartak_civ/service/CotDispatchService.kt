@@ -669,9 +669,9 @@ class CotDispatchService : Service() {
         val currTime = System.currentTimeMillis()
         cancelSosAlert = event.category == CAT_SOS_ALERT_CANCELLED
         val action = if (event.category == CAT_SOS_ALERT_CANCELLED) {
-            AlertState.CANCEL
+            DataRepository.AlertState.CANCEL
         } else {
-            AlertState.ALERT
+            DataRepository.AlertState.ALERT
         }
         
         if (manualSosReceivedCategory == DESC_SOS_ALERT) {
@@ -689,7 +689,9 @@ class CotDispatchService : Service() {
         if ((currTime-lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL) {
             Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with 'fresh' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
             manualSosReceivedTime = currTime
-            sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, action) // isAnyTakConnected is taken care of inside sendEmergencyAlertCotMessage()
+            serviceScope.launch {
+                sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, event.sendSms, action)
+            }
         } else {
             if (manualSosToBeSent.getAndSet(true) == false) { // We overwrite with latest SOS
                 Log.d(TAG, "Emergency message($manualSosReceivedCategory, $manualSosReceivedDescription with manualSosToBeSent false & 'stale' gps lastUpdated(${(currTime-lastLocationUpdateRcvd)/1000.0}s ago)")
@@ -770,6 +772,7 @@ class CotDispatchService : Service() {
         """.trimIndent()
     }
 
+    /*
     private fun buildEmergencyAlertCotMessage(uid: String, location: Location, emergencyCategory: String, emergencyDesc: String, alertState: AlertState): String {
         dateTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
         val calendar: Calendar = Calendar.getInstance()
@@ -827,6 +830,60 @@ class CotDispatchService : Service() {
         		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
         		<contact callsign='$emergencyCallsign&#10;$emergencyCategory'/>
         		<emergency type='$emergencyDesc'>$callsign</emergency>
+                <usericon iconsetpath='911 Alert'/>
+                <color argb='-1'/>
+        	</detail>
+        </event>
+        """.trimIndent()
+        }
+    }
+*/
+
+    private fun buildEmergencyAlertCotMessage(
+        snapshot: DataRepository.EmergencyEventSnapshot
+    ): String {
+        val uid        = snapshot.uid
+        val alertState = snapshot.alertState
+        val loc        = snapshot.location
+        val time       = snapshot.time
+        val sys        = snapshot.system
+
+        val callsign   = sys.callsign
+        val linkUid    = sys.deviceId
+
+        // Location fields from LocationSnapshot
+        val latActual = loc.lat
+        val lonActual = loc.lon
+        val haeActual = loc.alt
+        val ceActual  = loc.ce
+        val leActual  = loc.le
+
+        // Use snapshot time instead of rebuilding Calendar
+        val startTime = time.startCot
+        val staleTime = time.staleCot
+
+        // If you still want a short HHmmss suffix, you can derive it from time.timeMillis later.
+        val emergencyCallsign = callsign
+
+        return if (alertState == DataRepository.AlertState.CANCEL) {
+            """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='$uid' type='b-a-o-can' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
+        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+        	<detail>
+        		<emergency cancel='true'>$callsign</emergency>
+        	</detail>
+        </event>
+        """.trimIndent()
+        } else {
+            """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <event version='2.0' uid='$uid' type='b-a-o' time='$startTime' start='$startTime' stale='$staleTime' how='h-e' access='Undefined'>
+        	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
+        	<detail>
+        		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
+        		<contact callsign='$emergencyCallsign&#10;${snapshot.category}'/>
+        		<emergency type='${snapshot.description}'>$callsign</emergency>
                 <usericon iconsetpath='911 Alert'/>
                 <color argb='-1'/>
         	</detail>
@@ -1124,18 +1181,8 @@ class CotDispatchService : Service() {
             NetworkUtils.MulticastPublisher.send(cotXml)
         }
     }
-
-    enum class AlertState {
-        ALERT,
-        CANCEL
-    }
-
-    enum class MarkerActionState {
-        DROP,
-        CLEAR
-    }
-
-    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertState: AlertState) {
+/*
+    private fun sendEmergencyAlertCotMessage(emergencyCategory: String, emergencyDesc: String, sendSms: Boolean, alertState: DataRepository.AlertState) {
         serviceScope.launch(Dispatchers.IO) {
             // don’t send an alert if we don’t have a location
             val loc = dataRepository.latestLocation.value
@@ -1148,7 +1195,7 @@ class CotDispatchService : Service() {
                 return@launch
             }
 
-            val uid = if (alertState == AlertState.ALERT) {
+            val uid = if (alertState == DataRepository.AlertState.ALERT) {
                 // Generate and store a new UID
                 val newUid = UUID.randomUUID().toString()
                 sosAlertUid = newUid
@@ -1195,6 +1242,72 @@ class CotDispatchService : Service() {
             sendMulticastDatagram(cotMessage)
         }
     }
+*/
+
+    private fun sendEmergencyAlertCotMessage(
+        emergencyCategory: String,
+        emergencyDesc: String,
+        sendSms: Boolean,
+        alertState: DataRepository.AlertState
+    ) {
+        serviceScope.launch(Dispatchers.IO) {
+
+            // SMS first (doesn’t depend on location)
+            if (MainActivity.enableSmsForAlerts && sendSms) {
+                SMSManager.sendSMSMessage(numbers = smsNumbersList, description = emergencyDesc)
+            }
+
+            val snapshot = dataRepository.snapshotEmergencyEvent(
+                category    = emergencyCategory,
+                description = emergencyDesc,
+                sendSms     = sendSms,
+                alertState  = alertState
+            )
+
+            if (snapshot == null) {
+                Log.w(TAG, "Skipping emergency alert: no usable location or no previous UID for cancel")
+                manualSosToBeSent.set(true)
+                return@launch
+            }
+
+            val cotMessage = buildEmergencyAlertCotMessage(snapshot)
+
+            // (Optional) build chat message from same snapshot
+//            val takGptChatMessage = buildChatCotMessageFromEmergencySnapshot(snapshot)
+            val takGptChatMessage = ""
+
+            // TAK / Ditto / multicast routing unchanged, just using `cotMessage`
+            if (TAKConnectService.isAnyTakConnected) {
+                if (DittoService.isRunning.get()) {
+                    EventBus.getDefault().post(DittoDocumentEvent("alert", cotMessage))
+                    manualSosToBeSent.set(false)
+                    Log.v(TAG, "Posted emergency alert to Ditto")
+                }
+                manualSosToBeSent.set(false)
+                sendDataTAKServers(cotMessage, true)
+
+                if (!takGptChatMessage.isNullOrEmpty()) {
+                    sendDataTAKServers(takGptChatMessage, true)
+                    Log.d(TAG, "Sending takGPT chat msg (emergency)")
+                }
+                Log.v(TAG, "Sent emergency alert to TAK server")
+            } else {
+                if (DittoService.isRunning.get()) {
+                    EventBus.getDefault().post(DittoDocumentEvent("alert", cotMessage))
+                    manualSosToBeSent.set(false)
+                    Log.v(TAG, "Posted emergency alert to Ditto")
+                } else {
+                    Log.w(TAG, "TAK Server not connected & no Ditto Mesh.")
+                    manualSosToBeSent.set(true)
+                }
+                if (companionAppAvailable()) {
+                    // TODO: send emergency via capRepo.
+                }
+            }
+
+            sendMulticastDatagram(cotMessage)
+        }
+    }
 
     fun buildAndSendPhysioLocationCotMsg() {
         // Blocks the current (scheduler) thread until the work is done.
@@ -1216,9 +1329,9 @@ class CotDispatchService : Service() {
         if (manualSosToBeSent.get() == true) {
             Log.d(TAG, "onLocationRcvdEvent called with manualSosToBeSent true")
             val action = if (cancelSosAlert) {
-                AlertState.CANCEL
+                DataRepository.AlertState.CANCEL
             } else {
-                AlertState.ALERT
+                DataRepository.AlertState.ALERT
             }
             sendEmergencyAlertCotMessage(manualSosReceivedCategory, manualSosReceivedDescription, manualSosReceivedSendSms, action)
         }
@@ -1249,16 +1362,6 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun sendDropNow(req: DataRepository.DropRequest, loc: Location) {
-
-//        val snapshot = DataRepository.MarkerSnapshot(
-//            uid         = UUID.randomUUID().toString(),
-//            markerType  = req.markerType,
-//            iconSetPath = req.markerType.icon,
-//            time        = getCotEventTimeSnapshot(staleOffset = Utils.TimeOffset(years = 1)),
-//            loc         = dataRepository.snapshotLocation(),
-//            physio      = dataRepository.snapshotPhysio(),
-//            system      = dataRepository.snapshotSystem()
-//        )
 
         val snapshot = dataRepository.snapshotMarker(req)
 
