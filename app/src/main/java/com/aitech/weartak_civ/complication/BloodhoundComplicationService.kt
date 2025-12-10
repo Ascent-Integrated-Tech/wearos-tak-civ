@@ -65,31 +65,29 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     false -> createComplicationData(
                         "---",
                         getString(R.string.watch_callsign),
-                        icon = R.drawable.compass_1,
+                        icon = R.drawable.compass_needle,
                         titleText = getString(R.string.compass),
                         needleOrientation.toFloat()
                     )
                 }
-                //TODO: WEAR 309 - change to disabled
                 false -> createComplicationData(
                     "---",
                     getString(R.string.watch_callsign),
-                    icon = R.drawable.disabled_compass_gray,
+                    icon = R.drawable.disabled_compass,
                     titleText = getString(R.string.compass_disabled),
                     needleOrientation.toFloat()
                 )
-                //TODO: WEAR 309 - change to disabled
                 else -> createComplicationData(
                     "---",
                     getString(R.string.watch_callsign),
-                    icon = R.drawable.disabled_compass_gray,
+                    icon = R.drawable.disabled_compass,
                     titleText = getString(R.string.compass_disabled),
                     needleOrientation.toFloat()
                 )
             }
             false -> createComplicationData(
                 getString(R.string.invalid_license), getString(R.string.invalid_license_key),
-                icon = R.drawable.disabled_compass_gray,
+                icon = R.drawable.disabled_compass,
                 titleText = getString(R.string.invalid_license),
                 0F
             )
