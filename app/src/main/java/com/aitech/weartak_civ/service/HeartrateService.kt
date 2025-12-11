@@ -64,7 +64,7 @@ class HeartrateService: Service() {
     var permission: Boolean = false
     private var deviceWorn = false
     var enableHrAlerts : Boolean = false
-    var highAlertThreshold : Int = 140
+    var highAlertThreshold : Int = 163
     var highAlertNumSecs : Int = 30
     var hrValuesEvictingQ : EvictingQueue<Int>? = null
     var highAlertSent : Boolean = false

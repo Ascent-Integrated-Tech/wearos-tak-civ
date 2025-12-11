@@ -15,7 +15,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
@@ -43,13 +43,13 @@ class ReportingIntervalStrategyService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private var enableDynamicReportingStrategy = false
-    private var constantReportingInterval = DEFAULT_REPORTING_INTERVAL
+    private var constantReportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
     private var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
     private var onFootReportingInterval = DEFAULT_ON_FOOT_REPORTING_INTERVAL
     private var vehicleReportingInterval = DEFAULT_VEHICLE_REPORTING_INTERVAL
     private var stationaryReportingInterval = DEFAULT_STATIONARY_REPORTING_INTERVAL
-    private var dynamicReportingInterval = DEFAULT_REPORTING_INTERVAL
-    private var reportingInterval = DEFAULT_REPORTING_INTERVAL
+    private var dynamicReportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
+    private var reportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
     private var isAlerting = false
     private var latestActivity = ActivityRecognized.UNKNOWN
 
