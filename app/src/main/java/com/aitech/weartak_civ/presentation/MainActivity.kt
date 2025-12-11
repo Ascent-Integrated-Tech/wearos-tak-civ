@@ -121,7 +121,7 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.DEFAULT_AGE
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
@@ -184,8 +184,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
+import com.aitech.weartak_civ.DEFAULT_BLOOD_TYPE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
+import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
+import com.aitech.weartak_civ.DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
+import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
+import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_SEX
+import com.aitech.weartak_civ.DEFAULT_USER_TYPE
+import com.aitech.weartak_civ.DEFAULT_WEIGHT
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -222,27 +252,27 @@ class MainActivity : ComponentActivity() {
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
-        var enableLocationService : Boolean =  true
-        var enableLocationServiceSettingsState = MutableLiveData<Boolean>(true)
-        var enableBleBeaconService : Boolean = false
+        var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
+        var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
+        var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
-        var enablePhysiologicalServices : Boolean = true
-        var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(true)
-        var enableHeartrateService : Boolean = true
-        var enableActivityRecognitionService: Boolean = false
-        var enableSkinTempService: Boolean = true
-        var enableDittoService : Boolean = false
-        var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableBloodhoundCompassService : Boolean = false
-        var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableChatService : Boolean =  false
-        var enableChatServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableBatteryAlerts: Boolean = false
-        var enableBatteryAlertsSettingsState = MutableLiveData<Boolean>(false)
-        var enableHailService: Boolean = false
-        var enableHailServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableMulticastOnWifi: Boolean = true
-        var enableBatdokCot: Boolean = true
+        var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
+        var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES)
+        var enableHeartrateService : Boolean = DEFAULT_ENABLE_HEART_RATE_SERVICE
+        var enableActivityRecognitionService: Boolean = DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
+        var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
+        var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
+        var enableDittoServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DITTO_SERVICE)
+        var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+        var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE)
+        var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE
+        var enableChatServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_CHAT_SERVICE)
+        var enableBatteryAlerts: Boolean = DEFAULT_ENABLE_BATTERY_ALERTS
+        var enableBatteryAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATTERY_ALERTS)
+        var enableHailService: Boolean = DEFAULT_ENABLE_HAIL_SERVICE
+        var enableHailServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HAIL_SERVICE)
+        var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
+        var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
 
         //Enable Global Health Events
         var enablePassiveDataService = false
@@ -287,30 +317,30 @@ class MainActivity : ComponentActivity() {
         var ageValue = DEFAULT_AGE
         val ageState = MutableLiveData<Int>(DEFAULT_AGE)
         val ageSettingsState = MutableLiveData<Int>(DEFAULT_AGE)
-        var heightFeetValue = 6
-        val heightFeetState = MutableLiveData<Int>(6)
-        val heightFeetSettingsState = MutableLiveData<Int>(6)
-        var heightInchesValue = 0
-        val heightInchesState = MutableLiveData<Int>(0)
-        val heightInchesSettingsState = MutableLiveData<Int>(0)
-        var weightValue = 180
-        val weightState = MutableLiveData<Int>(180)
-        val weightSettingsState = MutableLiveData<Int>(180)
-        var sexValue = "N/A"
-        val sexState = MutableLiveData<String>("N/A")
-        val sexSettingsState = MutableLiveData<String>("N/A")
-        var bloodTypeValue = "N/A"
-        val bloodTypeState = MutableLiveData<String>("N/A")
-        val bloodTypeSettingsState = MutableLiveData<String>("N/A")
-        var allergyList : List<DataRepository.AllergyItem> = listOf(DataRepository.AllergyItem(name="N/A"))
-        val allergyListState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
-        val allergyListSettingsState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem("N/A")))
+        var heightFeetValue = DEFAULT_HEIGHT_FEET
+        val heightFeetState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
+        val heightFeetSettingsState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
+        var heightInchesValue = DEFAULT_HEIGHT_INCHES
+        val heightInchesState = MutableLiveData<Int>(DEFAULT_HEIGHT_INCHES)
+        val heightInchesSettingsState = MutableLiveData<Int>(DEFAULT_HEIGHT_INCHES)
+        var weightValue = DEFAULT_WEIGHT
+        val weightState = MutableLiveData<Int>(DEFAULT_WEIGHT)
+        val weightSettingsState = MutableLiveData<Int>(DEFAULT_WEIGHT)
+        var sexValue = DEFAULT_SEX
+        val sexState = MutableLiveData<String>(DEFAULT_SEX)
+        val sexSettingsState = MutableLiveData<String>(DEFAULT_SEX)
+        var bloodTypeValue = DEFAULT_BLOOD_TYPE
+        val bloodTypeState = MutableLiveData<String>(DEFAULT_BLOOD_TYPE)
+        val bloodTypeSettingsState = MutableLiveData<String>(DEFAULT_BLOOD_TYPE)
+        var allergyList : List<DataRepository.AllergyItem> = listOf(DataRepository.AllergyItem(name=DEFAULT_ALLERGY_LIST))
+        val allergyListState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem(DEFAULT_ALLERGY_LIST)))
+        val allergyListSettingsState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem(DEFAULT_ALLERGY_LIST)))
         var restingHeartRate = DEFAULT_RESTING_HR
         val restingHeartRateState = MutableLiveData<Int>(DEFAULT_RESTING_HR)
         val restingHeartRateSettingsState = MutableLiveData<Int>(DEFAULT_RESTING_HR)
-        var userTypeValue = "N/A"
-        val userTypeState = MutableLiveData<String>("N/A")
-        val userTypeSettingsState = MutableLiveData<String>("N/A")
+        var userTypeValue = DEFAULT_USER_TYPE
+        val userTypeState = MutableLiveData<String>(DEFAULT_USER_TYPE)
+        val userTypeSettingsState = MutableLiveData<String>(DEFAULT_USER_TYPE)
 
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
@@ -322,30 +352,30 @@ class MainActivity : ComponentActivity() {
         var NO_WIFI_NETWORKS = "No WiFi Networks"
         var saveBattOnWifiString: String = ALL_WIFI_NETWORKS
         val saveBattOnWifiStringState = MutableLiveData<String>(ALL_WIFI_NETWORKS)
-        var enableWifiBatteryOptimization : Boolean = true
-        val enableWifiBatteryOptimizationState = MutableLiveData<Boolean>(true)
-        val enableWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(true)
-        var enableAllWifiBatteryOptimization : Boolean = true
-        val enableAllWifiBatteryOptimizationState = MutableLiveData<Boolean>(true)
-        val enableAllWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(true)
+        var enableWifiBatteryOptimization : Boolean = DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+        val enableWifiBatteryOptimizationState = MutableLiveData<Boolean>(DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION)
+        val enableWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION)
+        var enableAllWifiBatteryOptimization : Boolean = DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+        val enableAllWifiBatteryOptimizationState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION)
+        val enableAllWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION)
         var wifiSsidList : List<DataRepository.WifiSsidItem> = listOf()
         val wifiSsidListState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf())
         val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
-        var enableTakEndpoint : Boolean = true
-        var enableEsriEndpoint : Boolean = false
+        var enableTakEndpoint : Boolean = DEFAULT_ENABLE_TAK_ENDPOINT
+        var enableEsriEndpoint : Boolean = DEFAULT_ENABLE_ESRI_ENDPOINT
         var esriEndpoint : String = ""
-        var esriReportingUpdateInterval : Int = DEFAULT_REPORTING_INTERVAL
-        var enableTabletCommandEndpoint: Boolean = false
+        var esriReportingUpdateInterval : Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
+        var enableTabletCommandEndpoint: Boolean = DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
         var tabletCommandEndpoint : String = ""
         var tabletCommandApikey : String = ""
-        var tabletCommandReportingUpdateInterval : Int = DEFAULT_REPORTING_INTERVAL
+        var tabletCommandReportingUpdateInterval : Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
 
-        var enableDynamicReportingStrategy = false
-        val enableDynamicReportingStrategyState = MutableLiveData<Boolean>(false)
-        val enableDynamicReportingStrategySettingsState = MutableLiveData<Boolean>(false)
-        var constantReportingInterval = DEFAULT_REPORTING_INTERVAL
-        val constantReportingIntervalState = MutableLiveData<Int>(DEFAULT_REPORTING_INTERVAL)
-        val constantReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_REPORTING_INTERVAL)
+        var enableDynamicReportingStrategy = DEFAULT_ENABLE_DYNAMIC_REPORTING
+        val enableDynamicReportingStrategyState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DYNAMIC_REPORTING)
+        val enableDynamicReportingStrategySettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DYNAMIC_REPORTING)
+        var constantReportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
+        val constantReportingIntervalState = MutableLiveData<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
+        val constantReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
         var stationaryReportingInterval = DEFAULT_STATIONARY_REPORTING_INTERVAL
         val stationaryReportingIntervalState = MutableLiveData<Int>(DEFAULT_STATIONARY_REPORTING_INTERVAL)
         val stationaryReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_STATIONARY_REPORTING_INTERVAL)
@@ -359,20 +389,20 @@ class MainActivity : ComponentActivity() {
         val whileAlertingReportingIntervalState = MutableLiveData<Int>(DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL)
         val whileAlertingReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL)
 
-        var enableSmsForAlerts = false
-        var enableSmsForAlertsSettingsState = MutableLiveData<Boolean>(false)
+        var enableSmsForAlerts = DEFAULT_ENABLE_SMS_ALERTS
+        var enableSmsForAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_SMS_ALERTS)
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
         var smsNumbersListString : String = ""
         val smsNumbersListStringSettingsState = MutableLiveData<String>("")
-        var enablePhysiologicalAlerts = false
-        var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(false)
+        var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
+        var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
 
-        var hrHighAlertBpmThreshold : Int = 140
-        val hrHighAlertBpmThresholdState = MutableLiveData<Int>(140)
-        val hrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(140)
-        var hrHighAlertNumSecsThreshold : Int = 30
-        val hrHighAlertNumSecsThresholdState = MutableLiveData<Int>(30)
-        val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
+        var hrHighAlertBpmThreshold : Int = DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
+        val hrHighAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD)
+        val hrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD)
+        var hrHighAlertNumSecsThreshold : Int = DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+        val hrHighAlertNumSecsThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS)
+        val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS)
 
         var versionNumber : String = ""
         var logFile: java.io.File? = null

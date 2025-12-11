@@ -28,13 +28,43 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
+import com.aitech.weartak_civ.DEFAULT_BLOOD_TYPE
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
+import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
+import com.aitech.weartak_civ.DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
+import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
+import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_USER_TYPE
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.ReactiveServiceManager
@@ -122,7 +152,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableHailService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_HAIL_SERVICE] ?: false
+        prefs[ENABLE_HAIL_SERVICE] ?: DEFAULT_ENABLE_HAIL_SERVICE
     }
 
     suspend fun storeEnableBatdokCot(enable: Boolean) {
@@ -132,7 +162,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableBatdokCot: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_BATDOK_COT] ?: true
+        prefs[ENABLE_BATDOK_COT] ?: DEFAULT_ENABLE_BATDOK_COT
     }
 
 
@@ -280,7 +310,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableMulticast: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_MULTICAST] ?: true
+        prefs[ENABLE_MULTICAST] ?: DEFAULT_ENABLE_MULTICAST_ON_WIFI
     }
     // ======== ======== Multicast SECTION END ======== ==========
 
@@ -416,7 +446,7 @@ class DataRepository(private val context: Context) {
     // -------- End of Service State Debugging ----------
 
     val getEnableBloodhoundCompassService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_BLOODHOUND_COMPASS_SERVICE] ?: false
+        prefs[ENABLE_BLOODHOUND_COMPASS_SERVICE] ?: DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
     }
 
     suspend fun storeEnableBloodhoundCompassService(enableBloodhoundService: Boolean) {
@@ -706,7 +736,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableLocationService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_LOCATION_SERVICE] ?: true
+        prefs[ENABLE_LOCATION_SERVICE] ?: DEFAULT_ENABLE_LOCATION_SERVICE
     }
 
     suspend fun storeEnableLocationService(enableLocationService: Boolean) {
@@ -716,7 +746,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnablePhysiologicalServices: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_PHYSIOLOGICAL_SERVICES] ?: true
+        prefs[ENABLE_PHYSIOLOGICAL_SERVICES] ?: DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
     }
 
     suspend fun storeEnablePhysiologicalServices(enablePhysiologicalServices: Boolean) {
@@ -726,7 +756,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: false
+        prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
     }
 
     suspend fun storeEnableActivityRecognitionService(enableActivityRecognitionService: Boolean) {
@@ -736,7 +766,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableSkinTempService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_SKIN_TEMP_SERVICE] ?: true
+        prefs[ENABLE_SKIN_TEMP_SERVICE] ?: DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
     }
 
     suspend fun storeEnableSkinTempService(enableSkinTempService: Boolean) {
@@ -746,7 +776,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableHeartRateService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_HEART_RATE_SERVICE] ?: true
+        prefs[ENABLE_HEART_RATE_SERVICE] ?: DEFAULT_ENABLE_HEART_RATE_SERVICE
     }
 
     suspend fun storeEnableHeartRateService(enableHeartRateService: Boolean) {
@@ -765,7 +795,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableDittoService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_DITTO_SERVICE] ?: false
+        prefs[ENABLE_DITTO_SERVICE] ?: DEFAULT_ENABLE_DITTO_SERVICE
     }
 
     suspend fun storeEnableDittoService(enableDittoService: Boolean) {
@@ -775,7 +805,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_CHAT_SERVICE] ?: false
+        prefs[ENABLE_CHAT_SERVICE] ?: DEFAULT_ENABLE_CHAT_SERVICE
     }
 
     suspend fun storeEnableChatService(enableChatService: Boolean) {
@@ -784,7 +814,7 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_REPORTING_INTERVAL)
+    private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
     val reportingUpdateIntervalSecs: StateFlow<Int> = _reportingUpdateIntervalSecs
 
     suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {
@@ -797,7 +827,7 @@ class DataRepository(private val context: Context) {
     var isWifiConnected = MutableStateFlow<Boolean>(false)
 
     val getEnableWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: true
+        prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
     }
 
     suspend fun storeEnableWifiBatteryOptimization(enableWifiBatteryOptimization: Boolean) {
@@ -807,7 +837,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableAllWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION] ?: true
+        prefs[ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION] ?: DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
     }
 
     suspend fun storeEnableAllWifiBatteryOptimization(enableAllWifiBatteryOptimization: Boolean) {
@@ -970,7 +1000,7 @@ class DataRepository(private val context: Context) {
         ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
 
     val getEnableTakEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_TAK_ENDPOINT] ?: true
+        prefs[ENABLE_TAK_ENDPOINT] ?: DEFAULT_ENABLE_TAK_ENDPOINT
     }
 
     suspend fun storeEnableTakEndpoint(enableTakEndpoint: Boolean) {
@@ -980,7 +1010,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableEsriEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_ESRI_ENDPOINT] ?: false
+        prefs[ENABLE_ESRI_ENDPOINT] ?: DEFAULT_ENABLE_ESRI_ENDPOINT
     }
 
     suspend fun storeEnableEsriEndpoint(enableEsriEndpoint: Boolean) {
@@ -1000,7 +1030,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEsriReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[ESRI_REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+        prefs[ESRI_REPORTING_UPDATE_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
     }
 
     suspend fun storeEsriReportingUpdateInterval(esriReportingUpdateInterval: Int) {
@@ -1010,7 +1040,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableTabletCommandEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_TABLET_COMMAND_ENDPOINT] ?: false
+        prefs[ENABLE_TABLET_COMMAND_ENDPOINT] ?: DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
     }
 
     suspend fun storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint: Boolean) {
@@ -1041,7 +1071,7 @@ class DataRepository(private val context: Context) {
 
 
     val getTabletCommandReportingUpdateInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[TABLET_COMMAND_REPORTING_UPDATE_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+        prefs[TABLET_COMMAND_REPORTING_UPDATE_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
     }
 
     suspend fun storeTabletCommandReportingUpdateInterval(tabletCommandReportingUpdateInterval: Int) {
@@ -1158,7 +1188,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_BLE_BEACON_SERVICE] ?: false
+        prefs[ENABLE_BLE_BEACON_SERVICE] ?: DEFAULT_ENABLE_BLE_BEACON_SERVICE
     }
 
     suspend fun storeEnableBleBeaconService(enableBleBeaconService: Boolean) {
@@ -1199,7 +1229,7 @@ class DataRepository(private val context: Context) {
     val enableDynamicReportingStrategy: StateFlow<Boolean?> = _enableDynamicReportingStrategy
 
     val getEnableDynamicReportingStrategy: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: false
+        prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
     }
 
     suspend fun storeEnableDynamicReportingStrategy(enableDynamicRS: Boolean) {
@@ -1213,7 +1243,7 @@ class DataRepository(private val context: Context) {
     val constantReportingInterval: StateFlow<Int?> = _constantReportingInterval
 
     val getConstantReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_REPORTING_INTERVAL
+        prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
     }
 
     suspend fun storeConstantReportingInterval(constantReportingInterval: Int) {
@@ -1291,7 +1321,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableBatteryAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_BATTERY_ALERTS] ?: false
+        prefs[ENABLE_BATTERY_ALERTS] ?: DEFAULT_ENABLE_BATTERY_ALERTS
     }
 
     suspend fun storeEnableBatteryAlerts(enableBatteryAlerts: Boolean) {
@@ -1301,7 +1331,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableSmsForAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_SMS_FOR_ALERTS] ?: false
+        prefs[ENABLE_SMS_FOR_ALERTS] ?: DEFAULT_ENABLE_SMS_ALERTS
     }
 
     suspend fun storeEnableSmsForAlerts(enableSmsForAlerts: Boolean) {
@@ -1360,7 +1390,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnablePhysiologicalAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_PHYSIOLOGICAL_ALERTS] ?: false
+        prefs[ENABLE_PHYSIOLOGICAL_ALERTS] ?: DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
     }
 
     suspend fun storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts: Boolean) {
@@ -1370,7 +1400,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[HR_HIGH_ALERT_BPM_THRESHOLD] ?: 140
+        prefs[HR_HIGH_ALERT_BPM_THRESHOLD] ?: DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
     }
 
     suspend fun storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold: Int) {
@@ -1380,7 +1410,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getHrHighAlertNumSecsThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[HR_HIGH_ALERT_NUM_SECS_THRESHOLD] ?: 30
+        prefs[HR_HIGH_ALERT_NUM_SECS_THRESHOLD] ?: DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
     }
 
     suspend fun storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold: Int) {
@@ -1440,7 +1470,7 @@ class DataRepository(private val context: Context) {
 
 
     val getPhysiologicalMetricHeightFeet: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[HEIGHT_FEET] ?: 6
+        prefs[HEIGHT_FEET] ?: DEFAULT_HEIGHT_FEET
     }
 
     suspend fun storePhysiologicalMetricHeightFeet(heightfeet: Int) {
@@ -1450,7 +1480,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPhysiologicalMetricHeightInches: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[HEIGHT_INCHES] ?: 0
+        prefs[HEIGHT_INCHES] ?: DEFAULT_HEIGHT_INCHES
     }
 
     suspend fun storePhysiologicalMetricHeightInches(heightinches: Int) {
@@ -1460,7 +1490,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPhysiologicalMetricWeight: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[WEIGHT] ?: 180
+        prefs[WEIGHT] ?: DEFAULT_WEIGHT
     }
 
     suspend fun storePhysiologicalMetricWeight(weight: Int) {
@@ -1470,7 +1500,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPhysiologicalMetricSex: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[SEX] ?: "N/A"
+        prefs[SEX] ?: DEFAULT_SEX
     }
 
     suspend fun storePhysiologicalMetricSex(sex: String) {
@@ -1480,7 +1510,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPhysiologicalMetricBloodType: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[BLOOD_TYPE] ?: "N/A"
+        prefs[BLOOD_TYPE] ?: DEFAULT_BLOOD_TYPE
     }
 
     suspend fun storePhysiologicalMetricBloodType(bloodtype: String) {
@@ -1494,7 +1524,7 @@ class DataRepository(private val context: Context) {
         .map { preferences ->
             val jsonString = preferences[ALLERGIES_KEY]
             if (jsonString.isNullOrEmpty()) {
-                listOf(AllergyItem(name="N/A"))
+                listOf(AllergyItem(name=DEFAULT_ALLERGY_LIST))
             } else {
                 // Split into typeToken and type for minifyEnabled true. Do not combine into one line
                 val typeToken = object : TypeToken<List<AllergyItem>>() {}
@@ -1513,7 +1543,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getPhysiologicalMetricUserType: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[USER_TYPE] ?: "N/A"
+        prefs[USER_TYPE] ?: DEFAULT_USER_TYPE
     }
 
     suspend fun storePhysiologicalMetricUserType(usertype: String) {

@@ -436,7 +436,7 @@
 
     <string name="hr_high_alert_bpm_threshold_title" translatable="false">High Heartrate Alert BPM Threshold</string>
     <string name="hr_high_alert_bpm_threshold_description" translatable="false">Threshold in beats per minute beyond which high heartrate alert is sent if the heart rate says high for some number of seconds.</string>
-    <string name="hr_high_alert_bpm_threshold_default" translatable="false">140</string>
+    <string name="hr_high_alert_bpm_threshold_default" translatable="false">163</string>
 
     <string name="hr_high_alert_number_secs_threshold_title" translatable="false">High Heartrate Alert Number of Seconds Threshold</string>
     <string name="hr_high_alert_number_secs_threshold_description" translatable="false">Number of seconds that hearrate has to be above \'High Heartrate Alert BPM Threshold\' for alert to be sent.</string>

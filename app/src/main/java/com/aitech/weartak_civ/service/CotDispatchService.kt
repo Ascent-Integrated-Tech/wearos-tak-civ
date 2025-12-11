@@ -20,7 +20,7 @@ import android.util.Log
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
 import com.aitech.weartak_civ.Utils.getValueFromJson
@@ -58,8 +58,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -1382,8 +1380,8 @@ class CotDispatchService : Service() {
         private const val GPS_STALE_TIME_INTERVAL_MS_JSON_KEY = "gpsStaleTimeInterval"
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
-        var reportingUpdateIntervalSecs = DEFAULT_REPORTING_INTERVAL
-        var currReportingIntervalInSecs = DEFAULT_REPORTING_INTERVAL
+        var reportingUpdateIntervalSecs = DEFAULT_CONSTANT_REPORTING_INTERVAL
+        var currReportingIntervalInSecs = DEFAULT_CONSTANT_REPORTING_INTERVAL
         lateinit var instance: CotDispatchService
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         var esriGeojsonMsg = ""
