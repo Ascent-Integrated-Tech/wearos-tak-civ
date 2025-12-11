@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
+import android.view.Gravity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +26,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -171,6 +173,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSmsForAlerts
@@ -231,7 +235,6 @@ import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.settingsAc
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.sexOptionsList
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants.userTypeOptionsList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
 import com.aitech.weartak_civ.service.TAKConnectService
@@ -271,11 +274,10 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingR
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import java.time.LocalDate
 import java.time.ZoneId
@@ -285,6 +287,7 @@ import java.util.Locale
 
 
 class SettingsActivity : ComponentActivity() {
+
     companion object Constants {
         val TAG = "WearTAK-" + SettingsActivity::class.java.simpleName
         lateinit var settingsActivity: SettingsActivity
@@ -301,14 +304,6 @@ class SettingsActivity : ComponentActivity() {
         Log.i(TAG, "SettingsActivity onCreate()")
         settingsActivity = this
         loadSettingsValues()
-        //TODO: Is there a reason this is called here? Is the same thing done through main activity?
-//        lifecycleScope.launch {
-//            categoryRolesEntryLists = dataRepository.getCategoryRolesList.first()
-//            if (categoryRolesEntryLists.isEmpty())
-//                categoryRolesEntryLists = applicationContext.defaultRoleCategoryEntriesFromRaw()
-//
-//            categorySettingsState.postValue(dataRepository.getRoleCategory.first())
-//        }
         Log.d(TAG, "SettingsActivity onCreate called with enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState and enablePhysiologicalAlerts=$enablePhysiologicalAlerts")
 
         enableEdgeToEdge()
@@ -326,6 +321,7 @@ fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
+    enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
     enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
@@ -381,7 +377,6 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
     // collect license from data repo so we can see if it changes.
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
 
-    //Log.d(TAG, "WearTAKCivApp composable called")
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = if (isLicenseValid()) "settings_screen" else "invalid_license_screen"
@@ -3376,6 +3371,7 @@ fun SettingsScreen(
 ) {
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
+    val companionAppCheckedLive by enableCompanionAppServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
@@ -3384,11 +3380,14 @@ fun SettingsScreen(
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
     val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
-
-    Log.d(TAG, "Hail License State: $hailLicenseState")
-
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
-    //Log.d(TAG, "SettingsScreen called")
+
+    // WearTAK Developer Debug
+    val coroutineScope = rememberCoroutineScope()
+    var versionTapCount by remember { mutableStateOf(0) }
+    var lastVersionTapTime by remember { mutableStateOf(0L) }
+    val tapsRequired = 8
+    val timeoutMs = 1500L
 
     WearTakCivScreenDimensions(
         columnContent = {
@@ -3519,6 +3518,14 @@ fun SettingsScreen(
                 { enableDittoServiceSettingsState.postValue(it) },
                 {},
                 stringResource(R.string.ditto),
+                stringResource(R.string.service_on_off)
+            )
+
+            SettingSwitchToggleLiveData(
+                companionAppCheckedLive,
+                { enableCompanionAppServiceSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.companion_app),
                 stringResource(R.string.service_on_off)
             )
 
@@ -3678,11 +3685,19 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            Text(
-                modifier = Modifier.padding(top = 7.dp),
-                text = stringResource(R.string.version, versionNumber),
-                fontSize = 11.sp,
-                color = colors.primary,
+            var versionTapCount by remember { mutableStateOf(0) }
+            var lastVersionTapTime by remember { mutableStateOf(0L) }
+
+            DebugVersionText(
+                versionNumber = versionNumber,
+                dataRepository = dataRepository,
+                onDebugToggled = { enabled ->
+                    // Optional: if you want to immediately test something when debug is enabled
+                    if (enabled) {
+                        // e.g., trigger a manual battery-alert test hook
+                        // triggerTestBatteryAlert()
+                    }
+                }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -3739,6 +3754,7 @@ fun SettingsScreen(
                     var allergiesChanged: Boolean = false
                     var userTypeChanged: Boolean = false
                     var restingHeartRateChanged: Boolean = false
+                    var companionAppCheckedChanged: Boolean = false
 
                     if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
@@ -3784,6 +3800,16 @@ fun SettingsScreen(
                     if (restingHeartRate != restingHeartRateState.value) {
                         settingsChanged = true; restingHeartRateChanged = true
                         restingHeartRate = restingHeartRateState.value ?: restingHeartRate
+                    }
+
+                    if (enableCompanionAppService != enableCompanionAppServiceSettingsState.value) {
+                        settingsChanged = true; companionAppCheckedChanged = true
+                        enableCompanionAppService =
+                            enableCompanionAppServiceSettingsState.value ?: enableCompanionAppService
+                        runBlocking {
+                            // keep SettingsState in sync with whatever we ended up using
+                            enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
+                        }
                     }
 
                     if (enableDynamicReportingStrategy != enableDynamicReportingStrategySettingsState.value) {
@@ -4093,6 +4119,10 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                  dataRepository.storeEnableDittoService(enableDittoService)
                              }
+                             if (companionAppCheckedChanged) {
+                                 Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
+                                 dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
+                             }
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
@@ -4162,6 +4192,98 @@ fun SettingsScreen(
                 })
         },
         text = stringResource(R.string.callsign_settings)
+    )
+}
+
+@Composable
+fun DebugVersionText(
+    versionNumber: String,
+    dataRepository: DataRepository,
+    onDebugToggled: ((Boolean) -> Unit)? = null, // optional hook if you want to do extra stuff
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val colors = MaterialTheme.colors
+
+    val devModeEnabled by MainActivity.Constants.dataRepository
+        .getEnableWearTakDevMode
+        .collectAsState(false)
+
+    var versionTapCount by remember { mutableStateOf(0) }
+    var lastVersionTapTime by remember { mutableStateOf(0L) }
+    var currentToast by remember { mutableStateOf<Toast?>(null) }
+
+    val tapsRequired = 8
+    val timeoutMs = 1500L   // max gap between taps
+
+    fun showTopToast(message: String) {
+        // Cancel any old toast so they don't queue up
+        currentToast?.cancel()
+
+        val toast = Toast.makeText(context, message, Toast.LENGTH_SHORT)
+        toast.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 50)
+        toast.show()
+        currentToast = toast
+    }
+
+    Text(
+        modifier = Modifier
+            .padding(top = 7.dp)
+            .clickable {
+                val now = System.currentTimeMillis()
+
+                // Reset sequence if taps are too slow
+                if (now - lastVersionTapTime > timeoutMs) {
+                    versionTapCount = 0
+                }
+
+                versionTapCount++
+                lastVersionTapTime = now
+
+                // Countdown toasts on taps 5, 6, 7
+                if (versionTapCount in 5 until tapsRequired) {
+                    val remaining = tapsRequired - versionTapCount
+                    val msg = if (remaining == 1) {
+                        "1 more tap to toggle debug"
+                    } else {
+                        "$remaining more taps to toggle debug"
+                    }
+                    showTopToast(msg)
+                }
+
+                if (versionTapCount >= tapsRequired) {
+                    versionTapCount = 0
+
+                    coroutineScope.launch {
+                        // Read & toggle flag off main thread
+                        val currentlyEnabled =
+                            dataRepository.getEnableWearTakDevMode.first()
+                        val newValue = !currentlyEnabled
+
+                        dataRepository.storeEnableWearTakDevMode(newValue)
+
+                        Log.d(
+                            TAG,
+                            "~~~ DEBUG MODE ${if (newValue) "ENABLED" else "DISABLED"} ~~~"
+                        )
+
+                        withContext(Dispatchers.Main) {
+                            val toastText = if (newValue) {
+                                "Debug tools enabled"
+                            } else {
+                                "Debug tools disabled"
+                            }
+                            showTopToast(toastText)
+                        }
+
+                        // Optional hook if you want to e.g. trigger test alerts on enable
+                        onDebugToggled?.invoke(newValue)
+                    }
+                }
+            },
+        text = stringResource(R.string.version, versionNumber),
+        fontSize = 11.sp,
+        color = if (devModeEnabled) Color.Red else colors.primary,
     )
 }
 

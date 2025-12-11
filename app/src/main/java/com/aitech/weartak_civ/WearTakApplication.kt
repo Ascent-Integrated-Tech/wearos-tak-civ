@@ -24,6 +24,10 @@ import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -47,6 +51,10 @@ class WearTakApplication : Application() {
         capRepo = CompanionAppRepository(applicationContext)
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
+        // Wipe debug mode to false on every boot! 
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            repo.storeEnableWearTakDevMode(false)
+        }
     }
 
     object AppCtx {

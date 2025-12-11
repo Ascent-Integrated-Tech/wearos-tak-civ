@@ -27,14 +27,11 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.annotation.RequiresPermission
-import androidx.core.app.ActivityCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CompanionAppRepository
@@ -80,6 +77,12 @@ class CompanionAppService : Service() {
         serviceScope.launch {
             capRepo.bleConnectionState.collect { state ->
                 Log.i(TAG, "bleState: $state")
+                if (state == CompanionAppRepository.BleConnectionState.CONNECTED) {
+                    repo.closeTakSockets()
+                }
+                if (state == CompanionAppRepository.BleConnectionState.DISCONNECTED) {
+                    repo.openTakSockets()
+                }
             }
         }
     }
@@ -137,17 +140,26 @@ class CompanionAppService : Service() {
             capRepo.outboundBleEvents.collect { event ->
                 if (!capRepo.companionAppReady.value) {
                     Log.i(TAG, "Companion not ready; dropping BLE event $event")
+                    // TODO: Queue it??
                     return@collect
                 }
 
                 val json = when (event) {
                     is CompanionAppRepository.BleOutboundEvent.Marker -> {
+                        Log.i(TAG, "MARKER - BLE Outbound Collector")
                         val env = capRepo.buildMarkerEnvelopeFromSnapshot(event.snapshot)
                         capRepo.envelopeToJson(env)
                     }
 
                     is CompanionAppRepository.BleOutboundEvent.Emergency -> {
+                        Log.i(TAG, "EMERGENCY - BLE Outbound Collector")
                         val env = capRepo.buildEmergencyEnvelopeFromSnapshot(event.snapshot)
+                        capRepo.envelopeToJson(env)
+                    }
+
+                    is CompanionAppRepository.BleOutboundEvent.Chat -> {
+                        Log.i(TAG, "CHAT - BLE Outbound Collector uid=${event.snapshot.uid}")
+                        val env = capRepo.buildChatEnvelopeFromSnapshot(snapshot = event.snapshot)
                         capRepo.envelopeToJson(env)
                     }
                 }
@@ -435,7 +447,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendJsonToCompanion(json: String) {
         val device = connectedDevice ?: run {
-            Log.d(TAG, "No connected companion; dropping JSON: $json")
+            Log.d(TAG, "Not connected companion; dropping JSON: $json")
             return
         }
         val tx = txCharacteristic ?: run {
@@ -448,6 +460,16 @@ class CompanionAppService : Service() {
         }
 
         val bytes = json.toByteArray(Charsets.UTF_8)
+
+        if (bytes.size > MAX_GATT_ATTR_BYTES) {
+            Log.w(
+                TAG,
+                "BLE JSON too long (${bytes.size} > $MAX_GATT_ATTR_BYTES); dropping notification. " +
+                        "This came from =${json}"
+            )
+            return
+        }
+
         tx.value = bytes
 
         val ok = server.notifyCharacteristicChanged(device, tx, false)
@@ -462,5 +484,6 @@ class CompanionAppService : Service() {
         private val TAG = "WearTAK-" + CompanionAppService::class.java.simpleName
         private const val NOTIFICATION_ID = 999  // change per service
         val isRunning: AtomicBoolean = AtomicBoolean(false)
+        private const val MAX_GATT_ATTR_BYTES = 512  // 512 bytes is the typical Android max length for a GATT attribute value. If payload size is not handled properly, weartak throws errors & can crash.
     }
 }

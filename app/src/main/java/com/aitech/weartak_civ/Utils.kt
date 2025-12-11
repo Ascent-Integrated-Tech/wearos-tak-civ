@@ -78,6 +78,16 @@ object Utils {
     private const val ACCESS_EXTERNAL_DTD    = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
 
+    fun buildFallbackLocation(): Location =
+        Location("manual").apply {
+            latitude = 0.0
+            longitude = 0.0
+            altitude = 0.0
+            accuracy = 999_999.0f
+            verticalAccuracyMeters = 999_999.0f
+            time = System.currentTimeMillis()
+        }
+
     // Exactly-one-place we define the CoT UTC formatter.
     // [Unverified] Adjust the pattern here if your current dateTimeFormatter uses a different one.
     private val cotUtcFormatter: DateFormat by lazy {

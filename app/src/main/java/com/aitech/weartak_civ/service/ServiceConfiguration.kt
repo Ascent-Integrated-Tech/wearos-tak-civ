@@ -71,7 +71,7 @@ class ServiceConfiguration(
 
         ServiceType.ACTIVITY_RECOGNITION -> combine(
             dataRepository.getEnablePhysiologicalServices.distinctUntilChanged(),
-            dataRepository.getEnableActivityRecognitionService.distinctUntilChanged()
+            dataRepository.getEnableActRecService.distinctUntilChanged()
         ) { physioOn, actOn ->
             if (!physioOn) { false } else { actOn }
         }.distinctUntilChanged()

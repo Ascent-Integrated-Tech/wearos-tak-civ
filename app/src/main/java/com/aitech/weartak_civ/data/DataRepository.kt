@@ -51,6 +51,9 @@ import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
@@ -719,6 +722,27 @@ class DataRepository(private val context: Context) {
         val systemData: SystemSnapshot
     )
 
+    private suspend fun postCustomEmergencyEvent(event: CustomEmergencyEvent) {
+        _customEmergencyEvent.emit(event)
+    }
+
+    private fun removeCustomEmergencyEvent(eventUid: CustomEmergencyEvent) {
+
+    }
+
+    private suspend fun activateSos() {
+        val event = CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true)
+        postCustomEmergencyEvent(event)
+    }
+
+    private suspend fun deActivateSos() {
+        val event = CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true)
+        postCustomEmergencyEvent(event)
+    }
+
+    private val _customEmergencyEvent = MutableSharedFlow<CustomEmergencyEvent>(extraBufferCapacity = 64)
+    val customEmergencyEvent: SharedFlow<CustomEmergencyEvent> = _customEmergencyEvent
+
     data class DroppedMarker(
         val uid: String,
         val markerType: String,
@@ -983,7 +1007,7 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val getEnableActRecService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: false
     }
 
@@ -1165,28 +1189,50 @@ class DataRepository(private val context: Context) {
     }
      */
 
-//    data class ChatMessage(
-//        var message: String,
-//        val uid: String,
-//        var callsign: String,
-//        var timeReceived: Long
-//    )
-//
-//    data class ChatRoom(
-//        val uid: String,
-//        var title: String,
-//        var chatMessage: List<ChatMessage>, //Messages that device has sent you
-//        var newMessagesPresent: Boolean, //Are there unread messages, determined by timeLastOpened and timeLastClosed
-//        var timeLastOpened: Long, //When the chat log has been opened, any messages received while its open are automatically marked as read
-//        var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
-//    )
+    data class ChatEventSnapshot(
+        val uid: String,                     // stable per chat message
+        val roomUid: String,                // e.g. "All Chat Rooms" or actual room id
+        val roomTitle: String,              // human label for the room
+        val message: String,                // chat text
 
-    //val messageList1 = listOf(ChatMessage("A", "11111", "ALPHA-01", 1747932042L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L),ChatMessage("D", "11111", "ALPHA-01", 1747932109L),ChatMessage("E", "11111", "BRAVO-05", 1748018316L),ChatMessage("F", "11111", "BRAVO-05", 1748018317L))
-    //val messageList2 = listOf(ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
+        val time: Utils.CotEventTimeSnapshot,
+        val location: LocationSnapshot?,    // might be null if you want to allow it
+        val physio: PhysioSnapshot?,
+        val system: SystemSnapshot
+    )
 
-//    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
-//    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
-//    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+    suspend fun snapshotChatEvent(
+        roomUid: String,
+        roomTitle: String,
+        message: String
+    ): ChatEventSnapshot? {
+        val locSnap = snapshotLocation()
+        if (locSnap == null) {
+            Log.w("WearTAK-Chat", "snapshotChatEvent: snapshotLocation() is null, returning null")
+            return null
+        }
+
+        val timeSnap = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(minutes = 15) // or shorter if you want
+        )
+
+        val systemSnap = snapshotSystem()
+        val physioSnap = snapshotPhysio()
+        val msgUid = UUID.randomUUID().toString()
+
+        return ChatEventSnapshot(
+            uid        = msgUid,
+            roomUid    = roomUid,
+            roomTitle  = roomTitle,
+            message    = message,
+            time       = timeSnap,
+            location   = locSnap,
+            physio     = physioSnap,
+            system     = systemSnap
+        )
+    }
+
     var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
 
     private val _chatRoomsFlow = MutableStateFlow<List<Utils.ChatRoom>>(emptyList())
@@ -1415,6 +1461,17 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    private val _enableTakSockets = MutableStateFlow<Boolean?>(null) // TODO: Do we initialize with null OR from getEnableDynamicReportingStrategy
+    val enableTakSockets: StateFlow<Boolean?> = _enableTakSockets
+
+    suspend fun closeTakSockets() {
+        _enableTakSockets.emit(false)
+    }
+
+    suspend fun openTakSockets() {
+        _enableTakSockets.emit(true)
+    }
+
     val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_BLE_BEACON_SERVICE] ?: false
     }
@@ -1432,6 +1489,17 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableCompanionAppService(enableCompanionAppService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_COMPANION_APP_SERVICE] = enableCompanionAppService
+        }
+    }
+
+    val getEnableWearTakDevMode: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_WEARTAK_DEV_MODE] ?: false
+    }
+
+    // NOTE: Store as false on every app boot!
+    suspend fun storeEnableWearTakDevMode(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_WEARTAK_DEV_MODE] = enable
         }
     }
 
@@ -1840,6 +1908,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
+        private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")

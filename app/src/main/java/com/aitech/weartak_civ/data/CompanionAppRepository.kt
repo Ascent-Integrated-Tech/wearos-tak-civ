@@ -98,8 +98,8 @@ class CompanionAppRepository(private val context: Context) {
     sealed class BleOutboundEvent {
         data class Marker(val snapshot: DataRepository.MarkerSnapshot) : BleOutboundEvent()
         data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : BleOutboundEvent()
-//        data class BatteryAlert(val snapshot: DataRepository.BatteryAlert) : BleOutboundEvent()
-        // later: WatchInfo, BatteryAlert, etc.
+        data class Chat(val snapshot: DataRepository.ChatEventSnapshot) : BleOutboundEvent()
+        // later: PLI.
     }
 
     private val _outboundBleEvents =
@@ -114,9 +114,67 @@ class CompanionAppRepository(private val context: Context) {
         _outboundBleEvents.emit(BleOutboundEvent.Emergency(snapshot))
     }
 
-    private val _markerSnapshotsForBle =
-        MutableSharedFlow<DataRepository.MarkerSnapshot>(extraBufferCapacity = 64)
-    val markerSnapshotsForBle: SharedFlow<DataRepository.MarkerSnapshot> = _markerSnapshotsForBle
+    suspend fun enqueueChatSnapshotForBle(snapshot: DataRepository.ChatEventSnapshot) {
+        _outboundBleEvents.emit(BleOutboundEvent.Chat(snapshot))
+    }
+
+    fun buildChatEnvelopeFromSnapshot(
+        snapshot: DataRepository.ChatEventSnapshot
+    ): Envelope<ChatPayload> {
+
+        val timeSnap = snapshot.time
+        val sys      = snapshot.system
+        val phys     = snapshot.physio
+
+        // For now, cap BLE message length to avoid MTU issues until chunking exists.
+        val maxMsgLenForBle = 200
+        val bleMsg = if (snapshot.message.length > maxMsgLenForBle) {
+            snapshot.message.take(maxMsgLenForBle)
+        } else {
+            snapshot.message
+        }
+
+        val payload = ChatPayload(
+            uid        = snapshot.uid,
+            roomUid    = snapshot.roomUid,
+            roomTitle  = snapshot.roomTitle,
+            msg        = bleMsg,
+            tStart     = timeSnap.startCot,
+            tStale     = timeSnap.staleCot,
+            cs         = sys.callsign,
+            hr         = phys?.data?.heartRateBpm,
+            bat        = sys.batteryPercent
+        )
+
+        val nowIso = Utils.timeNowIsoUtc()
+
+        return Envelope(
+            proto_version = 1,
+            msg_type      = "chat",
+            msg_id        = snapshot.uid,
+            timestamp     = nowIso,
+            source        = "wearos",
+            payload       = payload
+        )
+    }
+
+//    private val _markerSnapshotsForBle =
+//        MutableSharedFlow<DataRepository.MarkerSnapshot>(extraBufferCapacity = 64)
+//    val markerSnapshotsForBle: SharedFlow<DataRepository.MarkerSnapshot> = _markerSnapshotsForBle
+
+    // In CompanionAppRepository
+
+    data class ChatPayload(
+        val uid: String,        // chat message id
+        val roomUid: String,
+        val roomTitle: String,
+        val msg: String,        // truncated for BLE
+        val tStart: String,
+        val tStale: String,
+        val cs: String,         // callsign
+        val hr: Int?,
+        val bat: Int?
+    )
 
     data class MarkerPayload(
         val marker_id: String,       // == msg_id
@@ -137,21 +195,22 @@ class CompanionAppRepository(private val context: Context) {
     data class EmergencyAlertPayload(
         val uid: String,
         val state: String,          // alert or cancel
-        val category: String,
-        val description: String,
+        val catg: String,
+        val desc: String,
 
-        val lat: Double,
-        val lon: Double,
-        val alt: Double?,
-        val ce: Double?,
-        val le: Double?,
+        // App crashed because payload was > 512 Bytes, Android GATT MTU.
+//        val lat: Double,
+//        val lon: Double,
+//        val alt: Double?,
+//        val ce: Double?,
+//        val le: Double?,
 
-        val time_start: String,
-        val time_stale: String,
+        val tStart: String,
+        val tStale: String,
 
-        val callsign: String,
-        val heart_rate: Int?,
-        val battery_percent: Int?
+        val cs: String,
+        val hr: Int?,
+        val bat: Int?
     )
 
     fun buildEmergencyEnvelopeFromSnapshot(
@@ -159,28 +218,21 @@ class CompanionAppRepository(private val context: Context) {
     ): Envelope<EmergencyAlertPayload> {
 
         val timeSnap = snapshot.time
-        val loc      = snapshot.location
         val sys      = snapshot.system
         val phys     = snapshot.physio
 
         val payload = EmergencyAlertPayload(
-            uid              = snapshot.uid,
-            state            = snapshot.alertState.name,   // "ALERT" or "CANCEL"
-            category         = snapshot.category,
-            description      = snapshot.description,
+            uid     = snapshot.uid,
+            state   = snapshot.alertState.name,   // "ALERT" or "CANCEL"
+            catg    = snapshot.category,
+            desc    = snapshot.description,
 
-            lat              = loc.lat,
-            lon              = loc.lon,
-            alt              = loc.alt,
-            ce               = loc.ce?.toDouble(),
-            le               = loc.le?.toDouble(),
+            tStart  = timeSnap.startCot,
+            tStale  = timeSnap.staleCot,
 
-            time_start       = timeSnap.startCot,
-            time_stale       = timeSnap.staleCot,
-
-            callsign         = sys.callsign,
-            heart_rate       = phys?.data?.heartRateBpm,
-            battery_percent  = sys.batteryPercent
+            cs      = sys.callsign,
+            hr      = phys?.data?.heartRateBpm,
+            bat     = sys.batteryPercent
         )
 
         val nowIso = Utils.timeNowIsoUtc()

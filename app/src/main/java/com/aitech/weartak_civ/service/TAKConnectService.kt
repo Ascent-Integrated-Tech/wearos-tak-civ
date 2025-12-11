@@ -86,7 +86,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandA
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
 import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import java.net.SocketTimeoutException
 import javax.net.ssl.TrustManagerFactory
 
@@ -133,6 +137,7 @@ class TAKConnectService: Service() {
 
         setFromDatastore()
         startMulticastCollector()
+        collectSocketEnablement()
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -415,6 +420,24 @@ class TAKConnectService: Service() {
         } catch (e: Exception) {
             Log.w(TAG, "ERROR in MessageEvent ($message) w/ $addlIntInfo: ${e.message}")
             Log.w(TAG, "${e.printStackTrace()}")
+        }
+    }
+
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private fun collectSocketEnablement() {
+        scope.launch {
+            dataRepository.enableTakSockets
+                .filterNotNull()
+                .collect { enable ->
+                    if (enable) {
+                        Log.v(TAG, "Collected socket ENABLED!")
+                        connectToTakServers()
+                    } else {
+                        Log.v(TAG, "Collected socket DISABLED!")
+                        closeTakServerSockets()
+                    }
+            }
         }
     }
 

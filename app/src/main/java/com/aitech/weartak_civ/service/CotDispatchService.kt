@@ -55,6 +55,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -139,6 +142,7 @@ class CotDispatchService : Service() {
         }
         //TODO: WEAR-312: Prevent this from calling when battery alerts disabled vvv
         startBatteryAlerts()
+        startWearTakDebugAlerts()
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -150,65 +154,137 @@ class CotDispatchService : Service() {
     }
 
     private fun startBatteryAlerts() {
-        // TODO: We should only send this when the device is NOT charging... And change to CEP rule
         serviceScope.launch(Dispatchers.IO) {
-            dataRepository.latestBatteryPercentage.collect { batt ->
-                val batteryAlertsEnabled = (dataRepository.getEnableBatteryAlerts.first())
-                val endpointsToSendTo: Boolean = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first())
-                if ((null != batt) && endpointsToSendTo && batteryAlertsEnabled) {
-                    if (batt <= MainActivity.battWarnPercent) {
-                        Log.d(TAG, "battery: $batt")
-                        if (batt > MainActivity.battAlertPercent) {
-                            if (!sentBatteryWarnChatMsg) {
-                                Log.d(TAG, "battery: $batt")
-                                val loc = //dataRepository.latestLocation.value ?:
-                                    Location("manual").apply {
-                                        latitude = 0.0
-                                        longitude = 0.0
-                                        altitude = 0.0
-                                        accuracy = 999999.0f
-                                        verticalAccuracyMeters = 999999.0f
-                                        time = System.currentTimeMillis()
+            dataRepository.latestBatteryPercentage
+                .filterNotNull()
+                .collect { batt ->
+                    val batteryAlertsEnabled = dataRepository.getEnableBatteryAlerts.first()
+                    if (!batteryAlertsEnabled) return@collect
+
+                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first() || companionAppAvailable())
+
+                    if (endpointsToSendTo) {
+                        if ((batt <= MainActivity.battWarnPercent)) {
+                            Log.i(TAG, "Battery is at or below the WARN threshold: $batt <= ${MainActivity.battWarnPercent}")
+
+                            if (batt > MainActivity.battAlertPercent) {
+                                Log.i(TAG, "Battery is at or below the ALERT threshold: $batt <= ${MainActivity.battWarnPercent}")
+                                if (!sentBatteryWarnChatMsg) {
+                                    val msgText =
+                                        "Watch Battery Warning: ${MainActivity.callsign} battery less than " +
+                                                "${MainActivity.battWarnPercent}% (actual=$batt%)"
+
+                                    // 1. Build snapshot (roomUid/title can be whatever your TAK chat expects)
+                                    val chatSnap = dataRepository.snapshotChatEvent(
+                                        roomUid = "All Chat Rooms",
+                                        roomTitle = "All Chat Rooms",
+                                        message = msgText
+                                    )
+
+                                    if (chatSnap != null) {
+                                        // 2. Build CoT XML from snapshot
+                                        val chatCot = buildChatCotFromSnapshot(chatSnap)
+                                        sendDataTAKServers(chatCot, true)
+                                        Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
+
+                                        if (companionAppAvailable()) {
+                                            capRepo.enqueueChatSnapshotForBle(chatSnap)
+                                        }
+
+                                        sentBatteryWarnChatMsg = true
+                                    } else {
+                                        Log.w(TAG, "Battery warn chat snapshot is null; not sending chat")
                                     }
-                                val chatMessage = buildChatCotMessage(
-                                    loc,
-                                    "Battery Warning: ${MainActivity.callsign} battery less than ${MainActivity.battWarnPercent}% (actual=$batt%)",
-                                    "All Chat Rooms",
-                                    "All Chat Rooms"
-                                )
-                                sentBatteryWarnChatMsg = true
-                                sendDataTAKServers(chatMessage, true)
-                                Log.d(TAG, "Sending chat msg to 'All Chat Rooms': $chatMessage")
+                                }
+                            } else {
+                                if (!sentBatteryAlertChatMsg) {
+                                    val msgText =
+                                        "Battery ALERT: ${MainActivity.callsign} battery less than " +
+                                                "${MainActivity.battAlertPercent}% (actual=$batt%)"
+
+                                    val chatSnap = dataRepository.snapshotChatEvent(
+                                        roomUid = "All Chat Rooms",
+                                        roomTitle = "All Chat Rooms",
+                                        message = msgText
+                                    )
+
+                                    if (chatSnap != null) {
+                                        val chatCot = buildChatCotFromSnapshot(chatSnap)
+                                        sendDataTAKServers(chatCot, true)
+                                        Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
+                                        capRepo.enqueueChatSnapshotForBle(chatSnap)
+
+                                        sentBatteryAlertChatMsg = true
+                                    } else {
+                                        Log.w(TAG, "Battery ALERT chat snapshot is null; not sending chat")
+                                    }
+                                }
                             }
                         } else {
-                            if (!sentBatteryAlertChatMsg) {
-                                val loc = dataRepository.latestLocation.value ?:
-                                Location("manual").apply {
-                                    latitude = 0.0
-                                    longitude = 0.0
-                                    altitude = 0.0
-                                    accuracy = 999999.0f
-                                    verticalAccuracyMeters = 999999.0f
-                                    time = System.currentTimeMillis()
-                                }
-                                val chatMessage = buildChatCotMessage(
-                                    loc,
-                                    "Battery ALERT: ${MainActivity.callsign} battery less than ${MainActivity.battAlertPercent}% (actual=$batt%)",
-                                    "All Chat Rooms",
-                                    "All Chat Rooms"
-                                )
-                                sentBatteryAlertChatMsg = true
-                                sendDataTAKServers(chatMessage, true)
-                                Log.d(TAG, "Sending chat msg to 'All Chat Rooms': $chatMessage")
-                            }
+                            sentBatteryWarnChatMsg = false
+                            sentBatteryAlertChatMsg = false
                         }
-                    } else {
-                        sentBatteryWarnChatMsg = false
-                        sentBatteryAlertChatMsg = false
                     }
-                }
             }
         }
+    }
+
+    private fun startWearTakDebugAlerts() {
+        serviceScope.launch(Dispatchers.IO) {
+            dataRepository.getEnableWearTakDevMode
+                .filterNotNull()
+                .collect { enabled ->
+                    val sendToTak = TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first()
+                    val sendToCompApp = companionAppAvailable()
+                    val endpointsToSendTo = sendToTak || sendToCompApp
+
+                    if (endpointsToSendTo && enabled) {
+                        val msg = "Debug mode changed to { $enabled } on Watch: $callsign with uid: $deviceId"
+                        val chatSnap = dataRepository.snapshotChatEvent(
+                            roomUid = "All Chat Rooms",
+                            roomTitle = "All Chat Rooms",
+                            message = msg
+                        )
+
+                        if (chatSnap != null) {
+
+                            if (sendToTak) {
+                                val chatCot = buildChatCotFromSnapshot(chatSnap)
+                                sendDataTAKServers(chatCot, true)
+                                Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
+                            }
+
+                            if (sendToCompApp) {
+                                capRepo.enqueueChatSnapshotForBle(chatSnap)
+                            }
+                        } else {
+                            Log.w(TAG, "Battery warn chat snapshot is null; not sending chat")
+                        }
+                    }
+                }
+        }
+    }
+
+
+    // New helper:
+    fun buildChatCotFromSnapshot(chat: DataRepository.ChatEventSnapshot): String {
+        // Rebuild an android.location.Location from snapshot, if needed.
+        val locSnapshot = chat.location
+        val loc = Location("snapshot").apply {
+            latitude = locSnapshot?.lat ?: 0.0
+            longitude = locSnapshot?.lon ?: 0.0
+            altitude = locSnapshot?.alt ?: 0.0
+            accuracy = (locSnapshot?.ce ?: 999_999.0).toFloat()
+            verticalAccuracyMeters = (locSnapshot?.le ?: 999_999.0).toFloat()
+            time = System.currentTimeMillis()
+        }
+
+        return buildChatCotMessage(
+            location    = loc,
+            chatMsg     = chat.message,
+            dstUid      = chat.roomUid,
+            dstChatroom = chat.roomTitle
+        )
     }
 
     private fun startMarkerPipelines() {
@@ -365,7 +441,6 @@ class CotDispatchService : Service() {
     }
     */
 
-    // TODO: Fix this shit so we don't have to repeat the snapshot logic.
     private suspend fun buildConciseLocationPhysioCot(): String {
         val staleOffset = 3 * currReportingIntervalInSecs
 
@@ -402,7 +477,7 @@ class CotDispatchService : Service() {
         val age         = physSnap.data.ageYears
 
         // Inject physio data into remarks
-        val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+        val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
             /*
             var activity : ActivityRecognized = ActivityRecognized.UNKNOWN
             runBlocking {
@@ -462,7 +537,7 @@ class CotDispatchService : Service() {
         if (enableEsriEndpoint) {
             val isWorn = if (-1 == physSnap.data.heartRateBpm) { false } else { true }
             esriGeojsonMsg =
-                if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+                if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
                     """
         { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${bat}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": $hr, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": $steps, "floors": ${floors?.roundToInt()}, "calories": ${calories?.roundToInt()}, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": $bat } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
         """.trimIndent()
@@ -478,7 +553,7 @@ class CotDispatchService : Service() {
 
         if (enableTabletCommandEndpoint) {
             val isWorn = if (-1 == physSnap.data.heartRateBpm) { false } else { true }
-            tabletCommandJsonMsg = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActivityRecognitionService || MainActivity.enableDynamicReportingStrategy)) {
+            tabletCommandJsonMsg = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
                 """
                 {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${bat},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${bat},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":${steps},"floors":${dailyMetrics?.floors?.roundToInt()},"calories":${dailyMetrics?.calories?.roundToInt()},"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${bat}}],"alerts":[],"resolvedalerts":[]}
                 """.trimIndent()
@@ -1285,7 +1360,6 @@ class CotDispatchService : Service() {
                 }
                 manualSosToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
-
                 if (!takGptChatMessage.isNullOrEmpty()) {
                     sendDataTAKServers(takGptChatMessage, true)
                     Log.d(TAG, "Sending takGPT chat msg (emergency)")
@@ -1300,9 +1374,10 @@ class CotDispatchService : Service() {
                     Log.w(TAG, "TAK Server not connected & no Ditto Mesh.")
                     manualSosToBeSent.set(true)
                 }
-                if (companionAppAvailable()) {
-                    // TODO: send emergency via capRepo.
-                }
+            }
+
+            if (companionAppAvailable()) {
+                capRepo.enqueueEmergencySnapshotForBle(snapshot)
             }
 
             sendMulticastDatagram(cotMessage)
