@@ -73,11 +73,10 @@ class CompanionAppRepository(private val context: Context) {
     val companionAppReady: StateFlow<Boolean> =
         bleConnectionState
             .map { state ->
-                state == BleConnectionState.CONNECTED ||
-                        state == BleConnectionState.SERVICES_READY
+                    state == BleConnectionState.SERVICES_READY
             }
             .stateIn(
-                scope = scope,              // your CoroutineScope
+                scope = scope,
                 started = SharingStarted.Eagerly,
                 initialValue = false
             )

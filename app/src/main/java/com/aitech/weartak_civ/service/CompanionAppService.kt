@@ -170,25 +170,6 @@ class CompanionAppService : Service() {
         }
     }
 
-//    @SuppressLint("MissingPermission")
-//    private fun startMarkerBleCollector() {
-//        serviceScope.launch {
-//            capRepo.markerSnapshotsForBle.collect { snapshot ->
-//                if (!capRepo.companionAppReady.value) {
-//                    Log.i(TAG, "Companion not ready; dropping marker snapshot")
-//                    return@collect
-//                }
-//
-//                // Build envelope + JSON and send
-//                val env  = capRepo.buildMarkerEnvelopeFromSnapshot(snapshot)
-//                val json = capRepo.envelopeToJson(env)
-//
-//                Log.d(TAG, "Sending marker over BLE: $json")
-//                sendJsonToCompanion(json)
-//            }
-//        }
-//    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "CompanionAppService onStartCommand()")
         // TODO: handle explicit ACTION_* if you use start/stop intents
