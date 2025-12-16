@@ -16,6 +16,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.preferencesDataStore
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
+import com.google.common.math.IntMath
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.util.UUID
+import kotlin.math.roundToInt
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "companion_app")
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -99,7 +101,7 @@ class CompanionAppRepository(private val context: Context) {
         data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : BleOutboundEvent()
         data class Chat(val snapshot: DataRepository.ChatEventSnapshot) : BleOutboundEvent()
         data class Pli(val snapshot: DataRepository.PliSnapshot) : BleOutboundEvent()
-
+        data class ReportInt(val interval: Int) : BleOutboundEvent()
     }
 
     private val _outboundBleEvents =
@@ -122,10 +124,66 @@ class CompanionAppRepository(private val context: Context) {
         _outboundBleEvents.emit(BleOutboundEvent.Pli(snapshot))
     }
 
-    fun buildPliEnvelopFromSnapshot(
-        snapshot: DataRepository.PliSnapshot
+    suspend fun enqueueReportIntForBle(interval: Int) {
+        _outboundBleEvents.emit(BleOutboundEvent.ReportInt(interval))
+    }
+
+    fun buildPliEnvelopeFromSnapshot(
+        snapshot: DataRepository.PliSnapshot,
+        repIntSeconds: Int
     ): Envelope<PliPayload> {
 
+        val loc = snapshot.loc ?: DataRepository.LocationSnapshot(
+            timeMillis = System.currentTimeMillis(),
+            lat = 0.0,
+            lon = 0.0,
+            alt = 0.0,
+            ce = 0F,
+            le = 0F,
+            course = 0F,
+            speed = 0F
+        )
+
+        val timeSnap = snapshot.time
+        val sys      = snapshot.systemData
+        val phys     = snapshot.physioData
+        val dm       = phys.data.dailyMetrics
+
+        val payload = PliPayload(
+            lat = loc.lat,
+            lon = loc.lon,
+            alt = loc.alt,
+            ce  = loc.ce?.toDouble(),
+            le  = loc.le?.toDouble(),
+
+            time_start = timeSnap.startCot,
+            time_stale = timeSnap.staleCot,
+
+            callsign        = sys.callsign,
+            heart_rate      = phys.data.heartRateBpm,
+            skt             = phys.data.skinTempF?.toInt() ?: 0,
+            battery_percent = sys.batteryPercent,
+
+            repInt = repIntSeconds,
+            age    = phys.data.ageYears ?: 0,
+            exr    = ((phys.data.exertion ?: 0.0) * 100.0).toInt(), // 0..100
+
+            stps = dm?.steps?.toInt() ?: 0,
+            cals = dm?.calories?.roundToInt() ?: 0,
+            flrs = dm?.floors?.roundToInt() ?: 0,
+            elev = dm?.elevationM?.roundToInt() ?: 0
+        )
+
+        val nowIso = Utils.timeNowIsoUtc()
+
+        return Envelope(
+            proto_version = 1,
+            msg_type      = "pli",
+            msg_id        = sys.deviceId,   // stable per-device id; change if you want per-update unique ids
+            timestamp     = nowIso,
+            source        = "wearos",
+            payload       = payload
+        )
     }
 
     fun buildChatEnvelopeFromSnapshot(
@@ -174,7 +232,7 @@ class CompanionAppRepository(private val context: Context) {
 
     // In CompanionAppRepository
 
-    // TODO: Add everything from the xml cot builder
+    // TODO: Make certain fields nullable like exertion, skt, hr if device not worn!!!
     data class PliPayload(
         val lat: Double,
         val lon: Double,
@@ -188,8 +246,15 @@ class CompanionAppRepository(private val context: Context) {
         val skt: Int,
         val battery_percent: Int?,
         val repInt: Int,
-        val age: Int
+        val age: Int,
+        val exr: Int,
+        val stps: Int,
+        val cals: Int,
+        val flrs: Int,
+        val elev: Int,
     )
+
+
 
     data class ChatPayload(
         val uid: String,        // chat message id
@@ -280,7 +345,27 @@ class CompanionAppRepository(private val context: Context) {
         val weartakVersion: String,
         val macAddress: String?,
         val batteryPercent: Int?,
+        val reportIntSecs: Int
     )
+
+    data class ReportingIntPayload(
+        val repIntS: Int
+    )
+
+    suspend fun buildReportIntPayload(interval: Int): Envelope<ReportingIntPayload> {
+        val payload = ReportingIntPayload(
+            repIntS = interval
+        )
+        val nowIso = Utils.timeNowIsoUtc()
+        return Envelope(
+            proto_version = 1,
+            msg_type      = "repInt",
+            msg_id        = "",   // same UID is used for alert + cancel
+            timestamp     = nowIso,
+            source        = "wearos",
+            payload       = payload
+        )
+    }
 
     suspend fun buildWatchInfoPayload(): WatchInfoPayload {
         val sys = repo.snapshotSystem()
@@ -291,7 +376,8 @@ class CompanionAppRepository(private val context: Context) {
             callsign       = sys.callsign,
             weartakVersion = sys.wearTakVersion,
             macAddress     = mac,
-            batteryPercent = sys.batteryPercent
+            batteryPercent = sys.batteryPercent,
+            reportIntSecs  = sys.reportIntSecs
         )
     }
 

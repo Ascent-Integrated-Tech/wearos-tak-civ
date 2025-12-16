@@ -25,6 +25,7 @@ import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

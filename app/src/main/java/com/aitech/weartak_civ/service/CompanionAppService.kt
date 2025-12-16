@@ -152,6 +152,7 @@ class CompanionAppService : Service() {
     private var connectedDevice: BluetoothDevice? = null
     @Volatile private var negotiatedMtu: Int = DEFAULT_ATT_MTU
     @Volatile private var notificationsEnabled: Boolean = false
+    @Volatile private var helloSentForConnection: Boolean = false
     @Volatile private var takSocketsClosedForBle = false
 
     private var txCharacteristic: BluetoothGattCharacteristic? = null
@@ -169,6 +170,13 @@ class CompanionAppService : Service() {
         super.onCreate()
         Log.d(TAG, "CompanionAppService onCreate()")
         isRunning.set(true)
+
+        // HARD RESET of runtime BLE flags/state for a new Service instance
+        connectedDevice = null
+        negotiatedMtu = DEFAULT_ATT_MTU
+        notificationsEnabled = false
+        helloSentForConnection = false
+        capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.NOT_CONNECTED)
 
         startForegroundServiceCompat(
             NOTIFICATION_ID,
@@ -205,15 +213,15 @@ class CompanionAppService : Service() {
         serviceScope.launch {
             capRepo.outboundBleEvents.collect { event ->
                 if (!capRepo.companionAppReady.value) {
-                    Log.i(TAG, "Companion not ready; dropping BLE event $event")
-                    // TODO: Queue it??
-                    return@collect
+                    Log.i(TAG, "Companion not ready; queueing BLE event $event")
+                    // build json as normal below and enqueueJson(json)
+                    // but we need json first, so don't return here
                 }
 
                 val json = when (event) {
                     is CompanionAppRepository.BleOutboundEvent.Pli -> {
                         Log.i(TAG, "PLI - BLE Outbound Collector")
-                        val env = capRepo.buildPliEnvelopeFromSnapshot(event.snapshot)
+                        val env = capRepo.buildPliEnvelopeFromSnapshot(snapshot = event.snapshot, repIntSeconds = repo.almightyReportingIntervalSecs.value)
                         capRepo.envelopeToJson(env)
                     }
 
@@ -234,6 +242,13 @@ class CompanionAppService : Service() {
                         val env = capRepo.buildChatEnvelopeFromSnapshot(snapshot = event.snapshot)
                         capRepo.envelopeToJson(env)
                     }
+
+                    is CompanionAppRepository.BleOutboundEvent.ReportInt -> {
+                        Log.i(TAG, "REPORTING INT - BLE Outbound Collector")
+                        val env = capRepo.buildReportIntPayload(event.interval)
+                        capRepo.envelopeToJson(env)
+                    }
+
                 }
 
                 if (!capRepo.companionAppReady.value || !notificationsEnabled) {
@@ -255,14 +270,29 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
-        super.onDestroy()
         Log.d(TAG, "CompanionAppService onDestroy()")
+
+        // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
+        capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
+        notificationsEnabled = false
+        negotiatedMtu = DEFAULT_ATT_MTU
+        clearPendingQueue()
+
+        // 2) Stop outbound work
         serviceJob.cancel()
+
+        // 3) Stop advertising + close the server + force disconnect
         stopAdvertising()
-        closeGattServer()
+        closeGattServer() // should cancel connection + close server
+
+        // 4) Finalize state
+        capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.NOT_CONNECTED)
         repo.setEndpointDisconnected(DataRepository.Endpoint.COMPANION_APP)
         isRunning.set(false)
+
+        // 5) Foreground teardown
         stopForeground(STOP_FOREGROUND_DETACH)
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -331,10 +361,17 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
     private fun startAdvertising() {
+        // If already connected, do not advertise. (Single-connection design)
+        if (connectedDevice != null) {
+            Log.d(TAG, "Skipping advertising: already connected to ${connectedDevice?.address}")
+            // Keep state as CONNECTED or SERVICES_READY, do NOT overwrite to ADVERTISING
+            return
+        }
         val adv = advertiser ?: run {
             Log.w(TAG, "No BLE advertiser available")
             return
         }
+
 
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ADVERTISING)
 
@@ -371,6 +408,7 @@ class CompanionAppService : Service() {
     private fun resetNegotiatedMtu() {
         negotiatedMtu = DEFAULT_ATT_MTU
         notificationsEnabled = false
+        helloSentForConnection = false
     }
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
@@ -546,13 +584,16 @@ class CompanionAppService : Service() {
                 notificationsEnabled = true
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
 
-                // Send initial watch_info AFTER notifications are enabled
                 serviceScope.launch {
-                    val env = capRepo.buildWatchInfoEnvelope()
-                    val json = capRepo.envelopeToJson(env)
-                    sendJsonToCompanion(json)
-                    // TODO: flushPendingIfReady() // section 9
+                    if (!helloSentForConnection) {
+                        helloSentForConnection = true
+                        val env = capRepo.buildWatchInfoEnvelope()
+                        val json = capRepo.envelopeToJson(env)
+                        sendJsonToCompanion(json)
+                    }
+                    flushPendingIfReady()
                 }
+
                 respond(BluetoothGatt.GATT_SUCCESS)
                 return
             }
@@ -567,20 +608,31 @@ class CompanionAppService : Service() {
             respond(BluetoothGatt.GATT_FAILURE)
         }
 
+        @SuppressLint("MissingPermission")
         override fun onMtuChanged(device: BluetoothDevice, mtu: Int) {
             Log.d(TAG, "onMtuChanged dev=${device.address} mtu=$mtu")
             if (device == connectedDevice) {
                 negotiatedMtu = mtu
-                // TODO: flushPendingIfReady() // you’ll add this in section 9
+                serviceScope.launch {
+                    flushPendingIfReady()
+                }
             }
         }
     }
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun closeGattServer() {
-        connectedDevice?.let { dev ->
+        val server = gattServer
+        val dev = connectedDevice
+
+        // Drop local flags immediately
+        connectedDevice = null
+        notificationsEnabled = false
+        negotiatedMtu = DEFAULT_ATT_MTU
+
+        if (server != null && dev != null) {
             try {
                 Log.d(TAG, "Cancelling GATT connection to ${dev.address}")
-                gattServer?.cancelConnection(dev)
+                server.cancelConnection(dev)
             } catch (t: Throwable) {
                 Log.w(TAG, "cancelConnection failed", t)
             }
@@ -588,13 +640,12 @@ class CompanionAppService : Service() {
 
         try {
             Log.d(TAG, "Closing GATT server")
-            gattServer?.close()
+            server?.close()
         } catch (t: Throwable) {
             Log.w(TAG, "gattServer.close() failed", t)
+        } finally {
+            gattServer = null
         }
-
-        gattServer = null
-        connectedDevice = null
     }
 
     // --- Public send API: JSON -> Notify ------------------------------------

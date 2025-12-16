@@ -594,11 +594,12 @@ class DataRepository(private val context: Context) {
     }
 
     data class SystemSnapshot(
-        val timeMillis: Long,      // When the snapshot was taken
-        val batteryPercent: Int?,  // nullable because sensors can fail or race
-        val callsign: String,      // always available from DataStore
-        val deviceId: String,      // MainActivity.device_uid
-        val wearTakVersion: String //
+        val timeMillis: Long,       // When the snapshot was taken
+        val batteryPercent: Int?,   // nullable because sensors can fail or race
+        val callsign: String,       // always available from DataStore
+        val deviceId: String,       // MainActivity.device_uid
+        val wearTakVersion: String, // gradle build vers #
+        val reportIntSecs: Int      // pli reporting rate
     )
 
     suspend fun snapshotSystem(): SystemSnapshot {
@@ -608,13 +609,15 @@ class DataRepository(private val context: Context) {
         val callsign = getCallsign.first()
         val deviceId = MainActivity.device_uid
         val version  = MainActivity.versionNumber
+        val interval = reportingUpdateIntervalSecs.value
 
         return SystemSnapshot(
             timeMillis = now,
             batteryPercent = battery,
             callsign = callsign,
             deviceId = deviceId,
-            wearTakVersion = version
+            wearTakVersion = version,
+            reportIntSecs = interval
         )
     }
 
@@ -726,7 +729,7 @@ class DataRepository(private val context: Context) {
     suspend fun snapshotPli(): PliSnapshot {
         val timeSnap = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
-            staleOffset = Utils.TimeOffset(seconds = (3 * CotDispatchService.currReportingIntervalInSecs))
+            staleOffset = Utils.TimeOffset(seconds = (3 * almightyReportingIntervalSecs.value))
         )
 
         return PliSnapshot(
@@ -1079,6 +1082,17 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_CHAT_SERVICE] = enableChatService
         }
+    }
+
+    private val _almightyReportingIntervalSecs =
+        MutableStateFlow(DEFAULT_REPORTING_INTERVAL)
+
+    val almightyReportingIntervalSecs: StateFlow<Int> =
+        _almightyReportingIntervalSecs.asStateFlow()
+
+    fun setAlmightyReportingInterval(intervalInSecs: Int) {
+        if (_almightyReportingIntervalSecs.value == intervalInSecs) return
+        _almightyReportingIntervalSecs.value = intervalInSecs
     }
 
     private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_REPORTING_INTERVAL)

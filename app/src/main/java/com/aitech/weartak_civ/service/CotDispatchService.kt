@@ -55,6 +55,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -149,8 +152,38 @@ class CotDispatchService : Service() {
         }
 
         collectHailFlows()
+        collectReportingIntervalSecs()
+        startReportingIntervalRepoBridge()
 
         startMarkerPipelines()
+    }
+
+    /* Expose the companion object CotDispatchService.currReportingIntervalSecs to the flow
+    *  pipelines for new services to collect. Bridging legacy usage into the new flow ecosystem.
+    */
+    private fun startReportingIntervalRepoBridge() {
+        serviceScope.launch {
+            currReportingIntervalFlow
+                .collect { secs ->
+                    dataRepository.setAlmightyReportingInterval(secs)
+                }
+        }
+    }
+
+    // Whenever the ACTUAL reporting is changed, we need to tell the companion the interval in secs
+    // to act as heartbeat for connection to handle timeouts better.
+    private fun collectReportingIntervalSecs() {
+        serviceScope.launch {
+            dataRepository.almightyReportingIntervalSecs
+                .collect{ interval ->
+                    Log.v(TAG, "Almighty reporting interval in DR has changed to -> $interval Seconds")
+                    Log.v(TAG, "Cotdispatch Companion Obj: $reportingUpdateIntervalSecs")
+                    if (companionAppAvailable()) {
+                        Log.v(TAG, "Sending to companion app via BLE")
+                        capRepo.enqueueReportIntForBle(interval)
+                    }
+                }
+        }
     }
 
     private fun startBatteryAlerts() {
@@ -265,9 +298,7 @@ class CotDispatchService : Service() {
         }
     }
 
-
-    // New helper:
-    fun buildChatCotFromSnapshot(chat: DataRepository.ChatEventSnapshot): String {
+    private fun buildChatCotFromSnapshot(chat: DataRepository.ChatEventSnapshot): String {
         // Rebuild an android.location.Location from snapshot, if needed.
         val locSnapshot = chat.location
         val loc = Location("snapshot").apply {
@@ -353,7 +384,6 @@ class CotDispatchService : Service() {
         }
     }
 
-//    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, Utils.CotUtils.CotMarkerInfo>()
     private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
 
     private val pendingDropQueue = ArrayDeque<DataRepository.DropRequest>()
@@ -1662,8 +1692,31 @@ class CotDispatchService : Service() {
         private const val GPS_STALE_TIME_INTERVAL_MS_JSON_KEY = "gpsStaleTimeInterval"
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
-        var reportingUpdateIntervalSecs = DEFAULT_REPORTING_INTERVAL
-        var currReportingIntervalInSecs = DEFAULT_REPORTING_INTERVAL
+
+        private val _currReportingIntervalFlow =
+            MutableStateFlow(DEFAULT_REPORTING_INTERVAL)
+        val currReportingIntervalFlow: StateFlow<Int> =
+            _currReportingIntervalFlow.asStateFlow()
+
+        var currReportingIntervalInSecs: Int = DEFAULT_REPORTING_INTERVAL
+            set(value) {
+                if (field == value) return
+                field = value
+                _currReportingIntervalFlow.value = value
+            }
+
+        private val _reportingUpdateIntervalFlow =
+            MutableStateFlow(DEFAULT_REPORTING_INTERVAL)
+        val reportingUpdateIntervalFlow: StateFlow<Int> =
+            _reportingUpdateIntervalFlow.asStateFlow()
+
+        var reportingUpdateIntervalSecs: Int = DEFAULT_REPORTING_INTERVAL
+            set(value) {
+                if (field == value) return
+                field = value
+                _reportingUpdateIntervalFlow.value = value
+            }
+
         lateinit var instance: CotDispatchService
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         var esriGeojsonMsg = ""
