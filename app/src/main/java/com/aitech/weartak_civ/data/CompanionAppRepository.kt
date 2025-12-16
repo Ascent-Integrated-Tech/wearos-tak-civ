@@ -267,6 +267,8 @@ class CompanionAppRepository(private val context: Context) {
         )
     }
 
+    data class EnvelopeBase(val msg_type: String)
+
     suspend fun buildWatchInfoEnvelope(): Envelope<WatchInfoPayload> {
         val nowIso = Utils.timeNowIsoUtc()
         val msgId  = UUID.randomUUID().toString()

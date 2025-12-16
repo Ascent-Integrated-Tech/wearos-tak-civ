@@ -78,6 +78,7 @@ import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -208,6 +209,7 @@ class TAKConnectService: Service() {
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
         }
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -288,6 +290,8 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
                 requestStatusIconsComplicationUpdate(context)
 
                 if (SERVER_ADDED_VIA_UI == message) {
@@ -343,6 +347,8 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
                 requestStatusIconsComplicationUpdate(context)
 
             }
@@ -377,6 +383,8 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
                 requestStatusIconsComplicationUpdate(context)
 
             }
@@ -459,6 +467,8 @@ class TAKConnectService: Service() {
     fun connectToTakServers() {
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(isAnyTakConnecting)
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
         requestStatusIconsComplicationUpdate(context)
 
         for (takServer in takServerDetails) {
@@ -1133,6 +1143,7 @@ class TAKConnectService: Service() {
                     takServerDetail.secureSocket?.startHandshake()
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+                    dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
                     requestStatusIconsComplicationUpdate(context)
 
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
@@ -1239,6 +1250,11 @@ class TAKConnectService: Service() {
             //Log.d(TAG, "setIsAnyNetworkConnected: $anyTakConnected")
             isAnyTakConnected = anyTakConnected
             isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+            if (anyTakConnected) {
+                dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
+            } else {
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+            }
         }
 
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {

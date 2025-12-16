@@ -61,6 +61,7 @@ import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import java.util.EnumMap
 import java.util.UUID
 import kotlin.collections.component1
@@ -1266,6 +1267,28 @@ class DataRepository(private val context: Context) {
         _unreadCount.emit(fresh.count { it.newMessagesPresent })
         _hasUnread.emit(fresh.any  { it.newMessagesPresent })
     }
+
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP }
+
+    private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
+    val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
+
+    val anyEndpointConnected: StateFlow<Boolean> =
+        endpointConnected.map { it.isNotEmpty() }
+            .stateIn( scope = repoScope , SharingStarted.Eagerly, false)
+
+    fun setEndpointConnected(endpoint: Endpoint) {
+        _endpointConnected.update { it + endpoint }
+    }
+
+    fun setEndpointDisconnected(endpoint: Endpoint) {
+        _endpointConnected.update { it - endpoint }
+    }
+
+    fun isEndpointConnected(endpoint: Endpoint): StateFlow<Boolean> =
+        endpointConnected.map { endpoint in it }
+            .stateIn(scope = repoScope, SharingStarted.Eagerly, false)
+
 
     /**
      *  Returns the current unread-message total, 0 if the service isn’t running.

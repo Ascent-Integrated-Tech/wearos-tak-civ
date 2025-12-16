@@ -91,6 +91,7 @@ class DittoService : Service() {
 
         try {
             ditto.startSync() // Start syncing
+            dataRepository.setEndpointConnected(DataRepository.Endpoint.DITTO)
             Log.i(TAG, "DittoService startSync()")
         } catch (e: DittoError) {
             Log.e(TAG, "DittoService ERROR startSync(): ${e.message}")
@@ -429,11 +430,14 @@ class DittoService : Service() {
         }
 
         unSubscribeToCollections()
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.DITTO)
+
         ioScope.cancel()
 
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {

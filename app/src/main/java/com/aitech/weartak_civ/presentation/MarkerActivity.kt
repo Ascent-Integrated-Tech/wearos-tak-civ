@@ -38,7 +38,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,7 +58,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import com.aitech.weartak_civ.service.TAKConnectService
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -836,7 +834,7 @@ fun ClearMarkerConfirmationDialog(
 @Composable
 fun SuccessfulCotSentCheck(
     shouldShowConfirm: MutableState<Boolean>,
-    takServer: Boolean?,
+    anyEndpointConnected: Boolean?,
     context: Context,
     exitActivity: () -> Unit,
     successBoolean: MutableState<Boolean>,
@@ -846,18 +844,7 @@ fun SuccessfulCotSentCheck(
     successFunction: () -> Unit
 ){
     if (shouldShowConfirm.value) {
-        if (takServer == true) {
-            if (location != null && locationChecked) {
-                successBoolean.value = true
-            }
-        } else {
-            if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
-                Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. Marker will be sent through here.")
-                successBoolean.value = true
-            } else {
-                successBoolean.value = false
-            }
-        }
+        successBoolean.value = (location != null && locationChecked && anyEndpointConnected == true)
         LaunchedEffect(Unit) {
             delay(2000) // Delay for 5 seconds
             shouldShowConfirm.value = false // Dismiss the dialog
@@ -880,7 +867,9 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
     val shouldShowClearAllDialog = remember { mutableStateOf(false) }
     val shouldShowClearAllConfirm = remember { mutableStateOf(false) }
     val removeMarker = remember {mutableStateOf(false)}
-    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
+    val connectedEndpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle(initialValue = emptySet())
+    val anyEndpointConnected = connectedEndpoints.isNotEmpty()
+
     val droppedMarkerListSetting by dataRepository
         .droppedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
@@ -915,7 +904,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
 
             SuccessfulCotSentCheck(
                 shouldShowConfirm,
-                takServer,
+                anyEndpointConnected,
                 context,
                 {exitActivity()},
                 successBoolean,
@@ -976,13 +965,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                             dataRepository.requestClearLast()
                         }
                         // dialog UX logic
-                        if (takServer == true) {
-                            if (location != null && locationChecked) {
-                                successBoolean.value = true
-                            }
-                        } else {
-                            successBoolean.value = MainActivity.enableDittoService && DittoService.isRunning.get()
-                        }
+                        successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
                     }
                 )
             }
@@ -1037,23 +1020,13 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         dataRepository.requestClearAll()
                     }
                     // dialog UX logic
-                    if (takServer == true) {
-                        if (location != null && locationChecked) {
-                            successBoolean.value = true
-                        }
-                    } else {
-                        if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
-                            successBoolean.value = true
-                        } else {
-                            successBoolean.value = false
-                        }
-                    }
+                    successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
                 }
             )
 
             SuccessfulCotSentCheck(
                 shouldShowClearAllConfirm,
-                takServer,
+                anyEndpointConnected,
                 context,
                 {exitActivity()},
                 successBoolean,
