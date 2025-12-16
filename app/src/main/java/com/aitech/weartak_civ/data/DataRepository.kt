@@ -56,6 +56,7 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.flow.asStateFlow
@@ -716,12 +717,25 @@ class DataRepository(private val context: Context) {
 
 
     data class PliSnapshot(
-        val uid: String,
-        val loc: LocationSnapshot,
+        val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
         val physioData: PhysioSnapshot,
         val systemData: SystemSnapshot
     )
+
+    suspend fun snapshotPli(): PliSnapshot {
+        val timeSnap = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(seconds = (3 * CotDispatchService.currReportingIntervalInSecs))
+        )
+
+        return PliSnapshot(
+            loc = snapshotLocation(),
+            time = timeSnap,
+            physioData = snapshotPhysio(),
+            systemData = snapshotSystem()
+        )
+    }
 
     private suspend fun postCustomEmergencyEvent(event: CustomEmergencyEvent) {
         _customEmergencyEvent.emit(event)

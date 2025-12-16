@@ -313,9 +313,7 @@ class CotDispatchService : Service() {
     private fun sendMarkerReady(): Boolean {
         val loc = dataRepository.latestLocation.value
         val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL
-        return if (TAKConnectService.isAnyTakConnected && (null != loc) && fresh) {
-            true
-        } else false
+        return (dataRepository.anyEndpointConnected.value && (null != loc) && fresh)
     }
 
     private fun startDropListCollector() {
@@ -441,6 +439,7 @@ class CotDispatchService : Service() {
     }
     */
 
+    /*
     private suspend fun buildConciseLocationPhysioCot(): String {
         val staleOffset = 3 * currReportingIntervalInSecs
 
@@ -568,6 +567,133 @@ class CotDispatchService : Service() {
 
         return cot
     }
+     */
+
+    private suspend fun buildPliCot(snapshot: DataRepository.PliSnapshot): String {
+        val timeSnap     = snapshot.time
+
+        val physSnap     = snapshot.physioData
+        val locSnap      = snapshot.loc
+        val sysSnap      = snapshot.systemData
+        val dailyMetrics = physSnap.data.dailyMetrics
+
+        val startTime     = timeSnap.startCot
+        val staleTime     = timeSnap.staleCot
+        val startTimeInMs = timeSnap.time
+
+        val lat = locSnap?.lat  ?: 0.0
+        val lon = locSnap?.lon  ?: 0.0
+        val hae = locSnap?.alt  ?: 0.0
+
+        // Strip precision & default to “9999” if NaN
+        val ceTrim     = locSnap?.ce?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val leTrim     = locSnap?.le?.takeIf { !it.isNaN() }?.toInt() ?: 9999
+        val courseTrim = locSnap?.course?.toInt()  ?: 0
+        val speedTrim  = locSnap?.speed?.toInt()   ?: 0
+
+        // Pull out physio values
+        val uid         = sysSnap.deviceId
+        val hr          = physSnap.data.heartRateBpm
+        val skt         = String.format("%.1f", physSnap.data.skinTempF).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
+        val exert       = String.format("%.2f", physSnap.data.exertion).let { str -> if (str.endsWith(".00")) str.replace(".00", "") else str }
+        val bat         = sysSnap.batteryPercent
+        val steps       = dailyMetrics?.steps
+        val calories    = dailyMetrics?.calories
+        val floors      = dailyMetrics?.floors
+        val elevationM  = dailyMetrics?.elevationM
+        val age         = physSnap.data.ageYears
+
+        // Inject physio data into remarks
+        val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
+            /*
+            var activity : ActivityRecognized = ActivityRecognized.UNKNOWN
+            runBlocking {
+                activity = dataRepository.latestActivityRecognized.value
+            }
+
+             */
+            buildString {
+                append("HR:$hr;")
+                append("SknTmp:$skt;")
+                append("Exert:$exert;")
+                append("Bat:${bat ?: -1};")
+                append("Steps:$steps;")
+                append("Cals:${calories?.roundToInt()};")
+                append("Floors:${floors?.roundToInt()};")
+                append("ElevGain(m):${elevationM?.roundToInt() ?: 0}")
+                //append(";Act:${activity.name}($currReportingIntervalInSecs)")
+            }
+        } else {
+            buildString {
+                append("HR:$hr;")
+                append("SknTmp:$skt;")
+                append("Exert:$exert;")
+                append("Bat:${bat ?: -1}")
+            }
+        }
+
+        val hailCotDetailString = buildHailDetail(physSnap.data)
+
+        // Build the cot XML
+        val cot = if (enableBatdokCot) {
+            val sktCelcius = String.format("%.1f", convertFarenheitToCelsius(physSnap.data.skinTempF)).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
+            var batdokStr = if (-1 == hr) {
+                if (-1F == physSnap.data.skinTempF) {
+                    ""
+                } else {
+                    """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
+                }
+            } else {
+                if (-1F == physSnap.data.skinTempF) {
+                    """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
+
+                } else {
+                    """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign><vitalSign index="1" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
+                }
+            }
+            """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks>$batdokStr<contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
+        } else {
+            """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
+        }
+        //Log.i(TAG, "Size: ${cot.length} Bytes \n $cot")
+        //Log.i(TAG, "===> HailCotDetail: $hailCotDetailString")
+
+
+        if (enableEsriEndpoint) {
+            val isWorn = if (-1 == physSnap.data.heartRateBpm) { false } else { true }
+            esriGeojsonMsg =
+                if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
+                    """
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${bat}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": $hr, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": $steps, "floors": ${floors?.roundToInt()}, "calories": ${calories?.roundToInt()}, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": $bat } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
+        """.trimIndent()
+
+                } else {
+                    """
+        { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$startTime", "staletimeutc": "$staleTime", "callsign": "$callsign", "role": "$role", "color": "$teamValue", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ceTrim, "vertaccuracy": $leTrim, "heading": $courseTrim, "speed": $speedTrim, "batt": ${bat}, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": $hr, "hribi": -1, "hrv": -1, "skintemp": $skt, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", "steps": -1, "floors": -1, "calories": -1, "exertion": $exert, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": $bat } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
+        """.trimIndent()
+                }
+
+            Log.d(TAG, "esriGeojsonMsg: $esriGeojsonMsg")
+        }
+
+        if (enableTabletCommandEndpoint) {
+            val isWorn = if (-1 == physSnap.data.heartRateBpm) { false } else { true }
+            tabletCommandJsonMsg = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
+                """
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${bat},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${bat},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":${steps},"floors":${dailyMetrics?.floors?.roundToInt()},"calories":${dailyMetrics?.calories?.roundToInt()},"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${bat}}],"alerts":[],"resolvedalerts":[]}
+                """.trimIndent()
+            } else {
+                """
+                {"id":"$uid","timeutc":"$startTime","staletimeutc":"$staleTime","callsign":"$callsign","role":"$role","color":"$teamValue","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ceTrim,"vertaccuracy":$leTrim,"heading":$courseTrim,"speed":$speedTrim,"batt":${bat},"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":${bat},"hribi":-1,"hrv":-1,"skintemp":$skt,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"","steps":-1,"floors":-1,"calories":-1,"exertion":$exert,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":${bat}}],"alerts":[],"resolvedalerts":[]}
+                """.trimIndent()
+            }
+            //Log.d(TAG, "tabletCommandJsonMsg: $tabletCommandJsonMsg")
+        }
+
+
+        return cot
+    }
+
 
     private fun collectHailFlows() {
         serviceScope.launch {
@@ -1178,11 +1304,11 @@ class CotDispatchService : Service() {
         if (snapshot == null) return
         val staleSnapshot = makeMarkerSnapshotStale(snapshot)
         val clearXml = buildClearMarkerCotMessage(snapshot)
-        Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${snapshot?.markerType?.type}")
 
         var sent = false
         if (companionAppAvailable()) {
             capRepo.enqueueMarkerSnapshotForBle(staleSnapshot)
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", clearXml))
@@ -1194,6 +1320,7 @@ class CotDispatchService : Service() {
         }
         if (!sent) return
 
+        Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${snapshot?.markerType?.type}")
         dataRepository.removeByUid(uid)
         markerDropMap.remove(uid)
     }
@@ -1345,54 +1472,49 @@ class CotDispatchService : Service() {
                 return@launch
             }
 
-            val cotMessage = buildEmergencyAlertCotMessage(snapshot)
-
-            // (Optional) build chat message from same snapshot
-//            val takGptChatMessage = buildChatCotMessageFromEmergencySnapshot(snapshot)
-            val takGptChatMessage = ""
+            val xml = buildEmergencyAlertCotMessage(snapshot)
 
             // TAK / Ditto / multicast routing unchanged, just using `cotMessage`
-            if (TAKConnectService.isAnyTakConnected) {
-                if (DittoService.isRunning.get()) {
-                    EventBus.getDefault().post(DittoDocumentEvent("alert", cotMessage))
-                    manualSosToBeSent.set(false)
-                    Log.v(TAG, "Posted emergency alert to Ditto")
-                }
-                manualSosToBeSent.set(false)
-                sendDataTAKServers(cotMessage, true)
-                if (!takGptChatMessage.isNullOrEmpty()) {
-                    sendDataTAKServers(takGptChatMessage, true)
-                    Log.d(TAG, "Sending takGPT chat msg (emergency)")
-                }
-                Log.v(TAG, "Sent emergency alert to TAK server")
-            } else {
-                if (DittoService.isRunning.get()) {
-                    EventBus.getDefault().post(DittoDocumentEvent("alert", cotMessage))
-                    manualSosToBeSent.set(false)
-                    Log.v(TAG, "Posted emergency alert to Ditto")
-                } else {
-                    Log.w(TAG, "TAK Server not connected & no Ditto Mesh.")
-                    manualSosToBeSent.set(true)
-                }
-            }
-
+            var sent = false
             if (companionAppAvailable()) {
+                Log.i(TAG, "Send Marker payload via BLE ...")
                 capRepo.enqueueEmergencySnapshotForBle(snapshot)
+                sent = true
+            }
+            if (dataRepository.getEnableMulticast.first()) {
+                sendMulticastDatagram(xml)
+                sent = true
+            }
+            if (DittoService.isRunning.get()) {
+                EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
+                sent = true
+            }
+            if (TAKConnectService.isAnyTakConnected) {
+                sendDataTAKServers(xml, true)
+                sent = true
             }
 
-            sendMulticastDatagram(cotMessage)
+            manualSosToBeSent.set(!sent)
+            if (!sent) return@launch
+
         }
     }
 
     fun buildAndSendPhysioLocationCotMsg() {
         // Blocks the current (scheduler) thread until the work is done.
         runBlocking(Dispatchers.IO) {
-            val xml = buildConciseLocationPhysioCot()
+            val snapshot = dataRepository.snapshotPli()
+
+            val xml = buildPliCot(snapshot)
 
             if (!TAKConnectService.isAnyTakConnected) {
                 Log.w(TAG, "Not connected to a TAK Server. Not sending to TAK Server. Attempting Multicast…")
             } else {
                 sendDataTAKServers(xml, false)
+            }
+
+            if (companionAppAvailable()) {
+                capRepo.enqueuePliSnapshotForBle(snapshot)
             }
 
             NetworkUtils.MulticastPublisher.send(xml) // always multicast
@@ -1446,7 +1568,6 @@ class CotDispatchService : Service() {
 
         var sent = false
         if (companionAppAvailable()) {
-            //capRepo.sendCot(snapshot)
             if (snapshot == null ) return
             Log.i(TAG, "Send Marker payload via BLE ...")
             capRepo.enqueueMarkerSnapshotForBle(snapshot)

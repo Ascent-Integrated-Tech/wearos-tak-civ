@@ -211,6 +211,12 @@ class CompanionAppService : Service() {
                 }
 
                 val json = when (event) {
+                    is CompanionAppRepository.BleOutboundEvent.Pli -> {
+                        Log.i(TAG, "PLI - BLE Outbound Collector")
+                        val env = capRepo.buildPliEnvelopeFromSnapshot(event.snapshot)
+                        capRepo.envelopeToJson(env)
+                    }
+
                     is CompanionAppRepository.BleOutboundEvent.Marker -> {
                         Log.i(TAG, "MARKER - BLE Outbound Collector")
                         val env = capRepo.buildMarkerEnvelopeFromSnapshot(event.snapshot)
@@ -254,6 +260,7 @@ class CompanionAppService : Service() {
         serviceJob.cancel()
         stopAdvertising()
         closeGattServer()
+        repo.setEndpointDisconnected(DataRepository.Endpoint.COMPANION_APP)
         isRunning.set(false)
         stopForeground(STOP_FOREGROUND_DETACH)
     }
@@ -570,7 +577,22 @@ class CompanionAppService : Service() {
     }
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun closeGattServer() {
-        gattServer?.close()
+        connectedDevice?.let { dev ->
+            try {
+                Log.d(TAG, "Cancelling GATT connection to ${dev.address}")
+                gattServer?.cancelConnection(dev)
+            } catch (t: Throwable) {
+                Log.w(TAG, "cancelConnection failed", t)
+            }
+        }
+
+        try {
+            Log.d(TAG, "Closing GATT server")
+            gattServer?.close()
+        } catch (t: Throwable) {
+            Log.w(TAG, "gattServer.close() failed", t)
+        }
+
         gattServer = null
         connectedDevice = null
     }

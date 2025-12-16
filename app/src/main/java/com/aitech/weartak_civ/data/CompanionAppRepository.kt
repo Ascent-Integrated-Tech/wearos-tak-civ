@@ -98,7 +98,8 @@ class CompanionAppRepository(private val context: Context) {
         data class Marker(val snapshot: DataRepository.MarkerSnapshot) : BleOutboundEvent()
         data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : BleOutboundEvent()
         data class Chat(val snapshot: DataRepository.ChatEventSnapshot) : BleOutboundEvent()
-        // later: PLI.
+        data class Pli(val snapshot: DataRepository.PliSnapshot) : BleOutboundEvent()
+
     }
 
     private val _outboundBleEvents =
@@ -115,6 +116,16 @@ class CompanionAppRepository(private val context: Context) {
 
     suspend fun enqueueChatSnapshotForBle(snapshot: DataRepository.ChatEventSnapshot) {
         _outboundBleEvents.emit(BleOutboundEvent.Chat(snapshot))
+    }
+
+    suspend fun enqueuePliSnapshotForBle(snapshot: DataRepository.PliSnapshot) {
+        _outboundBleEvents.emit(BleOutboundEvent.Pli(snapshot))
+    }
+
+    fun buildPliEnvelopFromSnapshot(
+        snapshot: DataRepository.PliSnapshot
+    ): Envelope<PliPayload> {
+
     }
 
     fun buildChatEnvelopeFromSnapshot(
@@ -162,6 +173,23 @@ class CompanionAppRepository(private val context: Context) {
 //    val markerSnapshotsForBle: SharedFlow<DataRepository.MarkerSnapshot> = _markerSnapshotsForBle
 
     // In CompanionAppRepository
+
+    // TODO: Add everything from the xml cot builder
+    data class PliPayload(
+        val lat: Double,
+        val lon: Double,
+        val alt: Double?,
+        val ce: Double?,
+        val le: Double?,
+        val time_start: String,
+        val time_stale: String,
+        val callsign: String,
+        val heart_rate: Int?,
+        val skt: Int,
+        val battery_percent: Int?,
+        val repInt: Int,
+        val age: Int
+    )
 
     data class ChatPayload(
         val uid: String,        // chat message id
