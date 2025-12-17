@@ -22,7 +22,6 @@ import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
-import com.aitech.weartak_civ.Utils.getCotEventTimeSnapshot
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -58,8 +57,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -304,7 +301,7 @@ class CotDispatchService : Service() {
         val loc = Location("snapshot").apply {
             latitude = locSnapshot?.lat ?: 0.0
             longitude = locSnapshot?.lon ?: 0.0
-            altitude = locSnapshot?.alt ?: 0.0
+            altitude = locSnapshot?.hae ?: 0.0
             accuracy = (locSnapshot?.ce ?: 999_999.0).toFloat()
             verticalAccuracyMeters = (locSnapshot?.le ?: 999_999.0).toFloat()
             time = System.currentTimeMillis()
@@ -613,7 +610,7 @@ class CotDispatchService : Service() {
 
         val lat = locSnap?.lat  ?: 0.0
         val lon = locSnap?.lon  ?: 0.0
-        val hae = locSnap?.alt  ?: 0.0
+        val hae = locSnap?.hae  ?: 0.0
 
         // Strip precision & default to “9999” if NaN
         val ceTrim     = locSnap?.ce?.takeIf { !it.isNaN() }?.toInt() ?: 9999
@@ -1085,7 +1082,7 @@ class CotDispatchService : Service() {
         // Location fields from LocationSnapshot
         val latActual = loc.lat
         val lonActual = loc.lon
-        val haeActual = loc.alt
+        val haeActual = loc.hae
         val ceActual  = loc.ce
         val leActual  = loc.le
 
@@ -1144,7 +1141,7 @@ class CotDispatchService : Service() {
 
         val lat   = loc?.lat
         val lon   = loc?.lon
-        val hae   = loc?.alt
+        val hae   = loc?.hae
         val ce    = loc?.ce ?: 9999999.0F
         val le    = loc?.le ?: 9999999.0F
 

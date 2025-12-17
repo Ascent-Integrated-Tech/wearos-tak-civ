@@ -16,7 +16,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.preferencesDataStore
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
-import com.google.common.math.IntMath
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -88,11 +87,11 @@ class CompanionAppRepository(private val context: Context) {
     }
 
     data class Envelope<T>(
-        val proto_version: Int = 1,
-        val msg_type: String,
-        val msg_id: String,
-        val timestamp: String,
-        val source: String,
+        val vers: Int = 2,      // Companion app version control
+        val msgType: String,    // Pli, Chat, Marker, Emergency, ReportInt
+        val msgUid: String,     // Inherits the UID of the msgType
+        val t: String,          // timestamp millis epoch string
+        val src: String,        // source (default to wearos)
         val payload: T
     )
 
@@ -137,7 +136,7 @@ class CompanionAppRepository(private val context: Context) {
             timeMillis = System.currentTimeMillis(),
             lat = 0.0,
             lon = 0.0,
-            alt = 0.0,
+            hae = 0.0,
             ce = 0F,
             le = 0F,
             course = 0F,
@@ -152,19 +151,19 @@ class CompanionAppRepository(private val context: Context) {
         val payload = PliPayload(
             lat = loc.lat,
             lon = loc.lon,
-            alt = loc.alt,
+            hae = loc.hae,
             ce  = loc.ce?.toDouble(),
             le  = loc.le?.toDouble(),
 
-            time_start = timeSnap.startCot,
-            time_stale = timeSnap.staleCot,
+            tStart = timeSnap.startCot,
+            tStale = timeSnap.staleCot,
 
-            callsign        = sys.callsign,
-            heart_rate      = phys.data.heartRateBpm,
+            cs        = sys.callsign,
+            hr      = phys.data.heartRateBpm,
             skt             = phys.data.skinTempF?.toInt() ?: 0,
-            battery_percent = sys.batteryPercent,
+            bat = sys.batteryPercent,
 
-            repInt = repIntSeconds,
+            int = repIntSeconds,
             age    = phys.data.ageYears ?: 0,
             exr    = ((phys.data.exertion ?: 0.0) * 100.0).toInt(), // 0..100
 
@@ -177,11 +176,11 @@ class CompanionAppRepository(private val context: Context) {
         val nowIso = Utils.timeNowIsoUtc()
 
         return Envelope(
-            proto_version = 1,
-            msg_type      = "pli",
-            msg_id        = sys.deviceId,   // stable per-device id; change if you want per-update unique ids
-            timestamp     = nowIso,
-            source        = "wearos",
+            vers = 1,
+            msgType      = "pli",
+            msgUid        = sys.deviceId,   // stable per-device id; change if you want per-update unique ids
+            t           = nowIso,
+            src        = "wearos",
             payload       = payload
         )
     }
@@ -204,8 +203,8 @@ class CompanionAppRepository(private val context: Context) {
 
         val payload = ChatPayload(
             uid        = snapshot.uid,
-            roomUid    = snapshot.roomUid,
-            roomTitle  = snapshot.roomTitle,
+            rmUid    = snapshot.roomUid,
+            rmTitle  = snapshot.roomTitle,
             msg        = bleMsg,
             tStart     = timeSnap.startCot,
             tStale     = timeSnap.staleCot,
@@ -217,11 +216,11 @@ class CompanionAppRepository(private val context: Context) {
         val nowIso = Utils.timeNowIsoUtc()
 
         return Envelope(
-            proto_version = 1,
-            msg_type      = "chat",
-            msg_id        = snapshot.uid,
-            timestamp     = nowIso,
-            source        = "wearos",
+            vers = 1,
+            msgType      = "chat",
+            msgUid        = snapshot.uid,
+            t     = nowIso,
+            src        = "wearos",
             payload       = payload
         )
     }
@@ -234,61 +233,59 @@ class CompanionAppRepository(private val context: Context) {
 
     // TODO: Make certain fields nullable like exertion, skt, hr if device not worn!!!
     data class PliPayload(
-        val lat: Double,
-        val lon: Double,
-        val alt: Double?,
-        val ce: Double?,
-        val le: Double?,
-        val time_start: String,
-        val time_stale: String,
-        val callsign: String,
-        val heart_rate: Int?,
-        val skt: Int,
-        val battery_percent: Int?,
-        val repInt: Int,
-        val age: Int,
-        val exr: Int,
-        val stps: Int,
-        val cals: Int,
-        val flrs: Int,
-        val elev: Int,
+        val lat: Double,        // latitude  (WGS84)
+        val lon: Double,        // longitude (WGS84)
+        val hae: Double?,       // height above elevation (meters)
+        val ce: Double?,        // circular error (horizontal accuracy)
+        val le: Double?,        // linear error   (vertical accuracy)
+        val tStart: String,     // start time (UTC zulu)
+        val tStale: String,     // stale time (UTC zulu)
+        val cs: String,         // callsign
+        val hr: Int?,           // heart rate (bpm)
+        val skt: Int,           // skin temp (degree F)
+        val bat: Int?,          // battery (0-100%)
+        val int: Int,           // reporting interval (seconds)
+        val age: Int,           // user age (years)
+        val exr: Int,           // exertion (0-100%)
+        val stps: Int,          // steps     (cumulative daily taken)
+        val cals: Int,          // calories  (cumulative daily burned)
+        val flrs: Int,          // floors    (cumulative daily climbed)
+        val elev: Int,          // elevation (cumulative daily climbed meters)
     )
-
-
 
     data class ChatPayload(
         val uid: String,        // chat message id
-        val roomUid: String,
-        val roomTitle: String,
+        val rmUid: String,      // chat room uid
+        val rmTitle: String,    // chat room title
         val msg: String,        // truncated for BLE
+        val tStart: String,     // start time zulu
+        val tStale: String,     // start time zulu
+        val cs: String,         // callsign
+        val hr: Int?,           // heart rate
+        val bat: Int?           // battery
+    )
+
+    data class MarkerPayload(
+        val uid: String,        // == msg_id
+        val type: String,       // Marker type (a-f-G, a-u-G, etc).
+        val icn: String?,       // Icon Path in cot details for itak
+        val lat: Double,
+        val lon: Double,
+        val hae: Double?,
+        val ce: Double?,
+        val le: Double?,
         val tStart: String,
         val tStale: String,
-        val cs: String,         // callsign
+        val cs: String,
         val hr: Int?,
         val bat: Int?
     )
 
-    data class MarkerPayload(
-        val marker_id: String,       // == msg_id
-        val marker_type: String,     // CoT type
-        val icon_path: String?,
-        val lat: Double,
-        val lon: Double,
-        val alt: Double?,
-        val ce: Double?,
-        val le: Double?,
-        val time_start: String,
-        val time_stale: String,
-        val callsign: String,
-        val heart_rate: Int?,
-        val battery_percent: Int?
-    )
-
     data class EmergencyAlertPayload(
-        val uid: String,
-        val state: String,          // alert or cancel
-        val catg: String,
-        val desc: String,
+        val uid: String,      // the unique id for an alert generated on weartak
+        val state: String,    // is this an alert or cancellation of an alert
+        val catg: String,     // what kind of an alert is it
+        val desc: String,     // details on the alert
 
         // App crashed because payload was > 512 Bytes, Android GATT MTU.
 //        val lat: Double,
@@ -330,39 +327,39 @@ class CompanionAppRepository(private val context: Context) {
         val nowIso = Utils.timeNowIsoUtc()
 
         return Envelope(
-            proto_version = 1,
-            msg_type      = "emergency",
-            msg_id        = snapshot.uid,   // same UID is used for alert + cancel
-            timestamp     = nowIso,
-            source        = "wearos",
+            vers = 1,
+            msgType      = "emergency",
+            msgUid        = snapshot.uid,   // same UID is used for alert + cancel
+            t     = nowIso,
+            src        = "wearos",
             payload       = payload
         )
     }
 
     data class WatchInfoPayload(
-        val deviceId: String,
-        val callsign: String,
-        val weartakVersion: String,
-        val macAddress: String?,
-        val batteryPercent: Int?,
-        val reportIntSecs: Int
+        val uid: String,    // Android Device UUID
+        val cs: String,     // callsign
+        val wtVrs: String,  // WearTAK Version
+        val mac: String?,   // Mac address Bluetooth
+        val bat: Int?,
+        val int: Int        // reporting interval
     )
 
     data class ReportingIntPayload(
-        val repIntS: Int
+        val int: Int
     )
 
     suspend fun buildReportIntPayload(interval: Int): Envelope<ReportingIntPayload> {
         val payload = ReportingIntPayload(
-            repIntS = interval
+            int = interval
         )
         val nowIso = Utils.timeNowIsoUtc()
         return Envelope(
-            proto_version = 1,
-            msg_type      = "repInt",
-            msg_id        = "",   // same UID is used for alert + cancel
-            timestamp     = nowIso,
-            source        = "wearos",
+            vers = 1,
+            msgType      = "repInt",
+            msgUid        = "",   // same UID is used for alert + cancel
+            t     = nowIso,
+            src        = "wearos",
             payload       = payload
         )
     }
@@ -372,12 +369,12 @@ class CompanionAppRepository(private val context: Context) {
         val mac = getLocalBluetoothMacOrNull(context)
 
         return WatchInfoPayload(
-            deviceId       = sys.deviceId,
-            callsign       = sys.callsign,
-            weartakVersion = sys.wearTakVersion,
-            macAddress     = mac,
-            batteryPercent = sys.batteryPercent,
-            reportIntSecs  = sys.reportIntSecs
+            uid       = sys.deviceId,
+            cs       = sys.callsign,
+            wtVrs = sys.wearTakVersion,
+            mac     = mac,
+            bat = sys.batteryPercent,
+            int  = sys.reportIntSecs
         )
     }
 
@@ -390,11 +387,11 @@ class CompanionAppRepository(private val context: Context) {
         val payload = buildWatchInfoPayload()
 
         return Envelope(
-            proto_version = 1,
-            msg_type      = "watch_info",
-            msg_id        = msgId,
-            timestamp     = nowIso,
-            source        = "wearos",
+            vers = 1,
+            msgType      = "watch_info",
+            msgUid        = msgId,
+            t     = nowIso,
+            src        = "wearos",
             payload       = payload
         )
     }
@@ -411,26 +408,26 @@ class CompanionAppRepository(private val context: Context) {
         val source = "wearos"                               // eventually can replace with android device uuid
 
         val payload = MarkerPayload(
-            marker_id       = uid,
-            marker_type     = snapshot.markerType.type,
-            icon_path       = snapshot.iconSetPath,
+            uid       = uid,
+            type     = snapshot.markerType.type,
+            icn       = snapshot.iconSetPath,
             lat             = snapshot.loc?.lat ?: 0.0,
             lon             = snapshot.loc?.lon ?: 0.0,
-            alt             = snapshot.loc?.alt,
+            hae             = snapshot.loc?.hae,
             ce              = snapshot.loc?.ce?.toDouble(),
             le              = snapshot.loc?.le?.toDouble(),
-            time_start      = snapshot.time.startCot,
-            time_stale      = snapshot.time.staleCot,
-            callsign        = snapshot.system.callsign,
-            heart_rate      = snapshot.physio?.data?.heartRateBpm,
-            battery_percent = snapshot.system.batteryPercent
+            tStart      = snapshot.time.startCot,
+            tStale      = snapshot.time.staleCot,
+            cs        = snapshot.system.callsign,
+            hr      = snapshot.physio?.data?.heartRateBpm,
+            bat = snapshot.system.batteryPercent
         )
 
         return Envelope(
-            msg_type  = "marker",
-            msg_id    = uid,
-            timestamp = nowIso,
-            source    = source,
+            msgType  = "marker",
+            msgUid    = uid,
+            t = nowIso,
+            src    = source,
             payload   = payload
         )
     }

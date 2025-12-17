@@ -56,7 +56,6 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.flow.asStateFlow
@@ -500,7 +499,7 @@ class DataRepository(private val context: Context) {
             timeMillis = baseLoc.time,
             lat = latActual,
             lon = lonActual,
-            alt = haeActual,
+            hae = haeActual,
             ce = ceActual,
             le = leActual,
             course = baseLoc.bearing.takeIf { !it.isNaN() },
@@ -512,7 +511,7 @@ class DataRepository(private val context: Context) {
         val timeMillis: Long,
         val lat: Double,
         val lon: Double,
-        val alt: Double?,
+        val hae: Double?,
         val ce: Float?,    // circular error (horizontal)
         val le: Float?,    // linear error (vertical)
         val course: Float?, // optional: bearing
