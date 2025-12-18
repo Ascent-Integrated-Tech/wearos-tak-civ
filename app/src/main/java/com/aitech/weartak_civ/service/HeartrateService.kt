@@ -269,7 +269,7 @@ class HeartrateService: Service() {
                             Log.d(TAG, "Sending alert: ($hrAlertDesc)")
                             EventBus.getDefault().post(CustomEmergencyEvent(CAT_Biometric, hrAlertDesc, 1, true))
                             scope.launch {
-                                sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Warning, System.currentTimeMillis(), ""))
+                                sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Emergency, System.currentTimeMillis(), ""))
                                 requestPhysioComplicationUpdate(applicationContext)
                             }
                             highAlertSent = true
