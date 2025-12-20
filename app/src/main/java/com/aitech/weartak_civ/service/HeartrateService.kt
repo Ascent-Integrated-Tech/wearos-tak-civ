@@ -31,6 +31,7 @@ import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_Biometric
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_HIGH_HEART_RATE_ALERT_CLEAR
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.MessageEvent
@@ -179,7 +180,7 @@ class HeartrateService: Service() {
 
     init {
         scope.launch {
-            sharedRepository.exertionFlow
+            sharedRepository.latestExertion
                 .collect { exertion ->
                     val logString = "Exertion updated: $exertion"
                     Log.d(TAG, logString)
@@ -278,7 +279,6 @@ class HeartrateService: Service() {
                         highAlertSent = false
                         if (numAboveThreshold == 0) {
                             // TODO: Store all alerts with UID and clear them
-                            //EventBus.getDefault().post(CustomEmergencyEvent(CAT_Biometric, hrAlertDesc, 1, true))
                             scope.launch {
                                 sharedRepository.removePhysioAlerts(HIGH_HEART_RATE_ALERT)
                                 requestPhysioComplicationUpdate(applicationContext)

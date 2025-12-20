@@ -78,6 +78,7 @@ import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -86,6 +87,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandA
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
 import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import java.net.SocketTimeoutException
 import javax.net.ssl.TrustManagerFactory
@@ -124,6 +128,7 @@ class TAKConnectService: Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.w(TAG, "Repo identity = ${System.identityHashCode(dataRepository)}")
         Log.d(TAG, "TAKConnectService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(
@@ -134,10 +139,27 @@ class TAKConnectService: Service() {
         setFromDatastore()
         startMulticastCollector()
 
+        scope.launch {
+            dataRepository.isCompanionConnected
+                .collect { connected ->
+                    Log.w(TAG, "isCompanionConnected=$connected") // temporary
+                    isCompanionAppConnected = connected
+                    if (connected) {
+                        Log.w(TAG, "closing TAK sockets because companion is ready")
+                        closeTakServerSockets()
+                        resetTakServerConnectionDetails()
+                        return@collect
+                }
+
+                if (!isNetworkConnected) return@collect
+                if (isAnyTakConnected || isAnyTakConnecting) return@collect
+                connectToTakServers()
+            }
+        }
+
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
-
     }
 
     private fun startMulticastCollector() {
@@ -170,10 +192,12 @@ class TAKConnectService: Service() {
         networkManager = NetworkManager.getInstance()
         isNetworkConnected = networkManager?.isNetworkConnected() ?: false
         isWifiConnected = networkManager?.isWifiConnected() ?: false
+        // Connecting to tak server is handled by the endpoint gate logic. If companion app is not connected, connectToTakServers() will fire there.
         if (isNetworkConnected) {
             Log.d(TAG, "TAKConnectService onStartCommand(): net=$isNetworkConnected wifi=$isWifiConnected")
             connectToTakServers()
         }
+
         return START_NOT_STICKY
     }
 
@@ -188,6 +212,8 @@ class TAKConnectService: Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        scope.cancel()
+        connectJob?.cancel()
         networkManager = null
         closeTakServerSockets()
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -203,6 +229,7 @@ class TAKConnectService: Service() {
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
         }
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -283,6 +310,8 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
                 requestStatusIconsComplicationUpdate(context)
 
                 if (SERVER_ADDED_VIA_UI == message) {
@@ -338,6 +367,8 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
                 requestStatusIconsComplicationUpdate(context)
 
             }
@@ -372,6 +403,8 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
                 requestStatusIconsComplicationUpdate(context)
 
             }
@@ -418,6 +451,10 @@ class TAKConnectService: Service() {
         }
     }
 
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private var connectJob: Job? = null
+
     fun closeTakServerSockets() {
         for (takServer in takServerDetails) {
             if (takServer.isEnabled) {
@@ -434,8 +471,14 @@ class TAKConnectService: Service() {
     }
 
     fun connectToTakServers() {
+        if (dataRepository.isCompanionConnected.value) {
+            Log.w(TAG, "TAK Connect Supressed, Companion App is Active")
+            return
+        }
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(isAnyTakConnecting)
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
         requestStatusIconsComplicationUpdate(context)
 
         for (takServer in takServerDetails) {
@@ -893,6 +936,10 @@ class TAKConnectService: Service() {
         }
 
         fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
+            if (isCompanionAppConnected) {
+                Log.w(TAG, "TAK reconnect suppressed (cert): Companion App is active")
+                return
+            }
             Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
@@ -1055,8 +1102,14 @@ class TAKConnectService: Service() {
             Log.d(TAG, "isSelfSigned=false")
             false
         }
+
+        var isCompanionAppConnected = false
         
         fun connectTAKServer(takServerDetail: TakServerDetail) {
+            if (isCompanionAppConnected) {
+                Log.w(TAG, "connectTAKServer CompanionAppIsConnected back out early")
+                return
+            }
             val takServer = takServerDetail.address
             val port = takServerDetail.port
             Log.i(TAG,"connectTAKServer called for takServer ($takServer)")
@@ -1110,6 +1163,7 @@ class TAKConnectService: Service() {
                     takServerDetail.secureSocket?.startHandshake()
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+                    dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
                     requestStatusIconsComplicationUpdate(context)
 
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
@@ -1157,16 +1211,16 @@ class TAKConnectService: Service() {
                                         Log.d(TAG, "Received Chat for me:\n$rawXml")
                                         EventBus.getDefault().post(TakChatEvent(rawXml))
                                     }
-                                    val markerCotEvent: BloodhoundRepository.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
+                                    val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
                                     if (markerCotEvent != null) {
                                         Log.i(TAG, "We read a marker message!: \n $markerCotEvent")
 //                                        Log.i(TAG, "XML XML XML: $rawXml")
-                                        val mapItem = BloodhoundRepository.MarkerMapItem(markerCotEvent)
+                                        val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                                         val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                             mapItem = mapItem,
                                             server = takServerDetail.address,
-                                            timeIssued = mapItem.link.productionTime,
+                                            timeIssued = mapItem.link?.productionTime,
                                             timeCompleted = null
                                         )
                                         bhRepo.updateBloodhoundEvent(bhEvent)
@@ -1216,6 +1270,11 @@ class TAKConnectService: Service() {
             //Log.d(TAG, "setIsAnyNetworkConnected: $anyTakConnected")
             isAnyTakConnected = anyTakConnected
             isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+            if (anyTakConnected) {
+                dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
+            } else {
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+            }
         }
 
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {

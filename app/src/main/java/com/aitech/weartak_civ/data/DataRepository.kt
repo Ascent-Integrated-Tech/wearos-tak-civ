@@ -81,13 +81,19 @@ import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
+import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
+import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import java.util.EnumMap
+import java.util.UUID
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -338,6 +344,12 @@ class DataRepository(private val context: Context) {
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
 
+    suspend fun updateChargingState(charging: Boolean) {
+        _chargingState.emit(charging)
+    }
+    private val _chargingState = MutableStateFlow<Boolean>(false)
+    val chargingState: StateFlow<Boolean> = _chargingState
+
     private val _latestIsDeviceWorn = MutableStateFlow<Boolean>(false)
     val latestIsDeviceWorn: StateFlow<Boolean> = _latestIsDeviceWorn
 
@@ -473,7 +485,6 @@ class DataRepository(private val context: Context) {
     private val _getEnableOffBodyDetectService = MutableStateFlow<Boolean>(true)
     var getEnableOffBodyDetectService: MutableStateFlow<Boolean> = _getEnableOffBodyDetectService
 
-
     @Entity(tableName = "daily_health_metrics")
     data class DailyHealthMetrics(
         @PrimaryKey val timestampHour: Instant,  // truncated to the top of the hour
@@ -493,7 +504,298 @@ class DataRepository(private val context: Context) {
         _restingHeartRate.emit(restHr)
     }
 
-    // --- authoritative list (unchanged) ---
+    suspend fun snapshotLocation(): LocationSnapshot? {
+        val baseLoc = latestLocation.value ?: return null
+
+        var latActual   = baseLoc.latitude
+        var lonActual   = baseLoc.longitude
+        var haeActual   = baseLoc.altitude
+        var ceActual    = baseLoc.accuracy
+        var leActual    = baseLoc.verticalAccuracyMeters
+
+        if (ceActual.isNaN()) ceActual = 9999999.0f
+        if (leActual.isNaN()) leActual = 9999999.0f
+
+        // Apply BLE-beacon override if enabled
+        if (getEnableBleBeaconService.first()) {
+            val bleOutput = Utils.LocationUtils.mapLocationAgainstClosestBleBeacon(baseLoc)
+            latActual = bleOutput.lat
+            lonActual = bleOutput.lon
+            haeActual = bleOutput.hae
+            ceActual  = bleOutput.ce
+        }
+
+        return LocationSnapshot(
+            timeMillis = baseLoc.time,
+            lat = latActual,
+            lon = lonActual,
+            hae = haeActual,
+            ce = ceActual,
+            le = leActual,
+            course = baseLoc.bearing.takeIf { !it.isNaN() },
+            speed = baseLoc.speed.takeIf { !it.isNaN() }
+        )
+    }
+
+    data class LocationSnapshot(
+        val timeMillis: Long,
+        val lat: Double,
+        val lon: Double,
+        val hae: Double?,
+        val ce: Float?,    // circular error (horizontal)
+        val le: Float?,    // linear error (vertical)
+        val course: Float?, // optional: bearing
+        val speed: Float?   // optional: m/s
+    )
+
+    data class PhysioData(
+        val heartRateBpm: Int?,          // current HR
+        val skinTempF: Float?,           // Temp of skin in Deg F
+        val ageYears: Int?,              // physiological age used for calculations
+        val weightKg: Int?,              // settings
+        val restingHrBpm: Int?,          // baseline rest HR
+        val exertion: Double?,           // 0..1 or null if unknown
+        val exertionClass: String?,      // "LIGHT", "MODERATE", "VIGOROUS", "UNKNOWN"
+        val dailyMetrics: DailyMetrics?  // aggregated steps/calories/floors/elevation
+    )
+
+    data class PhysioSnapshot(
+        val timeMillis: Long,
+        val data: PhysioData
+    )
+
+    suspend fun snapshotPhysio(): PhysioSnapshot {
+        val nowMillis = System.currentTimeMillis()
+
+        val hr          = latestHeartRate.value
+        val skinT       = latestSkinTemp.value
+        val ageYears    = getPhysiologicalMetricAge.first()
+        val weightKg    = getPhysiologicalMetricWeight.first()
+        val restingHr   = getRestingHeartRate.first()
+        val exertion    = latestExertion.value
+        val daily       = latestDailyMetrics.value
+
+        val exertionClass: String? = exertion.let {
+            Utils.PhysioUtils.classifyExertion(it)
+        }
+
+        return PhysioSnapshot(
+            timeMillis = nowMillis,
+            data = PhysioData(
+                heartRateBpm  = hr,
+                skinTempF     = skinT,
+                ageYears      = ageYears,
+                weightKg      = weightKg,
+                restingHrBpm  = restingHr,
+                exertion      = exertion,
+                exertionClass = exertionClass,
+                dailyMetrics  = daily
+            )
+        )
+    }
+
+    data class DailyMetrics(
+        val timestampHour: Instant,
+        val steps: Long       = 0L,
+        val calories: Double  = 0.0,
+        val floors: Double    = 0.0,
+        val elevationM: Double = 0.0
+    )
+
+    private val _latestDailyMetrics = MutableStateFlow<DailyMetrics?>(null)
+    val latestDailyMetrics: StateFlow<DailyMetrics?> = _latestDailyMetrics
+
+    fun updateDailyMetrics(
+        timestampHour: Instant,
+        steps: Long?,
+        calories: Double?,
+        floors: Double?,
+        elevationM: Double?
+    ) {
+        val prev = _latestDailyMetrics.value
+        _latestDailyMetrics.value = DailyMetrics(
+            timestampHour = timestampHour,
+            steps        = steps       ?: prev?.steps       ?: 0L,
+            calories     = calories    ?: prev?.calories    ?: 0.0,
+            floors       = floors      ?: prev?.floors      ?: 0.0,
+            elevationM   = elevationM  ?: prev?.elevationM  ?: 0.0
+        )
+    }
+
+    data class SystemSnapshot(
+        val timeMillis: Long,       // When the snapshot was taken
+        val batteryPercent: Int?,   // nullable because sensors can fail or race
+        val callsign: String,       // always available from DataStore
+        val deviceId: String,       // MainActivity.device_uid
+        val wearTakVersion: String, // gradle build vers #
+        val reportIntSecs: Int      // pli reporting rate
+    )
+
+    suspend fun snapshotSystem(): SystemSnapshot {
+        val now = System.currentTimeMillis()
+
+        val battery  = latestBatteryPercentage.value
+        val callsign = getCallsign.first()
+        val deviceId = MainActivity.device_uid
+        val version  = MainActivity.versionNumber
+        val interval = reportingUpdateIntervalSecs.value
+
+        return SystemSnapshot(
+            timeMillis = now,
+            batteryPercent = battery,
+            callsign = callsign,
+            deviceId = deviceId,
+            wearTakVersion = version,
+            reportIntSecs = interval
+        )
+    }
+
+    data class MarkerSnapshot(
+        val uid: String,
+        val markerType: MarkerType,
+        val iconSetPath: String?,
+        val loc: LocationSnapshot?,
+        val time: Utils.CotEventTimeSnapshot,
+        val physio: PhysioSnapshot?,
+        val system: SystemSnapshot
+    )
+
+    suspend fun snapshotMarker(req: DropRequest): MarkerSnapshot? {
+        val loc = snapshotLocation() ?: return null
+        val timeSnapshot = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(years = 1)
+        )
+
+        val physioSnapshot = snapshotPhysio()
+        val systemSnapshot = snapshotSystem()
+
+        return MarkerSnapshot(
+            uid = UUID.randomUUID().toString(),
+            markerType = req.markerType,
+            iconSetPath = req.markerType.icon,
+            loc = loc,
+            time = timeSnapshot,
+            physio = physioSnapshot,
+            system = systemSnapshot
+        )
+    }
+
+    enum class AlertState {
+        ALERT,
+        CANCEL
+    }
+
+    data class EmergencyEventSnapshot(
+        val uid: String,                     // stable per alert thread
+        val alertState: AlertState,          // ALERT or CANCEL
+        val category: String,
+        val description: String,
+        val sendSms: Boolean,
+
+        val time: Utils.CotEventTimeSnapshot,
+        val location: LocationSnapshot,
+        val physio: PhysioSnapshot?,
+        val system: SystemSnapshot
+    )
+
+    private var sosAlertUid: String? = null
+    private var highHrAlertUid: String? = null
+
+    private fun isHighHrThread(category: String, description: String): Boolean {
+        return (category == CustomEmergencyEvent.CAT_Biometric &&
+                description == CustomEmergencyEvent.DESC_HIGH_HEART_RATE_ALERT) ||
+                (category == CustomEmergencyEvent.CAT_HIGH_HEART_RATE_ALERT_CLEAR)
+    }
+
+    suspend fun snapshotEmergencyEvent(
+        category: String,
+        description: String,
+        sendSms: Boolean,
+        alertState: AlertState
+    ): EmergencyEventSnapshot? {
+        val loc = latestLocation.value
+        if (loc == null) {
+            // Let caller decide what to do (set manualSosToBeSent, etc.)
+            return null
+        }
+
+        // UID logic: new for ALERT, reuse for CANCEL
+        val useHighHrUid = isHighHrThread(category, description)
+
+        val uid = if (alertState == AlertState.ALERT) {
+            val fresh = UUID.randomUUID().toString()
+            if (useHighHrUid) highHrAlertUid = fresh else sosAlertUid = fresh
+            fresh
+        } else {
+            (if (useHighHrUid) highHrAlertUid else sosAlertUid) ?: return null
+        }
+
+        val timeSnap = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(minutes = 15) // or whatever SOS stale you want
+        )
+
+        val locSnap = snapshotLocation() ?: return null
+        val systemSnap = snapshotSystem()
+        val physioSnap = snapshotPhysio()
+
+        return EmergencyEventSnapshot(
+            uid         = uid,
+            alertState  = alertState,
+            category    = category,
+            description = description,
+            sendSms     = sendSms,
+            time        = timeSnap,
+            location    = locSnap,
+            physio      = physioSnap,
+            system      = systemSnap
+        )
+    }
+
+
+    data class PliSnapshot(
+        val loc: LocationSnapshot?,
+        val time: Utils.CotEventTimeSnapshot,
+        val physioData: PhysioSnapshot,
+        val systemData: SystemSnapshot
+    )
+
+    suspend fun snapshotPli(): PliSnapshot {
+        val timeSnap = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(seconds = (3 * almightyReportingIntervalSecs.value))
+        )
+
+        return PliSnapshot(
+            loc = snapshotLocation(),
+            time = timeSnap,
+            physioData = snapshotPhysio(),
+            systemData = snapshotSystem()
+        )
+    }
+
+    private suspend fun postCustomEmergencyEvent(event: CustomEmergencyEvent) {
+        _customEmergencyEvent.emit(event)
+    }
+
+    private fun removeCustomEmergencyEvent(eventUid: CustomEmergencyEvent) {
+
+    }
+
+    private suspend fun activateSos() {
+        val event = CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true)
+        postCustomEmergencyEvent(event)
+    }
+
+    private suspend fun deActivateSos() {
+        val event = CustomEmergencyEvent(CAT_MANUAL, DESC_SOS_ALERT, 1, true)
+        postCustomEmergencyEvent(event)
+    }
+
+    private val _customEmergencyEvent = MutableSharedFlow<CustomEmergencyEvent>(extraBufferCapacity = 64)
+    val customEmergencyEvent: SharedFlow<CustomEmergencyEvent> = _customEmergencyEvent
+
     data class DroppedMarker(
         val uid: String,
         val markerType: String,
@@ -537,7 +839,10 @@ class DataRepository(private val context: Context) {
     }
 
     // --- request flows (UI -> backend) ---
-    data class DropRequest(val markerType: MarkerType, val timeMillis: Long)
+    data class DropRequest(
+        val markerType: MarkerType,
+        val timeMillis: Long
+    )
 
     sealed interface ClearRequest {
         data class Specific(val uid: String) : ClearRequest
@@ -755,7 +1060,7 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getEnableActivityRecognitionService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val getEnableActRecService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ACTIVITY_RECOGNITION_SERVICE] ?: DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
     }
 
@@ -812,6 +1117,17 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_CHAT_SERVICE] = enableChatService
         }
+    }
+
+    private val _almightyReportingIntervalSecs =
+        MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
+
+    val almightyReportingIntervalSecs: StateFlow<Int> =
+        _almightyReportingIntervalSecs.asStateFlow()
+
+    fun setAlmightyReportingInterval(intervalInSecs: Int) {
+        if (_almightyReportingIntervalSecs.value == intervalInSecs) return
+        _almightyReportingIntervalSecs.value = intervalInSecs
     }
 
     private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
@@ -937,28 +1253,50 @@ class DataRepository(private val context: Context) {
     }
      */
 
-//    data class ChatMessage(
-//        var message: String,
-//        val uid: String,
-//        var callsign: String,
-//        var timeReceived: Long
-//    )
-//
-//    data class ChatRoom(
-//        val uid: String,
-//        var title: String,
-//        var chatMessage: List<ChatMessage>, //Messages that device has sent you
-//        var newMessagesPresent: Boolean, //Are there unread messages, determined by timeLastOpened and timeLastClosed
-//        var timeLastOpened: Long, //When the chat log has been opened, any messages received while its open are automatically marked as read
-//        var timeLastClosed: Long //When the chat log has been closed, messages received when closed become unread
-//    )
+    data class ChatEventSnapshot(
+        val uid: String,                     // stable per chat message
+        val roomUid: String,                // e.g. "All Chat Rooms" or actual room id
+        val roomTitle: String,              // human label for the room
+        val message: String,                // chat text
 
-    //val messageList1 = listOf(ChatMessage("A", "11111", "ALPHA-01", 1747932042L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L),ChatMessage("D", "11111", "ALPHA-01", 1747932109L),ChatMessage("E", "11111", "BRAVO-05", 1748018316L),ChatMessage("F", "11111", "BRAVO-05", 1748018317L))
-    //val messageList2 = listOf(ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932020L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L),ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L))
+        val time: Utils.CotEventTimeSnapshot,
+        val location: LocationSnapshot?,    // might be null if you want to allow it
+        val physio: PhysioSnapshot?,
+        val system: SystemSnapshot
+    )
 
-//    val messageList1 = listOf(ChatMessage("F", "11111", "BRAVO-05", 1748018317L), ChatMessage("E", "11111", "BRAVO-05", 1748018316L), ChatMessage("D", "11111", "ALPHA-01", 1747932109L), ChatMessage("C", "11111", "ALPHA-01", 1747932108L), ChatMessage("B", "11111", "ALPHA-01", 1747932043L),ChatMessage("A", "11111", "ALPHA-01", 1747932042L) )
-//    val messageList2 = listOf(ChatMessage("At Charlie", "11111", "ALPHA-01", 1747932193L), ChatMessage("Going to Charlie", "11111", "ALPHA-01", 1747932020L), ChatMessage("Going to Bravo", "11111", "ALPHA-01",1747932019L))
-//    val messageGroups = listOf(ChatRoom("1111111", "Group-01", chatMessage = messageList1, true, 1L, 2L), ChatRoom("1111112", "ALPHA-01", chatMessage = messageList2, false, 1L, 2L))
+    suspend fun snapshotChatEvent(
+        roomUid: String,
+        roomTitle: String,
+        message: String
+    ): ChatEventSnapshot? {
+        val locSnap = snapshotLocation()
+        if (locSnap == null) {
+            Log.w("WearTAK-Chat", "snapshotChatEvent: snapshotLocation() is null, returning null")
+            return null
+        }
+
+        val timeSnap = Utils.getCotEventTimeSnapshot(
+            startOffset = Utils.TimeOffset(),
+            staleOffset = Utils.TimeOffset(minutes = 15) // or shorter if you want
+        )
+
+        val systemSnap = snapshotSystem()
+        val physioSnap = snapshotPhysio()
+        val msgUid = UUID.randomUUID().toString()
+
+        return ChatEventSnapshot(
+            uid        = msgUid,
+            roomUid    = roomUid,
+            roomTitle  = roomTitle,
+            message    = message,
+            time       = timeSnap,
+            location   = locSnap,
+            physio     = physioSnap,
+            system     = systemSnap
+        )
+    }
+
     var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
 
     private val _chatRoomsFlow = MutableStateFlow<List<Utils.ChatRoom>>(emptyList())
@@ -992,6 +1330,50 @@ class DataRepository(private val context: Context) {
         _unreadCount.emit(fresh.count { it.newMessagesPresent })
         _hasUnread.emit(fresh.any  { it.newMessagesPresent })
     }
+
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP }
+
+    private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
+    val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
+
+    val anyEndpointConnected: StateFlow<Boolean> =
+        endpointConnected.map { it.isNotEmpty() }
+            .stateIn( scope = repoScope , SharingStarted.Eagerly, false)
+
+    fun setEndpointConnected(endpoint: Endpoint) {
+        _endpointConnected.update { set ->
+            if (endpoint in set) set else set + endpoint
+        }
+    }
+
+    fun setEndpointDisconnected(endpoint: Endpoint) {
+        _endpointConnected.update { set ->
+            if (endpoint !in set) set else set - endpoint
+        }
+    }
+
+    fun setCompanionAppConnected() {
+        setEndpointConnected(Endpoint.COMPANION_APP)
+        _companionAppConnected.value = true
+    }
+
+    fun setCompanionAppDisconnected() {
+        setEndpointDisconnected(Endpoint.COMPANION_APP)
+        _companionAppConnected.value = false
+    }
+
+    private val _companionAppConnected = MutableStateFlow<Boolean>(false)
+    val isCompanionConnected: StateFlow<Boolean> = _companionAppConnected
+        .stateIn(repoScope, SharingStarted.Eagerly, false)
+
+//    val isCompanionConnected: StateFlow<Boolean> =
+//        endpointConnected
+//            .map { set -> set.contains(Endpoint.COMPANION_APP)}
+//            .distinctUntilChanged()
+//            .stateIn(repoScope, SharingStarted.Eagerly, false)
+
+    fun isEndpointConnected(endpoint: Endpoint): Boolean =
+        _endpointConnected.value.contains(endpoint)
 
     /**
      *  Returns the current unread-message total, 0 if the service isn’t running.
@@ -1197,6 +1579,27 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableCompanionAppService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_COMPANION_APP_SERVICE] ?: true
+    }
+
+    suspend fun storeEnableCompanionAppService(enableCompanionAppService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_COMPANION_APP_SERVICE] = enableCompanionAppService
+        }
+    }
+
+    val getEnableWearTakDevMode: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_WEARTAK_DEV_MODE] ?: false
+    }
+
+    // NOTE: Store as false on every app boot!
+    suspend fun storeEnableWearTakDevMode(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_WEARTAK_DEV_MODE] = enable
+        }
+    }
+
     data class LocalizationBleBeaconItem(
         val uuid: String,
         val major: Int,
@@ -1241,6 +1644,8 @@ class DataRepository(private val context: Context) {
 
     private val _constantReportingInterval = MutableStateFlow<Int?>(null)
     val constantReportingInterval: StateFlow<Int?> = _constantReportingInterval
+
+    val androidDeviceUid: String = MainActivity.device_uid
 
     val getConstantReportingInterval: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
@@ -1455,7 +1860,7 @@ class DataRepository(private val context: Context) {
         initialValue = DEFAULT_AGE
     )
 
-    val exertionFlow: StateFlow<Double> = combine(
+    val latestExertion: StateFlow<Double> = combine(
         latestHeartRate.filterNotNull(),
         physiologicalMetricAge.filterNotNull(),
         restingHeartRate.filterNotNull()
@@ -1552,34 +1957,6 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    data class DailyMetrics(
-        val timestampHour: Instant,
-        val steps: Long       = 0L,
-        val calories: Double  = 0.0,
-        val floors: Double    = 0.0,
-        val elevationM: Double = 0.0
-    )
-
-    private val _latestDailyMetrics = MutableStateFlow<DailyMetrics?>(null)
-    val latestDailyMetrics: StateFlow<DailyMetrics?> = _latestDailyMetrics
-
-    fun updateDailyMetrics(
-        timestampHour: Instant,
-        steps: Long?,
-        calories: Double?,
-        floors: Double?,
-        elevationM: Double?
-    ) {
-        val prev = _latestDailyMetrics.value
-        _latestDailyMetrics.value = DailyMetrics(
-            timestampHour = timestampHour,
-            steps        = steps       ?: prev?.steps       ?: 0L,
-            calories     = calories    ?: prev?.calories    ?: 0.0,
-            floors       = floors      ?: prev?.floors      ?: 0.0,
-            elevationM   = elevationM  ?: prev?.elevationM  ?: 0.0
-        )
-    }
-
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -1627,6 +2004,8 @@ class DataRepository(private val context: Context) {
         private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
+        private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
+        private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")

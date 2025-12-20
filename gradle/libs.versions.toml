@@ -19,6 +19,7 @@ runtimeLivedata = "1.7.5"
 material3Android = "1.3.1"
 protoliteWellKnownTypes = "18.0.1"
 animationCore = "1.9.2"
+datastoreCore = "1.1.7"
 
 [libraries]
 compose-navigation = { module = "androidx.wear.compose:compose-navigation", version.ref = "composeNavigation" }
@@ -44,6 +45,7 @@ runtime-livedata = { group = "androidx.compose.runtime", name = "runtime-livedat
 material3-android = { group = "androidx.compose.material3", name = "material3-android", version.ref = "material3Android" }
 protolite-well-known-types = { group = "com.google.firebase", name = "protolite-well-known-types", version.ref = "protoliteWellKnownTypes" }
 animation-core = { group = "androidx.compose.animation", name = "animation-core", version.ref = "animationCore" }
+datastore-core = { group = "androidx.datastore", name = "datastore-core", version.ref = "datastoreCore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

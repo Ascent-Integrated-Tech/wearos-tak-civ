@@ -336,6 +336,12 @@
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
         <service
+            android:name=".service.CompanionAppService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.BloodhoundService"
             android:enabled="true"
             android:exported="false"

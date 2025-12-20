@@ -18,9 +18,16 @@ package com.aitech.weartak_civ
 
 import android.app.Application
 import android.content.Context
+import android.provider.Settings.Secure
 import android.util.Log
 import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -30,6 +37,7 @@ class WearTakApplication : Application() {
 
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
+    lateinit var capRepo: CompanionAppRepository; private set
 
     companion object {
         val TAG = "WearTAK-Applicaton"
@@ -37,10 +45,16 @@ class WearTakApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
+        capRepo = CompanionAppRepository(applicationContext)
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
+        // Wipe debug mode to false on every boot! 
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            repo.storeEnableWearTakDevMode(false)
+        }
     }
 
     object AppCtx {

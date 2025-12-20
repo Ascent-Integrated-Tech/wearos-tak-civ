@@ -20,7 +20,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,9 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
@@ -55,7 +52,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -74,26 +70,15 @@ import com.aitech.weartak_civ.HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.LOW_HEART_RATE_ALERT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.complication.PhysioAlertComplicationService
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.alertListPreview
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.HeartrateService
-import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
-import com.aitech.weartak_civ.service.HeartrateService.Companion.hrStringLiveData
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
-import java.lang.Math.round
-import java.time.Instant
 
 class PhysioAlertsActivity : ComponentActivity() {
     companion object {
@@ -269,7 +254,7 @@ fun AlertsScreen(
 fun ExpandableCard() {
     var expanded by remember { mutableStateOf(false) }
     val heartRateFlow = dataRepository.latestHeartRate.collectAsState()
-    val exertionFlow = dataRepository.exertionFlow.collectAsState()
+    val exertionFlow = dataRepository.latestExertion.collectAsState()
     val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
     val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
     val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()

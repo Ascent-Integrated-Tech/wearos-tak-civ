@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
@@ -308,7 +309,9 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     val successBoolean = remember { mutableStateOf(false) }
     val shouldShowConfirm = remember { mutableStateOf(false) }
     isAlertingLiveData.observeAsState()
-    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
+    val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle(initialValue = false)
+//    val anyEndpointConnected = connectedEndpoints.isNotEmpty()
+
     val location = dataRepository.latestLocation.value
     var locationChecked by remember { mutableStateOf(enableLocationService) }
     val navController = rememberSwipeDismissableNavController()
@@ -348,7 +351,6 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isAlertingLiveData
             )
             Log.w(TAG, "SOS_Screen Composable Reached.")
-
 //            if (isDismissed.value) {
 //                exitActivity()
 //                context.startActivity(Intent(context, MainActivity::class.java))
@@ -359,25 +361,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
             //isConfirmed = Was confirmation dialog confirm button pressed
 
             if (isConfirmed.value) {
-                if (takServer == true) {
-                    if (location != null && locationChecked) {
-                        successBoolean.value = true
-                        SOSButtonEmergencyMessage(isAlertingLiveData)
-                    }
-                } else {
-                    if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
-                        Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
-                        successBoolean.value = true
-                        SOSButtonEmergencyMessage(isAlertingLiveData)
-                    } else {
-                        Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
-                        successBoolean.value = false
-                        //
-//                        isAlerting.value = isAlerting.value == true
-//                        isAlerting.postValue(isAlerting.value)
-                    }
-
-                }
+                successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
+                if (successBoolean.value) {SOSButtonEmergencyMessage(isAlertingLiveData)}
 
                 LaunchedEffect(Unit) {
                     delay(2000) // Delay for 5 seconds

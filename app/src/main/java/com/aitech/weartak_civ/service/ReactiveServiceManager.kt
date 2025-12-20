@@ -105,6 +105,33 @@ class ReactiveServiceManager : Service() {
         val isRunning = AtomicBoolean(false)
     }
 
+    // Higher number = higher priority within an exclusive group
+    private val servicePriority: Map<ServiceType, Int> = mapOf(
+        ServiceType.DITTO          to 10,
+        ServiceType.COMPANION_APP  to 20
+    )
+
+    private fun priorityOf(type: ServiceType): Int =
+        servicePriority[type] ?: 0
+
+    // Returns running conflicting services with lower priority than `t`
+    private fun conflictsToStopBeforeStarting(t: ServiceType): List<ServiceType> {
+        val myPriority = priorityOf(t)
+        return t.conflictsWith.filter { other ->
+            registry.isServiceRunning(other) && priorityOf(other) < myPriority
+        }
+    }
+
+    // True if any conflicting service is desired & has >= priority
+    private fun conflictsBlockStart(t: ServiceType): Boolean {
+        val myPriority = priorityOf(t)
+        return t.conflictsWith.any { other ->
+            val otherPriority = priorityOf(other)
+            val otherDesired = desiredServicesStateMap[other] == true
+            otherDesired && otherPriority >= myPriority
+        }
+    }
+
     /*
      * Ordering and race-free states matter more than parallelism, so we use
      * our own single thread dispatcher for management (start/stop) of services
@@ -346,6 +373,15 @@ class ReactiveServiceManager : Service() {
 
             val ctx = ctx(t)
             if (shouldStart(ctx)) {
+                // 1) Stop lower-priority conflicting services that are currently running
+                val conflictsStopped = conflictsToStopBeforeStarting(t)
+                conflictsStopped.forEach { conflict ->
+                    Log.w(TAG, "Mutual exclusion: stopping $conflict before starting $t")
+                    stopOne(conflict)
+                    changedTypes += conflict
+                }
+
+                // 2) Start the requested service
                 startOne(t)
                 changedTypes += t
                 changed = true
@@ -407,7 +443,11 @@ class ReactiveServiceManager : Service() {
     )
 
     private fun shouldStart(c: ServiceCtx): Boolean =
-        c.desired && !c.running && c.available && c.depsSatisfied
+        c.desired &&
+                !c.running &&
+                c.available &&
+                c.depsSatisfied &&
+                !conflictsBlockStart(c.type)
 
     private fun isRunnable(t: ServiceType): Boolean =
         runnableServicesList.contains(t)
@@ -836,7 +876,7 @@ class ReactiveServiceManager : Service() {
         val isForegroundService: Boolean = false,
         val dependencies: List<ServiceType> = emptyList(),
         val isKnoxMgdService: Boolean = false,
-        val isNotRunnable: Boolean = false  // PHYSIO is virtual, we can't start custom access, hail isn't a runnable a service
+        val isNotRunnable: Boolean = false,  // PHYSIO is virtual, we can't start custom access, hail isn't a runnable a service
     ) {
         TAK_CONNECT(true, isKnoxMgdService = false),
         CHAT(true, dependencies = listOf(TAK_CONNECT), isKnoxMgdService = true),
@@ -855,6 +895,14 @@ class ReactiveServiceManager : Service() {
         BATTERY(true, isKnoxMgdService = false),
         POWER_MGR(true, isKnoxMgdService = false),
         BLOOD_HOUND(true, isKnoxMgdService = false),
-        MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND))
+        MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND)),
+        COMPANION_APP(isForegroundService = true, isKnoxMgdService = false);
+
+        val conflictsWith: List<ServiceType>
+            get() = when (this) {
+                DITTO         -> listOf(COMPANION_APP)
+                COMPANION_APP -> listOf(DITTO)
+                else          -> emptyList()
+            }
     }
 }
