@@ -980,7 +980,7 @@ class MainActivity : ComponentActivity() {
         mainActivityIsInit = this
 //        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         //TODO: WEAR-180: CHANGE BACK when finished
-        device_uid = "1"
+                device_uid = "1"
 
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
