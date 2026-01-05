@@ -140,4 +140,9 @@
     <string name="battery_alerts">Battery Alerts</string>
     <string name="compass_disabled">Compass Disabled</string>
     <string name="bluetooth">Bluetooth</string>
+    <string name="please_enable_chat_in_order_to_use_this_feature">Please enable Chat in order to use this feature</string>
+    <string name="go_to_settings">Go to Settings</string>
+    <string name="exit">Exit</string>
+    <string name="chat_messages">Chat Messages</string>
+    <string name="chat_disabled">Chat Disabled</string>
 </resources>

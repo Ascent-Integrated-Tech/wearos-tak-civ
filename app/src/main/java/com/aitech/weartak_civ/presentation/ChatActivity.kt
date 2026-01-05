@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -223,7 +224,8 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
         }
 
         composable("chat_disabled_screen") {
-            ChatDisabledScreen(navController, exitActivity)
+            ActivityDisabledScreen( navController, exitActivity, stringResource(R.string.chat_disabled),
+                stringResource(R.string.please_enable_chat_in_order_to_use_this_feature))
         }
 
         composable(
@@ -272,7 +274,7 @@ fun ChatScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Chat Messages",
+                    text = stringResource(R.string.chat_messages),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(7.dp)
@@ -672,66 +674,6 @@ fun ChatReplyScreen(navController: NavController) {
 
 }
 
-@Composable
-fun ChatDisabledScreen(navController: NavController, exitActivity: () -> Unit) {
-    WearTAKCIVTheme {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Chat Disabled",
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.size(5.dp))
-            Text(
-                text = "Please enable Chat in order to use this feature",
-                textAlign = TextAlign.Center,
-                fontSize = 14.sp
-            )
-            Spacer(modifier = Modifier.size(10.dp))
-            Button(
-                onClick = {
-                    navController.navigate("invalid_license_screen") {
-                        popUpTo("invalid_license_screen") { inclusive = true }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.primary,
-                    contentColor = Color.Black
-                )
-            ) {
-                Text(
-                    text = "Go to Settings",
-                    color = Color.Black,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-            Button(
-                onClick = { exitActivity() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.DarkGray,
-                    contentColor = Color.White
-                ),
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                Text(
-                    text = "Exit",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
 fun utcToHoursMinutes(time: Long): String {
     val instant = Instant.ofEpochMilli(time)
     val localTime = instant.atZone(ZoneId.systemDefault())
@@ -762,10 +704,4 @@ fun ChatScreenDetailedPreview() {
 @Composable
 fun ChatReplyPreview() {
     ChatReplyScreen(rememberSwipeDismissableNavController())
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun ChatDisabledPreview() {
-    ChatDisabledScreen(rememberSwipeDismissableNavController(), {})
 }

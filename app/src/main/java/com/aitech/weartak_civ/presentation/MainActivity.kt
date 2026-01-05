@@ -2990,7 +2990,7 @@ fun ActivityDisabledScreen(
                 )
             ) {
                 Text(
-                    text = "Go to Settings",
+                    text = stringResource(R.string.go_to_settings),
                     color = Color.Black,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
@@ -3005,7 +3005,7 @@ fun ActivityDisabledScreen(
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Text(
-                    text = "Exit",
+                    text = stringResource(R.string.exit),
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
