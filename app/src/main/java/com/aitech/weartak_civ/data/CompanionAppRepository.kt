@@ -16,15 +16,22 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.preferencesDataStore
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.util.UUID
@@ -95,36 +102,36 @@ class CompanionAppRepository(private val context: Context) {
         val payload: T
     )
 
-    sealed class BleOutboundEvent {
-        data class Marker(val snapshot: DataRepository.MarkerSnapshot) : BleOutboundEvent()
-        data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : BleOutboundEvent()
-        data class Chat(val snapshot: DataRepository.ChatEventSnapshot) : BleOutboundEvent()
-        data class Pli(val snapshot: DataRepository.PliSnapshot) : BleOutboundEvent()
-        data class ReportInt(val interval: Int) : BleOutboundEvent()
+    sealed class OutboundCotEvent {
+        data class Marker(val snapshot: DataRepository.MarkerSnapshot) : OutboundCotEvent()
+        data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : OutboundCotEvent()
+        data class Chat(val snapshot: DataRepository.ChatEventSnapshot) : OutboundCotEvent()
+        data class Pli(val snapshot: DataRepository.PliSnapshot) : OutboundCotEvent()
+        data class ReportInt(val interval: Int) : OutboundCotEvent()
     }
 
-    private val _outboundBleEvents =
-        MutableSharedFlow<BleOutboundEvent>(extraBufferCapacity = 64)
-    val outboundBleEvents: SharedFlow<BleOutboundEvent> = _outboundBleEvents
+    private val _outboundBleCotEvents =
+        MutableSharedFlow<OutboundCotEvent>(extraBufferCapacity = 64)
+    val outboundBleCotEvents: SharedFlow<OutboundCotEvent> = _outboundBleCotEvents
 
     suspend fun enqueueMarkerSnapshotForBle(snapshot: DataRepository.MarkerSnapshot) {
-        _outboundBleEvents.emit(BleOutboundEvent.Marker(snapshot))
+        _outboundBleCotEvents.emit(OutboundCotEvent.Marker(snapshot))
     }
 
     suspend fun enqueueEmergencySnapshotForBle(snapshot: DataRepository.EmergencyEventSnapshot) {
-        _outboundBleEvents.emit(BleOutboundEvent.Emergency(snapshot))
+        _outboundBleCotEvents.emit(OutboundCotEvent.Emergency(snapshot))
     }
 
     suspend fun enqueueChatSnapshotForBle(snapshot: DataRepository.ChatEventSnapshot) {
-        _outboundBleEvents.emit(BleOutboundEvent.Chat(snapshot))
+        _outboundBleCotEvents.emit(OutboundCotEvent.Chat(snapshot))
     }
 
     suspend fun enqueuePliSnapshotForBle(snapshot: DataRepository.PliSnapshot) {
-        _outboundBleEvents.emit(BleOutboundEvent.Pli(snapshot))
+        _outboundBleCotEvents.emit(OutboundCotEvent.Pli(snapshot))
     }
 
     suspend fun enqueueReportIntForBle(interval: Int) {
-        _outboundBleEvents.emit(BleOutboundEvent.ReportInt(interval))
+        _outboundBleCotEvents.emit(OutboundCotEvent.ReportInt(interval))
     }
 
     fun buildPliEnvelopeFromSnapshot(
@@ -265,6 +272,10 @@ class CompanionAppRepository(private val context: Context) {
         val bat: Int?           // battery
     )
 
+    data class TakServerList(
+        val list: List<DataRepository.TakServerItem>
+    )
+
     data class MarkerPayload(
         val uid: String,        // == msg_id
         val type: String,       // Marker type (a-f-G, a-u-G, etc).
@@ -278,6 +289,7 @@ class CompanionAppRepository(private val context: Context) {
         val tStale: String,
         val cs: String,
         val hr: String,
+        val remarks: String,
         val bat: Int?
     )
 
@@ -378,7 +390,162 @@ class CompanionAppRepository(private val context: Context) {
         )
     }
 
-    data class EnvelopeBase(val msg_type: String)
+    data class EnvelopeBase(
+        @SerializedName("msg_type")
+        val msg_type: String? = null,
+
+        @SerializedName("msgType")
+        val msgType: String? = null
+    ) {
+        // Single accessor used everywhere else
+        val type: String
+            get() = msg_type ?: msgType ?: ""
+    }
+    data class SetSettingsMessage(
+        @SerializedName("msg_type")
+        val msg_type: String? = null,
+
+        @SerializedName("msgType")
+        val msgType: String? = null,
+
+        val payload: SetSettingsPayload
+    ) {
+        val type: String
+            get() = msg_type ?: msgType ?: ""
+    }
+
+    data class SetSettingsPayload(
+        val takServerList: List<DataRepository.TakServerItem> = emptyList(),
+        val reportIntSecs: Int? = null,
+        val callsign: String? = null
+    )
+
+    data class SettingsAckPayload(
+        val ok: Boolean,
+        val error: String? = null
+    )
+
+    fun buildSettingsAck(ok: Boolean, error: String? = null): Envelope<SettingsAckPayload> {
+        val nowIso = Utils.timeNowIsoUtc()
+        val msgId = UUID.randomUUID().toString()
+
+        val payload = SettingsAckPayload(ok = ok, error = error)
+
+        return Envelope(
+            vers = 1,
+            msgType = "settings_set_ack",
+            msgUid = msgId,
+            t = nowIso,
+            src = "wearos",
+            payload = payload
+        )
+    }
+
+    suspend fun buildWatchSettingsEnvelope(): Envelope<WearTakSettingsSnapshot> {
+        val nowIso = Utils.timeNowIsoUtc()
+        val msgId  = UUID.randomUUID().toString()
+        val payload = snapshotWearTakSettings()
+
+        return Envelope(
+            vers = 1,
+            msgType = "settings_request",
+            msgUid        = msgId,
+            t = nowIso,
+            src = "wearos",
+            payload = payload
+        )
+    }
+
+    // The settings we can change from the companion app.
+    data class WearTakSettingsSnapshot(
+        val timeMillis: Long,                       // When the snapshot was taken
+        val takServerList: List<TakServerItem>,     // Tak Server Connections
+        val reportIntSecs: Int,                     // pli reporting rate
+        val callsign: String                        // callsign right now
+    )
+
+    suspend fun snapshotWearTakSettings(): WearTakSettingsSnapshot {
+        return WearTakSettingsSnapshot(
+            timeMillis    = System.currentTimeMillis(),
+            takServerList = repo.getTakServerList.first(),
+            reportIntSecs = repo.getConstantReportingInterval.first(),
+            callsign      = repo.getCallsign.first()
+        )
+    }
+
+    data class SettingsChangedPayload(
+        val callsign: String? = null,
+        val reportIntSecs: Int? = null,
+        val takServerList: List<TakServerItem>? = null
+    )
+
+    suspend fun buildSettingsChangedEnvelope(delta: SettingsChangedPayload): Envelope<SettingsChangedPayload> {
+        val nowIso = Utils.timeNowIsoUtc()
+        val msgId  = UUID.randomUUID().toString()
+
+        return Envelope(
+            vers = 1,
+            msgType = "settings_changed",
+            msgUid = msgId,
+            t = nowIso,
+            src = "wearos",
+            payload = delta
+        )
+    }
+
+
+    /**
+     * Emits when any of callsign / report interval / server list changes.
+     *
+     * Important: timeMillis is NOT included in equality comparison, otherwise it would
+     * emit constantly. We generate timeMillis only at emit time.
+     */
+    fun wearTakSettingsFlow(): Flow<WearTakSettingsSnapshot> {
+        return combine(
+            repo.getTakServerList,                 // Flow<List<TakServerItem>>
+            repo.getConstantReportingInterval,     // StateFlow<Int> or Flow<Int>
+            repo.getCallsign                      // Flow<String>
+        ) { list, interval, callsign ->
+            WearTakSettingsSnapshot(
+                timeMillis = System.currentTimeMillis(),
+                takServerList = list,
+                reportIntSecs = interval,
+                callsign = callsign
+            )
+        }
+            // Strip timeMillis out of distinct comparison
+            .distinctUntilChanged { old, new ->
+                old.callsign == new.callsign &&
+                        old.reportIntSecs == new.reportIntSecs &&
+                        old.takServerList == new.takServerList
+            }
+    }
+
+    fun settingsChangedDeltasFlow(): Flow<SettingsChangedPayload> = flow {
+        var prev: WearTakSettingsSnapshot? = null
+
+        wearTakSettingsFlow().collect { cur ->
+            val p = prev
+            prev = cur
+
+            // First emission: you can choose to emit a full "delta" or emit nothing.
+            // I recommend emitting full once so the plugin UI gets initialized immediately.
+            val callsignChanged = (p == null) || (p.callsign != cur.callsign)
+            val intChanged      = (p == null) || (p.reportIntSecs != cur.reportIntSecs)
+            val serversChanged  = (p == null) || (p.takServerList != cur.takServerList)
+
+            // If nothing changed (should be rare because wearTakSettingsFlow is distinct, but safe):
+            if (!callsignChanged && !intChanged && !serversChanged) return@collect
+
+            emit(
+                SettingsChangedPayload(
+                    callsign = if (callsignChanged) cur.callsign else null,
+                    reportIntSecs = if (intChanged) cur.reportIntSecs else null,
+                    takServerList = if (serversChanged) cur.takServerList else null
+                )
+            )
+        }
+    }
 
     suspend fun buildWatchInfoEnvelope(): Envelope<WatchInfoPayload> {
         val nowIso = Utils.timeNowIsoUtc()
@@ -426,6 +593,7 @@ class CompanionAppRepository(private val context: Context) {
             tStale      = snapshot.time.staleCot,
             cs        = snapshot.system.callsign,
             hr      = hrStr,
+            remarks = snapshot.remark,
             bat = snapshot.system.batteryPercent
         )
 

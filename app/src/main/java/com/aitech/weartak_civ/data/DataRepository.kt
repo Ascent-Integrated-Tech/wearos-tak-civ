@@ -1633,7 +1633,6 @@ class DataRepository(private val context: Context) {
         }
     }
 
-
     data class TakServerItem(
         var isEnabled: Boolean,
         val name: String,
