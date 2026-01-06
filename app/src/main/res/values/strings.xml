@@ -464,6 +464,8 @@
     <string name="localization_iBeacon_geojson_title" translatable="false">iBeacon GeoJSON</string>
     <string name="localization_iBeacon_geojson_description" translatable="false">Full iBeacon dataset as GeoJSON string ({"type":"FeatureCollection","name":"Test-02","properties":{"uuid":"426c7565-4368-6172-6d42-6561636f6e74","setName":"Test-01","generatedAt":"2025-08-20T16:10:32.551Z"},"features":[{"type":"Feature","properties":{"major":1,"minor":2},"geometry":{"type":"Point","coordinates":[-87.967657,45.459174,98.5]}},{"type":"Feature","properties":{"major":3,"minor":4},"geometry":{"type":"Point","coordinates":[-87.669969,45.511368,54.3]}}]})</string>
 
+    <string name="sos_text_complication_service">SoS Text Complication Service</string>
+
     <string name="cancel_current_sos_alert">Cancel current SOS Alert?</string>
     <string name="sos_active">SOS Live</string>
     <string name="sos_alert_sent">SOS Alert SENT</string>
