@@ -303,7 +303,7 @@ class MainActivity : ComponentActivity() {
         var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
         val categorySettingsState = MutableLiveData<String>("")
         var category = ""
-        var license = "License"
+        var license = "AscentFreeLicense"
         var teamValue = ""
         var dittoAppId = ""
         var dittoAuthToken = ""
