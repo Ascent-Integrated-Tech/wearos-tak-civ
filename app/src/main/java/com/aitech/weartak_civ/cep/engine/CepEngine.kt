@@ -42,7 +42,7 @@ class CepEngine(
 
                 computeFeaturesSafely()
 
-                //featureStore.logDerivedTick("CEP") // NEW: print everything computed this tick
+                featureStore.logDerivedTick("CEP") // NEW: print everything computed this tick
 
                 ruleEngine.processTick()
                 checkAndClearAlerts()   // NEW
