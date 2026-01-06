@@ -3481,6 +3481,8 @@ fun SettingsScreen(
                     .padding(bottom = 3.dp)
             )
 
+
+            /*
             val licenseText: String? by licenseSettingsState.observeAsState()
 
             Chip(
@@ -3501,7 +3503,7 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(bottom = 3.dp)
             )
-
+            */
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
