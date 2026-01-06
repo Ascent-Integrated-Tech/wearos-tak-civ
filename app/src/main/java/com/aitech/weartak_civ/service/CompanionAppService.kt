@@ -46,9 +46,14 @@ import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.DIS
 import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.CONNECTION_FAILED
 import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.NOT_CONNECTED
 import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.ERROR
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
-
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * CompanionAppService:
@@ -65,6 +70,10 @@ class CompanionAppService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private val gson = Gson()
+
+    private val notifyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val notifyMutex = Mutex()
+    private val NOTIFY_CHUNK_DELAY_MS = 12L // tune 8–20ms
 
     @Volatile private var activeAddr: String? = null
     private fun isActive(device: BluetoothDevice): Boolean =
@@ -105,6 +114,24 @@ class CompanionAppService : Service() {
                 if (state in listOf(DISCONNECTED, ERROR, CONNECTION_FAILED, NOT_CONNECTED)) {
                     if (connectedDevice == null) startAdvertising()
                 }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startSettingsChangedCollector() {
+        serviceScope.launch {
+            capRepo.settingsChangedDeltasFlow().collect { delta ->
+                val env = capRepo.buildSettingsChangedEnvelope(delta)
+                val json = capRepo.envelopeToJson(env)
+
+                if (!capRepo.companionAppReady.value || !notificationsEnabled) {
+                    enqueueJson(json)
+                    return@collect
+                }
+
+                flushPendingIfReady()
+                sendJsonToCompanion(json)
             }
         }
     }
@@ -251,8 +278,9 @@ class CompanionAppService : Service() {
         // 4) Initialize BLE server + GATT service
         initBle()
 
-        // 5) Start outbound BLE collector
+        // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
+        startSettingsChangedCollector()
 
         // 6) Finish setup async
         serviceScope.launch {
@@ -288,9 +316,24 @@ class CompanionAppService : Service() {
     }
 
     @SuppressLint("MissingPermission")
+    private fun updateBluetoothNameFromCallsign(callsign: String) {
+        val desiredName = "WT-$callsign" // or just callsign
+        val adapter = bluetoothAdapter ?: return
+
+        try {
+            if (adapter.name != desiredName) {
+                adapter.name = desiredName
+                Log.d(TAG, "Set BT adapter name to $desiredName")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to set BT adapter name", t)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private fun startBleOutboundCollector() {
         serviceScope.launch {
-            capRepo.outboundBleEvents.collect { event ->
+            capRepo.outboundBleCotEvents.collect { event ->
                 if (!capRepo.companionAppReady.value) {
                     Log.i(TAG, "Companion not ready; queueing BLE event $event")
                     // build json as normal below and enqueueJson(json)
@@ -298,31 +341,31 @@ class CompanionAppService : Service() {
                 }
 
                 val json = when (event) {
-                    is CompanionAppRepository.BleOutboundEvent.Pli -> {
+                    is CompanionAppRepository.OutboundCotEvent.Pli -> {
                         Log.i(TAG, "PLI - BLE Outbound Collector")
                         val env = capRepo.buildPliEnvelopeFromSnapshot(snapshot = event.snapshot, repIntSeconds = repo.almightyReportingIntervalSecs.value)
                         capRepo.envelopeToJson(env)
                     }
 
-                    is CompanionAppRepository.BleOutboundEvent.Marker -> {
+                    is CompanionAppRepository.OutboundCotEvent.Marker -> {
                         Log.i(TAG, "MARKER - BLE Outbound Collector")
                         val env = capRepo.buildMarkerEnvelopeFromSnapshot(event.snapshot)
                         capRepo.envelopeToJson(env)
                     }
 
-                    is CompanionAppRepository.BleOutboundEvent.Emergency -> {
+                    is CompanionAppRepository.OutboundCotEvent.Emergency -> {
                         Log.i(TAG, "EMERGENCY - BLE Outbound Collector")
                         val env = capRepo.buildEmergencyEnvelopeFromSnapshot(event.snapshot)
                         capRepo.envelopeToJson(env)
                     }
 
-                    is CompanionAppRepository.BleOutboundEvent.Chat -> {
+                    is CompanionAppRepository.OutboundCotEvent.Chat -> {
                         Log.i(TAG, "CHAT - BLE Outbound Collector uid=${event.snapshot.uid}")
                         val env = capRepo.buildChatEnvelopeFromSnapshot(snapshot = event.snapshot)
                         capRepo.envelopeToJson(env)
                     }
 
-                    is CompanionAppRepository.BleOutboundEvent.ReportInt -> {
+                    is CompanionAppRepository.OutboundCotEvent.ReportInt -> {
                         Log.i(TAG, "REPORTING INT - BLE Outbound Collector")
                         val env = capRepo.buildReportIntPayload(event.interval)
                         capRepo.envelopeToJson(env)
@@ -338,6 +381,12 @@ class CompanionAppService : Service() {
                 flushPendingIfReady()
                 sendJsonToCompanion(json)
             }
+        }
+    }
+
+    private fun collectOutboundSettings() {
+        serviceScope.launch {
+            capRepo.outboundBleCotEvents
         }
     }
 
@@ -610,47 +659,42 @@ class CompanionAppService : Service() {
                 value
             )
 
-            if (characteristic.uuid == capRepo.RX_FROM_COMPANION_UUID) {
-                val json = value.toString(Charsets.UTF_8)
-                Log.d(TAG, "RX from companion: $json")
+            // Respond immediately so the companion doesn't block on the write.
+            if (responseNeeded) {
+                val status = if (characteristic.uuid == capRepo.RX_FROM_COMPANION_UUID)
+                    BluetoothGatt.GATT_SUCCESS
+                else
+                    BluetoothGatt.GATT_FAILURE
 
-                // Minimal but robust: parse just msg_type, regardless of spacing/formatting
-                try {
-                    val base = gson.fromJson(
-                        json,
-                        CompanionAppRepository.EnvelopeBase::class.java
-                    )
-                    if (base.msg_type == "request_watch_info") {
-                        serviceScope.launch {
-                            val env = capRepo.buildWatchInfoEnvelope()
-                            val respJson = capRepo.envelopeToJson(env)
-                            sendJsonToCompanion(respJson)
-                        }
-                    }
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Failed to parse RX JSON: $json", t)
-                    // If parsing fails, just ignore; we can extend this later for other msg_types.
-                }
+                gattServer?.sendResponse(device, requestId, status, offset, null)
+            }
 
-                if (responseNeeded) {
-                    gattServer?.sendResponse(
-                        device,
-                        requestId,
-                        BluetoothGatt.GATT_SUCCESS,
-                        offset,
-                        null
-                    )
+            if (characteristic.uuid != capRepo.RX_FROM_COMPANION_UUID) return
+
+            val chunk = value.toString(Charsets.UTF_8)
+            Log.d(TAG, "RX from companion chunk: $chunk")
+
+            rxBuf.append(chunk)
+
+            // 1) Process newline-delimited frames
+            while (true) {
+                val idx = rxBuf.indexOf("\n")
+                if (idx < 0) break
+
+                val line = rxBuf.substring(0, idx).trim()
+                rxBuf.delete(0, idx + 1)
+
+                if (line.isNotEmpty()) {
+                    handleCompanionLine(line)
                 }
-            } else {
-                if (responseNeeded) {
-                    gattServer?.sendResponse(
-                        device,
-                        requestId,
-                        BluetoothGatt.GATT_FAILURE,
-                        offset,
-                        null
-                    )
-                }
+            }
+
+            // 2) Fallback: if companion sends a whole JSON object without newline,
+            // and buffer currently looks like a complete object, process it.
+            val bufTrim = rxBuf.toString().trim()
+            if (bufTrim.startsWith("{") && bufTrim.endsWith("}")) {
+                rxBuf.setLength(0)
+                handleCompanionLine(bufTrim)
             }
         }
 
@@ -800,15 +844,15 @@ class CompanionAppService : Service() {
             return
         }
 
-        val bytes = json.toByteArray(Charsets.UTF_8)
+        val framed = if (json.endsWith("\n")) json else (json + "\n")
+        val bytes = framed.toByteArray(Charsets.UTF_8)
         val maxPayload = maxNotifyPayloadBytes()
 
-        if (bytes.size > maxPayload) {
-            Log.w(TAG, "BLE JSON too long (${bytes.size} > $maxPayload, mtu=$negotiatedMtu); dropping/queueing")
-            // either return OR queue (see section 9)
-            return
+        notifyScope.launch {
+            sendChunkedNotify(bytes, maxPayload)
         }
 
+        /*
         tx.value = bytes
 
         try {
@@ -823,6 +867,151 @@ class CompanionAppService : Service() {
             // [Inference] optional: treat as connection failure and reset:
             // capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR)
             // restartAdvertisingSafely()
+        }
+
+         */
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private suspend fun sendChunkedNotify(bytes: ByteArray, maxPayload: Int) {
+        val device = connectedDevice ?: run {
+            Log.d(TAG, "sendChunkedNotify: no connectedDevice")
+            return
+        }
+        val tx = txCharacteristic ?: run {
+            Log.w(TAG, "sendChunkedNotify: txCharacteristic null")
+            return
+        }
+        val server = gattServer ?: run {
+            Log.w(TAG, "sendChunkedNotify: gattServer null")
+            return
+        }
+
+        // Prevent interleaving chunks from multiple messages
+        notifyMutex.withLock {
+            var offset = 0
+            while (offset < bytes.size) {
+                val end = minOf(offset + maxPayload, bytes.size)
+                val chunk = bytes.copyOfRange(offset, end)
+
+                tx.value = chunk
+
+                val ok = try {
+                    server.notifyCharacteristicChanged(device, tx, false)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "notifyCharacteristicChanged threw", t)
+                    false
+                }
+
+                if (!ok) {
+                    Log.w(TAG, "notifyCharacteristicChanged returned false at offset=$offset/${
+                        bytes.size
+                    } (dropping remainder)")
+                    return
+                }
+
+                offset = end
+
+                // Small pacing delay avoids buffer overruns on some stacks
+                if (offset < bytes.size) delay(NOTIFY_CHUNK_DELAY_MS)
+            }
+        }
+
+        Log.d(TAG, "sendChunkedNotify: sent ${bytes.size} bytes in chunks (maxPayload=$maxPayload)")
+    }
+    private val rxBuf = StringBuilder(4096)
+
+    suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
+        // 1) Store servers
+        repo.storeTakServerList(payload.takServerList)
+        // reflect the settings ui.
+        takServerList = payload.takServerList
+        takServerListState.postValue(takServerList)
+
+        // 2) Store reporting interval
+        val int = payload.reportIntSecs
+        if (int != null && int != 0) {
+            repo.storeConstantReportingInterval(payload.reportIntSecs)
+        }
+
+        // 3) Store callsign & update the ui.
+        if (payload.callsign == null) return
+
+        repo.storeCallsign(payload.callsign)
+        callsign = payload.callsign
+        MainActivity.callsignSettingsState.postValue(callsign)
+
+        // Only rename BT adapter when not actively connected
+        if (connectedDevice == null) {
+            updateBluetoothNameFromCallsign(payload.callsign)
+        } else {
+            Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun handleCompanionLine(json: String) {
+        Log.d(TAG, "RX from companion line: $json")
+
+        try {
+            val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
+
+            when (base.type) {
+                "request_watch_info" -> {
+                    serviceScope.launch {
+                        val env = capRepo.buildWatchInfoEnvelope()
+                        sendJsonToCompanion(capRepo.envelopeToJson(env))
+                    }
+                }
+
+                "request_settings" -> {
+                    serviceScope.launch {
+                        val env = capRepo.buildWatchSettingsEnvelope()
+                        sendJsonToCompanion(capRepo.envelopeToJson(env))
+                    }
+                }
+
+                "set_settings" -> {
+                    serviceScope.launch {
+                        try {
+                            val msg = gson.fromJson(
+                                json,
+                                CompanionAppRepository.SetSettingsMessage::class.java
+                            )
+
+                            // store the settings
+                            applySettingsFromCompanion(msg.payload)
+
+                            // ACK with the current settings (msgType)
+                            val ackEnv = capRepo.buildSettingsAck(ok = true)
+                            sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))                 // ACKNOWLEDGEMENT
+
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "set_settings: failed to parse/apply: $json", t)
+
+                            val ackEnv = capRepo.buildSettingsAck(
+                                ok = false,
+                                error = t.message ?: "parse/apply error"
+                            )
+                            sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))
+                        }
+                        // whenever we are commanded to write setting values, we always send back over the actual settings to the plugin to ensure true sync.
+                        try {
+                            val currSettingsEnv = capRepo.buildWatchSettingsEnvelope()
+                            sendJsonToCompanion(capRepo.envelopeToJson(currSettingsEnv))
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "set_settings: failed to send current settings", t)
+                        }
+                    }
+                }
+
+                else -> {
+                    Log.d(TAG, "RX: unhandled type=${base.type}")
+                }
+            }
+
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to parse RX JSON: $json", t)
         }
     }
 

@@ -318,6 +318,14 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
+suspend fun refreshTakServerSettings() {
+    takServerList = dataRepository.getTakServerList.first()
+    takServerListState.postValue(takServerList)
+    constantReportingInterval = dataRepository.getConstantReportingInterval.first()
+    constantReportingIntervalState.postValue(constantReportingInterval)
+    constantReportingIntervalSettingsState.postValue(constantReportingInterval)
+}
+
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
