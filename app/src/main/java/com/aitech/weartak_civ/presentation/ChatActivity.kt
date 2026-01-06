@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
@@ -69,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +82,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -559,7 +562,7 @@ fun ChatMessageItem(
 @Composable
 fun ChatReplyScreen(navController: NavController) {
 //    val textBox = remember { mutableStateOf("") }
-    var replyTextFieldValue by remember {
+    var replyTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(
             TextFieldValue(
                 reply.value ?: "null"
@@ -600,8 +603,8 @@ fun ChatReplyScreen(navController: NavController) {
                     ),
                     shape = RoundedCornerShape(50), // pill shape like Chip
                     maxLines = 3,
-
-                )
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                    )
                 Spacer(modifier = Modifier.width(5.dp))
                 IconButton(
                     onClick = {
