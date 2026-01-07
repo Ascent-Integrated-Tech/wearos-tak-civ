@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.cep.di
 
 import android.content.Context
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cep.engine.CepEngine
 import com.aitech.weartak_civ.cep.engine.ProfileStore
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
@@ -46,7 +47,9 @@ object CepProvider {
     private fun buildEngine(context: Context): CepEngine {
         val config = RuleCompiler.loadFromRaw(context)
 
-        val dataRepo = DataRepository(context.applicationContext)
+        //val dataRepo = DataRepository(context.applicationContext)
+
+        val dataRepo = (context as WearTakApplication).repo
 
         val yearOfBirth = kotlinx.coroutines.runBlocking {
             dataRepo.getYearOfBirth.first()
