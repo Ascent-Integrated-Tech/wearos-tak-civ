@@ -555,7 +555,7 @@ object Utils {
         val time: Long,
         val trigger: String
 	)
-    data class ChatResponse (
+    data class TextSelectionButton (
         val shortenedText: String,
         val longText: String
     )

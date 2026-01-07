@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
@@ -68,6 +71,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.complication.SosComplicationService
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
@@ -76,14 +80,19 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALE
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.isAlertingLiveData
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertOptions
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertType
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertTypeSaved
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.TAKConnectService
 import kotlinx.coroutines.delay
 import org.greenrobot.eventbus.EventBus
+import kotlin.collections.List
 
 
 class SosActivity : ComponentActivity() {
@@ -91,7 +100,16 @@ companion object Constants{
     lateinit var sosActivity : SosActivity
     val TAG = "WearTAK-" + SosActivity::class.java.simpleName
     val isAlertingLiveData = MutableLiveData<Boolean>(false)
+    val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
+        Utils.TextSelectionButton("Gate Runner", "Gate Runner"),
+        Utils.TextSelectionButton("Gunshot", "Gunshot"),
+        Utils.TextSelectionButton("Injury", "Injury"),
+        Utils.TextSelectionButton("UAS", "UAS"),
+        Utils.TextSelectionButton("Vehicle", "Vehicle")
+    )
 
+    val manualAlertType = MutableLiveData<String>("")
+    val manualAlertTypeSaved = MutableLiveData<String>("")
 }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -131,13 +149,23 @@ companion object Constants{
         WearTAKCIVTheme {
             Surface {
                 val isAlerting = MutableLiveData<Boolean>(true)
-                val isConfirmed = remember { mutableStateOf(false) }
+                val isConfirmed = remember { mutableStateOf(true) }
 
-                ConfirmationPage(
+                ConfirmationAlertPage(
                     isConfirmed,
-                    {},
-                    isAlerting
+                    isConfirmed,
+                    isAlerting,
+                    {}
                 )
+            }
+        }
+    }
+    @Preview(widthDp = 230, heightDp = 400, showBackground = true)
+    @Composable
+    fun PreviewAlertTypeScreen() {
+        WearTAKCIVTheme {
+            Surface {
+                TextSelectionScreen(rememberSwipeDismissableNavController(), manualAlertOptions, manualAlertType, "Manual Alert",{}, {})
             }
         }
     }
@@ -167,10 +195,10 @@ fun ConfirmationPage(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                Icons.Default.Warning,
-                modifier = Modifier.size(25.dp),
+                painterResource(R.drawable.tak_alert_icon),
+                modifier = Modifier.size(35.dp),
                 contentDescription = null,
-                tint = Color.LightGray
+                tint = Color.White
             )
             Spacer(modifier = Modifier.size(15.dp))
             Text(
@@ -227,6 +255,86 @@ fun ConfirmationPage(
 }
 
 @Composable
+fun ConfirmationAlertPage(
+    shouldShowDialog: MutableState<Boolean>,
+    isConfirmed: MutableState<Boolean>,
+    isAlerting: MutableLiveData<Boolean>,
+    confirmFunction: () -> Unit,
+    ) {
+    if (shouldShowDialog.value) {
+        AlertDialog(
+            containerColor = if (isAlerting.value == true) Color.Red else colors.background,
+            modifier = if (isAlerting.value == true) {
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Red)
+                    .padding(0.dp)
+            } else {
+                Modifier
+                    .fillMaxSize()
+                    .background(colors.background)
+                    .padding(0.dp)
+            },
+            onDismissRequest = {
+                shouldShowDialog.value = false
+            },
+            icon = {
+                Icon(
+                    painterResource(R.drawable.tak_alert_icon),
+                    modifier = Modifier.size(35.dp),
+                    contentDescription = null,
+                    tint = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = if (isAlerting.value == true) "Cancel ${manualAlertTypeSaved.value} Alert?" else "Send ${manualAlertType.value} Alert?",
+                    textAlign = TextAlign.Center,
+                    color = Color.White,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        shouldShowDialog.value = false
+                        isConfirmed.value = true
+                        confirmFunction()
+                    },
+                    modifier = Modifier.fillMaxWidth(0.45f),
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isAlerting.value == true) Color.Black else Color.Red),
+                ) {
+                    androidx.compose.material3.Text(
+                        text = stringResource(R.string.confirm),
+                        color = if (isAlerting.value == true) Color.White else Color.Black
+                    )
+                }
+            },
+
+            dismissButton = {
+                Button(
+                    onClick = {
+                        shouldShowDialog.value = false
+                        isConfirmed.value = false
+                    },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.fillMaxWidth(0.45f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                    )
+                ) {
+                    androidx.compose.material3.Text(
+                        text = stringResource(R.string.cancel),
+                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
 fun SuccessDialogActivity(
     shouldShowDialog: MutableState<Boolean>,
     successBoolean : MutableState<Boolean>,
@@ -264,7 +372,7 @@ fun SuccessDialogActivity(
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = if (isAlerting.value == true) stringResource(R.string.sos_alert_sent) else stringResource(R.string.sos_alert_cancelled),
+                        text = if (isAlerting.value == true) "${manualAlertTypeSaved.value} Alert Sent" else "${manualAlertTypeSaved.value} Alert Cancelled",
                         textAlign = TextAlign.Center,
                     )
                     Log.w(TAG, "isAlertingLiveData = ${isAlertingLiveData.observeAsState()}")
@@ -278,6 +386,11 @@ fun SuccessDialogActivity(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = stringResource(R.string.error),
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = if (isAlerting.value == true) "Alert will cancel when reconnected" else "Alert will send when reconnected",
                         textAlign = TextAlign.Center,
                     )
 
@@ -339,50 +452,60 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
         navController = navController,
         startDestination = if (isLicenseValid()) "sos_screen" else "invalid_license_screen"
     ) {
-        composable("sos_screen" ) {
-//            ConfirmationDialogActivity(
-//                isConfirmed,
-//                isDismissed,
-//                isAlertingLiveData
-//            )
-            ConfirmationPage(
-                isConfirmed,
-                {exitActivity()},
-                isAlertingLiveData
-            )
-            Log.w(TAG, "SOS_Screen Composable Reached.")
-//            if (isDismissed.value) {
-//                exitActivity()
-//                context.startActivity(Intent(context, MainActivity::class.java))
-//            }
-
-            //shouldShowDialog = Should successdialog be shown
-            //successBoolean = Success boolean (x or check)
-            //isConfirmed = Was confirmation dialog confirm button pressed
-
-            if (isConfirmed.value) {
-                successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
-                if (successBoolean.value) {SOSButtonEmergencyMessage(isAlertingLiveData)}
-
-                LaunchedEffect(Unit) {
-                    delay(2000) // Delay for 5 seconds
-                    shouldShowConfirm.value = false // Dismiss the dialog
-                    exitActivity()
-                    context.startActivity(Intent(context, MainActivity::class.java))
-                    isConfirmed.value = false
-                }
-                SuccessDialogActivity(
-                    shouldShowConfirm,
-                    successBoolean,
-                    isAlertingLiveData,
-                    context
-                )
-            }
-        }
 //        composable(
 //            "license_setting_screen") {
 //            LicenseKeyScreen(navController, licenseSettingsState, context)
 //        }
+        composable("sos_screen"){
+            if (isAlertingLiveData.value == false) {
+                TextSelectionScreen(
+                    navController,
+                    manualAlertOptions,
+                    manualAlertType,
+                    "Manual Alert",
+                    { shouldShowConfirm.value = true
+                        manualAlertTypeSaved.postValue(manualAlertType.value)
+                    },
+                    {
+                        manualAlertType.postValue("")
+                        exitActivity()})
+            } else {
+                shouldShowConfirm.value = true
+            }
+
+            ConfirmationAlertPage(
+                shouldShowConfirm,
+                isConfirmed,
+                isAlertingLiveData,
+                {
+                    successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
+                    if (successBoolean.value) {SOSButtonEmergencyMessage(isAlertingLiveData)}
+                }
+            )
+
+            SuccessfulCotSentCheck(
+                isConfirmed,
+                anyEndpointConnected,
+                context,
+                {
+                    exitActivity()
+                    manualAlertType.postValue("")
+                },
+                successBoolean,
+                location,
+                locationChecked,
+                {
+                    SuccessDialogActivity(
+                    isConfirmed,
+                    successBoolean,
+                    isAlertingLiveData,
+                    context
+                )
+                },
+                {}
+            )
+            Log.d(TAG, "Manual Alert Type: ${manualAlertType.value},"+" Manual Alert Type Saved: ${manualAlertTypeSaved.value}")
+        }
         composable(
             "invalid_license_screen") {
             context.startActivity(Intent(context, SettingsActivity::class.java))

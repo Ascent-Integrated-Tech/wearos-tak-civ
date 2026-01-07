@@ -33,7 +33,6 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
-import android.provider.Settings.Secure
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.Display
@@ -253,11 +252,11 @@ class MainActivity : ComponentActivity() {
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
-        var quickReplyOptions: List<Utils.ChatResponse> = listOf(
-            Utils.ChatResponse("RGR", "Roger"),
-            Utils.ChatResponse("NEG", "Negative"),
-            Utils.ChatResponse("Obj", "Objective"),
-            Utils.ChatResponse("nPos", "In Position")
+        var quickReplyOptions: List<Utils.TextSelectionButton> = listOf(
+            Utils.TextSelectionButton("RGR", "Roger"),
+            Utils.TextSelectionButton("NEG", "Negative"),
+            Utils.TextSelectionButton("Obj", "Objective"),
+            Utils.TextSelectionButton("nPos", "In Position")
         )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
@@ -2744,24 +2743,30 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
             contentColor = if (isAlertingLiveData == true) Color.White else Color.Red
         )
     ) {
-        if (isAlertingLiveData == true) {
-            Text (
-                sosLiveText,
-                fontSize = if (sosLiveText.length <= 15) 17.sp else 15.sp,
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 1,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = Color.White,
-            )
-        } else {
-            Text(
-                sosText,
-                fontSize = if (sosText.length <= 10) 25.sp else 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
+        Icon(
+            painterResource(R.drawable.tak_alert_icon),
+            modifier = Modifier.size(35.dp),
+            contentDescription = null,
+            tint = Color.White
+        )
+//        if (isAlertingLiveData == true) {
+//            Text (
+//                sosLiveText,
+//                fontSize = if (sosLiveText.length <= 15) 17.sp else 15.sp,
+//                overflow = TextOverflow.Ellipsis,
+//                maxLines = 1,
+//                fontWeight = FontWeight.Bold,
+//                textAlign = TextAlign.Center,
+//                color = Color.White,
+//            )
+//        } else {
+//            Text(
+//                sosText,
+//                fontSize = if (sosText.length <= 10) 25.sp else 20.sp,
+//                fontWeight = FontWeight.Bold,
+//                color = Color.White
+//            )
+//        }
     }
 }
 @Composable
