@@ -145,7 +145,7 @@ class DittoService : Service() {
             }
 
             // Schedule the next run
-            dittoUpdateHandler?.postDelayed(this, CotDispatchService.currReportingIntervalInSecs * 1000L)
+            dittoUpdateHandler?.postDelayed(this, CotDispatchService.actualReportingIntervalSecs * 1000L)
         }
     }
 
@@ -314,7 +314,7 @@ class DittoService : Service() {
     private fun updateTrackDocument() {
         ioScope.launch{
             val timeMs = System.currentTimeMillis()
-            val staleMsOffset = 3000 * CotDispatchService.currReportingIntervalInSecs
+            val staleMsOffset = 3000 * CotDispatchService.actualReportingIntervalSecs
             val staleTimeMs = timeMs+staleMsOffset
             val location = dataRepository.latestLocation.value
             val heartRate = dataRepository.latestHeartRate.value ?: -1

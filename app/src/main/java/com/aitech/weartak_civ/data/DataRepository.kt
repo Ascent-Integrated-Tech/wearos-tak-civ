@@ -68,6 +68,7 @@ import com.aitech.weartak_civ.DEFAULT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.ReactiveServiceManager
+import com.aitech.weartak_civ.service.BatteryService.DockType
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
@@ -86,6 +87,8 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_MANUAL
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
+import com.aitech.weartak_civ.service.BatteryService
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.flow.asStateFlow
@@ -343,6 +346,30 @@ class DataRepository(private val context: Context) {
 
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
+    // TODO: Later move nonNullBatteryPercentage to ViewModel
+    val nonNullBatteryPercentage: StateFlow<Int> = latestBatteryPercentage
+            .map { it ?: 100 }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.Eagerly,
+                initialValue = 100
+            )
+
+    private val _dockType = MutableStateFlow(BatteryService.DockType.NONE)
+    val dockType: StateFlow<BatteryService.DockType> = _dockType
+
+    suspend fun updateDockType(type: BatteryService.DockType) {
+        _dockType.emit(type)
+    }
+
+    val isDocked: StateFlow<Boolean> =
+        dockType
+            .map { it != BatteryService.DockType.NONE }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.Eagerly,
+                initialValue = false
+            )
 
     suspend fun updateChargingState(charging: Boolean) {
         _chargingState.emit(charging)
@@ -622,13 +649,49 @@ class DataRepository(private val context: Context) {
         )
     }
 
+    suspend fun logSystemSnapshot(tag: String) {
+        val states = snapshotSystemStates()
+        Log.d(tag, formatSystemSnapshot(states))
+    }
+
+    private fun formatSystemSnapshot(states: SystemStates): String {
+        return buildString {
+            appendLine("┌─ System Snapshot")
+            appendLine("│ timeMillis             : ${states.timeMillis}")
+            appendLine("│ dockType               : ${states.dockType}")
+            appendLine("│ charging               : ${states.charging}")
+            appendLine("│ desiredReportInterval  : ${states.desiredReportInterval} s")
+            appendLine("│ actualReportInterval   : ${states.actualReportInterval} s")
+            appendLine("└─────────────────────────────")
+        }
+    }
+
+    data class SystemStates(
+        val timeMillis: Long,       // timestamp of the states
+        val dockType: DockType,     // docked via wireless, usb, or none
+        val charging: Boolean,      // is the device currently charging
+        val desiredReportInterval: Int,    // the desired reporting interval before optimizations are applied
+        val actualReportInterval: Int,    // the actual dispatching interval in cot dispatch
+    )
+
+    private fun snapshotSystemStates(): SystemStates {
+        return SystemStates(
+            timeMillis = System.currentTimeMillis(),
+            dockType = dockType.value,
+            charging = chargingState.value,
+            desiredReportInterval = CotDispatchService.desiredReportingIntervalSecs,
+            actualReportInterval = CotDispatchService.actualReportingIntervalSecs
+        )
+    }
+
     data class SystemSnapshot(
         val timeMillis: Long,       // When the snapshot was taken
         val batteryPercent: Int?,   // nullable because sensors can fail or race
         val callsign: String,       // always available from DataStore
         val deviceId: String,       // MainActivity.device_uid
         val wearTakVersion: String, // gradle build vers #
-        val reportIntSecs: Int      // pli reporting rate
+        val reportIntSecs: Int,     // pli reporting rate
+        val systemStates: SystemStates
     )
 
     suspend fun snapshotSystem(): SystemSnapshot {
@@ -638,7 +701,7 @@ class DataRepository(private val context: Context) {
         val callsign = getCallsign.first()
         val deviceId = MainActivity.device_uid
         val version  = MainActivity.versionNumber
-        val interval = reportingUpdateIntervalSecs.value
+        val interval = CotDispatchService.actualReportingIntervalSecs
 
         return SystemSnapshot(
             timeMillis = now,
@@ -646,7 +709,8 @@ class DataRepository(private val context: Context) {
             callsign = callsign,
             deviceId = deviceId,
             wearTakVersion = version,
-            reportIntSecs = interval
+            reportIntSecs = interval,
+            systemStates = snapshotSystemStates()
         )
     }
 

@@ -35,13 +35,11 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.runTimerJob
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.startGlobalTimer
-import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -56,8 +54,6 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.min
-import kotlin.text.set
 
 
 class LocationService : Service() {
@@ -136,16 +132,16 @@ class LocationService : Service() {
             return
         }
 
-        if (CotDispatchService.currReportingIntervalInSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL) {
+        if (CotDispatchService.actualReportingIntervalSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL) {
             usingPeriodicGpsCallback = AtomicBoolean(true)
-            Log.d(TAG, "initializeLocation: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) using Location request/callback")
+            Log.d(TAG, "initializeLocation: GPS updates are periodic (${CotDispatchService.actualReportingIntervalSecs} s) using Location request/callback")
             //Initialize a new handler thread to start the location updates
-            startPeriodicLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+            startPeriodicLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.actualReportingIntervalSecs * 1000L, CotDispatchService.actualReportingIntervalSecs * 1000L)
         } else {
             usingPeriodicGpsCallback = AtomicBoolean(false)
-            Log.d(TAG, "initializeLocation: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) via alarm")
+            Log.d(TAG, "initializeLocation: GPS updates are periodic (${CotDispatchService.actualReportingIntervalSecs} s) via alarm")
             fusedLocationProviderClient?.requestLocationUpdates(oneShotLocationRequest, oneShotLocationCallback, Looper.getMainLooper())
-            runTimerJob(CotDispatchService.currReportingIntervalInSecs * 1000L)
+            runTimerJob(CotDispatchService.actualReportingIntervalSecs * 1000L)
         }
     }
 
@@ -166,7 +162,7 @@ class LocationService : Service() {
 
         //Log.d(TAG, "Acquired wakelock and now requesting location")
         fusedLocationProviderClient?.requestLocationUpdates(oneShotLocationRequest, oneShotLocationCallback, Looper.getMainLooper())
-        startGlobalTimer(CotDispatchService.currReportingIntervalInSecs * 1000L)
+        startGlobalTimer(CotDispatchService.actualReportingIntervalSecs * 1000L)
     }
 
     private fun startForegroundService() {
@@ -302,20 +298,20 @@ class LocationService : Service() {
             destroyLocationThread()
         } // No need to do anything if !usingPeriodicGpsCallback as we check this variable in acquireWakelockAndRequestLocation
 
-        if (CotDispatchService.currReportingIntervalInSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL) {
+        if (CotDispatchService.actualReportingIntervalSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL) {
             usingPeriodicGpsCallback.set(true)
-            Log.d(TAG, "restartGpsUpdates: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) using Location request/callback\")")
-            startPeriodicLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.currReportingIntervalInSecs * 1000L, CotDispatchService.currReportingIntervalInSecs * 1000L)
+            Log.d(TAG, "restartGpsUpdates: GPS updates are periodic (${CotDispatchService.actualReportingIntervalSecs} s) using Location request/callback\")")
+            startPeriodicLocationUpdates(Priority.PRIORITY_HIGH_ACCURACY, CotDispatchService.actualReportingIntervalSecs * 1000L, CotDispatchService.actualReportingIntervalSecs * 1000L)
         } else {
             usingPeriodicGpsCallback.set(false)
-            Log.d(TAG, "restartGpsUpdates: GPS updates are periodic (${CotDispatchService.currReportingIntervalInSecs} s) via alarm")
+            Log.d(TAG, "restartGpsUpdates: GPS updates are periodic (${CotDispatchService.actualReportingIntervalSecs} s) via alarm")
             if ((ActivityCompat.checkSelfPermission(mainActivity, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) &&
                 (ActivityCompat.checkSelfPermission(mainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
                 return
             }
             Log.d(TAG, "Received onLocationUpdateRequiredEvent: Requesting one shot location")
             fusedLocationProviderClient?.requestLocationUpdates(oneShotLocationRequest, oneShotLocationCallback, Looper.getMainLooper())
-            runTimerJob(CotDispatchService.currReportingIntervalInSecs * 1000L)
+            runTimerJob(CotDispatchService.actualReportingIntervalSecs * 1000L)
         }
     }
 

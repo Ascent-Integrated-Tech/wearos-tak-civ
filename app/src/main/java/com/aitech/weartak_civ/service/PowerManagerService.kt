@@ -29,7 +29,13 @@ import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_
 import com.aitech.weartak_civ.events.WifiSsidRcvd
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.DEFAULT_DOCKED_REPORTING_INTERVAL_SECS
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -40,6 +46,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 class PowerManagerService : Service() {
     private var powerManagerHandler: Handler? = null
     private var powerManagerThread: HandlerThread? = null
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var dockedAndShouldThrottleDispatch: Boolean = false // gate for triggering a throttle dispatch. Determined by dock state and enableDispatchThrottleOnDevDock flag.
+    private var currentDockType: BatteryService.DockType = BatteryService.DockType.NONE  // Are docked via wireless, usb, or not at all
+    private var enableDispatchThrottleOnDevDock = false // Default to false. when true, PLI dispatch interval is 15 minutes whenever charging, even on dev dock charger. Only make true when testing.
+
 
     override fun onCreate() {
         super.onCreate()
@@ -55,7 +66,7 @@ class PowerManagerService : Service() {
         }
 
         startPowerManagerThread()
-
+        collectDockState()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -76,6 +87,7 @@ class PowerManagerService : Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        scope.cancel()
         Log.d(TAG, "PowerManager Service destroyed")
     }
 
@@ -95,6 +107,76 @@ class PowerManagerService : Service() {
 
         // Schedule the first run
         powerManagerHandler?.postDelayed(initialPowerManagerStartRunnable, INITIAL_START_DELAY)
+    }
+
+    private fun collectDockState() {
+        scope.launch {
+            dataRepository.dockType.collect { dockType ->
+//                Log.i(
+//                    TAG,
+//                    "collectDockState: dockType=$dockType " +
+//                            "(initialStartDelayDone=${initialStartDelayDone.get()}, currentDockType=$currentDockType, usbThrottle=$enableDispatchThrottleOnDevDock)"
+//                )
+                dataRepository.logSystemSnapshot(TAG)
+
+                // De-dupe first (prevents spam)
+                if (currentDockType == dockType) {
+                    Log.d(TAG, "collectDockState: dockType unchanged ($dockType), skipping")
+                    return@collect
+                }
+
+                currentDockType = dockType
+
+                dockedAndShouldThrottleDispatch =
+                    dockType == BatteryService.DockType.WIRELESS ||
+                            (dockType == BatteryService.DockType.USB && enableDispatchThrottleOnDevDock)
+
+                // ✅ Key fix:
+                // If we should throttle, do it immediately, even during startup delay.
+                if (dockedAndShouldThrottleDispatch) {
+                    val before = CotDispatchService.actualReportingIntervalSecs
+                    if (before != DEFAULT_DOCKED_REPORTING_INTERVAL_SECS) {
+                        CotDispatchService.actualReportingIntervalSecs = DEFAULT_DOCKED_REPORTING_INTERVAL_SECS
+
+                        Log.d(
+                            TAG,
+                            "PowerManagerService: Dock throttle ON " +
+                                    "(dockType=$dockType, usbThrottle=$enableDispatchThrottleOnDevDock, interval $before -> ${CotDispatchService.actualReportingIntervalSecs})"
+                        )
+
+                        EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
+                    } else {
+                        Log.d(
+                            TAG,
+                            "collectDockState: throttle already applied " +
+                                    "(dockType=$dockType, interval=${CotDispatchService.actualReportingIntervalSecs})"
+                        )
+                    }
+                    return@collect
+                }
+
+                // For non-throttle states (NONE), keep startup-delay gate.
+                if (!initialStartDelayDone.get()) {
+                    Log.d(TAG, "collectDockState: startup delay active; skipping restore path for dockType=$dockType")
+                    return@collect
+                }
+
+                // Restore normal behavior using existing logic
+                runBlocking {
+                    dynamicUpdates(
+                        NetworkManager.isNetworkConnected,
+                        isWifiToInt(NetworkManager.isWifi),
+                        NetworkManager.connectedWifiSsid,
+                        dataRepository.getEnableWifiBatteryOptimization.first(),
+                        dataRepository.getEnableAllWifiBatteryOptimization.first(),
+                        dataRepository.getWifiSsidList.first()
+                    )
+                }
+
+                dataRepository.logSystemSnapshot(TAG)
+
+            }
+        }
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -154,29 +236,33 @@ class PowerManagerService : Service() {
                                enableWifiPowerOptim: Boolean, enablePowerOptimOnAllWifiSsids: Boolean,
                                powerOptimWifiSsidList: List<DataRepository.WifiSsidItem>) {
         Log.d(TAG, "PowerManagerService dynamicUpdates(): nwConnected($nwConnected), nwTransport($nwTransport), connWifiSsid($connWifiSsid), enableWifiPowerOptim($enableWifiPowerOptim), enablePowerOptimOnAllWifiSsids($enablePowerOptimOnAllWifiSsids), powerOptimWifiSsidList(${powerOptimWifiSsidList.toString()})")
+        if (dockedAndShouldThrottleDispatch) {
+            Log.w(TAG, "Device is docked and should be throttled. Exiting dynamicUpdates() early....")
+            return
+        }
         if (nwConnected) {
             if (nwTransport == WIFI) {
                 if (enableWifiPowerOptim) {
                     if (enablePowerOptimOnAllWifiSsids) {
                         // Slow down the GPS update as we assume that the device is NOT in critical area
                         // TODO: This will have to change this below when we add custom geofence
-                        CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
-                        Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids true: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                        CotDispatchService.actualReportingIntervalSecs = slowDownReportingInterval(CotDispatchService.desiredReportingIntervalSecs)
+                        Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids true: Setting currReportingIntervalInSecs to ${CotDispatchService.actualReportingIntervalSecs}")
                         // Send eventbus message so that LocationService can soft restart
                         EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                     } else {
                         // Check SSID and slow down if connWifiSsid is in powerOptimWifiSsidList
                         if (powerOptimWifiSsidList.any { it.name == connWifiSsid }) {
                             // connWifiSsid is in powerOptimWifiSsidList
-                            CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
-                            Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                            CotDispatchService.actualReportingIntervalSecs = slowDownReportingInterval(CotDispatchService.desiredReportingIntervalSecs)
+                            Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.actualReportingIntervalSecs}")
                             // Send eventbus message so that LocationService can soft restart
                             EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                         } else {
                             // Fast updates
-                            if (CotDispatchService.currReportingIntervalInSecs != CotDispatchService.reportingUpdateIntervalSecs) {
-                                CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-                                Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) NOT in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                            if (CotDispatchService.actualReportingIntervalSecs != CotDispatchService.desiredReportingIntervalSecs) {
+                                CotDispatchService.actualReportingIntervalSecs = CotDispatchService.desiredReportingIntervalSecs
+                                Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim true, enablePowerOptimOnAllWifiSsids false (connWifiSsid($connWifiSsid) NOT in $powerOptimWifiSsidList): Setting currReportingIntervalInSecs to ${CotDispatchService.actualReportingIntervalSecs}")
                                 // Send eventbus message so that LocationService can soft restart
                                 EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                             }
@@ -184,26 +270,26 @@ class PowerManagerService : Service() {
                     }
                 } else {
                     // Fast updates
-                    if (CotDispatchService.currReportingIntervalInSecs != CotDispatchService.reportingUpdateIntervalSecs) {
-                        CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-                        Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim false: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                    if (CotDispatchService.actualReportingIntervalSecs != CotDispatchService.desiredReportingIntervalSecs) {
+                        CotDispatchService.actualReportingIntervalSecs = CotDispatchService.desiredReportingIntervalSecs
+                        Log.d(TAG, "PowerManagerService: WIFI w/ enableWifiPowerOptim false: Setting currReportingIntervalInSecs to ${CotDispatchService.actualReportingIntervalSecs}")
                         // Send eventbus message so that LocationService can soft restart
                         EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                     }
                 }
             } else { // It will be CELLULAR
                 // Fast GPS update
-                if (CotDispatchService.currReportingIntervalInSecs != CotDispatchService.reportingUpdateIntervalSecs) {
-                    CotDispatchService.currReportingIntervalInSecs = CotDispatchService.reportingUpdateIntervalSecs
-                    Log.d(TAG, "PowerManagerService CELLULAR: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+                if (CotDispatchService.actualReportingIntervalSecs != CotDispatchService.desiredReportingIntervalSecs) {
+                    CotDispatchService.actualReportingIntervalSecs = CotDispatchService.desiredReportingIntervalSecs
+                    Log.d(TAG, "PowerManagerService CELLULAR: Setting currReportingIntervalInSecs to ${CotDispatchService.actualReportingIntervalSecs}")
                     // Send eventbus message so that LocationService can soft restart
                     EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
                 }
             }
         } else {
             // Not connected. Slow down the GPS update
-            CotDispatchService.currReportingIntervalInSecs = slowDownReportingInterval(CotDispatchService.reportingUpdateIntervalSecs)
-            Log.d(TAG, "PowerManagerService Network Disconnected: Setting currReportingIntervalInSecs to ${CotDispatchService.currReportingIntervalInSecs}")
+            CotDispatchService.actualReportingIntervalSecs = slowDownReportingInterval(CotDispatchService.desiredReportingIntervalSecs)
+            Log.d(TAG, "PowerManagerService Network Disconnected: Setting currReportingIntervalInSecs to ${CotDispatchService.actualReportingIntervalSecs}")
             // Send eventbus message so that LocationService can soft restart
             EventBus.getDefault().post(PowerManagerEvent(CHANGED_UPDATE_INTERVAL))
         }
