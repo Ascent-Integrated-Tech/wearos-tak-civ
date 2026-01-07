@@ -21,7 +21,6 @@ import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
-import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
@@ -162,7 +161,7 @@ class CotDispatchService : Service() {
     */
     private fun startReportingIntervalRepoBridge() {
         serviceScope.launch {
-            currReportingIntervalFlow
+            actualReportingIntervalSecsFlow
                 .collect { secs ->
                     dataRepository.setAlmightyReportingInterval(secs)
                 }
@@ -176,7 +175,7 @@ class CotDispatchService : Service() {
             dataRepository.almightyReportingIntervalSecs
                 .collect{ interval ->
                     Log.v(TAG, "Almighty reporting interval in DR has changed to -> $interval Seconds")
-                    Log.v(TAG, "Cotdispatch Companion Obj: $reportingUpdateIntervalSecs")
+                    Log.v(TAG, "Cotdispatch Companion Obj: $desiredReportingIntervalSecs")
                     if (companionAppAvailable()) {
                         Log.v(TAG, "Sending to companion app via BLE")
                         capRepo.enqueueReportIntForBle(interval)
@@ -407,7 +406,7 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
-            if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > currReportingIntervalInSecs * 1000L) {
+            if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > actualReportingIntervalSecs * 1000L) {
                 // Somehow location update did not happen within the last currReportingIntevalInSecs.
                 // Mostly because watch does not have GPS (e.g., indoor) and fused location at this time
                 // will only provide updates every 5 seconds irrespective if currReportingIntevalInSecs < 5s.
@@ -418,7 +417,7 @@ class CotDispatchService : Service() {
                 buildAndSendPhysioLocationCotMsg()
             }
             // Schedule the next run
-            cotDispatchHandler?.postDelayed(this, currReportingIntervalInSecs * 1000L)
+            cotDispatchHandler?.postDelayed(this, actualReportingIntervalSecs * 1000L)
         }
     }
 
@@ -1806,28 +1805,28 @@ class CotDispatchService : Service() {
         private const val OVERRIDE_GPS_WITH_BLE_EXIT_HYSTERESIS_COUNT_JSON_KEY = "overrideGpsWithBleExitHysteresisCount"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
 
-        private val _currReportingIntervalFlow =
+        private val _actualReportingIntervalSecsFlow =
             MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
-        val currReportingIntervalFlow: StateFlow<Int> =
-            _currReportingIntervalFlow.asStateFlow()
+        val actualReportingIntervalSecsFlow: StateFlow<Int> =
+            _actualReportingIntervalSecsFlow.asStateFlow()
 
-        var currReportingIntervalInSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
+        var actualReportingIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
             set(value) {
                 if (field == value) return
                 field = value
-                _currReportingIntervalFlow.value = value
+                _actualReportingIntervalSecsFlow.value = value
             }
 
-        private val _reportingUpdateIntervalFlow =
+        private val _desiredReportingIntervalSecsFlow =
             MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
-        val reportingUpdateIntervalFlow: StateFlow<Int> =
-            _reportingUpdateIntervalFlow.asStateFlow()
+        val desiredReportingIntervalSecsFlow: StateFlow<Int> =
+            _desiredReportingIntervalSecsFlow.asStateFlow()
 
-        var reportingUpdateIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
+        var desiredReportingIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
             set(value) {
                 if (field == value) return
                 field = value
-                _reportingUpdateIntervalFlow.value = value
+                _desiredReportingIntervalSecsFlow.value = value
             }
 
         lateinit var instance: CotDispatchService

@@ -25,7 +25,6 @@ import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.aitech.weartak_civ.service.CotDispatchService.Companion.currReportingIntervalInSecs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -102,9 +101,9 @@ class ReportingIntervalStrategyService : Service() {
             Log.d(TAG, "initializeVariables enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
                     "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
                     "(activity=$latestActivity, isAlerting=$isAlerting, alerting=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
-            if (reportingInterval != CotDispatchService.reportingUpdateIntervalSecs) {
-                Log.d(TAG, "initializeVariables reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
-                CotDispatchService.reportingUpdateIntervalSecs = reportingInterval
+            if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs) {
+                Log.d(TAG, "initializeVariables reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.desiredReportingIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
+                CotDispatchService.desiredReportingIntervalSecs = reportingInterval
                 EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, reportingInterval))
             }
         }
@@ -116,9 +115,9 @@ class ReportingIntervalStrategyService : Service() {
         //Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
         //            "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
         //            "(activity=$latestActivity, alerting=$isAlerting, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
-        if (reportingInterval != CotDispatchService.reportingUpdateIntervalSecs) {
+        if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs) {
             //Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
-            CotDispatchService.reportingUpdateIntervalSecs = reportingInterval
+            CotDispatchService.desiredReportingIntervalSecs = reportingInterval
             EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, reportingInterval))
         }
     }
