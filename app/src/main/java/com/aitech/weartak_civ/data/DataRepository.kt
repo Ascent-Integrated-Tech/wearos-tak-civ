@@ -2299,7 +2299,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getYearOfBirth: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[YEAR_OF_BIRTH] ?: 1997
+        prefs[YEAR_OF_BIRTH] ?: 1825
     }
 
     suspend fun storeYearOfBirth(year: Int) {

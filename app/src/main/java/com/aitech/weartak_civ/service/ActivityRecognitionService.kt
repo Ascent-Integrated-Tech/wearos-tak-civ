@@ -41,6 +41,7 @@ import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
 import com.aitech.weartak_civ.cep.model.payloads.ActivityPayload
+import com.aitech.weartak_civ.cep.model.payloads.SleepPayload
 import com.aitech.weartak_civ.CAT_FALL_DETECTED
 import com.aitech.weartak_civ.DESC_GOOGLE_SDK_FALL_DETECTED
 import kotlinx.coroutines.SupervisorJob
@@ -184,6 +185,16 @@ class ActivityRecognitionService : Service() {
                         CepEvent(
                             topic = Topics.ACTIVITY,
                             payload = ActivityPayload(state = cepState)
+                        )
+                    )
+                }
+
+                // Emit to CEP inside coroutine scope
+                ioScope.launch {
+                    CepBus.emit(
+                        CepEvent(
+                            topic = Topics.SLEEP,
+                            payload = SleepPayload(is_sleeping = false)
                         )
                     )
                 }

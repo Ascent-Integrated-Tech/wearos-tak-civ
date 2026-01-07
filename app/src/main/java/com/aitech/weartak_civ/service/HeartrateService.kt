@@ -324,7 +324,7 @@ class HeartrateService: Service() {
 
                 hr = localHr
                 //Log.d(TAG, "Obtained heartrate: $hr")
-                generateAlerts()
+                //generateAlerts()
 
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.actualReportingIntervalSecs * 1000L)) {
