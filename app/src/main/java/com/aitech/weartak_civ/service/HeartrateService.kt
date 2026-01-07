@@ -31,7 +31,6 @@ import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_Biometric
-import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_HIGH_HEART_RATE_ALERT_CLEAR
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.MessageEvent
@@ -302,7 +301,7 @@ class HeartrateService: Service() {
                 generateAlerts()
 
                 val currTime = System.currentTimeMillis()
-                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.currReportingIntervalInSecs * 1000L)) {
+                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.actualReportingIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     runBlocking {
                         hrStringLiveData.postValue(hr.toString())

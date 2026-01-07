@@ -731,8 +731,8 @@ class MainActivity : ComponentActivity() {
                 if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
 
             dataRepository.storeReportingUpdateInterval(reportingUpdateInterval)
-            CotDispatchService.reportingUpdateIntervalSecs = reportingUpdateInterval
-            CotDispatchService.currReportingIntervalInSecs = reportingUpdateInterval
+            CotDispatchService.desiredReportingIntervalSecs = reportingUpdateInterval
+            CotDispatchService.actualReportingIntervalSecs = reportingUpdateInterval
 
             // --- External endpoints / integrations ---
             enableTakEndpoint              = dataRepository.getEnableTakEndpoint.first()
@@ -2545,7 +2545,7 @@ fun TroubleshootingIcons() {
             contentAlignment = Alignment.TopCenter
     ) {
         val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
-        val battery by BatteryService.batteryPercentageLiveData.observeAsState()
+        val battery by dataRepository.nonNullBatteryPercentage.collectAsState(initial = 100)
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val anyTakServerConnected by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
         val anyTakServerConnecting by TAKConnectService.isAnyTakConnectingLiveData.observeAsState()
@@ -2628,10 +2628,10 @@ fun TroubleshootingIcons() {
         // Icon on the bottom right curve
 
         val batteryIcon = when {
-            battery!! <= 20 -> R.drawable.battery_1_bar
-            battery!! <= 40 -> R.drawable.battery_3
-            battery!! <= 60 -> R.drawable.battery_4_bar
-            battery!! <= 80 -> R.drawable.battery_5
+            battery <= 20 -> R.drawable.battery_1_bar
+            battery <= 40 -> R.drawable.battery_3
+            battery <= 60 -> R.drawable.battery_4_bar
+            battery <= 80 -> R.drawable.battery_5
             else -> R.drawable.battery_full
         }
         Icon(

@@ -15,22 +15,22 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 class BatteryService: Service() {
-    private var batteryMonitorHandler: Handler? = null
-    private var batteryMonitorThread: HandlerThread? = null
-    private val batteryMonitorRunnable = BatteryMonitorRunnable()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var lastDockType: DockType? = null
+    private var lastBatteryPct: Int? = null
+    private var lastChargingOrFull: Boolean? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -40,7 +40,7 @@ class BatteryService: Service() {
             BATTERY_MONITOR_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
         )
-        startBatteryMonitor()
+        startBatteryPowerMonitoring()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -48,50 +48,96 @@ class BatteryService: Service() {
         return START_NOT_STICKY
     }
 
-    private fun startBatteryMonitor() {
-        batteryMonitorThread = HandlerThread("Battery Monitor Thread")
+    private fun startBatteryPowerMonitoring() {
+        registerReceiver(
+            batteryPowerReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_BATTERY_CHANGED)     // includes EXTRA_PLUGGED + status
+                addAction(Intent.ACTION_POWER_CONNECTED)     // edge-trigger signal
+                addAction(Intent.ACTION_POWER_DISCONNECTED)  // edge-trigger signal
+            }
+        )
+
+        Log.d(TAG, "BatteryService: batteryPowerReceiver registered")
+    }
+
+    private fun stopBatteryPowerMonitoring() {
         try {
-            batteryMonitorThread?.start()
-            batteryMonitorHandler = batteryMonitorThread?.looper?.let { Handler(it) }
-            batteryMonitorHandler?.postDelayed(batteryMonitorRunnable, INITIAL_BATTERY_MONITOR_START_DELAY)
-        } catch (e: IllegalThreadStateException) {
-            Log.e(TAG, "Not able to start the battery monitor thread ", e)
+            unregisterReceiver(batteryPowerReceiver)
+            Log.d(TAG, "BatteryService: batteryPowerReceiver unregistered")
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "BatteryService: batteryPowerReceiver already unregistered?", e)
         }
     }
 
-    fun getBatteryPercentage(context: Context): Float {
-        try {
-            val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            val batteryStatus = context.registerReceiver(null, iFilter)
-            val level = (batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1).toFloat()
-            val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-            val charging =
+    private val batteryPowerReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_BATTERY_CHANGED &&
+                intent.action != Intent.ACTION_POWER_CONNECTED &&
+                intent.action != Intent.ACTION_POWER_DISCONNECTED
+            ) return
+
+            Log.v(TAG, "batteryPowerReceiver: intent.action --> ${intent.action}")
+
+            // ACTION_BATTERY_CHANGED carries the extras we care about.
+            // POWER_CONNECTED / DISCONNECTED may not include EXTRA_PLUGGED on all devices,
+            // so we fall back to querying the sticky BATTERY_CHANGED intent if needed.
+            val batteryIntent = if (intent.action == Intent.ACTION_BATTERY_CHANGED) {
+                intent
+            } else {
+                context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            }
+
+            if (batteryIntent == null) {
+                Log.w(TAG, "batteryPowerReceiver: batteryIntent=null (cannot determine dock state)")
+                return
+            }
+
+            val status = batteryIntent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            val plugged = batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+
+            val level = batteryIntent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = batteryIntent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            if (level < 0 || scale <= 0) {
+                Log.w(TAG, "batteryPowerReceiver: invalid level/scale (level=$level, scale=$scale)")
+                return
+            }
+            val batteryPct = ((level.toFloat() / scale.toFloat()) * 100f).toInt()
+
+            val dockType = when (plugged) {
+                BatteryManager.BATTERY_PLUGGED_WIRELESS -> DockType.WIRELESS
+                BatteryManager.BATTERY_PLUGGED_USB      -> DockType.USB
+                else                                    -> DockType.NONE
+            }
+
+            val chargingOrFull =
                 status == BatteryManager.BATTERY_STATUS_CHARGING ||
                         status == BatteryManager.BATTERY_STATUS_FULL
 
-            CoroutineScope(Dispatchers.IO).launch {
-                // Implement this in dataRepository (see below)
-                dataRepository.updateChargingState(charging)
+            // De-dupe to avoid spamming repo/logs if system sends repeated BATTERY_CHANGED
+            val dockChanged = dockType != lastDockType
+            val chargingChanged = (chargingOrFull != lastChargingOrFull)
+            val pctChanged = batteryPct != lastBatteryPct
+            if (!dockChanged && !pctChanged && !chargingChanged) return
+
+            lastDockType = dockType
+            lastBatteryPct = batteryPct
+            lastChargingOrFull = chargingOrFull
+
+            Log.i(TAG, "batteryPowerReceiver: pct=$batteryPct dockType=$dockType (plugged=$plugged, status=$status, chargingOrFull=$chargingOrFull)")
+
+            serviceScope.launch {
+                if (pctChanged) dataRepository.storeLatestBatteryPercentage(batteryPct)
+                if (dockChanged) dataRepository.updateDockType(dockType)
+                if (chargingChanged) dataRepository.updateChargingState(chargingOrFull)
             }
-            return (level / scale) * 100
-        } catch (e: RuntimeException) {
-            Log.e(TAG, "Error in getBatteryPercentage: ", e)
-            return (-1000).toFloat()
         }
     }
 
-    private inner class BatteryMonitorRunnable : Runnable {
-        override fun run() {
-            batteryPercentage = getBatteryPercentage(applicationContext).toInt()
-            batteryPercentageLiveData.postValue(batteryPercentage)
-//            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
-//            batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
-            CoroutineScope(Dispatchers.IO).launch {
-                dataRepository.storeLatestBatteryPercentage(batteryPercentage) // TODO: can we remove coroutine scope
-            }
-            batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
-        }
+    enum class DockType {
+        NONE,
+        USB,
+        WIRELESS
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -104,22 +150,13 @@ class BatteryService: Service() {
         Log.d(TAG, "BatteryService onDestroy()")
         isRunning.set(false)
         stopForeground(STOP_FOREGROUND_DETACH)
-
-        if ((batteryMonitorThread != null) && (batteryMonitorHandler != null)) {
-            batteryMonitorHandler?.removeCallbacks(batteryMonitorRunnable)
-            batteryMonitorHandler?.looper?.quit()
-            batteryMonitorThread?.quitSafely()
-        }
+        stopBatteryPowerMonitoring()
+        serviceScope.cancel()
     }
 
     companion object {
         private val TAG = "WearTAK-" + BatteryService::class.java.simpleName
-        const private val INITIAL_BATTERY_MONITOR_START_DELAY = 1_000L // Set to 1 second
-        //const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 3_00_000L // 5 minutes
-        const private val DEFAULT_BATTERY_MONITOR_INTERVAL = 60_000L // Set to 1 minute
         const private val BATTERY_MONITOR_SERVICE_NOTIFICATION_ID = 102
-        var batteryPercentage : Int = 100
-        val batteryPercentageLiveData = MutableLiveData<Int>(100)
         val isRunning : AtomicBoolean = AtomicBoolean(false)
     }
 }
