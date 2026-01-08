@@ -173,89 +173,6 @@ companion object Constants{
 }
 
 @Composable
-fun ConfirmationPage(
-    isConfirmed: MutableState<Boolean>,
-    exitActivity: () -> Unit,
-    isAlerting: MutableLiveData<Boolean>
-) {
-    WearTAKCIVTheme {
-        val context = LocalContext.current
-        Column(
-            modifier = if (isAlerting.value == true) {
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Red)
-                    .padding(16.dp)
-            } else {
-                Modifier
-                    .fillMaxSize()
-                    .background(colors.background)
-                    .padding(16.dp)
-            },
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                painterResource(R.drawable.tak_alert_icon),
-                modifier = Modifier.size(35.dp),
-                contentDescription = null,
-                tint = Color.White
-            )
-            Spacer(modifier = Modifier.size(15.dp))
-            Text(
-                text = if (isAlerting.value == true) stringResource(R.string.cancel_current_sos_alert) else stringResource(R.string.sos_alert_prompt),
-                textAlign = TextAlign.Center,
-                fontSize = if (stringResource(R.string.sos_alert_prompt).length > 40) 13.sp else 14.sp
-            )
-            Spacer(modifier = Modifier.size(15.dp))
-            Row(
-                modifier = Modifier
-                    .padding(top = 0.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center) {
-                Button(
-                    onClick = {
-                        isConfirmed.value = false
-                        exitActivity()
-                        context.startActivity(Intent(context, MainActivity::class.java))
-                    },
-                    contentPadding = PaddingValues(10.dp),
-//                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Gray,
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.dismiss),
-                    )
-                }
-
-                Spacer(modifier = Modifier.size(10.dp))
-
-                Button(
-                    onClick = {
-                        Log.w(TAG, "SOS Clicked.")
-                        isConfirmed.value = true
-//                        exitActivity()
-//                        context.startActivity(Intent(context, MainActivity::class.java))
-                    },
-//                    modifier = Modifier.fillMaxWidth(0.45f),
-                    contentPadding = PaddingValues(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isAlerting.value == true) Color.Black else Color.Red,
-                    ),
-                ) {
-                    Text(
-                        text = stringResource(R.string.confirm),
-                        color = if (isAlerting.value == true) Color.White else Color.Black
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun ConfirmationAlertPage(
     shouldShowDialog: MutableState<Boolean>,
     isConfirmed: MutableState<Boolean>,
@@ -290,7 +207,13 @@ fun ConfirmationAlertPage(
             },
             text = {
                 Text(
-                    text = if (isAlerting.value == true) "Cancel ${manualAlertTypeSaved.value} Alert?" else "Send ${manualAlertType.value} Alert?",
+                    text = when {
+                        isAlerting.value == true && manualAlertTypeSaved.value.isNullOrEmpty() -> "Cancel Manual Alert?"
+                        isAlerting.value == true && !manualAlertTypeSaved.value.isNullOrEmpty() -> "Cancel Alert:${manualAlertTypeSaved.value}?"
+                        isAlerting.value == false && manualAlertType.value.isNullOrEmpty() -> "Send Manual Alert?"
+                        isAlerting.value == false && !manualAlertType.value.isNullOrEmpty() -> "Send Alert:${manualAlertTypeSaved.value}?"
+                        else -> {"ERROR"}
+                    },
                     textAlign = TextAlign.Center,
                     color = Color.White,
                     modifier = Modifier.fillMaxWidth(),
@@ -377,7 +300,13 @@ fun SuccessDialogActivity(
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = if (isAlerting.value == true) "${manualAlertTypeSaved.value} Alert Sent" else "${manualAlertTypeSaved.value} Alert Cancelled",
+                        text = when {
+                            isAlerting.value == true && manualAlertType.value.isNullOrEmpty() -> "Manual Alert Sent"
+                            isAlerting.value == true && !manualAlertType.value.isNullOrEmpty() -> "Alert Sent:${manualAlertTypeSaved.value}"
+                            isAlerting.value == false && manualAlertTypeSaved.value.isNullOrEmpty() -> "Manual Alert Cancelled"
+                            isAlerting.value == false && !manualAlertTypeSaved.value.isNullOrEmpty() -> "Alert Cancelled:${manualAlertTypeSaved.value}"
+                            else -> {"ERROR"}
+                        },
                         textAlign = TextAlign.Center,
                     )
                     Log.w(TAG, "isAlertingLiveData = ${isAlertingLiveData.observeAsState()}")
