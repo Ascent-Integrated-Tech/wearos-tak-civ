@@ -155,6 +155,7 @@ companion object Constants{
                     isConfirmed,
                     isConfirmed,
                     isAlerting,
+                    {},
                     {}
                 )
             }
@@ -260,6 +261,7 @@ fun ConfirmationAlertPage(
     isConfirmed: MutableState<Boolean>,
     isAlerting: MutableLiveData<Boolean>,
     confirmFunction: () -> Unit,
+    exitActivity: () -> Unit,
     ) {
     if (shouldShowDialog.value) {
         AlertDialog(
@@ -316,6 +318,9 @@ fun ConfirmationAlertPage(
             dismissButton = {
                 Button(
                     onClick = {
+                        if (isAlertingLiveData.value == true){
+                            exitActivity()
+                        }
                         shouldShowDialog.value = false
                         isConfirmed.value = false
                     },
@@ -480,7 +485,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 {
                     successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
                     if (successBoolean.value) {SOSButtonEmergencyMessage(isAlertingLiveData)}
-                }
+                },
+                {exitActivity()}
             )
 
             SuccessfulCotSentCheck(
