@@ -11,6 +11,10 @@ android {
     namespace 'com.aitech.weartak_civ'
     compileSdk 35
 
+    androidResources {
+        noCompress 'onnx'
+    }
+
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
@@ -52,7 +56,7 @@ android {
             enable true
             reset()
             //include "x86", "armeabi-v7a", "arm64-v8a", "x86_64"
-            include "armeabi-v7a"
+            include "arm64-v8a", "armeabi-v7a"
             universalApk true
         }
     }
@@ -185,6 +189,9 @@ dependencies {
         exclude group: "org.json", module: "json"
     }
     implementation("org.apache.commons:commons-lang3:3.18.0")
+
+    // Onnx Runtime
+    implementation libs.onnxruntime.android
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
