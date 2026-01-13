@@ -18,12 +18,10 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,7 +29,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
@@ -59,7 +56,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,17 +76,13 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALE
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
-import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.isAlertingLiveData
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertOptions
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertType
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertTypeSaved
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-import com.aitech.weartak_civ.service.DittoService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import com.aitech.weartak_civ.service.TAKConnectService
-import kotlinx.coroutines.delay
 import org.greenrobot.eventbus.EventBus
 import kotlin.collections.List
 
@@ -212,7 +204,7 @@ fun ConfirmationAlertPage(
                         isAlerting.value == true && !manualAlertTypeSaved.value.isNullOrEmpty() -> "Cancel Alert:${manualAlertTypeSaved.value}?"
                         isAlerting.value == false && manualAlertType.value.isNullOrEmpty() -> "Send Manual Alert?"
                         isAlerting.value == false && !manualAlertType.value.isNullOrEmpty() -> "Send Alert:${manualAlertTypeSaved.value}?"
-                        else -> {"ERROR"}
+                        else -> {"ERROR"} // Note: This will never be reached
                     },
                     textAlign = TextAlign.Center,
                     color = Color.White,
@@ -305,7 +297,7 @@ fun SuccessDialogActivity(
                             isAlerting.value == true && !manualAlertType.value.isNullOrEmpty() -> "Alert Sent:${manualAlertTypeSaved.value}"
                             isAlerting.value == false && manualAlertTypeSaved.value.isNullOrEmpty() -> "Manual Alert Cancelled"
                             isAlerting.value == false && !manualAlertTypeSaved.value.isNullOrEmpty() -> "Alert Cancelled:${manualAlertTypeSaved.value}"
-                            else -> {"ERROR"}
+                            else -> {"ERROR"} // Note: This will never be reached
                         },
                         textAlign = TextAlign.Center,
                     )
@@ -324,7 +316,10 @@ fun SuccessDialogActivity(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = if (isAlerting.value == true) "Alert will cancel when reconnected" else "Alert will send when reconnected",
+                        text = if (isAlerting.value == true)
+                                    "Alert will cancel when reconnected"
+                                else
+                                    "Alert will send when reconnected",
                         textAlign = TextAlign.Center,
                     )
 

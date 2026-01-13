@@ -252,6 +252,7 @@ class MainActivity : ComponentActivity() {
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
+        // TODO Senni: Use MC and dataRepo; Can remove this finally.
         var quickReplyOptions: List<Utils.TextSelectionButton> = listOf(
             Utils.TextSelectionButton("RGR", "Roger"),
             Utils.TextSelectionButton("NEG", "Negative"),
@@ -972,14 +973,13 @@ class MainActivity : ComponentActivity() {
          */
     }
 
+    @SuppressLint("HardwareIds")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "MainActivity onCreate(): Start...")
         mainActivity = this
         mainActivityIsInit = this
-//        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
-        //TODO: WEAR-180: CHANGE BACK when finished
-                device_uid = "1"
+        device_uid = "WEAROS_" + Settings.Secure.getString(this.getContentResolver(), Settings.Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
@@ -2749,24 +2749,6 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
             contentDescription = null,
             tint = Color.White
         )
-//        if (isAlertingLiveData == true) {
-//            Text (
-//                sosLiveText,
-//                fontSize = if (sosLiveText.length <= 15) 17.sp else 15.sp,
-//                overflow = TextOverflow.Ellipsis,
-//                maxLines = 1,
-//                fontWeight = FontWeight.Bold,
-//                textAlign = TextAlign.Center,
-//                color = Color.White,
-//            )
-//        } else {
-//            Text(
-//                sosText,
-//                fontSize = if (sosText.length <= 10) 25.sp else 20.sp,
-//                fontWeight = FontWeight.Bold,
-//                color = Color.White
-//            )
-//        }
     }
 }
 @Composable

@@ -1,0 +1,18 @@
+[
+  {
+    "shortenedText": "RGR",
+    "longText": "Roger"
+  },
+  {
+    "shortenedText": "NEG",
+    "longText": "Negative"
+  },
+  {
+    "shortenedText": "Obj",
+    "longText": "Objective"
+  },
+  {
+    "shortenedText": "nPos",
+    "longText": "In Position"
+  }
+]
