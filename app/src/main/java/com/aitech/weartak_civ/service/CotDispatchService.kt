@@ -1188,6 +1188,7 @@ class CotDispatchService : Service() {
     private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot?): String {
         val uid         = ms?.uid
         val markerType  = ms?.markerType?.type
+        val markerRemark = ms?.remark
         val battery     = ms?.system?.batteryPercent
 
         val hr          = rectifiedIntToString(ms?.physio?.data?.heartRateBpm)
@@ -1222,7 +1223,7 @@ class CotDispatchService : Service() {
                 <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
                 <usericon iconsetpath="$iconSetPath"/>
-                <remarks>HeartRate: $hr bpm; Battery Level: $battery%</remarks>
+                <remarks>$markerRemark</remarks> 
                 <contact callsign="$markerCallsign_Time"/>
             </detail>
         </event>
@@ -1734,7 +1735,7 @@ class CotDispatchService : Service() {
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, timeDropped = req.timeMillis)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, remark = snapshot.remark, timeDropped = req.timeMillis)
         )
     }
 

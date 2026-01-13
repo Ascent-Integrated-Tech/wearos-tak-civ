@@ -28,7 +28,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -65,10 +64,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Delete
@@ -82,6 +84,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -100,6 +103,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.CurvedLayout
@@ -123,6 +128,8 @@ import com.aitech.weartak_civ.events.MarkerEvent.Companion.UNKNOWN
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.remarkSettingsState
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.isAlertingLiveData
 import com.aitech.weartak_civ.service.DittoService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +146,7 @@ class MarkerActivity : ComponentActivity() {
         lateinit var markerActivity : MarkerActivity
         var markerType: String = ""
         const val TAG = "WearTAK-MarkerActivity"
+        var remarkSettingsState = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -185,7 +193,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         shouldShowDialog.value = true
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
                         markerScope.launch {
-                            dataRepository.requestMarkerDrop(markerType, time)
+                            dataRepository.requestMarkerDrop(markerType, "hello", time)
                         }
                     }
                 )
@@ -201,7 +209,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         shouldShowDialog.value = true
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
                         markerScope.launch {
-                            dataRepository.requestMarkerDrop(markerType, time)
+                            dataRepository.requestMarkerDrop(markerType, "hello", time)
                         }
                     }
                 )
@@ -218,7 +226,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
 
                         markerScope.launch {
-                            dataRepository.requestMarkerDrop(markerType, time)
+                            dataRepository.requestMarkerDrop(markerType, "hello", time)
                         }
                     }
                 )
@@ -235,7 +243,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
 
                         markerScope.launch {
-                            dataRepository.requestMarkerDrop(markerType, time)
+                            dataRepository.requestMarkerDrop(markerType, "hello", time)
                         }
                     }
                 )
@@ -764,6 +772,158 @@ fun MarkerSuccessDialog(
 }
 
 @Composable
+fun DropMarkerConfirmationDialog(
+    shouldShowDialog: MutableState<Boolean>,
+    isConfirmed: MutableState<Boolean>,
+    confirmFunction: () -> Unit,
+) {
+    if (shouldShowDialog.value) {
+        WearTAKCIVTheme {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.background)
+                    .padding(bottom = 16.dp, top = 15.dp)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.SpaceEvenly,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        painter =
+                            markerIconFromString(markerType),
+                        modifier = Modifier.size(30.dp),
+                        contentDescription = "Marker Type",
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        "Drop $markerType marker?",
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        modifier = Modifier.fillMaxWidth(),
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+                    GenericOutlinedTextField(
+                        remarkSettingsState,
+                        "Optional Remark",
+                        ""
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 5.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        TextButton(
+                            onClick = {
+                                shouldShowDialog.value = false
+                                isConfirmed.value = false
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Gray,
+                                contentColor = Color.Black
+                            ),
+                                ) { Text("Cancel")}
+                        TextButton(
+                            onClick = {
+                                shouldShowDialog.value = false
+                                isConfirmed.value = true
+                                confirmFunction()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.primary,
+                                contentColor = Color.Black
+                            ),
+                            ) { Text("Confirm")}
+                    }
+                }
+            }
+        }
+        
+        
+//        AlertDialog(
+//            containerColor = colors.background,
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .padding(0.dp),
+//            onDismissRequest = {
+//                shouldShowDialog.value = false
+//            },
+//            icon = {
+//                icon()
+//            },
+//            text = {
+//                Column(modifier = Modifier
+//                    .padding(0.dp)
+//                    .fillMaxHeight()) {
+//                    Text(
+//                        description,
+//                        textAlign = TextAlign.Center,
+//                        color = Color.White,
+//                        modifier = Modifier.fillMaxWidth(),
+//                        fontSize = if (description.length > 40) 13.sp else 14.sp
+//                    )
+////                    Spacer(modifier = Modifier.height(15.dp))
+//                    GenericOutlinedTextField(
+//                        remarkSettingsState,
+//                        stringResource(R.string.callsign),
+//                        stringResource(R.string.callsign)
+//                    )
+//                }
+//            },
+//            confirmButton = {
+//                Button(
+//                    onClick = {
+//                        shouldShowDialog.value = false
+//                        isConfirmed.value = true
+//                        confirmFunction()
+//                    },
+//                    modifier = Modifier.fillMaxWidth(0.45f),
+//                    contentPadding = PaddingValues(0.dp),
+//                    colors = ButtonDefaults.buttonColors(
+//                        containerColor = Color.Red,
+//                    ),
+//                ) {
+//                    Text(
+//                        text = stringResource(R.string.confirm),
+//                        color = Color.Black
+//                    )
+//                }
+//            },
+//
+//            dismissButton = {
+//                Button(
+//                    onClick = {
+//                        shouldShowDialog.value = false
+//                        isConfirmed.value = false
+//                    },
+//                    contentPadding = PaddingValues(0.dp),
+//                    modifier = Modifier.fillMaxWidth(0.45f),
+//                    colors = ButtonDefaults.buttonColors(
+//                        containerColor = Color.Gray,
+//                    )
+//                ) {
+//                    Text(
+//                        text = stringResource(R.string.cancel),
+//                    )
+//                }
+//            }
+//        )
+    }
+}
+
+@Composable
 fun ClearMarkerConfirmationDialog(
     shouldShowDialog: MutableState<Boolean>,
     description: String,
@@ -862,6 +1022,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
 //    val shouldShowDialog = remember { mutableStateOf(false) }
     val shouldShowConfirm = remember { mutableStateOf(false) }
+    val shouldShowDropMarkerConfirm = remember {mutableStateOf(false)}
     val shouldShowClearLastDialog = remember { mutableStateOf(false) }
     val shouldShowClearLastConfirm = remember { mutableStateOf(false) }
     val shouldShowClearAllDialog = remember { mutableStateOf(false) }
@@ -904,8 +1065,16 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
         composable("marker_screen" ) {
             MarkerSelectionScreen(exitActivity = {exitActivity()}, shouldShowConfirm, navController)
 
+            DropMarkerConfirmationDialog(
+                shouldShowDialog = shouldShowConfirm,
+                isConfirmed = shouldShowDropMarkerConfirm,
+                confirmFunction = {
+                    successBoolean.value = (location != null && locationChecked && anyEndpointConnected)
+                }
+            )
+
             SuccessfulCotSentCheck(
-                shouldShowConfirm,
+                shouldShowDropMarkerConfirm,
                 anyEndpointConnected,
                 context,
                 {exitActivity()},
@@ -916,18 +1085,31 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                     MarkerSuccessDialog(
                         shouldShowConfirm,
                         successBoolean,
-                        {Image(
-                        painter =
-                            markerIconFromString(markerType),
-                     contentDescription = "Marker Type",
-                        )},
-                        {Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        //TODO" Have this text translated
-                        text = "$markerType Marker Dropped",
-                        textAlign = TextAlign.Center,
-                        color = Color.White
-                    )}
+                        {
+                            Image(
+                                painter =
+                                    markerIconFromString(markerType),
+                                contentDescription = "Marker Type",
+                            )
+                        },
+                        {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (remarkSettingsState.value.isNullOrEmpty()) {
+                                Text(
+                                    //TODO" Have this text translated
+                                    text = "$markerType Marker Dropped",
+                                    textAlign = TextAlign.Center,
+                                    color = Color.White
+                                )
+                            } else {
+                                Text(
+                                    //TODO" Have this text translated
+                                    text = "Dropped $markerType: ${remarkSettingsState.value}",
+                                    textAlign = TextAlign.Center,
+                                    color = Color.White
+                                )
+                            }
+                        }
                     )
                 },
                 {}
@@ -1107,6 +1289,18 @@ fun ClearMarkerConfirmationDialogPreview() {
             modifier = Modifier.size(25.dp),
             contentDescription = null,
             tint = Color.LightGray) },
+        isConfirmed,
+        {}
+    )
+}
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+@Composable
+fun DropMarkerConfirmationDialogPreview() {
+    val shouldShowDialog = remember { mutableStateOf(true) }
+    val isConfirmed = remember { mutableStateOf(true) }
+
+    DropMarkerConfirmationDialog(
+        shouldShowDialog = shouldShowDialog,
         isConfirmed,
         {}
     )
