@@ -87,10 +87,55 @@ object RuleCompiler {
                 for (i in 0 until monitorArray.length()) {
                     val m = monitorArray.getJSONObject(i)
                     val feature = m.getString("feature")
-                    val exitBelow =
-                        if (m.has("exit_below") && !m.isNull("exit_below")) m.getDouble("exit_below") else null
-                    val exitAbove =
-                        if (m.has("exit_above") && !m.isNull("exit_above")) m.getDouble("exit_above") else null
+
+                    // exit_below can be number OR feature ref string
+                    val exitBelow: Double?
+                    val exitBelowKey: String?
+                    if (m.has("exit_below") && !m.isNull("exit_below")) {
+                        val raw = m.get("exit_below")
+                        when (raw) {
+                            is Number -> {
+                                exitBelow = raw.toDouble()
+                                exitBelowKey = null
+                            }
+                            is String -> {
+                                exitBelow = null
+                                exitBelowKey = raw
+                            }
+                            else -> {
+                                exitBelow = null
+                                exitBelowKey = null
+                            }
+                        }
+                    } else {
+                        exitBelow = null
+                        exitBelowKey = null
+                    }
+
+                    // exit_above can be number OR feature ref string
+                    val exitAbove: Double?
+                    val exitAboveKey: String?
+                    if (m.has("exit_above") && !m.isNull("exit_above")) {
+                        val raw = m.get("exit_above")
+                        when (raw) {
+                            is Number -> {
+                                exitAbove = raw.toDouble()
+                                exitAboveKey = null
+                            }
+                            is String -> {
+                                exitAbove = null
+                                exitAboveKey = raw
+                            }
+                            else -> {
+                                exitAbove = null
+                                exitAboveKey = null
+                            }
+                        }
+                    } else {
+                        exitAbove = null
+                        exitAboveKey = null
+                    }
+
                     val hysteresis =
                         if (m.has("hysteresis") && !m.isNull("hysteresis")) m.getDouble("hysteresis") else 0.0
 
@@ -98,6 +143,8 @@ object RuleCompiler {
                         feature = feature,
                         exitBelow = exitBelow,
                         exitAbove = exitAbove,
+                        exitBelowKey = exitBelowKey,
+                        exitAboveKey = exitAboveKey,
                         hysteresis = hysteresis
                     )
                 }

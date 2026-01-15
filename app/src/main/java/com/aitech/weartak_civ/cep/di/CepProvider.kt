@@ -55,7 +55,7 @@ object CepProvider {
             dataRepo.getYearOfBirth.first()
         }
 
-        return CepEngine(context.applicationContext, scope, config, yearOfBirth = yearOfBirth)
+        return CepEngine(context.applicationContext, scope, config, yearOfBirth = yearOfBirth, dataRepo)
     }
 }
 

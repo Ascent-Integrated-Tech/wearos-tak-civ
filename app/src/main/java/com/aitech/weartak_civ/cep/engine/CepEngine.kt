@@ -7,8 +7,10 @@ import android.util.Log
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import firebase.com.protolitewrapper.BuildConfig
+import kotlinx.coroutines.flow.first
 import org.greenrobot.eventbus.EventBus
 import java.util.Calendar
 
@@ -16,7 +18,8 @@ class CepEngine(
     private val appContext: Context,
     private val scope: CoroutineScope,
     private val config: CepConfig,
-    private val yearOfBirth: Int
+    private val yearOfBirth: Int,
+    private val dataRepository: DataRepository
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(config.tickHz, RingConfig.default())
@@ -29,7 +32,25 @@ class CepEngine(
         Log.d("CEP", "CEP Engine started")
 
         //Call this fn whenever the yob is changed
-        updateHrProfile(currentYearOfBirth)
+        updateHrProfile()
+
+        /*scope.launch {
+            try {
+                val high = dataRepository.getHrHighAlertBpmThreshold
+                val low  = dataRepository.getRestingHeartRate
+
+                featureStore.put("thresholds.hr.high_bpm", high)
+                featureStore.put("thresholds.hr.low_bpm", low)
+
+                Log.d("CEP", "Loaded HR thresholds: high=$high low=$low")
+            } catch (t: Throwable) {
+                Log.e("CEP", "Failed to load HR thresholds from DataRepository", t)
+
+                // Safe defaults (optional)
+                featureStore.put("thresholds.hr.high_bpm", 163.0)
+                featureStore.put("thresholds.hr.low_bpm", 40.0)
+            }
+        }*/
 
         // Subscribe to the bus (no emitters yet; safe)
         scope.launch { CepBus.events.collect { evt -> windows.ingest(evt, featureStore) } }
@@ -51,7 +72,7 @@ class CepEngine(
         }
     }
 
-    fun updateHrProfile(newYearOfBirth: Int, hrRest: Double = 60.0) {
+    /*fun updateHrProfile(newYearOfBirth: Int, hrRest: Double = 60.0) {
         currentYearOfBirth = newYearOfBirth
 
         val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
@@ -62,11 +83,54 @@ class CepEngine(
         featureStore.put("profile.hr_rest_bpm", hrRest)
         featureStore.put("profile.hr_max_bpm", hrMax)
 
+        // HR thresholds (loaded once alongside profile)
+        featureStore.put("thresholds.hr.high_bpm", hrHigh)
+        featureStore.put("thresholds.hr.low_bpm", hrLow)
+
         Log.d(
             "CEP",
-            "Updated HR profile: YOB=$newYearOfBirth age=$age hrRest=$hrRest hrMax=$hrMax"
+            "Updated HR profile: YOB=$newYearOfBirth age=$age hrRest=$hrRest hrMax=$hrMax " +
+                    "hrHigh=$hrHigh hrLow=$hrLow"
         )
+    }*/
+
+    fun updateHrProfile() {
+        //currentYearOfBirth = newYearOfBirth
+
+        scope.launch {
+            try {
+                val newYearOfBirth = dataRepository.getYearOfBirth.first()
+
+                val currentYear =
+                    java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                val age = (currentYear - newYearOfBirth).coerceIn(16, 80)
+
+                val hrMax = ZoneHelper.tanakaHrMax(age)
+
+                // Load values from DataRepository
+                val hrRest = dataRepository.getRestingHeartRate.first() ?: 60.0
+                val hrHigh = dataRepository.getHrHighAlertBpmThreshold.first() ?: 140
+                val hrLow  = 40.0 //dataRepository.getRestingHeartRate
+
+                // Core HR profile
+                featureStore.put("profile.hr_rest_bpm", hrRest)
+                featureStore.put("profile.hr_max_bpm", hrMax)
+
+                // HR thresholds
+                featureStore.put("thresholds.hr.high_bpm", hrHigh)
+                featureStore.put("thresholds.hr.low_bpm",  hrLow)
+
+                Log.d(
+                    "CEP",
+                    "Updated HR profile: YOB=$newYearOfBirth age=$age " +
+                            "hrRest=$hrRest hrMax=$hrMax hrHigh=$hrHigh hrLow=$hrLow"
+                )
+            } catch (t: Throwable) {
+                Log.e("CEP", "Failed to update HR profile from DataRepository", t)
+            }
+        }
     }
+
 
     private fun computeFeaturesSafely() {
         for (def in config.features) {
@@ -93,6 +157,13 @@ class CepEngine(
 
             val satisfiedFlags = conditions.map { cond ->
                 val value = featureStore.latestAsDouble(cond.feature) ?: return@map false
+
+                // Resolve exit thresholds (constant or feature ref)
+                val belowThreshold: Double? =
+                    cond.exitBelow ?: cond.exitBelowKey?.let { key -> featureStore.latestAsDouble(key) }
+
+                val aboveThreshold: Double? =
+                    cond.exitAbove ?: cond.exitAboveKey?.let { key -> featureStore.latestAsDouble(key) }
 
                 val belowOk = cond.exitBelow?.let { value < it - cond.hysteresis } ?: false
                 val aboveOk = cond.exitAbove?.let { value > it + cond.hysteresis } ?: false

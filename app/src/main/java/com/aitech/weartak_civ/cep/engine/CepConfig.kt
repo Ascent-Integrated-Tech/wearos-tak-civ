@@ -71,6 +71,8 @@ data class ExitCondition(
     val feature: String,
     val exitBelow: Double? = null,
     val exitAbove: Double? = null,
+    val exitBelowKey: String? = null,
+    val exitAboveKey: String? = null,
     val hysteresis: Double = 0.0
 )
 

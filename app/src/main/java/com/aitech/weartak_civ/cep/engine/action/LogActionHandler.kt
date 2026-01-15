@@ -14,9 +14,36 @@ class LogActionHandler(
     private val appScope: CoroutineScope
 ): ActionHandler {
     override val type: String = "log"
+    //private val PLACEHOLDER_REGEX = "\\{([^}]+)}".toRegex()
+
+    //private val PLACEHOLDER_REGEX = "\\{([^}]+)\\}".toRegex()
+
+    private val PLACEHOLDER_REGEX = "\\{([a-zA-Z0-9._-]+)\\}".toRegex()
+
+    private fun expandMessage(
+        template: String,
+        snapshot: Map<String, Any?>
+    ): String {
+        if (!template.contains("{")) return template
+
+        return PLACEHOLDER_REGEX.replace(template) { match ->
+            val key = match.groupValues[1]
+            snapshot[key]?.toString() ?: "?"
+        }
+    }
+
     override suspend fun handle(ctx: TriggerContext) {
         val prefix = "[CEP][${ctx.action.severity}][${ctx.ruleId}]"
-        val body = "${ctx.action.message.ifEmpty { "Triggered" }} tags=${ctx.action.tags} | snapshot=${ctx.snapshot}"
+
+        //val body = "${ctx.action.message.ifEmpty { "Triggered" }} tags=${ctx.action.tags} | snapshot=${ctx.snapshot}"
+
+        val expandedMessage = expandMessage(
+            ctx.action.message.ifEmpty { "Triggered" },
+            ctx.snapshot
+        )
+
+        val body = "$expandedMessage tags=${ctx.action.tags} | snapshot=${ctx.snapshot}"
+
         when (ctx.action.severity) {
             Severity.EMERGENCY -> Log.e("CEP", "$prefix $body")
             Severity.ALERT, Severity.WARN -> Log.w("CEP", "$prefix $body")
