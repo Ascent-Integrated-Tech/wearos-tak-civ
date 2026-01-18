@@ -19,9 +19,18 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        mavenLocal() // For hive-btle local publishing
         repositories {
             flatDir { dirs 'libs' }
         }
+    }
+}
+
+// Composite build for hive-btle development (changes propagate immediately)
+// Enable this for local development, disable for published versions
+includeBuild('../hive-btle/android') {
+    dependencySubstitution {
+        substitute module('com.revolveteam:hive') using project(':')
     }
 }
 

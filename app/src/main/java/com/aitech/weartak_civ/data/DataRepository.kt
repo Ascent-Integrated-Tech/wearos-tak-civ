@@ -42,6 +42,9 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HIVE_BTLE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_HIVE_MESH_ID
+import com.aitech.weartak_civ.DEFAULT_HIVE_POWER_PROFILE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
@@ -1109,6 +1112,54 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // --- HIVE BLE Mesh Settings ---
+
+    val getEnableHiveBtleService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_HIVE_BTLE_SERVICE] ?: DEFAULT_ENABLE_HIVE_BTLE_SERVICE
+    }
+
+    suspend fun storeEnableHiveBtleService(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_HIVE_BTLE_SERVICE] = enable
+        }
+    }
+
+    val getHiveMeshId: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[HIVE_MESH_ID] ?: DEFAULT_HIVE_MESH_ID
+    }
+
+    suspend fun storeHiveMeshId(meshId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[HIVE_MESH_ID] = meshId
+        }
+    }
+
+    val getHivePowerProfile: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIVE_POWER_PROFILE] ?: DEFAULT_HIVE_POWER_PROFILE
+    }
+
+    suspend fun storeHivePowerProfile(profile: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HIVE_POWER_PROFILE] = profile
+        }
+    }
+
+    val getHiveEncryptionKey: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[HIVE_ENCRYPTION_KEY]
+    }
+
+    suspend fun storeHiveEncryptionKey(key: String?) {
+        context.dataStore.edit { prefs ->
+            if (key != null) {
+                prefs[HIVE_ENCRYPTION_KEY] = key
+            } else {
+                prefs.remove(HIVE_ENCRYPTION_KEY)
+            }
+        }
+    }
+
+    // --- End HIVE Settings ---
+
     val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_CHAT_SERVICE] ?: DEFAULT_ENABLE_CHAT_SERVICE
     }
@@ -1331,7 +1382,7 @@ class DataRepository(private val context: Context) {
         _hasUnread.emit(fresh.any  { it.newMessagesPresent })
     }
 
-    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP }
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, HIVE_BTLE }
 
     private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
     val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
@@ -1976,6 +2027,10 @@ class DataRepository(private val context: Context) {
         private val ENABLE_HEART_RATE_SERVICE = booleanPreferencesKey("enable_heart_rate_service")
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
+        private val ENABLE_HIVE_BTLE_SERVICE = booleanPreferencesKey("enable_hive_btle_service")
+        private val HIVE_MESH_ID = stringPreferencesKey("hive_mesh_id")
+        private val HIVE_POWER_PROFILE = intPreferencesKey("hive_power_profile")
+        private val HIVE_ENCRYPTION_KEY = stringPreferencesKey("hive_encryption_key")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")

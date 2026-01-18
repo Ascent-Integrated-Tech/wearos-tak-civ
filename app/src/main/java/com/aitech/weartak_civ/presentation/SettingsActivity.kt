@@ -174,6 +174,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
@@ -321,6 +323,7 @@ class SettingsActivity : ComponentActivity() {
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
+    enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
     enableChatServiceSettingsState.postValue(enableChatService)
     enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
     enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
@@ -3377,6 +3380,7 @@ fun SettingsScreen(
 ) {
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
+    val hiveBtleCheckedLive by enableHiveBtleServiceSettingsState.observeAsState()
     val companionAppCheckedLive by enableCompanionAppServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
@@ -3530,12 +3534,16 @@ fun SettingsScreen(
             )
 
             SettingSwitchToggleLiveData(
-                companionAppCheckedLive,
-                { enableCompanionAppServiceSettingsState.postValue(it) },
+                hiveBtleCheckedLive,
+                { enabled ->
+                    enableHiveBtleServiceSettingsState.postValue(enabled)
+                },
                 {},
-                stringResource(R.string.companion_app),
+                "HIVE BLE Mesh",
                 stringResource(R.string.service_on_off)
             )
+
+            // COMPANION_APP toggle removed - service is disabled in favor of HIVE_BTLE
 
             SettingSwitchToggleLiveData(
                 chatCheckedLive,
@@ -3738,6 +3746,7 @@ fun SettingsScreen(
                     var physioCheckedChanged: Boolean = false
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
+                    var hiveBtleCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
@@ -3948,6 +3957,14 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (enableHiveBtleService != enableHiveBtleServiceSettingsState.value) {
+                        settingsChanged = true; hiveBtleCheckedChanged = true
+                        enableHiveBtleService = enableHiveBtleServiceSettingsState.value ?: enableHiveBtleService
+                        runBlocking {
+                            enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
+                        }
+                    }
+
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
                         enableChatService = enableChatServiceSettingsState.value ?: enableChatService
@@ -4127,6 +4144,10 @@ fun SettingsScreen(
                              if (dittoCheckedChanged) {
                                  Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                  dataRepository.storeEnableDittoService(enableDittoService)
+                             }
+                             if (hiveBtleCheckedChanged) {
+                                 Log.d(TAG, "Storing enableHiveBtleService $enableHiveBtleService")
+                                 dataRepository.storeEnableHiveBtleService(enableHiveBtleService)
                              }
                              if (companionAppCheckedChanged) {
                                  Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")

@@ -1,6 +1,6 @@
 [versions]
 #agp = "8.7.2"
-agp = "8.10.0"
+agp = "8.13.0"
 composeNavigation = "1.4.0"
 kotlin = "2.2.0"
 playServicesWearable = "18.2.0"

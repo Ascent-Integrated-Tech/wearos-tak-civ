@@ -1136,4 +1136,32 @@ object Utils {
         }
 
     }
+
+    /**
+     * Calculate distance between two GPS coordinates using the Haversine formula.
+     * @return Distance in meters
+     */
+    fun calculateDistanceMeters(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double
+    ): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+                kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+        return EARTH_RADIUS * c
+    }
+
+    /**
+     * Format distance for display.
+     * Uses meters for short distances (<1km), kilometers for longer distances.
+     */
+    fun formatDistance(meters: Double): String {
+        return when {
+            meters < 1000 -> "${meters.toInt()}m"
+            else -> String.format("%.1fkm", meters / 1000)
+        }
+    }
 }

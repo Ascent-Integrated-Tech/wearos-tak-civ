@@ -310,6 +310,12 @@
             android:foregroundServiceType="connectedDevice"
             android:stopWithTask="false" />
         <service
+            android:name=".service.HiveBtleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.OffBodyDetectService"
             android:enabled="true"
             android:exported="false"
@@ -476,6 +482,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".presentation.HiveMeshActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.aitech.weartak_civ"
+            android:theme="@android:style/Theme.DeviceDefault" />
     </application>
 
 </manifest>

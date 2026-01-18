@@ -17,6 +17,9 @@ const val DEFAULT_ENABLE_HEART_RATE_SERVICE: Boolean = true
 const val DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE: Boolean = true
 const val DEFAULT_ENABLE_DITTO_SERVICE: Boolean = false
+const val DEFAULT_ENABLE_HIVE_BTLE_SERVICE: Boolean = true
+const val DEFAULT_HIVE_MESH_ID: String = "WEARTAK"
+const val DEFAULT_HIVE_POWER_PROFILE: Int = 2  // 0=Aggressive, 1=Balanced, 2=LowPower, 3=UltraLow
 const val DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_CHAT_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_BATTERY_ALERTS: Boolean = false

@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.wear.compose.material.CardDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
@@ -68,11 +70,14 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.events.HiveDocumentEvent
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import org.greenrobot.eventbus.EventBus
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -80,20 +85,26 @@ import java.time.format.DateTimeFormatter
 class ChatActivity : ComponentActivity() {
     companion object {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
-        lateinit var dataRepository: DataRepository
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        dataRepository = DataRepository(applicationContext)
+        val app = applicationContext as WearTakApplication
+        val dataRepository = app.repo
+        val hiveBtleRepo = app.hiveBtleRepo
 
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    ChatCivApp(exitActivity = { finishAndRemoveTask() }, context)
+                    ChatCivApp(
+                        exitActivity = { finishAndRemoveTask() },
+                        context = context,
+                        hiveBtleRepo = hiveBtleRepo,
+                        dataRepository = dataRepository
+                    )
                 }
             }
         }
@@ -102,7 +113,7 @@ class ChatActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
+fun ChatCivApp(exitActivity: () -> Unit, context: Context, hiveBtleRepo: HiveBtleRepository, dataRepository: DataRepository) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
@@ -164,7 +175,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "chat_screen_detailed index: $index")
-            ChatScreenDetailed(navController, index, chatRooms)
+            ChatScreenDetailed(navController, index, chatRooms, hiveBtleRepo, dataRepository)
         }
 
         composable("invalid_license_screen") {
@@ -332,13 +343,19 @@ fun ChatCard(
 fun ChatScreenDetailed(
     navController: NavController,
     index: Int,
-    chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
+    chatRooms: List<Utils.ChatRoom>,
+    hiveBtleRepo: HiveBtleRepository,
+    dataRepository: DataRepository
 ) {
     WearTAKCIVTheme {
+        val context = LocalContext.current
         val room = chatRooms.getOrNull(index)
         val chatRoomTitle = room?.title.orEmpty()
         val messageList = room?.messageList.orEmpty()
         val roomId = room?.uid
+
+        // Check if HIVE mesh is active for ACK button
+        val isHiveActive by hiveBtleRepo.isActive.collectAsState()
 
         // Mark this room as read when entering detail
         LaunchedEffect(key1 = index) {
@@ -402,6 +419,42 @@ fun ChatScreenDetailed(
                         popUpTo("chat_screen") { inclusive = true }
                     }
                 })
+
+                // ACK button - only show when HIVE mesh is active
+                if (isHiveActive) {
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                // Send ACK to mesh with replyTo referencing last received mesh chat
+                                val lastChat = hiveBtleRepo.lastMeshChat
+                                val ackCot = "<remarks>ACK</remarks>"
+                                EventBus.getDefault().post(HiveDocumentEvent(
+                                    collection = "chat",
+                                    cotXml = ackCot,
+                                    replyToNode = lastChat?.originNodeId ?: 0L,
+                                    replyToTimestamp = lastChat?.timestamp ?: 0L
+                                ))
+                                if (lastChat != null) {
+                                    Log.i(TAG, "ACK sent (replyTo: ${String.format("%08X", lastChat.originNodeId)}:${lastChat.timestamp})")
+                                } else {
+                                    Log.i(TAG, "ACK sent (no replyTo - no mesh chat received)")
+                                }
+                                android.widget.Toast.makeText(context, "ACK sent", android.widget.Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to send ACK: ${e.message}", e)
+                                android.widget.Toast.makeText(context, "ACK failed", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.size(height = 35.dp, width = 75.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.primary,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text("ACK", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
     }
@@ -521,11 +574,12 @@ fun ChatScreenPreview() {
     ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList())
 }
 
-@Preview(widthDp = 192, heightDp = 400, showBackground = true)
-@Composable
-fun ChatScreenDetailedPreview() {
-    ChatScreenDetailed(rememberSwipeDismissableNavController(), 0, emptyList())
-}
+// Preview disabled - requires HiveBtleRepository
+// @Preview(widthDp = 192, heightDp = 400, showBackground = true)
+// @Composable
+// fun ChatScreenDetailedPreview() {
+//     ChatScreenDetailed(rememberSwipeDismissableNavController(), 0, emptyList(), ...)
+// }
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
