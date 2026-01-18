@@ -42,6 +42,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,6 +63,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -72,6 +75,11 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.AlertDialog
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -80,11 +88,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -140,6 +150,8 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.events.HiveDocumentEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -154,6 +166,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
@@ -182,6 +195,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -207,6 +221,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_GEOFENCE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HIVE_BTLE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
@@ -316,6 +331,8 @@ class MainActivity : ComponentActivity() {
         var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
         var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
+        var enableHiveBtleService : Boolean = DEFAULT_ENABLE_HIVE_BTLE_SERVICE
+        var enableHiveBtleServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableCompanionAppService: Boolean = DEFAULT_ENABLE_COMPANION_APP_SERVICE
         var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_COMPANION_APP_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
@@ -733,7 +750,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "MainActivity onDestroy()")
-        stopReactiveServiceManager(applicationContext)
+        // Don't stop services when Activity is destroyed - they should persist as foreground services
+        // Services will be stopped when app is force-stopped or system kills it
+        // stopReactiveServiceManager(applicationContext)
         networkManager?.deInit()
         try { unregisterReceiver(restrictionReceiver) } catch (_: Exception) {}
     }
@@ -892,6 +911,7 @@ class MainActivity : ComponentActivity() {
             enableLowAtmPressureAlert      = dataRepository.getEnableLowAtmPressureAlert.first()
             enableHighAtmPressureAlert     = dataRepository.getEnableHighAtmPressureAlert.first()
             enableDittoService             = dataRepository.getEnableDittoService.first()
+            enableHiveBtleService          = dataRepository.getEnableHiveBtleService.first()
             enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
             enableChatService              = dataRepository.getEnableChatService.first()
             enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
@@ -1375,6 +1395,7 @@ class MainActivity : ComponentActivity() {
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)
+        enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
         enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
@@ -1718,6 +1739,7 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActRecService
         localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
         localMap[ServiceType.DITTO]      = enableDittoService
+        localMap[ServiceType.HIVE_BTLE]  = enableHiveBtleService
         localMap[ServiceType.COMPANION_APP] = enableCompanionAppService
         localMap[ServiceType.CHAT]       = enableChatService
         localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
@@ -2655,7 +2677,7 @@ fun MainScreen(
     sitxVm: SitxViewModel,
     context: Context // Add context parameter
 ) {
-    //Log.d(TAG, "MainScreen called")
+    Log.e(TAG, "=== BUILD v7 - Activity-level overlay ===")
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
@@ -2757,6 +2779,10 @@ fun MainScreen(
         }
     }
 
+    // Observe peer emergency count for SOS button flash
+    val hiveBtleRepo = (context.applicationContext as WearTakApplication).hiveBtleRepo
+    val peerEmergencyCount by hiveBtleRepo.emergencyPeerCount.collectAsState()
+
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
     }
@@ -2802,7 +2828,7 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        SOSButton(context, isAlerting)
+                        SOSButton(context, isAlerting, peerEmergencyCount)
                         Spacer(
                             modifier = Modifier.width(10.dp)
                         )
@@ -2857,25 +2883,64 @@ fun MainScreen(
                                 )
                             }
                         }
-                        Spacer(
-                            modifier = Modifier.width(10.dp)
-                        )
+                        Spacer(modifier = Modifier.width(10.dp))
                         Callsign(context, callsignState)
                     }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-//                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ){
                         BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
                 }
                 TroubleshootingIcons(sitxVm)
 
+                // HIVE mesh button - LOCKED POSITION (user approved)
+                // Known issue: disappears after deep sleep when off-charger
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(30.dp),
+                    contentAlignment = Alignment.TopStart
+                ) {
+                    HiveButtonSimple(
+                        modifier = Modifier
+                            .offset(x = 70.dp, y = 0.dp)
+                    )
+                }
+
                 TimeWithSecondsAware(context)
+
+                // HIVE mesh chat overlay - shows incoming chat with ACK button
+                val pendingChat by hiveBtleRepo.pendingChat.collectAsState()
+                HiveChatOverlay(
+                    chat = pendingChat,
+                    onAck = {
+                        // Send ACK to mesh with replyTo referencing the original message
+                        pendingChat?.let { chat ->
+                            try {
+                                val ackCot = "<remarks>ACK</remarks>"
+                                EventBus.getDefault().post(HiveDocumentEvent(
+                                    collection = "chat",
+                                    cotXml = ackCot,
+                                    replyToNode = chat.originNodeId,
+                                    replyToTimestamp = chat.timestamp
+                                ))
+                                Log.i(TAG, "[CHAT-ACK] ACK sent to mesh (replyTo: ${String.format("%08X", chat.originNodeId)}:${chat.timestamp})")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "[CHAT-ACK] Failed to send ACK: ${e.message}", e)
+                            }
+                        }
+                        // Dismiss overlay
+                        hiveBtleRepo.clearPendingChat()
+                    },
+                    onDismiss = {
+                        hiveBtleRepo.clearPendingChat()
+                    }
+                )
             }
         }
     }
@@ -3351,19 +3416,18 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
                 painterResource(R.drawable.tak_server_disconnected)
         }
 
-        // Icon on the top left curve
+        // Icon on the top left curve (TAK connection status)
         Image(
             painter = painter,
-            contentDescription = "Top Left Icon",
+            contentDescription = "TAK Connection Status",
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .offset(
-                    x = (40).dp, // Adjust this value based on the curve
-                    y = (-10).dp // Adjust this value based on the curve
-                )
-                .size(25.dp) // Adjust icon size as needed
+                .offset(x = 40.dp, y = (-10).dp)
+                .size(25.dp)
         )
-        //Log.d(TAG, "AnyTakServerConnected = $anyTakServerConnected; AnyTakServerConnecting = $anyTakServerConnecting")
+
+        // HIVE mesh button - position locked, deep sleep issue is known bug
+        // DO NOT MOVE - user approved this position
 
         val wirelessConnPainter = when {
             companionConnected -> painterResource(R.drawable.bluetooth)
@@ -3461,6 +3525,148 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
     }
 }
 
+/**
+ * Simple HIVE button using LiveData (like other surviving icons) instead of StateFlow.
+ * Other icons that survive deep sleep all use LiveData.observeAsState().
+ */
+@Composable
+fun HiveButtonSimple(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val hiveBtleRepo = (context.applicationContext as WearTakApplication).hiveBtleRepo
+
+    // Use LiveData.observeAsState() - same pattern as other icons that survive deep sleep
+    val peerCount by hiveBtleRepo.peerCountLiveData.observeAsState(initial = 0)
+    val meshState by hiveBtleRepo.meshStateLiveData.observeAsState(
+        initial = HiveBtleRepository.HiveMeshState.NOT_INITIALIZED
+    )
+
+    val isHiveActive = meshState != HiveBtleRepository.HiveMeshState.NOT_INITIALIZED &&
+                       meshState != HiveBtleRepository.HiveMeshState.ERROR
+    val hasConnectedPeers = isHiveActive && (peerCount ?: 0) > 0
+    val buttonColor = if (hasConnectedPeers) Color(0xFF4CAF50) else Color.DarkGray
+
+    // Use Canvas to draw circle background + Icon on top - matches other icon patterns
+    Box(
+        modifier = modifier
+            .size(25.dp)
+            .clickable { context.startActivity(Intent(context, HiveMeshActivity::class.java)) },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(color = buttonColor)
+        }
+        Icon(
+            painter = painterResource(R.drawable.bluetooth),
+            contentDescription = "HIVE Mesh",
+            tint = Color.White,
+            modifier = Modifier.size(15.dp)
+        )
+    }
+}
+
+/**
+ * Inline HIVE mesh button for embedding directly in TroubleshootingIcons.
+ * Uses regular collectAsState (not lifecycle-aware) for stability across sleep/wake.
+ */
+@Composable
+fun HiveMeshIconInline(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val hiveBtleRepo = (context.applicationContext as WearTakApplication).hiveBtleRepo
+
+    // Use regular collectAsState - not lifecycle aware, always collects
+    val peers by hiveBtleRepo.peers.collectAsState()
+    val hiveBtleEnabled by enableHiveBtleServiceSettingsState.observeAsState(initial = true)
+
+    // Derive values to ensure recomposition
+    val peerCount by remember { derivedStateOf { peers.size } }
+    val isEnabled by remember { derivedStateOf { hiveBtleEnabled == true } }
+    val buttonColor by remember { derivedStateOf {
+        if (peerCount > 0) Color(0xFF4CAF50) else Color.DarkGray
+    }}
+
+    Log.d(TAG, "HiveMeshIconInline: peerCount=$peerCount, enabled=$isEnabled")
+
+    // DEBUG: Make button very visible - bright red/green, larger
+    Box(
+        modifier = modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(if (peerCount > 0) Color.Green else Color.Red)
+            .border(2.dp, Color.Yellow, CircleShape)
+            .clickable(enabled = isEnabled) {
+                context.startActivity(Intent(context, HiveMeshActivity::class.java))
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // Show peer count as text for debugging
+        Text(
+            text = "$peerCount",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+fun HiveMeshButton(context: Context) {
+    HiveMeshIconButton(context = context, modifier = Modifier)
+}
+
+@Composable
+fun HiveMeshIconButton(context: Context, modifier: Modifier = Modifier) {
+    // Use LocalContext to ensure fresh context after activity recreation
+    val currentContext = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val hiveBtleRepo = (currentContext.applicationContext as WearTakApplication).hiveBtleRepo
+
+    // Track lifecycle state for debugging
+    var lifecycleState by remember { mutableStateOf("INIT") }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            lifecycleState = event.name
+            Log.w(TAG, "HiveMeshButton LIFECYCLE: $event")
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            Log.w(TAG, "HiveMeshButton DISPOSED")
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Use lifecycle-aware collection - minActiveState=CREATED to collect even when screen off
+    val peers by hiveBtleRepo.peers.collectAsStateWithLifecycle(
+        minActiveState = Lifecycle.State.CREATED
+    )
+    val peerCount = peers.size
+    val hiveBtleEnabled by enableHiveBtleServiceSettingsState.observeAsState(initial = true)
+
+    Log.d(TAG, "HiveMeshButton RENDER: peerCount=$peerCount, enabled=$hiveBtleEnabled, lifecycle=$lifecycleState")
+
+    // Button color: green if peers connected, dark gray otherwise
+    val buttonColor = if (peerCount > 0) Color(0xFF4CAF50) else Color.DarkGray
+
+    // Use simple Box with background - zIndex ensures it stays on top after recomposition
+    Box(
+        modifier = modifier
+            .zIndex(100f)  // High z-index to ensure visibility after lifecycle changes
+            .size(32.dp)   // Slightly larger for visibility
+            .clip(CircleShape)
+            .background(buttonColor)
+            .border(2.dp, Color.White, CircleShape)  // White border for visibility
+            .clickable(enabled = hiveBtleEnabled == true) {
+                currentContext.startActivity(Intent(currentContext, HiveMeshActivity::class.java))
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.bluetooth),
+            contentDescription = "HIVE Mesh ($peerCount peers)",
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
 
 @Composable
 fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
@@ -3485,48 +3691,36 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
-//    val shouldShowDialog = remember { mutableStateOf(false) }
-//    val successBoolean = remember {mutableStateOf(false)}
-//    val shouldShowConfirmationDialog = remember { mutableStateOf(false) }
-//    val isConfirmed = remember { mutableStateOf(false) }
-//    val takServer by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
-//    val location = dataRepository.latestLocation.value
-//    var locationChecked by remember{ mutableStateOf(enableLocationService)}
+fun SOSButton(context: Context, isAlertingLiveData: Boolean?, peerEmergencyCount: Int = 0) {
     var sosText = stringResource(R.string.sos)
     var sosLiveText = stringResource(R.string.sos_active)
-    //Log.d(TAG, "SOSButtton")
 
-//    if (shouldShowConfirmationDialog.value) {
-//        ConfirmationDialog(
-//            shouldShowConfirmationDialog,
-//            rememberSwipeDismissableNavController(),
-//            stringResource(R.string.sos_alert_prompt),
-//            Icons.Default.Warning,
-//            Color.Red,
-//            "main_screen",
-//            isConfirmed
-//        )
-//    }
-//    if (isConfirmed.value) {
-//        shouldShowDialog.value = true
-//        if (takServer == true) {
-//            if (location != null && locationChecked) {
-//                successBoolean.value = true
-//                SOSButtonEmergencyMessage()
-//            }
-//        } else {
-//            if (MainActivity.enableDittoService && DittoService.isRunning.get()) {
-//                Log.w(TAG, "Not connected to tak server, but Ditto is enabled and running. SOS will be sent through here.")
-//                successBoolean.value = true
-//                SOSButtonEmergencyMessage()
-//            } else {
-//                Log.e(TAG, "Not connected to tak server, Ditto is either not enabled or not running. Sending a failed SOS to the UI.")
-//                successBoolean.value = false
-//            }
-//        }
-//        SuccessDialog(shouldShowDialog = shouldShowDialog, successBoolean = successBoolean, isConfirmed)
-//    }
+    // Flash animation when peer is in emergency
+    val hasPeerEmergency = peerEmergencyCount > 0
+    val infiniteTransition = rememberInfiniteTransition(label = "sos_flash")
+    val flashAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flash_alpha"
+    )
+
+    // Border color: flash orange/red when peer emergency, solid red otherwise
+    val borderColor = if (hasPeerEmergency) {
+        Color(0xFFFF6600).copy(alpha = flashAlpha)  // Flashing orange
+    } else {
+        Color.Red
+    }
+
+    // Container color: flash when peer emergency (and we're not already alerting)
+    val containerColor = when {
+        isAlertingLiveData == true -> Color.Red  // Our own SOS active
+        hasPeerEmergency -> Color(0xFFFF6600).copy(alpha = flashAlpha * 0.5f)  // Peer SOS flash
+        else -> Color.Transparent
+    }
 
     Button(
         onClick = {
@@ -3535,14 +3729,14 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
         modifier = Modifier
             .border(
                 width = 4.dp,
-                color = Color.Red,
+                color = borderColor,
                 shape = RoundedCornerShape(40.dp),
             )
             .size(110.dp, 60.dp),
         shape = RoundedCornerShape(40.dp),
         contentPadding = PaddingValues.Absolute(0.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (isAlertingLiveData == true) Color.Red else Color.Transparent,
+            containerColor = containerColor,
             contentColor = if (isAlertingLiveData == true) Color.White else Color.Red
         )
     ) {
@@ -3653,14 +3847,14 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                     text = stringResource(R.string.compass_disabled),
                     fontSize = 12.sp,
                     overflow = TextOverflow.Ellipsis,
-                    color = Color.Gray,
+                    color = colors.onSurfaceVariant,
                     fontWeight = FontWeight.Medium,
                 )
 
                 Text(
                     text = "---",
                     fontSize = 15.sp,
-                    color = Color.Gray,
+                    color = colors.onSurfaceVariant,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )

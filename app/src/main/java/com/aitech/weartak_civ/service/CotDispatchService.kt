@@ -31,6 +31,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.PhysioData
 import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
 import com.aitech.weartak_civ.events.DittoDocumentEvent
+import com.aitech.weartak_civ.events.HiveDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
@@ -1755,6 +1756,10 @@ class CotDispatchService : Service() {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", clearXml))
             sent = true
         }
+        if (HiveBtleService.isRunning.get()) {
+            EventBus.getDefault().post(HiveDocumentEvent("mapitem", clearXml))
+            sent = true
+        }
         if (TAKConnectService.isAnyTakConnected) {
             sendDataTAKServers(clearXml, true)
             sent = true
@@ -1920,6 +1925,10 @@ class CotDispatchService : Service() {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
             sent = true
         }
+        if (HiveBtleService.isRunning.get()) {
+            EventBus.getDefault().post(HiveDocumentEvent("alert", xml))
+            sent = true
+        }
         if (TAKConnectService.isAnyTakConnected) {
             sendDataTAKServers(xml, true)
             sent = true
@@ -2061,6 +2070,10 @@ class CotDispatchService : Service() {
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
+            sent = true
+        }
+        if (HiveBtleService.isRunning.get()) {
+            EventBus.getDefault().post(HiveDocumentEvent("mapitem", xml))
             sent = true
         }
         if (TAKConnectService.isAnyTakConnected) {

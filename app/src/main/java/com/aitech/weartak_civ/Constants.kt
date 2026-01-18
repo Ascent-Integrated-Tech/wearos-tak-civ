@@ -22,6 +22,9 @@ const val DEFAULT_LOW_ATM_PRESSURE_THRESHOLD: Int = 950
 const val DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT: Boolean = false
 const val DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD: Int = 2000
 const val DEFAULT_ENABLE_DITTO_SERVICE: Boolean = false
+const val DEFAULT_ENABLE_HIVE_BTLE_SERVICE: Boolean = true
+const val DEFAULT_HIVE_MESH_ID: String = "WEARTAK"
+const val DEFAULT_HIVE_POWER_PROFILE: Int = 2  // 0=Aggressive, 1=Balanced, 2=LowPower, 3=UltraLow
 const val DEFAULT_ENABLE_COMPANION_APP_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE: Boolean = true
 const val DEFAULT_ENABLE_CHAT_SERVICE: Boolean = true

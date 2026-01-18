@@ -176,6 +176,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
@@ -420,6 +422,7 @@ fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
+    enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
     enableChatServiceSettingsState.postValue(enableChatService)
     enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
     enableLowAtmPressureAlertSettingsState.postValue(enableLowAtmPressureAlert)
@@ -4506,6 +4509,7 @@ fun SettingsScreen(
 ) {
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
+    val hiveBtleCheckedLive by enableHiveBtleServiceSettingsState.observeAsState()
     val companionAppCheckedLive by enableCompanionAppServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val immersionAlertsCheckedLive by enableImmersionAlertsSettingsState.observeAsState()
@@ -4681,12 +4685,16 @@ fun SettingsScreen(
             )
 
             SettingSwitchToggleLiveData(
-                companionAppCheckedLive,
-                { enableCompanionAppServiceSettingsState.postValue(it) },
+                hiveBtleCheckedLive,
+                { enabled ->
+                    enableHiveBtleServiceSettingsState.postValue(enabled)
+                },
                 {},
-                stringResource(R.string.companion_app),
+                "HIVE BLE Mesh",
                 stringResource(R.string.service_on_off)
             )
+
+            // COMPANION_APP toggle removed - service is disabled in favor of HIVE_BTLE
 
             SettingSwitchToggleLiveData(
                 chatCheckedLive,
@@ -4940,6 +4948,7 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var batdokCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
+                    var hiveBtleCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var immersionAlertsChanged = false
                     var lowPressureAlertChanged = false
@@ -5279,6 +5288,13 @@ fun SettingsScreen(
                         settingsChanged = true; sitxClientIdChanged = true
                         sitxTakClientId = sitxTakClientIdSettingsState.value ?: sitxTakClientId
                     }
+                    if (enableHiveBtleService != enableHiveBtleServiceSettingsState.value) {
+                        settingsChanged = true; hiveBtleCheckedChanged = true
+                        enableHiveBtleService = enableHiveBtleServiceSettingsState.value ?: enableHiveBtleService
+                        runBlocking {
+                            enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
+                        }
+                    }
 
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
@@ -5586,6 +5602,10 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
                                  sitxRepo.setClientId(sitxTakClientId)
                                  // TODO Senni: Need to restart the device authorization
+                             }
+                             if (hiveBtleCheckedChanged) {
+                                 Log.d(TAG, "Storing enableHiveBtleService $enableHiveBtleService")
+                                 dataRepository.storeEnableHiveBtleService(enableHiveBtleService)
                              }
                              if (companionAppCheckedChanged) {
                                  Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")

@@ -130,6 +130,9 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0"
 
     implementation "live.ditto:ditto:4.10.2"
+
+    // HIVE BLE mesh sync (replaces Ditto for power-efficient P2P)
+    implementation "com.revolveteam:hive:0.0.11"
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
     implementation libs.ui
