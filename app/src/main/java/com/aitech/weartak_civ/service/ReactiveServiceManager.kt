@@ -243,10 +243,12 @@ class ReactiveServiceManager : Service() {
             while (isActive) {
                 delay(5_000) // every 5s
                 reconcileStates(reason = RecType.PERMISSIONS_POLL)
+                val blocked = computeBlockedServices()
+                repo.updateBlockedServices(blocked)
 
                 val macro = computeMacroMissingPermissions()
-                if (macro != repo.missingPermissions.value) {
-                    repo.updateMissingPermissions(macro)
+                if (macro.distinct().sorted() != repo.missingPermissions.value) {
+                    repo.updateMissingPermissions(macro.distinct().sorted())
                 }
             }
         }
@@ -258,6 +260,19 @@ class ReactiveServiceManager : Service() {
             .keys
 
         return config.missingPerms(desiredActive)
+    }
+
+    private fun computeBlockedServices(): Map<ServiceType, List<String>> {
+        val desiredActive = desiredServicesStateMap
+            .filter { it.value == true }
+            .keys
+
+        val blocked = EnumMap<ServiceType, List<String>>(ServiceType::class.java)
+        desiredActive.forEach { t ->
+            val missing = config.missingPerms(t) // you already have this private overload in ServiceConfiguration
+            if (missing.isNotEmpty()) blocked[t] = missing
+        }
+        return blocked
     }
 
     enum class RecType {

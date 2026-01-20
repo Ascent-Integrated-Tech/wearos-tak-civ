@@ -88,6 +88,7 @@ import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -142,6 +143,13 @@ class DataRepository(private val context: Context) {
 
     suspend fun updateMissingPermissions(perms: List<String>) {
         _missingPermissions.emit(perms)
+    }
+
+    private val _blockedServices = MutableStateFlow<Map<ServiceType, List<String>>>(emptyMap())
+    val blockedServices: StateFlow<Map<ServiceType, List<String>>> = _blockedServices
+
+    suspend fun updateBlockedServices(blocked: Map<ServiceType, List<String>> ) {
+        _blockedServices.emit(blocked)
     }
 
     // ======== ======== HAIL SECTION START ======== ========
