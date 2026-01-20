@@ -15,6 +15,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.text.format.DateFormat
 import android.util.Log
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.ChatRoom
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
@@ -23,6 +24,8 @@ import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -31,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class ChatService : Service() {
     private lateinit var dataRepository: DataRepository
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val chatRoomMap = LinkedHashMap<String, ChatRoom>() // in memory "inbox" roomId → ChatRoom
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -55,6 +59,33 @@ class ChatService : Service() {
         _instance = this
         EventBus.getDefault().register(this)
         dataRepository = MainActivity.dataRepository
+
+        startSendChatReplyCollector()
+    }
+
+    private fun startSendChatReplyCollector() {
+        serviceScope.launch {
+            dataRepository.chatRequestFromUI.collect { req ->
+                Log.i(TAG, "Received chat request to be sent: $req")
+                val uid = req.dstUid
+                val title = req.dstChatroom
+                val message = req.message
+                val timeMillis = req.timeMillis
+                val existingChatRoom = chatRoomMap[uid]
+                if (null != existingChatRoom) {
+                    if (title.isNotEmpty() && message.isNotEmpty()) {
+                        val mergedMessages = existingChatRoom.messageList + Utils.ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
+                        val mergedRoom = existingChatRoom.copy(messageList = mergedMessages, newMessagesPresent = false, timeLastOpened = timeMillis, timeLastClosed = timeMillis)
+                        chatRoomMap[uid] = mergedRoom
+                        val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+                        publishInboxToRepo()
+                        logChatRooms(sortedInbox)
+                        dataRepository.sendChatMessage(uid, title, message, timeMillis)
+                    }
+                }
+                // We will never come to else case as we are sending from an already received chat room (with proper uid and title)
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -64,6 +95,7 @@ class ChatService : Service() {
         EventBus.getDefault().unregister(this)
         _instance = null
         stopForeground(STOP_FOREGROUND_DETACH)
+        serviceScope.cancel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -229,11 +261,4 @@ class ChatService : Service() {
             room.newMessagesPresent = false
         }
     }
-
-    /**
-     * Send a new chat message into the given room.
-     * Returns true if the send was queued/succeeded locally.
-     */
-    fun sendMessage(roomId: String, text: String): Boolean { return false}
-
 }

@@ -264,7 +264,7 @@ class MainActivity : ComponentActivity() {
         var quickReplyOptions: List<Utils.TextSelectionButton> = listOf(
             Utils.TextSelectionButton("RGR", "Roger"),
             Utils.TextSelectionButton("NEG", "Negative"),
-            Utils.TextSelectionButton("Obj", "Objective"),
+            Utils.TextSelectionButton("Obj", "Objective sighted"),
             Utils.TextSelectionButton("nPos", "In Position")
         )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE

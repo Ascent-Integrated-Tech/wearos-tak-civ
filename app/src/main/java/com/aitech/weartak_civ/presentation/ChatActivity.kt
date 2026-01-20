@@ -94,14 +94,16 @@ import com.aitech.weartak_civ.Utils.ChatMessage
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
-import com.aitech.weartak_civ.presentation.ChatActivity.Companion.sampleMessages
-import com.aitech.weartak_civ.presentation.ChatActivity.Companion.sampleRooms
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -404,7 +406,7 @@ fun ChatScreenDetailed(
                 )
 
                 LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(messageList.reversed()) { messageIndex, chatMsg ->
+                    itemsIndexed(messageList) { messageIndex, chatMsg ->
                         val currentDate = utcToDate(chatMsg.timeReceived)
                         val displayDate = if (messageIndex == 0) {
                             true
@@ -469,7 +471,17 @@ fun ChatScreenDetailed(
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                             IconButton(
-                                onClick = { /* TODO WEAR-180: Add send functionality */},
+                                onClick = {
+                                    if (replyMessage.trim().isNotEmpty()) {
+                                        // TODO: Do we want to add success dialog box?
+                                        // I think no, as this is ATAK behavior and we will send it once any endpoint gets connected.
+                                        // It might be good to have an enqueuedToBeSent flag
+                                        CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
+                                            dataRepository.requestChatMessageSendFromUI(roomId?: "", chatRoomTitle, replyMessage.trim(), System.currentTimeMillis())
+                                            reply.value = ""
+                                        }
+                                    }
+                                },
                                 modifier = Modifier
                                     .size(35.dp),
                                 colors = IconButtonDefaults.iconButtonColors(

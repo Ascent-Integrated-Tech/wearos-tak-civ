@@ -898,7 +898,7 @@ class DataRepository(private val context: Context) {
     private val _clearManualAlert = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
     val clearManualAlert: SharedFlow<ClearRequest> = _clearManualAlert
 
-        suspend fun addManualAlertRequest(alertState: AlertState, category: String, description: String, timeMillis: Long) {
+    suspend fun addManualAlertRequest(alertState: AlertState, category: String, description: String, timeMillis: Long) {
         _addManualAlert.emit(ManualAlertRequest(alertState, category, description, timeMillis))
     }
 
@@ -944,7 +944,6 @@ class DataRepository(private val context: Context) {
         _physioAndAutoGenAlertList.emit(_physioAndAutoGenAlertList.value.filterNot { it.uuid == uid })
     }
 
-    // TODO Senni: can combine PhysioAndAutoGenAlertRequest and ManualAlertRequest
     data class PhysioAndAutoGenAlertRequest(
         val uuid: String,
         val alertState: AlertState = AlertState.ALERT,
@@ -1444,18 +1443,13 @@ class DataRepository(private val context: Context) {
         roomUid: String,
         roomTitle: String,
         message: String
-    ): ChatEventSnapshot? {
-        val locSnap = snapshotLocation()
-        if (locSnap == null) {
-            Log.w("WearTAK-Chat", "snapshotChatEvent: snapshotLocation() is null, returning null")
-            return null
-        }
+    ): ChatEventSnapshot {
 
         val timeSnap = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
             staleOffset = Utils.TimeOffset(minutes = 15) // or shorter if you want
         )
-
+        val locSnap = snapshotLocation()
         val systemSnap = snapshotSystem()
         val physioSnap = snapshotPhysio()
         val msgUid = UUID.randomUUID().toString()
@@ -1504,6 +1498,29 @@ class DataRepository(private val context: Context) {
         // update indicator
         _unreadCount.emit(fresh.count { it.newMessagesPresent })
         _hasUnread.emit(fresh.any  { it.newMessagesPresent })
+    }
+
+    // --- request flow (UI --> backend ChatService)
+    data class SendChatRequest(
+        val dstUid: String,
+        val dstChatroom: String,
+        val message: String,
+        val timeMillis: Long
+    )
+
+    private val _chatRequestFromUI = MutableSharedFlow<SendChatRequest>(extraBufferCapacity = 64)
+    val chatRequestFromUI: SharedFlow<SendChatRequest> = _chatRequestFromUI
+
+    suspend fun requestChatMessageSendFromUI(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
+        _chatRequestFromUI.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
+    }
+
+    // ChatService --> CotDispatchService
+    private val _chatRequestSend = MutableSharedFlow<SendChatRequest>(extraBufferCapacity = 64)
+    val chatRequestSend: SharedFlow<SendChatRequest> = _chatRequestSend
+
+    suspend fun sendChatMessage(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
+        _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
     }
 
     enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP }
