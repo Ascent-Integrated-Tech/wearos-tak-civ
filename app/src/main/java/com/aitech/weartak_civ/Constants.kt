@@ -21,6 +21,7 @@ const val DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_CHAT_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_BATTERY_ALERTS: Boolean = false
 const val DEFAULT_ENABLE_HAIL_SERVICE: Boolean = false
+const val DEFAULT_ENABLE_GEOFENCE_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_MULTICAST_ON_WIFI: Boolean = true
 const val DEFAULT_ENABLE_BATDOK_COT: Boolean = true
 const val DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION: Boolean = true

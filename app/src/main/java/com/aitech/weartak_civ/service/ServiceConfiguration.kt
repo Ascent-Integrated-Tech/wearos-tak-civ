@@ -80,7 +80,7 @@ class ServiceConfiguration(
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
-
+        ServiceType.GEOFENCE  -> dataRepository.getEnableGeofenceService.distinctUntilChanged()
         ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
@@ -144,7 +144,7 @@ class ServiceConfiguration(
         ServiceType.COT_DISPATCH,
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.BATTERY,
-//        ServiceType.BATTERY_ALERTS,
+        ServiceType.GEOFENCE,
         ServiceType.POWER_MGR -> emptyList()
         ServiceType.COMPANION_APP -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)

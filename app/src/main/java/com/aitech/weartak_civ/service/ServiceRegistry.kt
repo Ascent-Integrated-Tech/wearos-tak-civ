@@ -36,6 +36,7 @@ class ServiceRegistry() {
         ServiceType.ACTIVITY_RECOGNITION to ActivityRecognitionService::class.java,
         ServiceType.OFF_BODY_DETECT to OffBodyDetectService::class.java,
         ServiceType.BATTERY to BatteryService::class.java,
+        ServiceType.GEOFENCE to GeofenceService::class.java,
         ServiceType.POWER_MGR to PowerManagerService::class.java,
         ServiceType.BLOOD_HOUND to BloodhoundService::class.java,
         ServiceType.COMPANION_APP to CompanionAppService::class.java
@@ -56,6 +57,7 @@ class ServiceRegistry() {
         ServiceType.ACTIVITY_RECOGNITION to ActivityRecognitionService.isRunning,
         ServiceType.OFF_BODY_DETECT to OffBodyDetectService.isRunning,
         ServiceType.BATTERY to BatteryService.isRunning,
+        ServiceType.GEOFENCE to GeofenceService.isRunning,
         ServiceType.POWER_MGR to PowerManagerService.isRunning,
         ServiceType.BLOOD_HOUND to BloodhoundService.isRunning,
         ServiceType.COMPANION_APP to CompanionAppService.isRunning
