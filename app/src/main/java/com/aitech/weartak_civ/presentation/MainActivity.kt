@@ -9,7 +9,6 @@
 
 package com.aitech.weartak_civ.presentation
 
-import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
@@ -27,7 +26,6 @@ import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.hardware.display.DisplayManager
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -179,6 +177,7 @@ import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
@@ -201,6 +200,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_GEOFENCE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
@@ -240,13 +240,11 @@ import com.google.gson.reflect.TypeToken
 import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.Utils.getNullableBoolean
+import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -332,6 +330,7 @@ class MainActivity : ComponentActivity() {
         val roleSettingsState = MutableLiveData<String>("")
         val licenseSettingsState = MutableLiveData<String>("")
 
+        var enableGeofenceService: Boolean = DEFAULT_ENABLE_GEOFENCE_SERVICE
         var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
         var enableMulticastSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_MULTICAST_ON_WIFI)
         var multicastAddress = DEFAULT_MULTICAST_ADDRESS
@@ -1529,6 +1528,7 @@ class MainActivity : ComponentActivity() {
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
         val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
         val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
+        val enableGeofenceServiceConfigUpdate = appRestrictions.getBoolean("geofence_service_enabled", enableGeofenceService)
 
         cfgUpdateMap[ServiceType.LOCATION] = enableLocationServiceConfigUpdate
         cfgUpdateMap[ServiceType.PHYSIO]   = enablePhysiologicalServicesConfigUpdate
@@ -1539,6 +1539,7 @@ class MainActivity : ComponentActivity() {
         cfgUpdateMap[ServiceType.CHAT] = enableChatServiceConfigUpdate
         cfgUpdateMap[ServiceType.BLE_BEACON] = enableBleBeaconServiceConfigUpdate
         cfgUpdateMap[ServiceType.HAIL]       = enableHailServiceConfigUpdate
+        cfgUpdateMap[ServiceType.GEOFENCE] = enableGeofenceServiceConfigUpdate
         cfgUpdateMap[ServiceType.TAK_CONNECT]           = null
         cfgUpdateMap[ServiceType.COT_DISPATCH]          = null
         cfgUpdateMap[ServiceType.MOVEMENT_DETECTION]    = null
@@ -1840,6 +1841,7 @@ class MainActivity : ComponentActivity() {
             }
 
             dataRepository.storeEnableLocationService(enableLocationServiceConfigUpdate)
+            dataRepository.storeEnableGeofenceService(enableGeofenceServiceConfigUpdate)
             dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServicesConfigUpdate)
             dataRepository.storeEnableHeartRateService(enableHeartrateServiceConfigUpdate)
             dataRepository.storeEnableActivityRecognitionService(
@@ -1941,6 +1943,10 @@ class MainActivity : ComponentActivity() {
                 enableLocationService = enableLocationServiceConfigUpdate
                 Log.d(TAG, "enableLocationService=$enableLocationService")
                 if (!calledOnCreate) dataRepository.storeEnableLocationService(enableLocationService)
+            }
+            if (enableGeofenceServiceConfigUpdate != enableGeofenceService) {
+                enableGeofenceService = enableGeofenceServiceConfigUpdate
+                if (!calledOnCreate) dataRepository.storeEnableGeofenceService(enableGeofenceService)
             }
             if (enablePhysiologicalServicesConfigUpdate != enablePhysiologicalServices) {
                 enablePhysiologicalServices = enablePhysiologicalServicesConfigUpdate
@@ -2649,7 +2655,7 @@ fun HeartRate(context: Context) {
     }
 }
 
-enum class Connectivity { CELL, WIFI, BLUETOOTH, NONE }
+enum class Connectivity { CELL, WIFI, BLUETOOTH, AIRPLANE, NONE }
 enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
@@ -2659,11 +2665,14 @@ fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     val net = NetworkManager.isNetworkConnectedLiveData.value == true
     val cell = NetworkManager.isCellularConnectedLiveData.value == true
     val btooth = dataRepository.isCompanionConnected.value
+    val airplaneOnSuccess = dataRepository.airplaneOnSuccess.value
 
     return when {
+        btooth -> Connectivity.BLUETOOTH
         net && cell -> Connectivity.CELL
         net && !cell -> Connectivity.WIFI
-        btooth -> Connectivity.BLUETOOTH
+        // net is now false for expressions below
+        airplaneOnSuccess -> Connectivity.AIRPLANE
         else -> Connectivity.NONE
     }
 }
@@ -2697,6 +2706,7 @@ fun buildComplicationString(
         Connectivity.CELL -> getString(context, R.string.cell)
         Connectivity.WIFI -> getString(context, R.string.wifi)
         Connectivity.BLUETOOTH -> getString(context,R.string.bluetooth)
+        Connectivity.AIRPLANE -> getString(context, R.string.airplane_mode)
         Connectivity.NONE -> getString(context, R.string.no_connection)
     }
     val takLabel = when (effectiveTak) {
@@ -2736,12 +2746,15 @@ fun TroubleshootingIcons() {
     val iconSizeSmall= 20.dp
     networkManager?.checkNetworkConnected()
 
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(70.dp),
             contentAlignment = Alignment.TopCenter
     ) {
+        var clickCount by remember { mutableStateOf(0) }
+        val scope = rememberCoroutineScope()
         val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
         val battery by dataRepository.nonNullBatteryPercentage.collectAsState(initial = 100)
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
@@ -2750,6 +2763,7 @@ fun TroubleshootingIcons() {
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
+        val airplaneOnSuccess by dataRepository.airplaneOnSuccess.collectAsStateWithLifecycle()
 //        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
 //        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
         val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
@@ -2792,10 +2806,36 @@ fun TroubleshootingIcons() {
 
             wifiConnected == true -> painterResource(R.drawable.wifi)
 
+            (true == airplaneOnSuccess && false == isConnected) -> painterResource(R.drawable.airplane_mode)
+
             else -> painterResource(R.drawable.no_cell_wifi)
         }
 
 //         Icon on the bottom left curve
+        Icon(
+            painter = wirelessConnPainter,
+            contentDescription = "Bottom Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = 15.dp, y = 10.dp)
+                .size(25.dp)
+                .clickable {
+                    clickCount++
+
+                    if (clickCount == 2) {
+                        if (isConnected == false) setAirplaneMode("0") // OFF
+                        clickCount = 0
+                    } else {
+                        // reset counter after timeout
+                        scope.launch {
+                            delay(400)
+                            clickCount = 0
+                        }
+                    }
+                },
+            tint = if (isConnected == true) Color.White else Color.Unspecified
+        )
+        /*
         Icon(painter = wirelessConnPainter,
             contentDescription = "Bottom Left Icon",
             modifier = Modifier
@@ -2807,6 +2847,8 @@ fun TroubleshootingIcons() {
                 .size(25.dp),
             tint = if (isConnected == true) Color.White else Color.Unspecified
         )
+
+         */
 
         // Icon on the top right curve
         Icon(

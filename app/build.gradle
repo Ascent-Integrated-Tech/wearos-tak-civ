@@ -15,8 +15,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 48
-        versionName "0.58.2"
+        versionCode 50
+        versionName "0.60"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -101,6 +101,8 @@ dependencies {
     implementation libs.protolite.well.known.types
     implementation libs.animation.core
     implementation libs.datastore.core
+    implementation libs.ui.graphics
+    implementation libs.foundation.layout
 
     def room_version = "2.7.2"
     implementation "androidx.room:room-runtime:$room_version"

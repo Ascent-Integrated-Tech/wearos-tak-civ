@@ -540,7 +540,11 @@
     <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
     <string name="enable_battery_alerts" translatable="false">Enable Battery Alerts</string>
     <string name="enable_battery_alerts_desc" translatable="false">Enables wearTAK to send battery alerts via chat</string>
+    <string name="enable_battery_alerts_default" translatable="false">false</string>
     <string name="please_enable_chat_in_order_to_use_this_feature">Please enable Chat in order to use this feature</string>
+    <string name="enable_geofence_processing" translatable="false">Enable Geofence Processing Service</string>
+    <string name="enable_geofence_processing_desc" translatable="false">Enables processing of received geofence in order to set airplane mode when entering specially named geofences</string>
+    <string name="enable_geofence_processing_default" translatable="false">false</string>
     <string name="go_to_settings">Go to Settings</string>
     <string name="exit">Exit</string>
     <string name="chat_messages">Chat Messages</string>
@@ -583,4 +587,5 @@
     <string name="quic">QUIC</string>
     <string name="disabled">Disabled</string>
     <string name="enabled">Enabled</string>
+    <string name="airplane_mode">Airplane Mode</string>
 </resources>
