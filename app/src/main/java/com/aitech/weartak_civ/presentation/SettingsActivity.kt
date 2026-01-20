@@ -138,6 +138,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
@@ -4550,7 +4551,7 @@ fun SettingsScreen(
                     if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
                         hrHighAlertBpmThreshold = hrHighAlertBpmThresholdState.value ?: hrHighAlertBpmThreshold
-                    }    
+                    }
                     if (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdSettingsState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdTimeCheckedChanged = true
                         hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdState.value ?: hrHighAlertNumSecsThreshold
@@ -4591,6 +4592,9 @@ fun SettingsScreen(
                     if (restingHeartRate != restingHeartRateState.value) {
                         settingsChanged = true; restingHeartRateChanged = true
                         restingHeartRate = restingHeartRateState.value ?: restingHeartRate
+
+                        //Updating HR Profile in CEP
+                        CepProvider.getOrCreateEngine(context).updateHrProfile()
                     }
                     if (uniformWaistSize != uniformWaistSizeState.value) {
                         settingsChanged = true; uniformWaistSizeChanged = true
@@ -5111,6 +5115,9 @@ fun SettingsScreen(
                              if (physiologicalAlertsBpmThresholdCheckedChanged) {
                                  Log.d(TAG, "Storing hrHighAlertBpmThreshold $hrHighAlertBpmThreshold")
                                  dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold)
+
+                                 //Updating the hrProfile in the CEP
+                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
                              }
                              if (physiologicalAlertsBpmThresholdTimeCheckedChanged) {
                                  Log.d(TAG, "Storing hrHighAlertNumSecsThreshold $hrHighAlertNumSecsThreshold")

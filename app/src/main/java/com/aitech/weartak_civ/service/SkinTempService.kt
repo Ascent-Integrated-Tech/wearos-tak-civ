@@ -22,6 +22,12 @@ import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.PpgPayload
+import com.aitech.weartak_civ.cep.model.payloads.SkinTempPayload
+import com.aitech.weartak_civ.cep.model.payloads.Spo2Payload
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -31,6 +37,11 @@ import com.samsung.android.service.health.tracking.data.DataPoint
 import com.samsung.android.service.health.tracking.data.ValueKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -57,11 +68,28 @@ class SkinTempService : Service() {
 
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
+    private lateinit var spo2Tracker: HealthTracker
+    private lateinit var ppgTracker: HealthTracker
+
+    // CEP emitter loop
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var emitJob: Job? = null
+    private val EMIT_INTERVAL_MS = 1000L
 
     private lateinit var handlerThread: HandlerThread
     private lateinit var backgroundHandler: Handler
     private var isHandlerRunning = false
     private var deviceWorn: Boolean = false
+
+    // Running flags for trackers
+    @Volatile private var spo2Running: Boolean = false
+    @Volatile private var ppgRunning: Boolean = false
+
+    // Cached latest values
+    @Volatile private var lastSkinTempC: Float? = null
+    @Volatile private var lastSpo2Pct: Double? = null
+    @Volatile private var lastPpgAmp: Float? = null
+    @Volatile private var lastPpgQuality: Float? = null
 
     private var nextFireMs = 0L          // wall-clock target for the next run
     // One monotonic clock – the same one Handler uses
@@ -88,10 +116,25 @@ class SkinTempService : Service() {
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
+            // Initialize on-demand SpO2 and PPG trackers as a hub
+            try {
+                spo2Tracker = healthService.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
+                Log.i(TAG, "SpO2 tracker initialized (on-demand)")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to init SpO2 tracker", t)
+            }
+            try {
+                // Prefer green channel on-demand if available
+                ppgTracker = healthService.getHealthTracker(HealthTrackerType.PPG_ON_DEMAND)
+                Log.i(TAG, "PPG tracker initialized (on-demand)")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to init PPG tracker", t)
+            }
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
                 startSkinTracker()     // only kick off if worn
                 scheduleNextReading()
+                startEmitLoopIfNeeded()
             }
         }
 
@@ -106,6 +149,9 @@ class SkinTempService : Service() {
             Log.w(TAG, "SkinTempService onConnectionEnded(): HealthPlatform DISCONNECTED")
             // Clean up when disconnected
             stopSkinTracker(true)
+            stopSpo2Tracker()
+            stopPpgTracker()
+            stopEmitLoop()
         }
     }
 
@@ -122,8 +168,9 @@ class SkinTempService : Service() {
                 if (status >= 0) {
                     val objectTemp = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE)
                     val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
+                    lastSkinTempC = objectTemp
                     tempF = objectTemp.toFahrenheit()
-                    Log.i(TAG, "SkinTempService T= ${"%.1f".format(tempF)}°F")
+                    Log.i(TAG, "SkinTempService skinTemp: object=${"%.1f".format(tempF)}°F (${objectTemp}°C) ambient=${ambientTemp}°C")
 
                     val logLine =
                         "SkinTempService status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
@@ -137,6 +184,12 @@ class SkinTempService : Service() {
                 CoroutineScope(Dispatchers.IO).launch {
                     sharedRepo.storeLatestSkinTemp(tempF)
                 }
+            }
+
+            // Trigger SpO2 and PPG bursts only if worn
+            if (deviceWorn) {
+                requestSpo2Once()
+                requestPpgBurst(5_000L)
             }
             // 3️⃣  Schedule the next run *once*, with the helper
             scheduleNextReading()
@@ -152,6 +205,144 @@ class SkinTempService : Service() {
             Log.e(TAG, "SkinTempService HealthTracker.TrackerError: $error")
         }
 
+    }
+
+    // ---- SpO2 (one-shot) ----
+    private val spo2EventListener = object : HealthTracker.TrackerEventListener {
+        override fun onDataReceived(dataPoints: List<DataPoint>) {
+            stopSpo2Tracker()
+            val dp = dataPoints.firstOrNull() ?: return
+            try {
+                val status = dp.getValue(ValueKey.SpO2Set.STATUS)
+                val spo2 = dp.getValue(ValueKey.SpO2Set.SPO2)
+                lastSpo2Pct = spo2.toDouble()
+                Log.i(TAG, "SkinTempService SpO2 (cached): status=$status spo2=$spo2 %")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to parse SpO2 datapoint", t)
+            }
+        }
+        override fun onFlushCompleted() {}
+        override fun onError(error: HealthTracker.TrackerError) {
+            Log.e(TAG, "SpO2 TrackerError: $error")
+        }
+    }
+
+    private fun requestSpo2Once() {
+        if (!::spo2Tracker.isInitialized) return
+        if (spo2Running) return
+        backgroundHandler.post {
+            try {
+                spo2Tracker.setEventListener(spo2EventListener)
+                spo2Running = true
+                Log.d(TAG, "SpO2 one-shot requested")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to start SpO2 one-shot", t)
+            }
+        }
+    }
+
+    private fun stopSpo2Tracker() {
+        if (!::spo2Tracker.isInitialized) return
+        backgroundHandler.post {
+            try {
+                spo2Tracker.unsetEventListener()
+                spo2Running = false
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to stop SpO2 tracker", t)
+            }
+        }
+    }
+
+    // ---- PPG burst (green) ----
+    private var ppgStartUptimeMs: Long = 0L
+    private var ppgBurstDurationMs: Long = 0L
+    private val ppgSamples = mutableListOf<Float>()
+
+    private val ppgEventListener = object : HealthTracker.TrackerEventListener {
+        override fun onDataReceived(dataPoints: List<DataPoint>) {
+            val now = SystemClock.uptimeMillis()
+            if (ppgStartUptimeMs == 0L) ppgStartUptimeMs = now
+            try {
+                dataPoints.forEach { dp ->
+                    // Capture raw PPG sample for on-demand PPG tracker
+                    val sample = dp.getValue(ValueKey.PpgSet.PPG_GREEN) as Float
+                    ppgSamples.add(sample)
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed reading PPG datapoints", t)
+            }
+
+            // Stop after duration
+            if (now - ppgStartUptimeMs >= ppgBurstDurationMs) {
+                stopPpgTracker()
+                if (ppgSamples.size >= 5) {
+                    val amp = computeAmplitudeP5P95(ppgSamples).toFloat()
+                    val quality = computeQuality(amp)
+                    lastPpgAmp = amp
+                    lastPpgQuality = quality
+                    Log.i(TAG, "SkinTempService PPG burst (cached): samples=${ppgSamples.size} amp=$amp q=$quality")
+                } else {
+                    Log.w(TAG, "SkinTempService PPG burst: insufficient samples (${ppgSamples.size})")
+                }
+                ppgSamples.clear()
+                ppgStartUptimeMs = 0L
+            }
+        }
+        override fun onFlushCompleted() {}
+        override fun onError(error: HealthTracker.TrackerError) {
+            Log.e(TAG, "PPG TrackerError: $error")
+        }
+    }
+
+    private fun requestPpgBurst(durationMs: Long) {
+        if (!::ppgTracker.isInitialized) return
+        if (ppgRunning) return
+        ppgStartUptimeMs = 0L
+        ppgBurstDurationMs = durationMs
+        ppgSamples.clear()
+        backgroundHandler.post {
+            try {
+                ppgTracker.setEventListener(ppgEventListener)
+                ppgRunning = true
+                Log.d(TAG, "PPG burst requested: ${durationMs}ms")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to start PPG burst", t)
+            }
+        }
+    }
+
+    private fun stopPpgTracker() {
+        if (!::ppgTracker.isInitialized) return
+        backgroundHandler.post {
+            try {
+                ppgTracker.unsetEventListener()
+                ppgRunning = false
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to stop PPG tracker", t)
+            }
+        }
+    }
+
+    private fun computeAmplitudeP5P95(samples: List<Float>): Double {
+        if (samples.isEmpty()) return 0.0
+        val sorted = samples.sorted()
+        fun pct(p: Double): Double {
+            val idx = ((p / 100.0) * (sorted.size - 1)).coerceIn(0.0, (sorted.size - 1).toDouble())
+            val i = idx.toInt()
+            val frac = idx - i
+            val a = sorted[i].toDouble()
+            val b = sorted[(i + 1).coerceAtMost(sorted.size - 1)].toDouble()
+            return a + (b - a) * frac
+        }
+        val p5 = pct(5.0)
+        val p95 = pct(95.0)
+        return (p95 - p5).coerceAtLeast(0.0)
+    }
+
+    private fun computeQuality(amplitude: Float): Float {
+        // Simple heuristic: normalize amplitude to [0..1] with soft cap
+        val norm = amplitude / 1.0f
+        return norm.coerceIn(0f, 1f)
     }
 
     override fun onCreate() {
@@ -201,12 +392,19 @@ class SkinTempService : Service() {
         Log.d(TAG, "SkinTempService onDestroy()")
         isRunning.set(false)
         deviceWorn = false
+        // Stop emitter loop
+        try {
+            emitJob?.cancel()
+            serviceScope.cancel()
+        } catch (_: Throwable) { }
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
 
         // Ensure listener is removed and thread stopped
         stopSkinTracker(true)
+        stopSpo2Tracker()
+        stopPpgTracker()
         healthService.disconnectService()
         handlerThread.quitSafely()
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -226,10 +424,14 @@ class SkinTempService : Service() {
             deviceWorn = true
             startSkinTracker()    // immediate snapshot
             scheduleNextReading()
+            startEmitLoopIfNeeded()
             writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
             stopSkinTracker(true)     // shut it down
+            stopSpo2Tracker()
+            stopPpgTracker()
+            stopEmitLoop()
             writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
@@ -249,4 +451,50 @@ class SkinTempService : Service() {
         }
     }
 
+    // CEP emission loop
+    private fun startEmitLoopIfNeeded() {
+        if (emitJob?.isActive == true) return
+        emitJob = serviceScope.launch {
+            while (isActive) {
+                emitLatestCep()
+                delay(EMIT_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopEmitLoop() {
+        try {
+            emitJob?.cancel()
+            emitJob = null
+        } catch (_: Throwable) { }
+    }
+
+    private suspend fun emitLatestCep() {
+        try {
+            lastSpo2Pct?.let { pct ->
+                CepBus.emit(CepEvent(topic = Topics.SPO2, payload = Spo2Payload(pct = pct)))
+            }
+            lastPpgAmp?.let { amp ->
+                CepBus.emit(
+                    CepEvent(
+                        topic = Topics.PPG,
+                        payload = PpgPayload(amplitude = amp, quality = (lastPpgQuality ?: 0f), wavelength = "green")
+                    )
+                )
+            }
+            lastSkinTempC?.let { c ->
+                 CepBus.emit(
+                     CepEvent(
+                         topic = Topics.SKIN_TEMP,
+                         payload = SkinTempPayload(
+                             c_peripheral = listOf(c.toDouble()),
+                             labels = listOf("hand")
+                         )
+                     )
+                 )
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "CEP emit loop error", t)
+        }
+    }
 }
