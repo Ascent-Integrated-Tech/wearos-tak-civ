@@ -2609,7 +2609,7 @@ fun HeartRate(context: Context) {
     }
 }
 
-enum class Connectivity { CELL, WIFI, BLUETOOTH, NONE }
+enum class Connectivity { CELL, WIFI, BLUETOOTH, AIRPLANE, NONE }
 enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
@@ -2619,11 +2619,14 @@ fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     val net = NetworkManager.isNetworkConnectedLiveData.value == true
     val cell = NetworkManager.isCellularConnectedLiveData.value == true
     val btooth = dataRepository.isCompanionConnected.value
+    //TODO: WEAR-349: Connect to airplane mode code
+    val airplane = true
 
     return when {
         net && cell -> Connectivity.CELL
         net && !cell -> Connectivity.WIFI
         btooth -> Connectivity.BLUETOOTH
+        airplane -> Connectivity.AIRPLANE
         else -> Connectivity.NONE
     }
 }
@@ -2657,6 +2660,7 @@ fun buildComplicationString(
         Connectivity.CELL -> getString(context, R.string.cell)
         Connectivity.WIFI -> getString(context, R.string.wifi)
         Connectivity.BLUETOOTH -> getString(context,R.string.bluetooth)
+        Connectivity.AIRPLANE -> getString(context, R.string.airplane_mode)
         Connectivity.NONE -> getString(context, R.string.no_connection)
     }
     val takLabel = when (effectiveTak) {
@@ -2710,6 +2714,8 @@ fun TroubleshootingIcons() {
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
+        //TODO WEAR-349: Connect with airplane mode functionality
+        val airplaneModeOn = false
 //        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
 //        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
         val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
@@ -2751,6 +2757,8 @@ fun TroubleshootingIcons() {
             cellConnected == true -> painterResource(R.drawable.cell)
 
             wifiConnected == true -> painterResource(R.drawable.wifi)
+
+            airplaneModeOn == true -> painterResource(R.drawable.airplane_mode)
 
             else -> painterResource(R.drawable.no_cell_wifi)
         }
