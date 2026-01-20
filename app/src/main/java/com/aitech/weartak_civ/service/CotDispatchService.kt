@@ -95,6 +95,7 @@ class CotDispatchService : Service() {
     private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
     private val pendingMarkerDropQueue = ArrayDeque<DataRepository.MarkerDropRequest>()
 
+    private val pendingChatMsgQueue = ArrayDeque<Utils.ChatMessage>()
 
     private var combatId: Int = 0
 
@@ -156,6 +157,21 @@ class CotDispatchService : Service() {
         startManualAlertPipelines()
 
         startPhysioAndAutoGenAlertPipelines()
+
+        startSendChatMessageCollector()
+
+        startAnyEndpointConnectedCollector()
+    }
+
+    private fun startAnyEndpointConnectedCollector() {
+        serviceScope.launch {
+            dataRepository.anyEndpointConnected.collect { connected ->
+                Log.i(TAG, "Any endpoint connected: $connected")
+                if (connected) {
+                    sendPendingChatMessages()
+                }
+            }
+        }
     }
 
     /* Expose the companion object CotDispatchService.currReportingIntervalSecs to the flow
@@ -225,19 +241,15 @@ class CotDispatchService : Service() {
                                     )
 
                                     // TODO Senni: We need to add this and below (!sentBatteryAlertChatMsg) as being sent to "All Chat Rooms"
-                                    if (chatSnap != null) {
-                                        // 2. Build CoT XML from snapshot
-                                        val chatCot = buildChatCotFromSnapshot(chatSnap)
-                                        Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
-                                        sendDataTAKServers(chatCot, true)
-                                        if (companionAppAvailable()) {
-                                            capRepo.enqueueChatSnapshotForBle(chatSnap)
-                                        }
-
-                                        sentBatteryWarnChatMsg = true
-                                    } else {
-                                        Log.w(TAG, "Battery warn chat snapshot is null; not sending chat")
+                                    // 2. Build CoT XML from snapshot
+                                    val chatCot = buildChatCotFromSnapshot(chatSnap)
+                                    Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
+                                    sendDataTAKServers(chatCot, true)
+                                    if (companionAppAvailable()) {
+                                        capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+
+                                    sentBatteryWarnChatMsg = true
                                 }
                             } else {
                                 if (!sentBatteryAlertChatMsg) {
@@ -250,18 +262,14 @@ class CotDispatchService : Service() {
                                         message = msgText
                                     )
 
-                                    if (chatSnap != null) {
-                                        val chatCot = buildChatCotFromSnapshot(chatSnap)
-                                        Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
-                                        sendDataTAKServers(chatCot, true)
-                                        if (companionAppAvailable()) {
-                                            capRepo.enqueueChatSnapshotForBle(chatSnap)
-                                        }
-
-                                        sentBatteryAlertChatMsg = true
-                                    } else {
-                                        Log.w(TAG, "Battery ALERT chat snapshot is null; not sending chat")
+                                    val chatCot = buildChatCotFromSnapshot(chatSnap)
+                                    Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
+                                    sendDataTAKServers(chatCot, true)
+                                    if (companionAppAvailable()) {
+                                        capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+
+                                    sentBatteryAlertChatMsg = true
                                 }
                             }
                         } else {
@@ -290,19 +298,14 @@ class CotDispatchService : Service() {
                             message = msg
                         )
 
-                        if (chatSnap != null) {
+                        if (sendToTak) {
+                            val chatCot = buildChatCotFromSnapshot(chatSnap)
+                            sendDataTAKServers(chatCot, true)
+                            Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
+                        }
 
-                            if (sendToTak) {
-                                val chatCot = buildChatCotFromSnapshot(chatSnap)
-                                sendDataTAKServers(chatCot, true)
-                                Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
-                            }
-
-                            if (sendToCompApp) {
-                                capRepo.enqueueChatSnapshotForBle(chatSnap)
-                            }
-                        } else {
-                            Log.w(TAG, "Battery warn chat snapshot is null; not sending chat")
+                        if (sendToCompApp) {
+                            capRepo.enqueueChatSnapshotForBle(chatSnap)
                         }
                     }
                 }
@@ -571,6 +574,83 @@ class CotDispatchService : Service() {
             }
         }
     }
+
+    private fun startSendChatMessageCollector() {
+        serviceScope.launch {
+            dataRepository.chatRequestSend.collect { req ->
+                Log.i(TAG, "Received req to send chat message: $req")
+                if (dataRepository.anyEndpointConnected.value) {
+                    sendAllChatMessages(req)
+                } else {
+                    val chatMsg = Utils.ChatMessage(message = req.message, uid = req.dstUid, callsign = req.dstChatroom, timeReceived = req.timeMillis)
+                    pendingChatMsgQueue.addLast(chatMsg)
+                    Log.i(TAG, "pendingChatMsgQueue=${pendingChatMsgQueue.size}")
+                }
+            }
+        }
+    }
+
+    private suspend fun sendPendingChatMessages(): Boolean {
+        var sentAll = true
+        Log.i(TAG, "pendingChatMsgQueue.size=${pendingChatMsgQueue.size}")
+        while (pendingChatMsgQueue.isNotEmpty()) {
+            val chatMsg = pendingChatMsgQueue.first()
+            Log.i(TAG, "Trying to send pending chat message: $chatMsg")
+            if (sendChatMessage(chatMsg)) {
+                pendingChatMsgQueue.removeFirst()
+            } else {
+                sentAll = false
+                break
+            }
+        }
+        return sentAll
+    }
+
+    private suspend fun sendChatMessage(chatMsg: Utils.ChatMessage): Boolean {
+        val chatSnap = dataRepository.snapshotChatEvent(roomUid = chatMsg.uid, roomTitle = chatMsg.callsign, message = chatMsg.message)
+        val chatCotXml = buildChatCotFromSnapshot(chatSnap)
+        var sent = false
+        if (companionAppAvailable()) {
+            Log.i(TAG, "Send Chat payload via BLE ...")
+            capRepo.enqueueChatSnapshotForBle(chatSnap)
+            sent = true
+        }
+        if (dataRepository.getEnableMulticast.first()) {
+            sendMulticastDatagram(chatCotXml)
+            //sent = true
+        }
+        if (DittoService.isRunning.get()) {
+            EventBus.getDefault().post(DittoDocumentEvent("mapitem", chatCotXml))
+            sent = true
+        }
+        if (TAKConnectService.isAnyTakConnected) {
+            sendDataTAKServers(chatCotXml, true)
+            sent = true
+        }
+
+        if (sent) {
+            Log.i(TAG, "sendChatMessage: Sent chat message: $chatMsg")
+        } else {
+            Log.i(TAG, "sendChatMessage: Could NOT send chat message: $chatMsg")
+        }
+
+        return sent
+    }
+
+    private suspend fun sendAllChatMessages(chatReq: DataRepository.SendChatRequest?) {
+        val sentPendingChatMessages = sendPendingChatMessages()
+
+        if (null == chatReq) return
+
+        if (sentPendingChatMessages) {
+            val chatMsg = Utils.ChatMessage(message = chatReq.message, uid = chatReq.dstUid, callsign = chatReq.dstChatroom, timeReceived = chatReq.timeMillis)
+            if (!sendChatMessage(chatMsg)) {
+                pendingChatMsgQueue.addLast(chatMsg)
+                Log.i(TAG, "pendingChatMsgQueue=${pendingChatMsgQueue.size}")
+            }
+        }
+    }
+
 
     private fun buildChatCotFromSnapshot(chat: DataRepository.ChatEventSnapshot): String {
         // Rebuild an android.location.Location from snapshot, if needed.
@@ -1761,7 +1841,7 @@ class CotDispatchService : Service() {
         }
         if (dataRepository.getEnableMulticast.first()) {
             sendMulticastDatagram(xml)
-            sent = true
+            //sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
