@@ -44,6 +44,10 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
         var bluetoothServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var bluetoothServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var bluetoothServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var airplaneModeServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var airplaneModeServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var airplaneModeServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var airplaneModeServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var noConnectionServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
         var noConnectServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var noConnectServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
@@ -211,7 +215,38 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
                     return bluetoothServerDisconnectedLocationDisabledComplicationData
                 }
             }
-
+            "Airplane Mode, Server Connecting, Location Enabled" -> when (null != airplaneModeServerConnectingLocationEnabledComplicationData) {
+                true -> airplaneModeServerConnectingLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new airplaneModeServerConnectingLocationEnabledComplicationData")
+                    airplaneModeServerConnectingLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplanemode_server_connecting_location_enabled), "Airplane Mode, Server Connecting, Location Enabled")
+                    return airplaneModeServerConnectingLocationEnabledComplicationData
+                }
+            }
+            "Airplane Mode, Server Connecting, Location Disabled" -> when (null != airplaneModeServerConnectingLocationDisabledComplicationData) {
+                true -> airplaneModeServerConnectingLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new airplaneModeServerConnectingLocationDisabledComplicationData")
+                    airplaneModeServerConnectingLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplanemode_server_connecting_location_disabled), "Airplane Mode, Server Connecting, Location Disabled")
+                    return airplaneModeServerConnectingLocationDisabledComplicationData
+                }
+            }
+            "Airplane Mode, Server Disconnected, Location Enabled" -> when (null != airplaneModeServerDisconnectedLocationEnabledComplicationData) {
+                true -> airplaneModeServerDisconnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new airplaneModeServerDisconnectedLocationEnabledComplicationData")
+                    airplaneModeServerDisconnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplanemode_server_disconnected_location_enabled), "Airplane Mode, Server Disconnected, Location Enabled")
+                    return airplaneModeServerDisconnectedLocationEnabledComplicationData
+                }
+            }
+            "Airplane Mode, Server Disconnected, Location Disabled" -> when (null != airplaneModeServerDisconnectedLocationDisabledComplicationData) {
+                true -> airplaneModeServerDisconnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new airplaneModeServerDisconnectedLocationDisabledComplicationData")
+                    airplaneModeServerDisconnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplanemode_server_disconnected_location_disabled), "Airplane Mode, Server Disconnected, Location Disabled")
+                    return airplaneModeServerDisconnectedLocationDisabledComplicationData
+                }
+            }
             getString(R.string.no_connect_server_connecting_location_enabled) -> when (null != noConnectionServerConnectingLocationEnabledComplicationData) {
                 true -> noConnectionServerConnectingLocationEnabledComplicationData
                 false -> {

@@ -138,6 +138,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
@@ -1333,7 +1334,6 @@ fun NewServerPage(navController: NavController) {
         var username by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
         var isP12Cert = false
-        val context = LocalContext.current
         val serverSettingsChanged = remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
@@ -1491,7 +1491,7 @@ fun NewServerPage(navController: NavController) {
                             } else {
                                 Toast.makeText(
                                     mainActivity,
-                                    context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
+                                    mainActivity.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
                             }
                         }
                     }
@@ -1686,8 +1686,6 @@ fun EditServerPage(
                 val minReportRate: Int = 1
                 val scope = rememberCoroutineScope()
 
-                val context = LocalContext.current
-
                 ConfirmCancelButtons(
                     onClickCancel = {
                         Log.d(TAG, "EditServerPage Settings NOT saved")
@@ -1757,7 +1755,7 @@ fun EditServerPage(
                                 }
                             }
                         } else {
-                            Toast.makeText(mainActivity, context.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
+                            Toast.makeText(mainActivity, mainActivity.getString(R.string.please_enter_valid_values_for_all_fields), Toast.LENGTH_LONG).show()
                         }
                     }
                 )
@@ -4443,6 +4441,7 @@ fun SettingsScreen(
                         // e.g., trigger a manual battery-alert test hook
                         // triggerTestBatteryAlert()
                     }
+                    setAirplaneMode("0")
                 }
             )
 
@@ -5213,9 +5212,9 @@ fun DebugVersionText(
 
                         withContext(Dispatchers.Main) {
                             val toastText = if (newValue) {
-                                "Debug tools enabled"
+                                "Debug tools enabled (airplane mode off)"
                             } else {
-                                "Debug tools disabled"
+                                "Debug tools disabled (airplane mode off)"
                             }
                             showTopToast(toastText)
                         }

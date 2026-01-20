@@ -135,7 +135,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
             }
         }
 
-        Log.d(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
+        Log.i(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         //writeToLogFileLocation(logFile, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         if (networkInfoChanged) {
             Log.d(TAG, "Change detected in network connection information.Sending NwConnEvent")

@@ -47,6 +47,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_GEOFENCE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
@@ -121,6 +122,13 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[PASSIVE_DATA_ENABLED] = enabled
         }
+    }
+
+    private val _airplaneOnSuccess = MutableStateFlow(false)
+    val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
+
+    fun setAirplaneOnSuccess(success: Boolean) {
+        _airplaneOnSuccess.value = success
     }
 
     /**
@@ -398,6 +406,26 @@ class DataRepository(private val context: Context) {
 
     // ======== ======== Multicast SECTION END ======== ==========
 
+    val geofenceServiceEnabled: StateFlow<Boolean?> =
+        context.dataStore.data
+            .map { prefs ->
+                prefs[ENABLE_GEOFENCE_SERVICE] ?: DEFAULT_ENABLE_GEOFENCE_SERVICE
+            }
+            .stateIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = null
+            )
+
+    suspend fun storeEnableGeofenceService(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_GEOFENCE_SERVICE] = enable
+        }
+    }
+
+    val getEnableGeofenceService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_GEOFENCE_SERVICE] ?: DEFAULT_ENABLE_GEOFENCE_SERVICE
+    }
     private val _latestActivityConfidence = MutableStateFlow<Int>(100)
     val latestActivityConfidence: StateFlow<Int?> = _latestActivityConfidence
 
@@ -2327,6 +2355,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
+        private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

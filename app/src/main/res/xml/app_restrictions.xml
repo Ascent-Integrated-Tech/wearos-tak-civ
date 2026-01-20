@@ -156,7 +156,7 @@
         android:restrictionType="bool"
         android:title="@string/enable_battery_alerts"
         android:description="@string/enable_battery_alerts_desc"
-        android:defaultValue="@string/ditto_service_enabled_default" />
+        android:defaultValue="@string/enable_battery_alerts_default" />
 
     <restriction
         android:key="batt_warn_percent"
@@ -170,7 +170,12 @@
         android:title="@string/batt_alert_percent_title"
         android:description="@string/batt_alert_percent_description"
         android:defaultValue="@string/batt_alert_percent_default"/>
-
+    <restriction
+        android:key="geofence_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/enable_geofence_processing"
+        android:description="@string/enable_geofence_processing_desc"
+        android:defaultValue="@string/enable_geofence_processing_default" />
     <restriction
         android:key="enable_physiological_alerts"
         android:restrictionType="bool"

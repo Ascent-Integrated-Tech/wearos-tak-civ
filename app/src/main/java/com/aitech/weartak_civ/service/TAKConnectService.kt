@@ -21,7 +21,16 @@ import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
+import com.aitech.weartak_civ.Utils.CotUtils
+import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
+import com.aitech.weartak_civ.data.parsers.GeofenceCotParser.isRadioSilenceRectangleGeofence
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
+import com.aitech.weartak_civ.data.GeofenceRepository
+import com.aitech.weartak_civ.data.parsers.GeofenceCotParser
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
@@ -30,15 +39,27 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
+import com.aitech.weartak_civ.events.TakChatEvent
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.manager.NetworkManager
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
+import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
 import com.aitech.weartak_civ.service.CotDispatchService.Companion.esriGeojsonMsg
+import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -59,6 +80,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.StringReader
+import java.net.SocketTimeoutException
 import java.security.*
 import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
@@ -72,31 +94,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
+import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
-import com.aitech.weartak_civ.Utils.CotUtils
-import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
-import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
-import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.BloodhoundRepository
-import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.events.TakChatEvent
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
-import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommandJsonMsg
-import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import java.net.SocketTimeoutException
-import javax.net.ssl.TrustManagerFactory
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
@@ -141,6 +144,7 @@ class TAKConnectService: Service() {
         )
 
         setFromDatastore()
+        startEnableGoefenceServiceCollector()
         startMulticastCollector()
 
         scope.launch {
@@ -163,6 +167,16 @@ class TAKConnectService: Service() {
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
+        }
+    }
+
+    private fun startEnableGoefenceServiceCollector() {
+        CoroutineScope(Dispatchers.IO).launch {
+            dataRepository.geofenceServiceEnabled.collectLatest { enabled ->
+                Log.i(TAG, "geofenceServiceEnabled=$enabled")
+                if (null != enabled && enabled != geofenceEnabled)
+                geofenceEnabled = enabled
+            }
         }
     }
 
@@ -534,6 +548,7 @@ class TAKConnectService: Service() {
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         const private val KEYSTORE_PASS = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
+        var geofenceEnabled: Boolean = false
         var isNetworkConnected = false
         var isWifiConnected = false
         var isAnyTakConnected : Boolean = false // Overall flag indicating that atleast one of the TAK servers is connected. This includes getting client cert and connecting to COT message port
@@ -1242,61 +1257,7 @@ class TAKConnectService: Service() {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
-                    // start a background COT‐reader on the same socket
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
-                            val buffer = StringBuilder()
-
-                            while (true) {
-                                // Gate: do not read unless chat is enabled
-                                if (!dataRepository.getEnableChatService.first()) {
-                                    delay(750)    // light sleep; re-check flag soon
-                                    continue
-                                }
-
-                                val line = try {
-                                    reader.readLine()
-                                } catch (e: SocketTimeoutException) {
-                                    // timeout just to re-check enabled/cancellation
-                                    continue
-                                } ?: break
-
-                                buffer.append(line)
-
-                                // parse one <event> ... </event>
-                                val bufStr = buffer.toString()
-                                val endIdx = bufStr.indexOf("</event>")
-                                if (endIdx >= 0) {
-                                    val rawXml = bufStr.substring(0, endIdx + "</event>".length)
-                                    buffer.delete(0, endIdx + "</event>".length)
-
-                                    if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
-                                    if (CotUtils.isChatMessage(rawXml)
-                                        && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
-                                        Log.d(TAG, "Received Chat for me:\n$rawXml")
-                                        EventBus.getDefault().post(TakChatEvent(rawXml))
-                                    }
-                                    val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
-
-                                    if (markerCotEvent != null) {
-                                        Log.i(TAG, "We read a marker message!: \n $markerCotEvent")
-//                                        Log.i(TAG, "XML XML XML: $rawXml")
-                                        val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
-                                        val bhEvent = BloodhoundRepository.BloodhoundEvent(
-                                            mapItem = mapItem,
-                                            server = takServerDetail.address,
-                                            timeIssued = mapItem.link?.productionTime,
-                                            timeCompleted = null
-                                        )
-                                        bhRepo.updateBloodhoundEvent(bhEvent)
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "COT listener loop failed", e)
-                        }
-                    }
+                    startCotReader(takServerDetail)
 
                 } catch (e: Exception) {
                     //sendTakConnectionStatusEvent(CONNECTION_FAILURE)
@@ -1387,6 +1348,68 @@ class TAKConnectService: Service() {
             }
         }
 
+        private fun startCotReader(takServerDetail: TakServerDetail) {
+            // start a background COT‐reader on the same socket
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val reader = BufferedReader(InputStreamReader(takServerDetail.secureSocket!!.inputStream))
+                    val buffer = StringBuilder()
+
+                    while (true) {
+                        // Gate: do not read unless chat is enabled
+                        if (!dataRepository.getEnableChatService.first()) {
+                            delay(750)    // light sleep; re-check flag soon
+                            continue
+                        }
+
+                        val line = try {
+                            reader.readLine()
+                        } catch (e: SocketTimeoutException) {
+                            // timeout just to re-check enabled/cancellation
+                            continue
+                        } ?: break
+
+                        buffer.append(line)
+
+                        // parse one <event> ... </event>
+                        val bufStr = buffer.toString()
+                        val endIdx = bufStr.indexOf("</event>")
+                        if (endIdx >= 0) {
+                            val rawXml = bufStr.substring(0, endIdx + "</event>".length)
+                            buffer.delete(0, endIdx + "</event>".length)
+
+                            //if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
+                            //Log.d(TAG, "Received xml=$rawXml")
+                            if (CotUtils.isChatMessage(rawXml)
+                                && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
+                                Log.i(TAG, "Received Chat for me:\n$rawXml")
+                                EventBus.getDefault().post(TakChatEvent(rawXml))
+                            } else if (geofenceEnabled && isRadioSilenceRectangleGeofence(rawXml)) {
+                                Log.i(TAG, "Received Radio Silence Rectangle Geofence:\n$rawXml")
+                                val geofenceCot = GeofenceCotParser.parse(rawXml)
+                                if (null != geofenceCot) GeofenceRepository.sendGeofenceCot(geofenceCot)
+                            } else {
+                                val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
+
+                                if (markerCotEvent != null) {
+                                    Log.i(TAG, "Received a marker message!: \n $markerCotEvent")
+                                    val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
+                                    val bhEvent = BloodhoundRepository.BloodhoundEvent(
+                                        mapItem = mapItem,
+                                        server = takServerDetail.address,
+                                        timeIssued = mapItem.link?.productionTime,
+                                        timeCompleted = null
+                                    )
+                                    bhRepo.updateBloodhoundEvent(bhEvent)
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "COT listener loop failed", e)
+                }
+            }
+        }
         fun replaceQuotedStringAfterSubstring(input: String, substring: String, replacement: String): String {
             val regex = Regex("$substring='(.*?)'")
             return input.replace(regex, "$substring='$replacement'")

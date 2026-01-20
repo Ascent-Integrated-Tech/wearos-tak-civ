@@ -18,6 +18,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
+import android.provider.Settings
 import android.content.Context
 import android.content.Context.ALARM_SERVICE
 import android.content.Intent
@@ -28,6 +30,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.model.LatLon
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.receiver.AlarmReceiver
@@ -64,7 +67,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
-
+import java.lang.reflect.Method
+import dalvik.system.PathClassLoader
 
 object Utils {
     private const val TAG = "WearTAK-Utils"
@@ -95,6 +99,57 @@ object Utils {
             timeZone = TimeZone.getTimeZone("UTC")
         }
     }
+
+    fun isPointInPolygon(point: LatLon, polygon: List<LatLon>): Boolean {
+        if (polygon.size < 3) return false
+
+        val x = point.lon
+        val y = point.lat
+
+        var inside = false
+        var j = polygon.lastIndex
+
+        for (i in polygon.indices) {
+            val xi = polygon[i].lon
+            val yi = polygon[i].lat
+            val xj = polygon[j].lon
+            val yj = polygon[j].lat
+
+            val intersects =
+                ((yi > y) != (yj > y)) &&
+                        (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi)
+
+            if (intersects) inside = !inside
+            j = i
+        }
+        return inside
+    }
+
+    // airplaneModeStatus value should be "1" (airplaneMode ON) / "0" (airplaneMode OFF)
+    fun setAirplaneMode(airplaneModeStatus: String): Boolean {
+        var success = true
+        try {
+            val classLoader = mainActivity.classLoader
+            val pathClassLoader = PathClassLoader(
+                "/system/framework/com.samsung.android.knox.wearable.common.jar",
+                "/system/framework/com.samsung.android.knox.wearable.common.jar",
+                classLoader)
+            //DpmWrapper API: setSystemSettings(ComponentName who, String callerPackage, String settings, String value)
+            var dpmWrapper: Class<*> =
+                pathClassLoader.loadClass("com.samsung.android.knox.wearable.common.DpmWrapper")
+            val method: Method = dpmWrapper.getDeclaredMethod(
+                "setGlobalSettings",
+                ComponentName::class.java, Context::class.java, String::class.java,
+                String::class.java)
+            method.invoke(dpmWrapper, null, mainActivity, Settings.Global.AIRPLANE_MODE_ON, airplaneModeStatus)
+        } catch (e : Exception) {
+            e.printStackTrace()
+            success = false
+        }
+        Log.i(TAG, "setAirplaneMode($airplaneModeStatus) returning $success")
+        return success
+    }
+
 
     /**
      * Offset in human units, can be positive or negative.
@@ -780,7 +835,6 @@ object Utils {
             var time: Long?,
             var type: String?,
         )
-
 
         object Bloodhound {
 

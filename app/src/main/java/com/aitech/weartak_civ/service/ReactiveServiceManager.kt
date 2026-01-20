@@ -780,6 +780,7 @@ class ReactiveServiceManager : Service() {
             put(ServiceType.OFF_BODY_DETECT,       OffBodyDetectService.isRunning.get())
             put(ServiceType.BATTERY,               BatteryService.isRunning.get())
             put(ServiceType.POWER_MGR,             PowerManagerService.isRunning.get())
+            put(ServiceType.GEOFENCE,              GeofenceService.isRunning.get())
         }
 
     private suspend fun publishDesiredSnapshot(repo: DataRepository) {
@@ -908,6 +909,7 @@ class ReactiveServiceManager : Service() {
         BLE_BEACON(true, isKnoxMgdService = true),
         OFF_BODY_DETECT(true, isKnoxMgdService = false),
         BATTERY(true, isKnoxMgdService = false),
+        GEOFENCE(true, isKnoxMgdService = true),
         POWER_MGR(true, isKnoxMgdService = false),
         BLOOD_HOUND(true, isKnoxMgdService = false),
 //        BATTERY_ALERTS(true, isKnoxMgdService = false),
