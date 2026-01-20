@@ -27,9 +27,11 @@ import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.hardware.display.DisplayManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
@@ -161,7 +163,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CustomAccessibilityService
 import com.aitech.weartak_civ.service.HeartrateService
@@ -182,6 +183,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
@@ -237,7 +240,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhou
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 
@@ -245,7 +250,6 @@ class MainActivity : ComponentActivity() {
 
     companion object Constants {
         val TAG = "WearTAK-" + MainActivity::class.java.simpleName
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         const val EVENT_SEND_DELAY_MS = 1000L
         const val MOVEMENT_DETECTION_SERVICE_START_DELAY = 20_000L
         lateinit var mainActivity : MainActivity
@@ -515,18 +519,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private val requestPermissionsLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissionsMap ->
-            val deniedPermissions = permissionsMap.filterValues { !it }.keys
-            permissionsMap.entries.forEach {
-                Log.d(TAG, "${it.key} = ${it.value}")
-            }
-            if (deniedPermissions.isEmpty()) {
-                Log.d(TAG, """
-                    All permissions granted.
-                    =====================================
-                    """.trimIndent())
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            permissionRequestInFlight = false
+
+            val denied = result.filterValues { granted -> !granted }.keys.toList()
+            if (denied.isNotEmpty()) {
+                Toast.makeText(
+                    this,
+                    "Permissions are denied. Enable in Settings → Apps → WearTAK → Permissions.",
+                    Toast.LENGTH_LONG
+                ).show()
             } else {
-                Log.w(TAG, "Permissions denied: $deniedPermissions")
+                // allow a future request if new perms appear
+                lastRequestedPermSet = null
             }
         }
 
@@ -912,65 +917,35 @@ class MainActivity : ComponentActivity() {
         Log.v(TAG, logOutput)
     }
 
-    private fun collectMissingPermissionsFlow() {
-        scope.launch {
-            dataRepository.missingPermissions
-                .filter{ perms -> perms.isNotEmpty() }
-                .collect { perms ->
-                    Log.i(TAG, "Launching permission request (flow): size=${perms.size} -> $perms")
-                    requestPermissionsLauncher.launch(perms.toTypedArray())
+    private var permissionRequestInFlight = false
+    private var lastRequestedPermSet: Set<String>? = null
+    private var lastRequestUptimeMs: Long = 0L
+    private val REQUEST_COOLDOWN_MS = 10_000L
+
+    private fun collectBlockedServices() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                dataRepository.blockedServices
+                    .map { blocked ->
+                        blocked.values.flatten().toSet()
+                    }
+                    .distinctUntilChanged()
+                    .filter { permSet -> permSet.isNotEmpty() }
+                    .collect { permSet ->
+                        if (permissionRequestInFlight) return@collect
+                        if (lastRequestedPermSet == permSet) return@collect
+
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastRequestUptimeMs < REQUEST_COOLDOWN_MS) return@collect
+
+                        lastRequestedPermSet = permSet
+                        permissionRequestInFlight = true
+                        lastRequestUptimeMs = now
+
+                        requestPermissionsLauncher.launch(permSet.toTypedArray())
+                    }
             }
         }
-    }
-
-    private fun checkAndRequestPermissions() {
-        val requiredPermissions = listOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BODY_SENSORS,
-            Manifest.permission.NEARBY_WIFI_DEVICES,
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_SCAN,
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_ADVERTISE,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-            Manifest.permission.ACTIVITY_RECOGNITION,
-            Manifest.permission.SEND_SMS
-        )
-
-        val missingPermissions = requiredPermissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-
-        Log.d(TAG, "=== === ===  Permissions  === === ===)")
-        if (missingPermissions.isNotEmpty()) {
-            Log.d(TAG,
-                """Missing: $missingPermissions
-                =====================================
-                """.trimIndent()
-            )
-            Log.i(TAG, "Launching permission request (manual): size=${missingPermissions.size} -> $missingPermissions")
-            requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
-            //refreshPermissions()
-        } else {
-            Log.d(TAG, """
-                All Permissions already granted.
-                =====================================
-                """.trimIndent()
-            )
-        }
-        /*
-        if (!Settings.canDrawOverlays(this)) {
-            //If the draw over permission is not available open the settings screen
-            //to grant the permission.
-
-            //val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            //startActivityForResult(intent, 2084)
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-            intent.setData(Uri.parse("package:$packageName"))
-            startActivity(intent)
-        }
-
-         */
     }
 
     @SuppressLint("HardwareIds")
@@ -1021,11 +996,10 @@ class MainActivity : ComponentActivity() {
         //printSensorDetails(this)
 
         // Request all necessary permissions
-        checkAndRequestPermissions()
+        collectBlockedServices()
         //startHealthCapabilitiesCollection()
         validateLicense(license)
         startReactiveServiceManager(applicationContext)
-        collectMissingPermissionsFlow()
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
 //        Log.d(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
