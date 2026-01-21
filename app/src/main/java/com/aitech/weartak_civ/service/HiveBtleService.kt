@@ -30,6 +30,8 @@ import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.hive.CotHiveTranslator
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import android.util.Base64
+import com.revolveteam.hive.DeviceIdentity
 import com.revolveteam.hive.HiveBtle
 import com.revolveteam.hive.HiveChat
 import com.revolveteam.hive.HiveDocument
@@ -38,6 +40,8 @@ import com.revolveteam.hive.HiveLocation
 import com.revolveteam.hive.HiveMarker
 import com.revolveteam.hive.HiveMeshListener
 import com.revolveteam.hive.HivePeer
+import com.revolveteam.hive.MembershipPolicy
+import com.revolveteam.hive.MeshGenesis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,8 +74,6 @@ class HiveBtleService : Service(), HiveMeshListener {
     private var syncUpdateThread: HandlerThread? = null
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val uuid = MainActivity.device_uid
-
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "HiveBtleService onCreate()")
@@ -100,23 +102,28 @@ class HiveBtleService : Service(), HiveMeshListener {
 
     /**
      * Initialize the HiveBtle mesh with configuration from DataRepository.
+     * Now uses encrypted mesh with DeviceIdentity and MeshGenesis.
      */
     private fun initializeHiveBtle() {
         try {
             // Get configuration from DataRepository
             meshId = runBlocking { dataRepository.getHiveMeshId.first() }
-            val powerProfile = runBlocking { dataRepository.getHivePowerProfile.first() }
 
-            // Derive node ID from device UUID
-            val nodeId = deriveNodeIdFromUuid(uuid)
+            // Load or create device identity (persisted across restarts)
+            val identity = loadOrCreateIdentity()
 
-            Log.d(TAG, "Initializing HiveBtle: nodeId=${nodeId.toString(16)}, meshId=$meshId, callsign=$callsign")
+            // Load or create mesh genesis (shared across all mesh nodes)
+            val genesis = loadOrCreateGenesis(identity)
 
-            // Create HiveBtle instance with mesh ID
+            Log.d(TAG, "Initializing HiveBtle with encryption: meshId=${genesis.meshId}, callsign=$callsign")
+
+            // Create encrypted HiveBtle instance
+            // IMPORTANT: Pass genesis.meshId for BLE advertising!
             hiveBtle = HiveBtle(
                 context = applicationContext,
-                _nodeId = nodeId,
-                meshId = meshId
+                meshId = genesis.meshId,  // Use genesis meshId for advertising
+                identity = identity,
+                genesis = genesis
             )
 
             // Initialize BLE adapter
@@ -125,12 +132,91 @@ class HiveBtleService : Service(), HiveMeshListener {
             // Start the mesh with this service as the listener
             hiveBtle?.startMesh(this)
 
-            Log.i(TAG, "HiveBtle mesh initialized successfully")
+            // Verify encryption is active
+            if (hiveBtle?.isEncryptionEnabled() == true) {
+                Log.i(TAG, "HiveBtle mesh initialized with ENCRYPTION ENABLED")
+            } else {
+                Log.w(TAG, "HiveBtle mesh initialized but encryption NOT enabled")
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize HiveBtle: ${e.message}", e)
             hiveBtleRepository.updateMeshState(HiveBtleRepository.HiveMeshState.ERROR)
         }
+    }
+
+    /**
+     * Load persisted DeviceIdentity or generate a new one.
+     * Identity is an Ed25519 keypair that persists across app restarts.
+     */
+    private fun loadOrCreateIdentity(): DeviceIdentity {
+        val storedIdentity = runBlocking { dataRepository.getHiveDeviceIdentity.first() }
+
+        return if (storedIdentity != null) {
+            try {
+                // Restore from persisted 32-byte private key
+                val privateKey = Base64.decode(storedIdentity, Base64.NO_WRAP)
+                val identity = DeviceIdentity.fromPrivateKey(privateKey)
+                Log.d(TAG, "Loaded existing DeviceIdentity: nodeId=${String.format("%08X", identity.nodeId)}")
+                identity
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to restore stored identity: ${e.message}, generating new one")
+                generateAndStoreIdentity()
+            }
+        } else {
+            // First run - generate new identity
+            Log.d(TAG, "No stored identity, generating new DeviceIdentity")
+            generateAndStoreIdentity()
+        }
+    }
+
+    private fun generateAndStoreIdentity(): DeviceIdentity {
+        val identity = DeviceIdentity.generate()
+        // Store the 32-byte private key (Base64 encoded)
+        val encoded = Base64.encodeToString(identity.privateKey, Base64.NO_WRAP)
+        runBlocking { dataRepository.storeHiveDeviceIdentity(encoded) }
+        Log.i(TAG, "Generated and stored new DeviceIdentity: nodeId=${String.format("%08X", identity.nodeId)}")
+        return identity
+    }
+
+    /**
+     * Load the shared hardcoded MeshGenesis for WEARTAK mesh.
+     * All nodes must use the same genesis for encrypted communication.
+     *
+     * This genesis is shared with the ATAK Plugin team for interoperability testing.
+     */
+    private fun loadOrCreateGenesis(identity: DeviceIdentity): MeshGenesis {
+        // Use the hardcoded shared genesis for WEARTAK mesh
+        val bytes = Base64.decode(SHARED_GENESIS_BASE64, Base64.NO_WRAP)
+        val genesis = MeshGenesis.decode(bytes)
+        if (genesis != null) {
+            Log.i(TAG, "Using SHARED WEARTAK genesis: meshId=${genesis.meshId}")
+            meshId = genesis.meshId
+            return genesis
+        }
+
+        // Fallback if hardcoded genesis fails (should not happen)
+        Log.e(TAG, "Failed to decode SHARED_GENESIS_BASE64! Creating new genesis.")
+        return createAndStoreGenesis(identity)
+    }
+
+    private fun createAndStoreGenesis(identity: DeviceIdentity): MeshGenesis {
+        // Create genesis with OPEN policy - WEARTAK mesh for testing
+        val genesis = MeshGenesis.create(
+            meshName = "WEARTAK",
+            identity = identity,
+            policy = MembershipPolicy.OPEN
+        )
+        val encoded = Base64.encodeToString(genesis.encode(), Base64.NO_WRAP)
+        runBlocking { dataRepository.storeHiveMeshGenesis(encoded) }
+
+        // Log the genesis for sharing with ATAK Plugin team
+        Log.i(TAG, "=== SHAREABLE GENESIS (copy this for ATAK Plugin) ===")
+        Log.i(TAG, "GENESIS_BASE64: $encoded")
+        Log.i(TAG, "MESH_ID: ${genesis.meshId}")
+        Log.i(TAG, "=== END GENESIS ===")
+
+        return genesis
     }
 
     // ==================== HiveMeshListener Implementation ====================
@@ -618,19 +704,18 @@ class HiveBtleService : Service(), HiveMeshListener {
         return null // Not a bound service
     }
 
-    // ==================== Utility Functions ====================
-
-    /**
-     * Derive a 32-bit node ID from the device UUID.
-     */
-    private fun deriveNodeIdFromUuid(uuid: String): Long {
-        // Use a hash of the UUID to generate a stable node ID
-        val hash = uuid.hashCode()
-        return (hash.toLong() and 0xFFFFFFFFL)
-    }
-
     companion object {
         private val TAG = "WearTAK-" + HiveBtleService::class.java.simpleName
+
+        /**
+         * Shared genesis for WEARTAK encrypted mesh.
+         * All nodes (WearOS, ATAK Plugin) must use this same genesis.
+         *
+         * MESH_ID: 29C916FA
+         * Generated: 2026-01-19
+         */
+        private const val SHARED_GENESIS_BASE64: String =
+            "BwBXRUFSVEFL4O7thA03dXXBNkT+gG22aTRGICECcX5RHtOgIdLBrb7tU7LTxkFLCLP+De21IALSXAbi6ZR/c3VXW9lKWacbM0YqfK9n5JXqob7/stIM63nBMLzJiFTGl9E6wcF8Gz0gUerY2JsBAAAA"
         private const val HIVE_SERVICE_NOTIFICATION_ID = 3334
         private const val SYNC_INTERVAL_MS = 5_000L // 5 seconds initial tick
 

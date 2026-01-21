@@ -1158,6 +1158,50 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Get the persisted HIVE DeviceIdentity bytes (Base64 encoded).
+     * Returns null if no identity has been generated yet.
+     */
+    val getHiveDeviceIdentity: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[HIVE_DEVICE_IDENTITY]
+    }
+
+    /**
+     * Store the HIVE DeviceIdentity bytes (Base64 encoded).
+     * This should be generated once and persisted across app restarts.
+     */
+    suspend fun storeHiveDeviceIdentity(identityBase64: String?) {
+        context.dataStore.edit { prefs ->
+            if (identityBase64 != null) {
+                prefs[HIVE_DEVICE_IDENTITY] = identityBase64
+            } else {
+                prefs.remove(HIVE_DEVICE_IDENTITY)
+            }
+        }
+    }
+
+    /**
+     * Get the persisted HIVE MeshGenesis bytes (Base64 encoded).
+     * Returns null if no genesis has been created/joined yet.
+     */
+    val getHiveMeshGenesis: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[HIVE_MESH_GENESIS]
+    }
+
+    /**
+     * Store the HIVE MeshGenesis bytes (Base64 encoded).
+     * All nodes in the same mesh must share the same genesis.
+     */
+    suspend fun storeHiveMeshGenesis(genesisBase64: String?) {
+        context.dataStore.edit { prefs ->
+            if (genesisBase64 != null) {
+                prefs[HIVE_MESH_GENESIS] = genesisBase64
+            } else {
+                prefs.remove(HIVE_MESH_GENESIS)
+            }
+        }
+    }
+
     // --- End HIVE Settings ---
 
     val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -2031,6 +2075,8 @@ class DataRepository(private val context: Context) {
         private val HIVE_MESH_ID = stringPreferencesKey("hive_mesh_id")
         private val HIVE_POWER_PROFILE = intPreferencesKey("hive_power_profile")
         private val HIVE_ENCRYPTION_KEY = stringPreferencesKey("hive_encryption_key")
+        private val HIVE_DEVICE_IDENTITY = stringPreferencesKey("hive_device_identity")
+        private val HIVE_MESH_GENESIS = stringPreferencesKey("hive_mesh_genesis")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
