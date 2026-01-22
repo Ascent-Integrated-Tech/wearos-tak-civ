@@ -205,6 +205,31 @@
         android:entryValues="@array/allergy_entry_values"
         android:defaultValue="@array/physiological_metrics_allergies_default" />
     <restriction
+        android:key="physiological_metrics_uniform_waist_size"
+        android:restrictionType="integer"
+        android:title="@string/uniform_waist_size"
+        android:description="@string/uniform_waist_size_desc"
+        android:defaultValue="0"/>
+    <restriction
+        android:key="physiological_metrics_stride_length"
+        android:restrictionType="integer"
+        android:title="@string/stride_length"
+        android:description="@string/stride_length_desc"
+        android:defaultValue="0"/>
+    <restriction
+        android:key="physiological_metrics_uniform_pants_length"
+        android:restrictionType="integer"
+        android:title="@string/uniform_pants_length"
+        android:description="@string/uniform_pants_length_desc"
+        android:defaultValue="0"/>
+    <restriction
+        android:key="physiological_metrics_loadout_weight"
+        android:restrictionType="integer"
+        android:title="@string/loadout_weight"
+        android:description="@string/loadout_weight_desc"
+        android:defaultValue="0"/>
+
+    <restriction
         android:key="physiological_metrics_resting_heart_rate"
         android:restrictionType="integer"
         android:title="@string/physiological_metrics_resting_heart_rate_title"
