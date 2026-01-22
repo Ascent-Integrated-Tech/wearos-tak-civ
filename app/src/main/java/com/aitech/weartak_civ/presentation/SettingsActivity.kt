@@ -263,9 +263,21 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryA
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeight
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLengthSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLengthState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformPantsLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformPantsLengthSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformPantsLengthState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSize
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSizeSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSizeState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReportingIntervalState
@@ -372,6 +384,10 @@ fun loadSettingsValues(){
     bloodTypeState.postValue(bloodTypeValue)
     allergyListState.postValue(allergyList)
     userTypeState.postValue(userTypeValue)
+    uniformWaistSizeState.postValue(uniformWaistSize)
+    strideLengthState.postValue(strideLength)
+    uniformPantsLengthState.postValue(uniformPantsLength)
+    loadoutWeightState.postValue(loadoutWeight)
     restingHeartRateState.postValue(restingHeartRate)
 }
 
@@ -517,10 +533,13 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             "physiological_metrics_setting_screen") {
             PhysiologicalMetricsSetting(navController)
         }
+        composable("physiological_metrics_medical_profile_batdok") {
+            PhysioMetricsMedicalProfileSetting(navController)
+        }
         composable(
             "physiological_metrics_age_screen") {
 //            AgeWeightSetting(navController, ageSettingsState, 150, stringResource(R.string.age), context)
-            NumericEntryPage(navController, ageSettingsState, 150, stringResource(R.string.age), context, "physiological_metrics_setting_screen")
+            NumericEntryPage(navController, ageSettingsState, 150, stringResource(R.string.age), context, "physiological_metrics_medical_profile_batdok")
         }
         composable(
             "physiological_metrics_height_screen") {
@@ -529,7 +548,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_weight_screen") {
 //            AgeWeightSetting(navController, weightSettingsState, 1000, stringResource(R.string.weight), context)
-            NumericEntryPage(navController, weightSettingsState, 1000, stringResource(R.string.weight), context, "physiological_metrics_setting_screen")
+            NumericEntryPage(navController, weightSettingsState, 1000, stringResource(R.string.weight), context, "physiological_metrics_medical_profile_batdok")
         }
         composable(
             "physiological_metrics_sex_screen") {
@@ -550,8 +569,28 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_resting_hr_screen") {
 //            AgeWeightSetting(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context)
-            NumericEntryPage(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context, "physiological_metrics_setting_screen")
+            NumericEntryPage(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context, "physiological_metrics_medical_profile_batdok")
         }
+        composable("physiological_metrics_gait_tracking") {
+            PhysioMetricsGaitTrackingSettings(navController)
+        }
+        composable(
+            "physiological_metrics_uniform_waist_size") {
+            NumericEntryPage(navController, uniformWaistSizeSettingsState, 100, stringResource(R.string.uniform_waist_size_text), context, "physiological_metrics_gait_tracking")
+        }
+        composable(
+            "physiological_metrics_stride_length") {
+            NumericEntryPage(navController, strideLengthSettingsState, 300, stringResource(R.string.stride_length_text), context, "physiological_metrics_gait_tracking")
+        }
+        composable(
+            "physiological_metrics_uniform_pants_length") {
+            NumericEntryPage(navController, uniformPantsLengthSettingsState, 100, stringResource(R.string.uniform_pants_length_text), context, "physiological_metrics_gait_tracking")
+        }
+        composable(
+            "physiological_metrics_loadout_weight") {
+            NumericEntryPage(navController, loadoutWeightSettingsState, 1000, stringResource(R.string.loadout_weight_text), context, "physiological_metrics_gait_tracking")
+        }
+
         composable(
             "hail_setting_screen") {
             HailSetting(navController)
@@ -2223,10 +2262,18 @@ fun NumericEntryPage(
             ),
             keyboardActions = KeyboardActions(
                 onDone = {
-                    if (metricTextFieldValue.text.toInt() > maximum) {
+                    if (metricTextFieldValue.text.isEmpty()) {
                         Toast.makeText(
                             mainActivity,
-                            context.getString(R.string.value_exceeds_maximum_please_re_enter), Toast.LENGTH_LONG).show()
+                            context.getString(R.string.please_enter_a_value),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else if (metricTextFieldValue.text.toInt() > maximum) {
+                        Toast.makeText(
+                            mainActivity,
+                            context.getString(R.string.value_exceeds_maximum_please_re_enter),
+                            Toast.LENGTH_LONG
+                        ).show()
                     } else {
                         focusManager.clearFocus()
                     }
@@ -2762,16 +2809,16 @@ fun HeightPickerSetting(navController: NavController){
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "HeightPickerSetting Settings NOT saved")
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
                             inclusive = true
                         }
                     } },
                 onClickConfirm = {
                     heightFeetSettingsState.postValue(feetIndex+1)
                     heightInchesSettingsState.postValue(inchesIndex)
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
                             inclusive = true
                         }
                     } })
@@ -2857,16 +2904,16 @@ fun SexBloodtypeUsertypeSetting (
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "SexBloodtypeUsertypeSetting Settings NOT saved")
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
                             inclusive = true
                         }
                     }                },
                 onClickConfirm = {
                     metricSettingState.setValue(dataList[selectedRadioIndex])
                     Log.d(TAG, "Settings saved with Sex, Blood Type or User Type: ${metricSettingState.value}")
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
                             inclusive = true
                         }
                     }
@@ -2971,8 +3018,8 @@ fun AllergySetting (
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Allergy Settings NOT saved")
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
                             inclusive = true
                         }
                     }                },
@@ -2980,8 +3027,8 @@ fun AllergySetting (
                     val toSave = selectedIndices
                         .map { idx -> DataRepository.AllergyItem(allergiesOptionsList[idx]) }
                     allergyListSettingsState.postValue(toSave)
-                    navController.navigate("physiological_metrics_setting_screen") {
-                        popUpTo(("physiological_metrics_setting_screen")) {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo(("physiological_metrics_medical_profile_batdok")) {
                             inclusive = true
                         }
                     }                })
@@ -2995,14 +3042,41 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
 
     WearTakCivScreenDimensions(
     columnContent = {
-        DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
-        DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
-        DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
-        DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
-        DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
-        DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
-        DataMetricsChip("physiological_metrics_usertype_screen", stringResource(R.string.user_type), userTypeSettingsState.value.toString(), navController)
-        DataMetricsChip("physiological_metrics_resting_hr_screen", stringResource(R.string.resting_heart_rate), restingHeartRateSettingsState.value.toString(), navController)
+        Chip(
+            onClick = {
+                navController.navigate("physiological_metrics_medical_profile_batdok") {
+                    popUpTo("physiological_metrics_medical_profile_batdok") { inclusive = true }
+                }
+            },
+            enabled = true,
+            label = { Text(text = stringResource(R.string.medical_profile_batdok)) },
+            colors = ChipDefaults.chipColors(
+                backgroundColor = Color.DarkGray,
+                contentColor = Color.White,
+                secondaryContentColor = Color.LightGray
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 3.dp)
+        )
+
+        Chip(
+            onClick = {
+                navController.navigate("physiological_metrics_gait_tracking") {
+                    popUpTo("physiological_metrics_gait_tracking") { inclusive = true }
+                }
+            },
+            enabled = true,
+            label = { Text(text = stringResource(R.string.gait_tracking)) },
+            colors = ChipDefaults.chipColors(
+                backgroundColor = Color.DarkGray,
+                contentColor = Color.White,
+                secondaryContentColor = Color.LightGray
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 3.dp)
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
     },
@@ -3010,15 +3084,7 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
         ConfirmCancelButtons(
             onClickCancel = {
                 Log.d(TAG, "Physiological Settings NOT saved")
-                ageState.setValue(ageValue)
-                heightFeetState.setValue(heightFeetValue)
-                heightInchesState.setValue(heightInchesValue)
-                weightState.setValue(weightValue)
-                sexState.setValue(sexValue)
-                bloodTypeState.setValue(bloodTypeValue)
-//                allergyListState.postValue(allergyValue)
-                userTypeState.setValue(userTypeValue)
-                restingHeartRateState.setValue(restingHeartRate)
+
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -3026,15 +3092,6 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
                 }
             },
             onClickConfirm = {
-                        ageState.setValue(ageSettingsState.value)
-                        heightFeetState.setValue(heightFeetSettingsState.value)
-                        heightInchesState.setValue(heightInchesSettingsState.value)
-                        weightState.setValue(weightSettingsState.value)
-                        sexState.setValue(sexSettingsState.value)
-                        bloodTypeState.setValue(bloodTypeSettingsState.value)
-                        allergyListState.setValue(allergyListSettingsState.value)
-                        userTypeState.setValue(userTypeSettingsState.value)
-                        restingHeartRateState.setValue(restingHeartRateSettingsState.value)
 
                 Log.d(TAG, "Finished saving physio state settings")
 
@@ -3047,6 +3104,111 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
     },
     text = stringResource(R.string.physiological_user_metrics)
 )
+}
+@Composable
+fun PhysioMetricsMedicalProfileSetting(navController: NavController) {
+    Log.d(TAG, "PhysioMetricsMedicalProfileSetting called")
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
+            DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
+            DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
+            DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
+            DataMetricsChip("physiological_metrics_bloodtype_screen", stringResource(R.string.blood_type), bloodTypeSettingsState.value.toString(), navController)
+            DataMetricsChip("physiological_metrics_allergies_screen", stringResource(R.string.allergies), allergyListSettingsState.value.takeIf { it!!.isNotEmpty() }?.joinToString(", ") { it.name } ?: "None", navController)
+            DataMetricsChip("physiological_metrics_usertype_screen", stringResource(R.string.user_type), userTypeSettingsState.value.toString(), navController)
+            DataMetricsChip("physiological_metrics_resting_hr_screen", stringResource(R.string.resting_heart_rate), restingHeartRateSettingsState.value.toString(), navController)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Physio Metrics Med Profile Settings NOT saved")
+                    ageSettingsState.setValue(ageValue)
+                    heightFeetSettingsState.setValue(heightFeetValue)
+                    heightInchesSettingsState.setValue(heightInchesValue)
+                    weightSettingsState.setValue(weightValue)
+                    sexSettingsState.setValue(sexValue)
+                    bloodTypeSettingsState.setValue(bloodTypeValue)
+                    //TODO: vv this might break
+                    allergyListSettingsState.setValue(allergyList)
+                    userTypeSettingsState.setValue(userTypeValue)
+                    restingHeartRateSettingsState.setValue(restingHeartRate)
+
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    ageState.setValue(ageSettingsState.value)
+                    heightFeetState.setValue(heightFeetSettingsState.value)
+                    heightInchesState.setValue(heightInchesSettingsState.value)
+                    weightState.setValue(weightSettingsState.value)
+                    sexState.setValue(sexSettingsState.value)
+                    bloodTypeState.setValue(bloodTypeSettingsState.value)
+                    allergyListState.setValue(allergyListSettingsState.value)
+                    userTypeState.setValue(userTypeSettingsState.value)
+                    restingHeartRateState.setValue(restingHeartRateSettingsState.value)
+
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.medical_profile_batdok)
+    )
+}
+
+@Composable
+fun PhysioMetricsGaitTrackingSettings(navController: NavController) {
+    Log.d(TAG, "PhysioMetricsGaitTrackingSettings called")
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+
+            DataMetricsChip("physiological_metrics_uniform_waist_size", stringResource(R.string.uniform_waist_size_text), uniformWaistSizeSettingsState.value.toString() + "''", navController)
+            DataMetricsChip("physiological_metrics_stride_length", stringResource(R.string.stride_length_text), strideLengthSettingsState.value.toString() + "''", navController)
+            DataMetricsChip("physiological_metrics_uniform_pants_length", stringResource(R.string.uniform_pants_length_text), uniformPantsLengthSettingsState.value.toString() + "''", navController)
+            DataMetricsChip("physiological_metrics_loadout_weight", stringResource(R.string.loadout_weight_text), loadoutWeightSettingsState.value.toString() + "lbs", navController)
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Gait Tracking Settings NOT saved")
+                    uniformWaistSizeSettingsState.setValue(uniformWaistSize)
+                    strideLengthSettingsState.setValue(strideLength)
+                    uniformPantsLengthSettingsState.setValue(uniformPantsLength)
+                    loadoutWeightSettingsState.setValue(loadoutWeight)
+
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    uniformWaistSizeState.setValue(uniformWaistSizeSettingsState.value)
+                    strideLengthState.setValue(strideLengthSettingsState.value)
+                    uniformPantsLengthState.setValue(uniformPantsLengthSettingsState.value)
+                    loadoutWeightState.setValue(loadoutWeightSettingsState.value)
+
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo(("physiological_metrics_setting_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.gait_tracking)
+    )
 }
 
 @Composable
@@ -3770,6 +3932,10 @@ fun SettingsScreen(
                     var bloodTypeChanged: Boolean = false
                     var allergiesChanged: Boolean = false
                     var userTypeChanged: Boolean = false
+                    var uniformWaistSizeChanged: Boolean = false
+                    var strideLengthChanged: Boolean = false
+                    var uniformPantsLengthChanged: Boolean = false
+                    var loadoutWeightChanged: Boolean = false
                     var restingHeartRateChanged: Boolean = false
                     var companionAppCheckedChanged: Boolean = false
 
@@ -3817,6 +3983,22 @@ fun SettingsScreen(
                     if (restingHeartRate != restingHeartRateState.value) {
                         settingsChanged = true; restingHeartRateChanged = true
                         restingHeartRate = restingHeartRateState.value ?: restingHeartRate
+                    }
+                    if (uniformWaistSize != uniformWaistSizeState.value) {
+                        settingsChanged = true; uniformWaistSizeChanged = true
+                        uniformWaistSize = uniformWaistSizeState.value ?: uniformWaistSize
+                    }
+                    if (strideLength != strideLengthState.value) {
+                        settingsChanged = true; strideLengthChanged = true
+                        strideLength = strideLengthState.value ?: strideLength
+                    }
+                    if (uniformPantsLength != uniformPantsLengthState.value) {
+                        settingsChanged = true; uniformPantsLengthChanged = true
+                        uniformPantsLength = uniformPantsLengthState.value ?: uniformPantsLength
+                    }
+                    if (loadoutWeight != loadoutWeightState.value) {
+                        settingsChanged = true; loadoutWeightChanged = true
+                        loadoutWeight = loadoutWeightState.value ?: loadoutWeight
                     }
 
                     if (enableCompanionAppService != enableCompanionAppServiceSettingsState.value) {
@@ -4091,6 +4273,22 @@ fun SettingsScreen(
                              if (restingHeartRateChanged) {
                                  Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
                                  dataRepository.storeRestingHeartRate(restingHeartRate)
+                             }
+                             if (uniformWaistSizeChanged) {
+                                 Log.d(TAG, "Storing Uniform Waist Size ($uniformWaistSize)")
+                                 dataRepository.storePhysiologicalMetricUniformWaistSize(uniformWaistSize)
+                             }
+                             if (strideLengthChanged) {
+                                 Log.d(TAG, "Storing Stride Length ($strideLength)")
+                                 dataRepository.storePhysiologicalMetricStrideLength(strideLength)
+                             }
+                             if (uniformPantsLengthChanged) {
+                                 Log.d(TAG, "Storing Uniform Pants Length ($uniformPantsLength)")
+                                 dataRepository.storePhysiologicalMetricUniformPantsLength(uniformPantsLength)
+                             }
+                             if (loadoutWeightChanged) {
+                                 Log.d(TAG, "Storing Loadout Weight ($loadoutWeight)")
+                                 dataRepository.storePhysiologicalMetricLoadoutWeight(loadoutWeight)
                              }
                              if (dynamicReportingChanged){
                                  dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy)

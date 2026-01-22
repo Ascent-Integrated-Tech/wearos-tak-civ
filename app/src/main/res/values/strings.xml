@@ -532,4 +532,22 @@
     <string name="neutral">Neutral</string>
     <string name="error_sending_no_endpoints_or_location">Error: No outbound endpoints connected OR location not available</string>
     <string name="error_sending_no_endpoints">Error: No outbound endpoints connected</string>
+    <string name="uniform_waist_size">Uniform Waist Size</string>
+    <string name="uniform_waist_size_desc">Enter Uniform Waist Size in Inches</string>
+    <string name="stride_length">Stride Length</string>
+    <string name="stride_length_desc">Enter Stride Length in Meters</string>
+    <string name="uniform_pants_length">Uniform Pants Length</string>
+    <string name="uniform_pants_length_desc">Enter uniform pants length in inches</string>
+    <string name="steps_per_100m">Steps Per 100m</string>
+    <string name="steps_per_hundred_meters_desc">Enter the number of steps per 100m user takes</string>
+    <string name="loadout_weight">Loadout Weight</string>
+    <string name="loadout_weight_desc">Enter loadout weight in lbs</string>
+    <string name="uniform_waist_size_text">Uniform Waist Size</string>
+    <string name="stride_length_text">Stride Length</string>
+    <string name="uniform_pants_length_text">Uniform Pants Length</string>
+    <string name="steps_per_100m_text">Steps Per 100m</string>
+    <string name="loadout_weight_text">Loadout Weight</string>
+    <string name="medical_profile_batdok">Medical Profile (BATDOK)</string>
+    <string name="gait_tracking">Gait Tracking</string>
+    <string name="please_enter_a_value">Please enter a value</string>
 </resources>
