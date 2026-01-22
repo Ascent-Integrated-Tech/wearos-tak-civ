@@ -96,6 +96,20 @@
         android:defaultValue="@string/ditto_service_enabled_default" />
 
     <restriction
+        android:key="enable_companion_plugin"
+        android:restrictionType="bool"
+        android:title="@string/enable_companion_plugin"
+        android:description="@string/enable_companion_plugin_desc"
+        android:defaultValue="@string/ditto_service_enabled_default" />
+
+    <restriction
+        android:key="enable_bloodhound_compass"
+        android:restrictionType="bool"
+        android:title="@string/enable_bloodhound_compass"
+        android:description="@string/enable_bloodhound_compass_desc"
+        android:defaultValue="@string/ditto_service_enabled_default" />
+
+    <restriction
         android:key="chat_service_enabled"
         android:restrictionType="bool"
         android:title="@string/chat_service_title"
@@ -136,6 +150,13 @@
         android:title="@string/enable_sms_numbers_comma_separated_title"
         android:description="@string/enable_sms_numbers_comma_separated_description"
         android:defaultValue="@string/enable_sms_numbers_comma_separated_default"/>
+
+    <restriction
+        android:key="enable_battery_alerts"
+        android:restrictionType="bool"
+        android:title="@string/enable_battery_alerts"
+        android:description="@string/enable_battery_alerts_desc"
+        android:defaultValue="@string/ditto_service_enabled_default" />
 
     <restriction
         android:key="batt_warn_percent"
@@ -243,6 +264,44 @@
         android:entries="@array/user_type_entries"
         android:entryValues="@array/user_type_entry_values"
         android:defaultValue="@string/physiological_metrics_user_type_default" />
+
+
+    <restriction
+        android:key="resting_hr_high_alert_bpm_threshold"
+        android:restrictionType="integer"
+        android:title= "@string/high_resting_heart_rate_alert_threshold_bpm"
+        android:description="@string/resting_high_hr_alert_threshold_description"
+        android:defaultValue="@string/hr_high_alert_bpm_threshold_default"/>
+    <restriction
+        android:key="resting_hr_low_alert_bpm_threshold"
+        android:restrictionType="integer"
+        android:title= "@string/low_resting_heart_rate_alert_threshold_bpm"
+        android:description="@string/resting_low_hr_alert_threshold_description"
+        android:defaultValue="30"/>
+    <restriction
+        android:key="resting_hr_alert_bpm_threshold_length"
+        android:restrictionType="integer"
+        android:title= "@string/resting_heart_rate_alert_threshold_length"
+        android:description="@string/resting_hr_alert_threshold_length_description"
+        android:defaultValue="60"/>
+    <restriction
+        android:key="exertion_threshold_warning"
+        android:restrictionType="integer"
+        android:title= "@string/exertion_threshold_warning"
+        android:description="@string/exertion_threshold_warning_description"
+        android:defaultValue="80"/>
+    <restriction
+        android:key="exertion_threshold_alert"
+        android:restrictionType="integer"
+        android:title= "@string/exertion_threshold_alert"
+        android:description="@string/exertion_threshold_alert_description"
+        android:defaultValue="90"/>
+    <restriction
+        android:key="exertion_threshold_length"
+        android:restrictionType="integer"
+        android:title= "@string/exertion_threshold_length"
+        android:description= "@string/exertion_threshold_length_description"
+        android:defaultValue="90"/>
 
     <restriction
         android:key="hr_high_alert_bpm_threshold"
