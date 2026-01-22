@@ -522,6 +522,24 @@
     <string name="skin_temp">Skin Temp</string>
     <string name="current_metrics">Current Metrics</string>
     <string name="bluetooth">Bluetooth</string>
+    <string name="high_resting_heart_rate_alert_threshold_bpm" translatable="false">High Resting Heart Rate Alert Threshold Bpm</string>
+    <string name="resting_high_hr_alert_threshold_description" translatable="false">Threshold in BPM for when high resting heart rate alert should trigger</string>
+    <string name="low_resting_heart_rate_alert_threshold_bpm" translatable="false">Low Resting Heart Rate Alert Threshold Bpm</string>
+    <string name="resting_low_hr_alert_threshold_description" translatable="false">Threshold in BPM for when low resting heart rate alert should trigger</string>
+    <string name="resting_heart_rate_alert_threshold_length" translatable="false">Resting Heart Rate Alert Threshold Length</string>
+    <string name="resting_hr_alert_threshold_length_description" translatable="false">Threshold Length in seconds for when low and high resting heart rate alerts should trigger</string>
+    <string name="exertion_threshold_alert" translatable="false">Exertion Threshold Alert</string>
+    <string name="exertion_threshold_warning" translatable="false">Exertion Threshold Warning</string>
+    <string name="exertion_threshold_warning_description" translatable="false">Percentage threshold for when the exertion warning should trigger</string>
+    <string name="exertion_threshold_alert_description" translatable="false">Percentage threshold for when the exertion alert should trigger</string>
+    <string name="exertion_threshold_length" translatable="false">Exertion Threshold Length</string>
+    <string name="exertion_threshold_length_description" translatable="false">Length in seconds for when the exertion alert or warning should trigger</string>
+    <string name="enable_companion_plugin" translatable="false">Enable Companion Plugin</string>
+    <string name="enable_companion_plugin_desc" translatable="false">Enable the service for the companion WearTAK ATAK app</string>
+    <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound/Compass</string>
+    <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
+    <string name="enable_battery_alerts" translatable="false">Enable Battery Alerts</string>
+    <string name="enable_battery_alerts_desc" translatable="false">Enables wearTAK to send battery alerts via chat</string>
     <string name="please_enable_chat_in_order_to_use_this_feature">Please enable Chat in order to use this feature</string>
     <string name="go_to_settings">Go to Settings</string>
     <string name="exit">Exit</string>

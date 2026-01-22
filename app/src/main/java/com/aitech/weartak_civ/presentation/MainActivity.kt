@@ -430,18 +430,21 @@ class MainActivity : ComponentActivity() {
         var restingHrHighAlertBpmThreshold: Int = 120
         var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(120)
         var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(120)
-        var restingHrLowAlertBpmThreshold: Int = 120
-        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(120)
-        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(120)
+        var restingHrLowAlertBpmThreshold: Int = 40
+        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(40)
+        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(40)
         var restingHrAlertBpmThresholdLength: Int = 10
         var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(10)
         var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(10)
-        var exertionThresholdWarning: Int = 80
-        var exertionThresholdWarningState = MutableLiveData<Int>(80)
-        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(80)
-        var exertionThresholdAlert: Int = 90
-        var exertionThresholdAlertState = MutableLiveData<Int>(90)
-        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(90)
+        var exertionThresholdWarning: Int = 75
+        var exertionThresholdWarningState = MutableLiveData<Int>(75)
+        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(75)
+        var exertionThresholdAlert: Int = 85
+        var exertionThresholdAlertState = MutableLiveData<Int>(85)
+        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(85)
+        var exertionThresholdLength: Int = 30
+        var exertionThresholdLengthState = MutableLiveData<Int>(30)
+        var exertionThresholdLengthSettingsState = MutableLiveData<Int>(30)
 
         //TODO WEAR-313: Comment out these
         var hrHighAlertBpmThreshold : Int = 140
@@ -815,6 +818,8 @@ class MainActivity : ComponentActivity() {
             restingHrAlertBpmThresholdLength = dataRepository.getRestingHrAlertBpmThresholdLength.first()
             exertionThresholdWarning = dataRepository.getExertionThresholdWarning.first()
             exertionThresholdAlert = dataRepository.getExertionThresholdAlert.first()
+            exertionThresholdLength = dataRepository.getExertionThresholdLength.first()
+
             hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
             hrHighAlertNumSecsThreshold = dataRepository.getHrHighAlertNumSecsThreshold.first()
 
@@ -926,6 +931,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Resting Heart Rate Threshold Length:", restingHrAlertBpmThresholdLength.toString())}
                     ${String.format("%-25s %-30s", "Exertion Warning Threshold:", exertionThresholdWarning.toString())}
                     ${String.format("%-25s %-30s", "Exertion Alert Threshold", exertionThresholdAlert.toString())}
+                    ${String.format("%-25s %-30s", "Exertion Threshold Length", exertionThresholdLength.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
                     ${String.format("%-25s %-30s", "Battery Warn Percentage:", battWarnPercent.toString())}
@@ -1136,10 +1142,17 @@ class MainActivity : ComponentActivity() {
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
         enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
         restingHrHighAlertBpmThresholdState.postValue(restingHrHighAlertBpmThreshold)
+        restingHrHighAlertBpmThresholdSettingsState.postValue(restingHrHighAlertBpmThreshold)
         restingHrLowAlertBpmThresholdState.postValue(restingHrLowAlertBpmThreshold)
+        restingHrLowAlertBpmThresholdSettingsState.postValue(restingHrLowAlertBpmThreshold)
         restingHrAlertBpmThresholdLengthState.postValue(restingHrAlertBpmThresholdLength)
+        restingHrAlertBpmThresholdLengthSettingsState.postValue(restingHrAlertBpmThresholdLength)
         exertionThresholdWarningState.postValue(exertionThresholdWarning)
+        exertionThresholdWarningSettingsState.postValue(exertionThresholdWarning)
         exertionThresholdAlertState.postValue(exertionThresholdAlert)
+        exertionThresholdAlertSettingsState.postValue(exertionThresholdAlert)
+        exertionThresholdLengthState.postValue(exertionThresholdLength)
+        exertionThresholdLengthSettingsState.postValue(exertionThresholdLength)
 
         hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
@@ -1440,13 +1453,16 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActRecService
         localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
         localMap[ServiceType.DITTO]      = enableDittoService
+        localMap[ServiceType.COMPANION_APP] = enableCompanionAppService
         localMap[ServiceType.CHAT]       = enableChatService
+        localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
         localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
         localMap[ServiceType.HAIL]        = enableHailService
         localMap[ServiceType.TAK_CONNECT]           = null
         localMap[ServiceType.COT_DISPATCH]          = null
         localMap[ServiceType.MOVEMENT_DETECTION]    = null
         localMap[ServiceType.BATTERY]               = null
+        localMap[ServiceType.BATTERY_ALERTS] = enableBatteryAlerts
         localMap[ServiceType.POWER_MGR]             = null
 
         runBlocking {
@@ -1467,6 +1483,7 @@ class MainActivity : ComponentActivity() {
             appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
         val enableChatServiceConfigUpdate =
             appRestrictions.getBoolean("chat_service_enabled", enableChatService)
+        val enableBloodhoundCompassConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_compass", enableBloodhoundCompassService)
         val enableBleBeaconServiceConfigUpdate =
             appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
@@ -1497,6 +1514,8 @@ class MainActivity : ComponentActivity() {
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
 
+        val enableCompanionAppServiceConfigUpdate = appRestrictions.getBoolean("enable_companion_plugin", enableCompanionAppService)
+
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
         val constantReportingIntervalConfigUpdate = appRestrictions.getInt("constant_reporting_interval", constantReportingInterval)
         val whileAlertingReportingIntervalConfigUpdate = appRestrictions.getInt("alerting_reporting_interval", whileAlertingReportingInterval)
@@ -1512,6 +1531,7 @@ class MainActivity : ComponentActivity() {
             .filter { it.isNotEmpty() } // Remove any empty values
             .map { DataRepository.SmsNumber(it) } // Map each SSID to a WifiSsidItem
 
+        val enableBatteryAlertsConfigUpdate = appRestrictions.getBoolean("enable_battery_alerts", enableBatteryAlerts)
         val battWarnPercentConfigUpdate = appRestrictions.getInt("batt_warn_percent", battWarnPercent)
         val battAlertPercentConfigUpdate = appRestrictions.getInt("batt_alert_percent", battAlertPercent)
         val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
@@ -1529,7 +1549,12 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsStrideLengthConfigUpdate = appRestrictions.getInt("physiological_metrics_stride_length", strideLength)
         val physiologicalMetricsUniformPantsLengthConfigUpdate = appRestrictions.getInt("physiological_metrics_uniform_pants_length", uniformPantsLength)
         val physiologicalMetricsLoadoutWeightConfigUpdate = appRestrictions.getInt("physiological_metrics_loadout_weight", loadoutWeight)
-
+        val restingHrHighAlertBpmThresholdServiceConfigUpdate = appRestrictions.getInt("resting_hr_high_alert_bpm_threshold", restingHrHighAlertBpmThreshold)
+        val restingHrLowAlertBpmThresholdServiceConfigUpdate = appRestrictions.getInt("resting_hr_low_alert_bpm_threshold", restingHrLowAlertBpmThreshold)
+        val restingHrAlertBpmThresholdLengthServiceConfigUpdate = appRestrictions.getInt("resting_hr_alert_bpm_threshold_length", restingHrAlertBpmThresholdLength)
+        val exertionThresholdWarningServiceConfigUpdate = appRestrictions.getInt("exertion_threshold_warning", exertionThresholdWarning)
+        val exertionThresholdAlertServiceConfigUpdate = appRestrictions.getInt("exertion_threshold_alert", exertionThresholdAlert)
+        val exertionThresholdLengthServiceConfigUpdate = appRestrictions.getInt("exertion_threshold_length", exertionThresholdLength)
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
@@ -1782,6 +1807,7 @@ class MainActivity : ComponentActivity() {
             )
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
+            dataRepository.storeEnableCompanionAppService(enableCompanionAppServiceConfigUpdate)
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             if (constantReportingInterval != constantReportingIntervalConfigUpdate) {
                 constantReportingInterval = constantReportingIntervalConfigUpdate
@@ -1814,11 +1840,13 @@ class MainActivity : ComponentActivity() {
             }
 
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
+            dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeEnableBatdokCot(enableBatdokCotConfigUpdate)
             dataRepository.storeEnableMulticast(enableMulticastConfigUpdate)
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
+            dataRepository.storeEnableBatteryAlerts(enableBatteryAlertsConfigUpdate)
             dataRepository.storeBatteryWarnPercentage(battWarnPercentConfigUpdate)
             dataRepository.storeBatteryAlertPercentage(battAlertPercentConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
@@ -1846,12 +1874,16 @@ class MainActivity : ComponentActivity() {
             dataRepository.storePhysiologicalMetricUserType(
                 physiologicalMetricsUserTypeServiceConfigUpdate
             )
-
+            dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThresholdServiceConfigUpdate)
+            dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThresholdServiceConfigUpdate)
+            dataRepository.storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLengthServiceConfigUpdate)
+            dataRepository.storeExertionThresholdWarning(exertionThresholdWarningServiceConfigUpdate)
+            dataRepository.storeExertionThresholdAlert(exertionThresholdAlertServiceConfigUpdate)
+            dataRepository.storeExertionThresholdLength(exertionThresholdLengthServiceConfigUpdate)
             dataRepository.storePhysiologicalMetricUniformWaistSize(physiologicalMetricsUniformWaistSizeConfigUpdate)
             dataRepository.storePhysiologicalMetricStrideLength(physiologicalMetricsStrideLengthConfigUpdate)
             dataRepository.storePhysiologicalMetricUniformPantsLength(physiologicalMetricsUniformPantsLengthConfigUpdate)
             dataRepository.storePhysiologicalMetricLoadoutWeight(physiologicalMetricsLoadoutWeightConfigUpdate)
-
             dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
             dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
 
@@ -1901,6 +1933,11 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "enableDittoService=$enableDittoService")
                 if (!calledOnCreate) dataRepository.storeEnableDittoService(enableDittoService)
             }
+            if (enableCompanionAppServiceConfigUpdate != enableCompanionAppService) {
+                enableCompanionAppService = enableCompanionAppServiceConfigUpdate
+                Log.d(TAG, "enableCompanionAppService=$enableCompanionAppService")
+                if (!calledOnCreate) dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
+            }
             if (enableBleBeaconServiceConfigUpdate != enableBleBeaconService) {
                 enableBleBeaconService = enableBleBeaconServiceConfigUpdate
                 Log.d(TAG, "enableBleBeaconService=$enableBleBeaconService")
@@ -1922,12 +1959,22 @@ class MainActivity : ComponentActivity() {
                     dataRepository.storeEnableChatService(enableChatService)
                 }
             }
+            if (enableBloodhoundCompassConfigUpdate != enableBloodhoundCompassService) {
+                enableBloodhoundCompassService = enableBloodhoundCompassConfigUpdate
+                Log.d(TAG, "enableBloodhoundCompassService=$enableBloodhoundCompassService")
+                if (!calledOnCreate) dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
+            }
             enableHailService = enableHailServiceConfigUpdate
             enableBatdokCot = enableBatdokCotConfigUpdate
             enableMulticastOnWifi = enableMulticastConfigUpdate
 
             enableSmsForAlerts = enableSmsForAlertsConfigUpdate
             smsNumbersList = smsNumbersListConfigUpdate
+            if (enableBatteryAlertsConfigUpdate != enableBatteryAlerts) {
+                enableBatteryAlerts = enableBatteryAlertsConfigUpdate
+                Log.d(TAG, "enableBatteryAlerts=$enableBatteryAlerts")
+                if (!calledOnCreate) dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
+            }
             battWarnPercent = battWarnPercentConfigUpdate
             battAlertPercent = battAlertPercentConfigUpdate
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
@@ -2017,6 +2064,34 @@ class MainActivity : ComponentActivity() {
                 userTypeValue = physiologicalMetricsUserTypeServiceConfigUpdate
             }
 
+            if ((restingHrHighAlertBpmThreshold != restingHrHighAlertBpmThresholdServiceConfigUpdate) ||
+                (restingHrLowAlertBpmThreshold != restingHrLowAlertBpmThresholdServiceConfigUpdate) ||
+                (restingHrAlertBpmThresholdLength != restingHrAlertBpmThresholdLengthServiceConfigUpdate) ||
+                (exertionThresholdAlert != exertionThresholdAlertServiceConfigUpdate) ||
+                (exertionThresholdWarning != exertionThresholdWarningServiceConfigUpdate) ||
+                (exertionThresholdLength != exertionThresholdLengthServiceConfigUpdate)) {
+                Log.d(
+                    TAG,
+                    "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)"
+                )
+                restingHrHighAlertBpmThreshold = restingHrHighAlertBpmThresholdServiceConfigUpdate
+                restingHrLowAlertBpmThreshold = restingHrLowAlertBpmThresholdServiceConfigUpdate
+                restingHrAlertBpmThresholdLength = restingHrAlertBpmThresholdLengthServiceConfigUpdate
+                exertionThresholdAlert = exertionThresholdAlertServiceConfigUpdate
+                exertionThresholdWarning = exertionThresholdWarningServiceConfigUpdate
+                exertionThresholdLength = exertionThresholdLengthServiceConfigUpdate
+                Handler(Looper.getMainLooper()).postDelayed({
+                    EventBus.getDefault().post(
+                        MessageEvent(
+                            HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {
+                                1
+                            } else {
+                                0
+                            }
+                        )
+                    )
+                }, EVENT_SEND_DELAY_MS)
+            }
             if (uniformWaistSize != physiologicalMetricsUniformWaistSizeConfigUpdate) {
                 Log.d(
                     TAG,
