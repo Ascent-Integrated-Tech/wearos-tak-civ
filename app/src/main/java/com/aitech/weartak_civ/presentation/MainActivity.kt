@@ -1462,7 +1462,7 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.COT_DISPATCH]          = null
         localMap[ServiceType.MOVEMENT_DETECTION]    = null
         localMap[ServiceType.BATTERY]               = null
-        localMap[ServiceType.BATTERY_ALERTS] = enableBatteryAlerts
+//        localMap[ServiceType.BATTERY_ALERTS] = enableBatteryAlerts
         localMap[ServiceType.POWER_MGR]             = null
 
         runBlocking {
