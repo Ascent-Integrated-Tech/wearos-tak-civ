@@ -216,7 +216,12 @@ import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_SEX
+import com.aitech.weartak_civ.DEFAULT_STEPS_PER_HUNDRED_METERS
+import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
+import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
+import com.aitech.weartak_civ.DEFAULT_UNIFORM_WAIST_SIZE
 import com.aitech.weartak_civ.DEFAULT_USER_TYPE
 import com.aitech.weartak_civ.DEFAULT_WEIGHT
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
@@ -354,6 +359,22 @@ class MainActivity : ComponentActivity() {
         var userTypeValue = DEFAULT_USER_TYPE
         val userTypeState = MutableLiveData<String>(DEFAULT_USER_TYPE)
         val userTypeSettingsState = MutableLiveData<String>(DEFAULT_USER_TYPE)
+
+        var uniformWaistSize = DEFAULT_UNIFORM_WAIST_SIZE
+        val uniformWaistSizeState =  MutableLiveData<Int>(DEFAULT_UNIFORM_WAIST_SIZE)
+        val uniformWaistSizeSettingsState =  MutableLiveData<Int>(DEFAULT_UNIFORM_WAIST_SIZE)
+        var strideLength = DEFAULT_STRIDE_LENGTH
+        val strideLengthState =  MutableLiveData<Int>(DEFAULT_STRIDE_LENGTH)
+        val strideLengthSettingsState =  MutableLiveData<Int>(DEFAULT_STRIDE_LENGTH)
+        var uniformPantsLength = DEFAULT_UNIFORM_PANTS_LENGTH
+        val uniformPantsLengthState =  MutableLiveData<Int>(DEFAULT_UNIFORM_PANTS_LENGTH)
+        val uniformPantsLengthSettingsState =  MutableLiveData<Int>(DEFAULT_UNIFORM_PANTS_LENGTH)
+        var stepsPerHundredMeters = DEFAULT_STEPS_PER_HUNDRED_METERS
+        val stepsPerHundredMetersState =  MutableLiveData<Int>(DEFAULT_STEPS_PER_HUNDRED_METERS)
+        val stepsPerHundredMetersSettingsState =  MutableLiveData<Int>(DEFAULT_STEPS_PER_HUNDRED_METERS)
+        var loadoutWeight = DEFAULT_LOADOUT_WEIGHT
+        val loadoutWeightState =  MutableLiveData<Int>(DEFAULT_LOADOUT_WEIGHT)
+        val loadoutWeightSettingsState =  MutableLiveData<Int>(DEFAULT_LOADOUT_WEIGHT)
 
         var takServerList : List<DataRepository.TakServerItem> = listOf()
         val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
@@ -798,6 +819,11 @@ class MainActivity : ComponentActivity() {
             allergyList        = dataRepository.getPhysiologicalMetricAllergyList.first()
             userTypeValue      = dataRepository.getPhysiologicalMetricUserType.first()
             restingHeartRate   = dataRepository.getRestingHeartRate.first()
+            uniformWaistSize   = dataRepository.getPhysiologicalMetricUniformWaistSize.first()
+            strideLength       = dataRepository.getPhysiologicalMetricStrideLength.first()
+            uniformPantsLength = dataRepository.getPhysiologicalMetricUniformPantsLength.first()
+            stepsPerHundredMeters = dataRepository.getPhysiologicalMetricStepsPerHundredMeters.first()
+            loadoutWeight      = dataRepository.getPhysiologicalMetricLoadoutWeight.first()
         }
     }
 
@@ -911,6 +937,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "BloodType:", bloodTypeValue)}
                     ${String.format("%-25s %-30s", "Allergies:", allergyList)}
                     ${String.format("%-25s %-30s", "UserType:", userTypeValue)}
+                    ${String.format("%-25s %-30s", "UniformWaistSize:", uniformWaistSize)}
+                    ${String.format("%-25s %-30s", "StrideLength:", strideLength)}
+                    ${String.format("%-25s %-30s", "UniformPantsLength:", uniformPantsLength)}
+                    ${String.format("%-25s %-30s", "StepsPerHundredMeter:", stepsPerHundredMeters)}
+                    ${String.format("%-25s %-30s", "LoadoutWeight:", loadoutWeight)}
                     ${String.format("%-25s %-30s", "RestingHeartRate:", restingHeartRate)}
                     
                     """.trimIndent()
@@ -1105,6 +1136,16 @@ class MainActivity : ComponentActivity() {
         allergyListSettingsState.postValue(allergyList)
         userTypeState.postValue(userTypeValue)
         userTypeSettingsState.postValue(userTypeValue)
+        uniformWaistSizeState.postValue(uniformWaistSize)
+        uniformWaistSizeSettingsState.postValue(uniformWaistSize)
+        strideLengthState.postValue(strideLength)
+        strideLengthSettingsState.postValue(strideLength)
+        uniformPantsLengthState.postValue(uniformPantsLength)
+        uniformPantsLengthSettingsState.postValue(uniformPantsLength)
+        stepsPerHundredMetersState.postValue(stepsPerHundredMeters)
+        stepsPerHundredMetersSettingsState.postValue(stepsPerHundredMeters)
+        loadoutWeightState.postValue(loadoutWeight)
+        loadoutWeightSettingsState.postValue(loadoutWeight)
         restingHeartRateState.postValue(restingHeartRate)
         restingHeartRateSettingsState.postValue(restingHeartRate)
 
@@ -1460,7 +1501,11 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsBloodTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_blood_type", bloodTypeValue)
         val physiologicalMetricsAllergiesServiceConfigUpdate = appRestrictions.getStringArray("physiological_metrics_allergies")
         val physiologicalMetricsUserTypeServiceConfigUpdate = appRestrictions.getString("physiological_metrics_user_type", userTypeValue)
-
+        val physiologicalMetricsUniformWaistSizeConfigUpdate = appRestrictions.getInt("physiological_metrics_uniform_waist_size", uniformWaistSize)
+        val physiologicalMetricsStrideLengthConfigUpdate = appRestrictions.getInt("physiological_metrics_stride_length", strideLength)
+        val physiologicalMetricsUniformPantsLengthConfigUpdate = appRestrictions.getInt("physiological_metrics_uniform_pants_length", uniformPantsLength)
+        val physiologicalMetricsStepsPerHundredMetersConfigUpdate = appRestrictions.getInt("physiological_metrics_steps_per_hundred_meters", stepsPerHundredMeters)
+        val physiologicalMetricsLoadoutWeightConfigUpdate = appRestrictions.getInt("physiological_metrics_loadout_weight", loadoutWeight)
 
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
@@ -1779,6 +1824,12 @@ class MainActivity : ComponentActivity() {
                 physiologicalMetricsUserTypeServiceConfigUpdate
             )
 
+            dataRepository.storePhysiologicalMetricUniformWaistSize(physiologicalMetricsUniformWaistSizeConfigUpdate)
+            dataRepository.storePhysiologicalMetricStrideLength(physiologicalMetricsStrideLengthConfigUpdate)
+            dataRepository.storePhysiologicalMetricUniformPantsLength(physiologicalMetricsUniformPantsLengthConfigUpdate)
+            dataRepository.storePhysiologicalMetricStepsPerHundredMeters(physiologicalMetricsStepsPerHundredMetersConfigUpdate)
+            dataRepository.storePhysiologicalMetricLoadoutWeight(physiologicalMetricsLoadoutWeightConfigUpdate)
+
             dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
             dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThresholdConfigUpdate)
 
@@ -1942,6 +1993,42 @@ class MainActivity : ComponentActivity() {
                     "Change detected userTypeValue(prev=$userTypeValue, curr=$physiologicalMetricsUserTypeServiceConfigUpdate)"
                 )
                 userTypeValue = physiologicalMetricsUserTypeServiceConfigUpdate
+            }
+
+            if (uniformWaistSize != physiologicalMetricsUniformWaistSizeConfigUpdate) {
+                Log.d(
+                    TAG,
+                    "Change detected uniformWaistSize(prev=$uniformWaistSize, curr=$physiologicalMetricsUniformWaistSizeConfigUpdate)"
+                )
+                uniformWaistSize = physiologicalMetricsUniformWaistSizeConfigUpdate
+            }
+            if (strideLength != physiologicalMetricsStrideLengthConfigUpdate) {
+                Log.d(
+                    TAG,
+                    "Change detected strideLength(prev=$strideLength, curr=$physiologicalMetricsStrideLengthConfigUpdate)"
+                )
+                strideLength = physiologicalMetricsStrideLengthConfigUpdate
+            }
+            if (uniformPantsLength != physiologicalMetricsUniformPantsLengthConfigUpdate) {
+                Log.d(
+                    TAG,
+                    "Change detected uniformPantsLength(prev=$uniformPantsLength, curr=$physiologicalMetricsUniformPantsLengthConfigUpdate)"
+                )
+                uniformPantsLength = physiologicalMetricsUniformPantsLengthConfigUpdate
+            }
+            if (stepsPerHundredMeters != physiologicalMetricsStepsPerHundredMetersConfigUpdate) {
+                Log.d(
+                    TAG,
+                    "Change detected stepsPerHundredMeters(prev=$stepsPerHundredMeters, curr=$physiologicalMetricsStepsPerHundredMetersConfigUpdate)"
+                )
+                stepsPerHundredMeters = physiologicalMetricsStepsPerHundredMetersConfigUpdate
+            }
+            if (loadoutWeight != physiologicalMetricsLoadoutWeightConfigUpdate) {
+                Log.d(
+                    TAG,
+                    "Change detected loadoutWeight(prev=$loadoutWeight, curr=$physiologicalMetricsLoadoutWeightConfigUpdate)"
+                )
+                loadoutWeight = physiologicalMetricsLoadoutWeightConfigUpdate
             }
 
             if ((hrHighAlertBpmThreshold != hrHighAlertBpmThresholdConfigUpdate) || (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdConfigUpdate)) {

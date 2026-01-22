@@ -151,4 +151,11 @@
     <string name="neutral">Neutral</string>
     <string name="error_sending_no_endpoints_or_location">Error: No outbound endpoints connected OR location not available</string>
     <string name="error_sending_no_endpoints">Error: No outbound endpoints connected</string>
+    <string name="uniform_waist_size_text">Uniform Waist Size</string>
+    <string name="stride_length_text">Stride Length</string>
+    <string name="uniform_pants_length_text">Uniform Pants Length</string>
+    <string name="steps_per_100m_text">Steps Per 100m</string>
+    <string name="loadout_weight_text">Loadout Weight</string>
+    <string name="medical_profile_batdok">Medical Profile (BATDOK)</string>
+    <string name="gait_tracking">Gait Tracking</string>
 </resources>
