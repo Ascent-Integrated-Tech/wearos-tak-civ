@@ -259,6 +259,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRa
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCot
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCotSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
@@ -365,6 +367,7 @@ fun loadSettingsValues(){
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
     enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
     enableHailServiceSettingsState.postValue(enableHailService)
+    enableBatdokCotSettingsState.postValue(enableBatdokCot)
     enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
     callsignSettingsState.postValue(callsign)
     teamSettingsState.postValue(team)
@@ -3389,6 +3392,7 @@ fun PhysioMetricsGaitTrackingSettings(navController: NavController) {
     )
 }
 
+// vv No longer used
 @Composable
 fun HailTitleText(text: String, canChangeColor: Boolean, status: HailLicenseStates?){
     Text(text, modifier = Modifier.padding(top = 15.dp, bottom = 5.dp), textAlign = TextAlign.Center,
@@ -3508,6 +3512,8 @@ fun HailSetting(navController: NavController) {
         text = "HAIL Settings"
     )
 }
+
+// ^^ No longer used
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
@@ -3733,6 +3739,7 @@ fun SettingsScreen(
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
+    val batdokCheckedLive by enableBatdokCotSettingsState.observeAsState()
     val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
 
@@ -3972,28 +3979,41 @@ fun SettingsScreen(
                 stringResource(R.string.physiological_monitoring),
                 stringResource(R.string.service_on_off)
             )
+//            SettingSwitchToggleLiveData(
+//                hailCheckedLive,
+//                { enableHailServiceSettingsState.postValue(it) },
+//                { Icon(
+//                    painter = painterResource(id = R.drawable.hail_icon),
+//                    tint = Color.Unspecified,
+//                    contentDescription = "null",
+//                    modifier = Modifier
+//                        .size(20.dp),
+//                ) },
+//                "HAIL",
+//                stringResource(R.string.service_on_off)
+//            )
+//            if (enableHailServiceSettingsState.value == true){
+//                DataMetricsChip(
+//                    if (hailLicenseState == HailLicenseStates.INVALID) {
+//                        "hail_pairing_screen"
+//                    } else {
+//                        "hail_setting_screen"
+//                    },
+//                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
+//            }
             SettingSwitchToggleLiveData(
-                hailCheckedLive,
-                { enableHailServiceSettingsState.postValue(it) },
+                batdokCheckedLive,
+                { enableBatdokCotSettingsState.postValue(it) },
                 { Icon(
-                    painter = painterResource(id = R.drawable.hail_icon),
+                    painter = painterResource(id = R.drawable.batdok),
                     tint = Color.Unspecified,
                     contentDescription = "null",
                     modifier = Modifier
                         .size(20.dp),
                 ) },
-                "HAIL",
-                stringResource(R.string.service_on_off)
+                stringResource(R.string.batdok),
+                stringResource(R.string.on_off)
             )
-            if (enableHailServiceSettingsState.value == true){
-                DataMetricsChip(
-                    if (hailLicenseState == HailLicenseStates.INVALID) {
-                        "hail_pairing_screen"
-                    } else {
-                        "hail_setting_screen"
-                    },
-                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
-            }
             Chip(
                 onClick = {
                     hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThresholdState.value)
@@ -4085,6 +4105,7 @@ fun SettingsScreen(
                     var locationCheckedChanged: Boolean = false
                     var physioCheckedChanged: Boolean = false
                     var hailCheckedChanged: Boolean = false
+                    var batdokCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
@@ -4387,6 +4408,23 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (enableBatdokCot != enableBatdokCotSettingsState.value) {
+                        settingsChanged = true; batdokCheckedChanged = true
+                        enableBatdokCot = enableBatdokCotSettingsState.value ?: enableBatdokCot
+                        runBlocking {
+                            enableBatdokCotSettingsState.postValue(enableBatdokCot)
+                        }
+                    }
+
+                    if (enableHailService != enableHailServiceSettingsState.value) {
+                        settingsChanged = true; hailCheckedChanged = true
+                        enableHailService = enableHailServiceSettingsState.value ?: enableHailService
+                        runBlocking {
+                            // This is in case enableLocationService above is NOT set to enableLocationServiceSettingsState.value
+                            enableHailServiceSettingsState.postValue(enableHailService)
+                        }
+                    }
+
                     if (enableSmsForAlerts != enableSmsForAlertsSettingsState.value) {
                         settingsChanged = true; smsAlertsCheckedChanged = true
                         enableSmsForAlerts = enableSmsForAlertsSettingsState.value ?: enableSmsForAlerts
@@ -4563,6 +4601,10 @@ fun SettingsScreen(
                              if (hailCheckedChanged) {
                                  Log.d(TAG, "Storing enableHailService $enableHailService")
                                  dataRepository.storeEnableHailService(enableHailService)
+                             }
+                             if (batdokCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBatdokCot $enableBatdokCot")
+                                 dataRepository.storeEnableBatdokCot(enableBatdokCot)
                              }
                              if (smsAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")

@@ -290,6 +290,7 @@ class MainActivity : ComponentActivity() {
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HAIL_SERVICE)
         var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
         var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
+        var enableBatdokCotSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATDOK_COT)
 
         //Enable Global Health Events
         var enablePassiveDataService = false
@@ -1133,6 +1134,7 @@ class MainActivity : ComponentActivity() {
         enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
 
         enableHailServiceSettingsState.postValue(enableHailService)
+        enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)

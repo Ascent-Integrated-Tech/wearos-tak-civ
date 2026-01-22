@@ -159,4 +159,5 @@
     <string name="medical_profile_batdok">Medical Profile (BATDOK)</string>
     <string name="gait_tracking">Gait Tracking</string>
     <string name="please_enter_a_value">Please enter a value</string>
+    <string name="batdok">BATDOK</string>
 </resources>
