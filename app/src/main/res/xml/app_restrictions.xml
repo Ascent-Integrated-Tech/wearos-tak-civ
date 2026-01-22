@@ -223,12 +223,6 @@
         android:description="@string/uniform_pants_length_desc"
         android:defaultValue="0"/>
     <restriction
-        android:key="physiological_metrics_steps_per_hundred_meters"
-        android:restrictionType="integer"
-        android:title="@string/steps_per_100m"
-        android:description="@string/steps_per_hundred_meters_desc"
-        android:defaultValue="0"/>
-    <restriction
         android:key="physiological_metrics_loadout_weight"
         android:restrictionType="integer"
         android:title="@string/loadout_weight"

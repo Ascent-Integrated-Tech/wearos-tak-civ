@@ -63,7 +63,6 @@ import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
-import com.aitech.weartak_civ.DEFAULT_STEPS_PER_HUNDRED_METERS
 import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_WAIST_SIZE
@@ -2159,15 +2158,6 @@ class DataRepository(private val context: Context) {
             prefs[UNIFORM_PANTS_LENGTH] = uniformPantsLength
         }
     }
-    val getPhysiologicalMetricStepsPerHundredMeters: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[STEPS_PER_HUNDRED_METERS] ?: DEFAULT_STEPS_PER_HUNDRED_METERS
-    }
-
-    suspend fun storePhysiologicalMetricStepsPerHundredMeters(stepsPerHundredMeters: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[STEPS_PER_HUNDRED_METERS] = stepsPerHundredMeters
-        }
-    }
     val getPhysiologicalMetricLoadoutWeight: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[LOADOUT_WEIGHT] ?: DEFAULT_LOADOUT_WEIGHT
     }
@@ -2243,7 +2233,6 @@ class DataRepository(private val context: Context) {
         private val UNIFORM_WAIST_SIZE = intPreferencesKey("uniform_waist_size")
         private val STRIDE_LENGTH = intPreferencesKey("stride_length")
         private val UNIFORM_PANTS_LENGTH = intPreferencesKey("uniform_pants_length")
-        private val STEPS_PER_HUNDRED_METERS = intPreferencesKey("steps_per_hundred_meters")
         private val LOADOUT_WEIGHT = intPreferencesKey("loadout_weight")
         private val ENABLE_TAK_ENDPOINT = booleanPreferencesKey("enable_tak_endpoint")
         private val ENABLE_ESRI_ENDPOINT = booleanPreferencesKey("enable_esri_endpoint")

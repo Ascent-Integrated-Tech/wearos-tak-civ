@@ -218,7 +218,6 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_SEX
-import com.aitech.weartak_civ.DEFAULT_STEPS_PER_HUNDRED_METERS
 import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_WAIST_SIZE
@@ -369,9 +368,6 @@ class MainActivity : ComponentActivity() {
         var uniformPantsLength = DEFAULT_UNIFORM_PANTS_LENGTH
         val uniformPantsLengthState =  MutableLiveData<Int>(DEFAULT_UNIFORM_PANTS_LENGTH)
         val uniformPantsLengthSettingsState =  MutableLiveData<Int>(DEFAULT_UNIFORM_PANTS_LENGTH)
-        var stepsPerHundredMeters = DEFAULT_STEPS_PER_HUNDRED_METERS
-        val stepsPerHundredMetersState =  MutableLiveData<Int>(DEFAULT_STEPS_PER_HUNDRED_METERS)
-        val stepsPerHundredMetersSettingsState =  MutableLiveData<Int>(DEFAULT_STEPS_PER_HUNDRED_METERS)
         var loadoutWeight = DEFAULT_LOADOUT_WEIGHT
         val loadoutWeightState =  MutableLiveData<Int>(DEFAULT_LOADOUT_WEIGHT)
         val loadoutWeightSettingsState =  MutableLiveData<Int>(DEFAULT_LOADOUT_WEIGHT)
@@ -822,7 +818,6 @@ class MainActivity : ComponentActivity() {
             uniformWaistSize   = dataRepository.getPhysiologicalMetricUniformWaistSize.first()
             strideLength       = dataRepository.getPhysiologicalMetricStrideLength.first()
             uniformPantsLength = dataRepository.getPhysiologicalMetricUniformPantsLength.first()
-            stepsPerHundredMeters = dataRepository.getPhysiologicalMetricStepsPerHundredMeters.first()
             loadoutWeight      = dataRepository.getPhysiologicalMetricLoadoutWeight.first()
         }
     }
@@ -940,7 +935,6 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "UniformWaistSize:", uniformWaistSize)}
                     ${String.format("%-25s %-30s", "StrideLength:", strideLength)}
                     ${String.format("%-25s %-30s", "UniformPantsLength:", uniformPantsLength)}
-                    ${String.format("%-25s %-30s", "StepsPerHundredMeter:", stepsPerHundredMeters)}
                     ${String.format("%-25s %-30s", "LoadoutWeight:", loadoutWeight)}
                     ${String.format("%-25s %-30s", "RestingHeartRate:", restingHeartRate)}
                     
@@ -1142,8 +1136,6 @@ class MainActivity : ComponentActivity() {
         strideLengthSettingsState.postValue(strideLength)
         uniformPantsLengthState.postValue(uniformPantsLength)
         uniformPantsLengthSettingsState.postValue(uniformPantsLength)
-        stepsPerHundredMetersState.postValue(stepsPerHundredMeters)
-        stepsPerHundredMetersSettingsState.postValue(stepsPerHundredMeters)
         loadoutWeightState.postValue(loadoutWeight)
         loadoutWeightSettingsState.postValue(loadoutWeight)
         restingHeartRateState.postValue(restingHeartRate)
@@ -1504,7 +1496,6 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsUniformWaistSizeConfigUpdate = appRestrictions.getInt("physiological_metrics_uniform_waist_size", uniformWaistSize)
         val physiologicalMetricsStrideLengthConfigUpdate = appRestrictions.getInt("physiological_metrics_stride_length", strideLength)
         val physiologicalMetricsUniformPantsLengthConfigUpdate = appRestrictions.getInt("physiological_metrics_uniform_pants_length", uniformPantsLength)
-        val physiologicalMetricsStepsPerHundredMetersConfigUpdate = appRestrictions.getInt("physiological_metrics_steps_per_hundred_meters", stepsPerHundredMeters)
         val physiologicalMetricsLoadoutWeightConfigUpdate = appRestrictions.getInt("physiological_metrics_loadout_weight", loadoutWeight)
 
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
@@ -1827,7 +1818,6 @@ class MainActivity : ComponentActivity() {
             dataRepository.storePhysiologicalMetricUniformWaistSize(physiologicalMetricsUniformWaistSizeConfigUpdate)
             dataRepository.storePhysiologicalMetricStrideLength(physiologicalMetricsStrideLengthConfigUpdate)
             dataRepository.storePhysiologicalMetricUniformPantsLength(physiologicalMetricsUniformPantsLengthConfigUpdate)
-            dataRepository.storePhysiologicalMetricStepsPerHundredMeters(physiologicalMetricsStepsPerHundredMetersConfigUpdate)
             dataRepository.storePhysiologicalMetricLoadoutWeight(physiologicalMetricsLoadoutWeightConfigUpdate)
 
             dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThresholdConfigUpdate)
@@ -2015,13 +2005,6 @@ class MainActivity : ComponentActivity() {
                     "Change detected uniformPantsLength(prev=$uniformPantsLength, curr=$physiologicalMetricsUniformPantsLengthConfigUpdate)"
                 )
                 uniformPantsLength = physiologicalMetricsUniformPantsLengthConfigUpdate
-            }
-            if (stepsPerHundredMeters != physiologicalMetricsStepsPerHundredMetersConfigUpdate) {
-                Log.d(
-                    TAG,
-                    "Change detected stepsPerHundredMeters(prev=$stepsPerHundredMeters, curr=$physiologicalMetricsStepsPerHundredMetersConfigUpdate)"
-                )
-                stepsPerHundredMeters = physiologicalMetricsStepsPerHundredMetersConfigUpdate
             }
             if (loadoutWeight != physiologicalMetricsLoadoutWeightConfigUpdate) {
                 Log.d(

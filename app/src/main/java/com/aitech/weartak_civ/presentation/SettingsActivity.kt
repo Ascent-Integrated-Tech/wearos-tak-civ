@@ -269,9 +269,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.stationaryReportingIntervalState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.stepsPerHundredMeters
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.stepsPerHundredMetersSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.stepsPerHundredMetersState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLength
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLengthState
@@ -390,7 +387,6 @@ fun loadSettingsValues(){
     uniformWaistSizeState.postValue(uniformWaistSize)
     strideLengthState.postValue(strideLength)
     uniformPantsLengthState.postValue(uniformPantsLength)
-    stepsPerHundredMetersState.postValue(stepsPerHundredMeters)
     loadoutWeightState.postValue(loadoutWeight)
     restingHeartRateState.postValue(restingHeartRate)
 }
@@ -589,10 +585,6 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_uniform_pants_length") {
             NumericEntryPage(navController, uniformPantsLengthSettingsState, 100, stringResource(R.string.uniform_pants_length_text), context, "physiological_metrics_gait_tracking")
-        }
-        composable(
-            "physiological_metrics_steps_per_hundred_meters") {
-            NumericEntryPage(navController, stepsPerHundredMetersSettingsState, 300, stringResource(R.string.steps_per_100m_text), context, "physiological_metrics_gait_tracking")
         }
         composable(
             "physiological_metrics_loadout_weight") {
@@ -2270,10 +2262,18 @@ fun NumericEntryPage(
             ),
             keyboardActions = KeyboardActions(
                 onDone = {
-                    if (metricTextFieldValue.text.toInt() > maximum) {
+                    if (metricTextFieldValue.text.isEmpty()) {
                         Toast.makeText(
                             mainActivity,
-                            context.getString(R.string.value_exceeds_maximum_please_re_enter), Toast.LENGTH_LONG).show()
+                            context.getString(R.string.please_enter_a_value),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else if (metricTextFieldValue.text.toInt() > maximum) {
+                        Toast.makeText(
+                            mainActivity,
+                            context.getString(R.string.value_exceeds_maximum_please_re_enter),
+                            Toast.LENGTH_LONG
+                        ).show()
                     } else {
                         focusManager.clearFocus()
                     }
@@ -3173,9 +3173,8 @@ fun PhysioMetricsGaitTrackingSettings(navController: NavController) {
         columnContent = {
 
             DataMetricsChip("physiological_metrics_uniform_waist_size", stringResource(R.string.uniform_waist_size_text), uniformWaistSizeSettingsState.value.toString() + "''", navController)
-            DataMetricsChip("physiological_metrics_stride_length", stringResource(R.string.stride_length_text), strideLengthSettingsState.value.toString() + "m", navController)
+            DataMetricsChip("physiological_metrics_stride_length", stringResource(R.string.stride_length_text), strideLengthSettingsState.value.toString() + "''", navController)
             DataMetricsChip("physiological_metrics_uniform_pants_length", stringResource(R.string.uniform_pants_length_text), uniformPantsLengthSettingsState.value.toString() + "''", navController)
-            DataMetricsChip("physiological_metrics_steps_per_hundred_meters", stringResource(R.string.steps_per_100m_text), stepsPerHundredMetersSettingsState.value.toString(), navController)
             DataMetricsChip("physiological_metrics_loadout_weight", stringResource(R.string.loadout_weight_text), loadoutWeightSettingsState.value.toString() + "lbs", navController)
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -3187,7 +3186,6 @@ fun PhysioMetricsGaitTrackingSettings(navController: NavController) {
                     uniformWaistSizeSettingsState.setValue(uniformWaistSize)
                     strideLengthSettingsState.setValue(strideLength)
                     uniformPantsLengthSettingsState.setValue(uniformPantsLength)
-                    stepsPerHundredMetersSettingsState.setValue(stepsPerHundredMeters)
                     loadoutWeightSettingsState.setValue(loadoutWeight)
 
                     navController.navigate("physiological_metrics_setting_screen") {
@@ -3200,7 +3198,6 @@ fun PhysioMetricsGaitTrackingSettings(navController: NavController) {
                     uniformWaistSizeState.setValue(uniformWaistSizeSettingsState.value)
                     strideLengthState.setValue(strideLengthSettingsState.value)
                     uniformPantsLengthState.setValue(uniformPantsLengthSettingsState.value)
-                    stepsPerHundredMetersState.setValue(stepsPerHundredMetersSettingsState.value)
                     loadoutWeightState.setValue(loadoutWeightSettingsState.value)
 
                     navController.navigate("physiological_metrics_setting_screen") {
@@ -3938,7 +3935,6 @@ fun SettingsScreen(
                     var uniformWaistSizeChanged: Boolean = false
                     var strideLengthChanged: Boolean = false
                     var uniformPantsLengthChanged: Boolean = false
-                    var stepsPerHundredMetersChanged: Boolean = false
                     var loadoutWeightChanged: Boolean = false
                     var restingHeartRateChanged: Boolean = false
                     var companionAppCheckedChanged: Boolean = false
@@ -3999,10 +3995,6 @@ fun SettingsScreen(
                     if (uniformPantsLength != uniformPantsLengthState.value) {
                         settingsChanged = true; uniformPantsLengthChanged = true
                         uniformPantsLength = uniformPantsLengthState.value ?: uniformPantsLength
-                    }
-                    if (stepsPerHundredMeters != stepsPerHundredMetersState.value) {
-                        settingsChanged = true; stepsPerHundredMetersChanged = true
-                        stepsPerHundredMeters = stepsPerHundredMetersState.value ?: stepsPerHundredMeters
                     }
                     if (loadoutWeight != loadoutWeightState.value) {
                         settingsChanged = true; loadoutWeightChanged = true
@@ -4293,10 +4285,6 @@ fun SettingsScreen(
                              if (uniformPantsLengthChanged) {
                                  Log.d(TAG, "Storing Uniform Pants Length ($uniformPantsLength)")
                                  dataRepository.storePhysiologicalMetricUniformPantsLength(uniformPantsLength)
-                             }
-                             if (stepsPerHundredMetersChanged) {
-                                 Log.d(TAG, "Storing Steps per 100m ($stepsPerHundredMeters)")
-                                 dataRepository.storePhysiologicalMetricStepsPerHundredMeters(stepsPerHundredMeters)
                              }
                              if (loadoutWeightChanged) {
                                  Log.d(TAG, "Storing Loadout Weight ($loadoutWeight)")
