@@ -1,14 +1,14 @@
 [
   {
-    "shortenedText": "Gate Runner",
+    "shortenedText": "GATERU",
     "longText": "Gate Runner"
   },
   {
-    "shortenedText": "Gunshot",
+    "shortenedText": "GNSHOT",
     "longText": "Gunshot"
   },
   {
-    "shortenedText": "Injury",
+    "shortenedText": "INJURY",
     "longText": "Injury"
   },
   {
@@ -16,7 +16,7 @@
     "longText": "UAS"
   },
   {
-    "shortenedText": "Vehicle",
+    "shortenedText": "VEH",
     "longText": "Vehicle"
   }
 ]
