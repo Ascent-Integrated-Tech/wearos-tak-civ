@@ -652,7 +652,7 @@ fun TextSelectionScreen(
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
 

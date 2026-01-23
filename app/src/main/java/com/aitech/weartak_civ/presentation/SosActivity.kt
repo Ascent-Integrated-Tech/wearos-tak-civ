@@ -94,11 +94,11 @@ companion object Constants{
     val TAG = "WearTAK-" + SosActivity::class.java.simpleName
     val isAlertingLiveData = MutableLiveData<Boolean>(false)
     val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
-        Utils.TextSelectionButton("Gate Runner", "Gate Runner"),
-        Utils.TextSelectionButton("Gunshot", "Gunshot"),
-        Utils.TextSelectionButton("Injury", "Injury"),
+        Utils.TextSelectionButton("GATERU", "Gate Runner"),
+        Utils.TextSelectionButton("GNSHOT", "Gunshot"),
+        Utils.TextSelectionButton("INJURY", "Injury"),
         Utils.TextSelectionButton("UAS", "UAS"),
-        Utils.TextSelectionButton("Vehicle", "Vehicle")
+        Utils.TextSelectionButton("VEH", "Vehicle")
     )
 
     val manualAlertType = MutableLiveData<String>("")
