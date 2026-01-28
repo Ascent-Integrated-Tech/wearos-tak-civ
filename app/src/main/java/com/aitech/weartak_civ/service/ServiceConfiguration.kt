@@ -87,6 +87,7 @@ class ServiceConfiguration(
         ServiceType.TAK_CONNECT,
         ServiceType.COT_DISPATCH,
         ServiceType.REPORTING_INTERVAL,
+        ServiceType.WEATHER,
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.CUST_ACCESS,
         ServiceType.BATTERY,
@@ -101,6 +102,8 @@ class ServiceConfiguration(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
             android.Manifest.permission.ACCESS_COARSE_LOCATION
         )
+
+        ServiceType.WEATHER -> emptyList()
 
         ServiceType.PHYSIO -> listOf(
             android.Manifest.permission.BODY_SENSORS,

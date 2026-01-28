@@ -11,6 +11,11 @@ android {
     namespace 'com.aitech.weartak_civ'
     compileSdk 35
 
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
@@ -24,6 +29,13 @@ android {
         manifestPlaceholders["repo"] = gitUrl()
         manifestPlaceholders["branch"] = gitBranch()
         manifestPlaceholders["commit"] = gitCommit()
+
+		// Inject OpenWeather API key from local.properties into BuildConfig
+		def lp = new Properties()
+		def lpFile = rootProject.file("local.properties")
+		if (lpFile.exists()) lp.load(lpFile.newDataInputStream())
+		def owKey = lp.getProperty("OPENWEATHER_API_KEY", "")
+		buildConfigField "String", "OPENWEATHER_API_KEY", "\"${owKey}\""
     }
 
     lintOptions {
@@ -79,6 +91,7 @@ android {
     }
     buildFeatures {
         compose true
+		buildConfig true
     }
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.15'
