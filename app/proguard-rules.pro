@@ -51,3 +51,8 @@
 # Keep classes that are used in fromJson() / toJson() calls if not already covered
 # Useful if you use reflection-based Gson adapters
 -keep class com.aitech.weartak_civ.** { *; }
+
+# ONNX Runtime minify crash prevention in release build (Java API + JNI bindings)
+-keep class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**

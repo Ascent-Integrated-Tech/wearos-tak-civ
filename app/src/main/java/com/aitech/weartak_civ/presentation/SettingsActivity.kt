@@ -55,6 +55,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -141,6 +142,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
@@ -306,6 +308,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticas
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
@@ -396,6 +400,7 @@ suspend fun refreshTakServerSettings() {
 
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
+    enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
     enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
@@ -4369,6 +4374,9 @@ fun SettingsScreen(
     val batdokCheckedLive by enableBatdokCotSettingsState.observeAsState()
     val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
+    val onnxGunshotDetectCheckedLive by enableOnnxGunshotServiceSettingsState.observeAsState()
+    val wearTakDevModeEnabled by dataRepository.getEnableWearTakDevMode
+        .collectAsStateWithLifecycle(initialValue = false)
 
     // WearTAK Developer Debug
     val coroutineScope = rememberCoroutineScope()
@@ -4551,6 +4559,16 @@ fun SettingsScreen(
                 "Bloodhound & Compass",
                 stringResource(R.string.service_on_off)
             )
+
+            if (wearTakDevModeEnabled) {
+                SettingSwitchToggleLiveData(
+                    onnxGunshotDetectCheckedLive,
+                    { enableOnnxGunshotServiceSettingsState.postValue(it) },
+                    {},
+                    stringResource(R.string.gunshot_detection),
+                    stringResource(R.string.service_on_off)
+                )
+            }
 
             SettingSwitchToggleLiveData(
                 enableSmsCheckedLive,
@@ -4755,6 +4773,7 @@ fun SettingsScreen(
                     var batdokCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var onnxGunDetectChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
@@ -5096,6 +5115,14 @@ fun SettingsScreen(
 
                     }
 
+                    if (enableOnnxGunshotService != enableOnnxGunshotServiceSettingsState.value) {
+                        settingsChanged = true; onnxGunDetectChanged = true
+                        enableOnnxGunshotService = enableOnnxGunshotServiceSettingsState.value ?: enableOnnxGunshotService
+                        runBlocking {
+                            enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
+                        }
+                    }
+
                     if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
                         settingsChanged = true; batteryAlertsCheckedChanged = true
                         enableBatteryAlerts = enableBatteryAlertsSettingsState.value
@@ -5326,7 +5353,6 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing updated ESRI Endpoint: $esriEndpoint")
                                  dataRepository.storeEsriEndpoint(esriEndpoint)
                              }
-
                              if (locationCheckedChanged) {
                                  Log.d(TAG, "Storing enableLocationService $enableLocationService")
                                  dataRepository.storeEnableLocationService(enableLocationService)
@@ -5356,6 +5382,10 @@ fun SettingsScreen(
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (onnxGunDetectChanged) {
+                                 Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
+                                 dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
                              }
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")

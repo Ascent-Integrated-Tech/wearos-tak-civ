@@ -91,6 +91,6 @@ class FeatureStore {
     fun logDerivedTick(tag: String = "CEP") {
         if (tickDerived.isEmpty()) return
         val body = tickDerived.joinToString { (k, v) -> "$k=$v" }
-        Log.d(tag, "[CEP][DERIVED] $body")
+        //Log.i(tag, "[CEP][DERIVED] $body")
     }
 }

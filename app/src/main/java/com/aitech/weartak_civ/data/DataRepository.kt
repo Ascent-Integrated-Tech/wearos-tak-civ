@@ -39,6 +39,7 @@ import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -53,6 +54,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
@@ -772,6 +774,7 @@ class DataRepository(private val context: Context) {
             appendLine("│ timeMillis             : ${states.timeMillis}")
             appendLine("│ dockType               : ${states.dockType}")
             appendLine("│ charging               : ${states.charging}")
+            appendLine("│ isWorn                 : ${states.isWorn}")
             appendLine("│ desiredReportInterval  : ${states.desiredReportInterval} s")
             appendLine("│ actualReportInterval   : ${states.actualReportInterval} s")
             appendLine("└─────────────────────────────")
@@ -782,6 +785,7 @@ class DataRepository(private val context: Context) {
         val timeMillis: Long,       // timestamp of the states
         val dockType: DockType,     // docked via wireless, usb, or none
         val charging: Boolean,      // is the device currently charging
+        val isWorn: Boolean,        // is the user wearing the device
         val desiredReportInterval: Int,    // the desired reporting interval before optimizations are applied
         val actualReportInterval: Int,    // the actual dispatching interval in cot dispatch
     )
@@ -791,6 +795,7 @@ class DataRepository(private val context: Context) {
             timeMillis = System.currentTimeMillis(),
             dockType = dockType.value,
             charging = chargingState.value,
+            isWorn = _latestIsDeviceWorn.value,
             desiredReportInterval = CotDispatchService.desiredReportingIntervalSecs,
             actualReportInterval = CotDispatchService.actualReportingIntervalSecs
         )
@@ -903,7 +908,6 @@ class DataRepository(private val context: Context) {
         )
     }
 
-
     data class PliSnapshot(
         val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
@@ -982,6 +986,17 @@ class DataRepository(private val context: Context) {
 
     // This is used by UI to request to clear SOS and Markers (UI --> Backend)
     // Also used by backend to automatically clear physio alerts
+    // TODO: Should this be what we use to update the gunshot emergency alerts? like should we have a datum for all alerts, manual or automatic, of any type (gunshot, physio, sos, etc)
+    //       and use this datum to populate adapters like emergency event objects. We could create a const hashmap given alert type enums returns value strings needed in the cot xml for
+    //       category, description, callsign, etc.
+    /*
+     *                  [ mm = MasterAlertsMap(Alert UUID, Alert Object) ]
+     *                              |
+     *                              V
+     *                  PhysioAlertList = mm.filter(Alert.TYPE == Physio)
+     *
+     *
+    */
     sealed interface ClearRequest {
         data class Specific(val uid: String) : ClearRequest
         data object Last : ClearRequest
@@ -1394,6 +1409,26 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableChatService(enableChatService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_CHAT_SERVICE] = enableChatService
+        }
+    }
+
+    val getEnableAudioCaptureService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_AUDIO_CAP_SERVICE] ?: DEFAULT_ENABLE_AUDIO_CAP_SERVICE
+    }
+
+    suspend fun storeEnableAudioCaptureService(enableAudioCaptureService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_AUDIO_CAP_SERVICE] = enableAudioCaptureService
+        }
+    }
+
+    val getEnableOnnxGunshotService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_ONNX_GUNSHOT_SERVICE] ?: DEFAULT_ENABLE_ONNX_GUNSHOT
+    }
+
+    suspend fun storeEnableOnnxGunshotService(enableOnnxGunshot: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_ONNX_GUNSHOT_SERVICE] = enableOnnxGunshot
         }
     }
 
@@ -1921,9 +1956,10 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getEnableWearTakDevMode: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_WEARTAK_DEV_MODE] ?: false
-    }
+    val getEnableWearTakDevMode: Flow<Boolean> =
+        context.dataStore.data
+            .map { prefs -> prefs[ENABLE_WEARTAK_DEV_MODE] ?: false }
+            .distinctUntilChanged()
 
     // NOTE: Store as false on every app boot!
     suspend fun storeEnableWearTakDevMode(enable: Boolean) {
@@ -2425,6 +2461,9 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
+        private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
+        private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
+
         private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
