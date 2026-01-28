@@ -162,7 +162,6 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
 //    val alerts by dataRepository.physioAlertsFlow.collectAsState(initial = emptyList())
     val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState(initial = emptyList())
 
-
     LaunchedEffect(licenseKey) {
 //        Log.d(TAG, "Launch chatEnabledLive = $chatEnabledLive")
         val currentDestination = navController.currentBackStackEntry?.destination?.route

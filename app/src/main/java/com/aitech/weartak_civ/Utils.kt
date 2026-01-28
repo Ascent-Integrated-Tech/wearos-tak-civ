@@ -27,10 +27,14 @@ import android.graphics.Color
 import android.location.Location
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.data.model.LatLon
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -386,6 +390,65 @@ object Utils {
         }
     }
 
+    fun vibrateWatch(
+        vibDurationMs: Long = 200L,
+        amplitude: Int = VibrationEffect.DEFAULT_AMPLITUDE,
+        numberOfVibes: Int = 1,
+        timeBtwnVibesMs: Long = 300L
+    ) {
+        val ctx = WearTakApplication.AppCtx.app.applicationContext
+
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = ctx.getSystemService(VibratorManager::class.java)
+            vm?.defaultVibrator
+        } else {
+            ctx.getSystemService(Vibrator::class.java)
+        }
+
+        vibrator?.let { vib ->
+            if (!vib.hasVibrator()) return
+
+            if (numberOfVibes <= 1) {
+                // Single vibration
+                val effect = VibrationEffect.createOneShot(
+                    vibDurationMs,
+                    amplitude
+                )
+                vib.vibrate(effect)
+            } else {
+                // Build waveform pattern:
+                // [delay, vibrate, pause, vibrate, pause, ...]
+                // First value must be initial delay (0 for immediate start)
+
+                val patternSize = numberOfVibes * 2
+                val timings = LongArray(patternSize)
+
+                // amplitudes array must match timings length
+                val amplitudes = IntArray(patternSize)
+
+                for (i in 0 until numberOfVibes) {
+                    val vibIndex = i * 2
+                    val pauseIndex = vibIndex + 1
+
+                    timings[vibIndex] = vibDurationMs
+                    amplitudes[vibIndex] = amplitude
+
+                    if (pauseIndex < patternSize) {
+                        timings[pauseIndex] = timeBtwnVibesMs
+                        amplitudes[pauseIndex] = 0
+                    }
+                }
+
+                val effect = VibrationEffect.createWaveform(
+                    timings,
+                    amplitudes,
+                    -1 // no repeat
+                )
+
+                vib.vibrate(effect)
+            }
+        }
+    }
     fun writeToLogFileLocation(logFile: File?, data: String) {
         if (null == logFile) {
             return
@@ -397,6 +460,73 @@ object Utils {
         } catch (e: IOException) {
             Log.e(TAG, "Failed to write log to file: ${e.message}", e)
         }
+    }
+
+    private val repo by lazy {
+        (WearTakApplication.AppCtx.app as WearTakApplication).repo
+    }
+
+    suspend fun logGunshotFeedback(
+        context: Context,
+        event: OnnxRepository.OnnxGunshotEvent,
+        label: OnnxRepository.GunshotUserLabel,
+        respondedAtMs: Long,
+        responseLatencyMs: Long,
+        extra: Map<String, Any?> = emptyMap()
+    ) {
+        val dir = File(context.filesDir, "gunshot_debug").apply { mkdirs() }
+        val logFile = File(dir, "gunshot_feedback.jsonl")
+        val sl = repo.snapshotLocation()
+        val ss = repo.snapshotSystem()
+
+        val obj = org.json.JSONObject().apply {
+            put("uid", event.uid)
+            put("eventTimestamp", event.timestamp)
+            put("confidence", event.confidence)
+            put("label", label.name)
+            put("respondedAtMs", respondedAtMs)
+            put("responseLatencyMs", responseLatencyMs)
+
+            put("triggerPcmPath", event.triggerPcmPath)
+
+            // If you're using Option A (chunkRef)
+            put("audioSessionId", event.chunkRef.sessionId)
+            put("audioSeq", event.chunkRef.seq)
+            put("audioChunkTimestampMs", event.chunkRef.timestampMs)
+            put("sampleRateHz", event.chunkRef.sampleRateHz)
+
+            put("micSource", event.audioSource)
+
+            // device info
+            put("manufacturer", android.os.Build.MANUFACTURER)
+            put("model", android.os.Build.MODEL)
+            put("sdkInt", android.os.Build.VERSION.SDK_INT)
+            put("wearTakVersion", ss.wearTakVersion)
+            put("callsign", ss.callsign)
+            put("deviceId", ss.deviceId)
+
+            // location
+            sl?.let {
+                put("lat", it.lat)
+                put("lon", it.lon)
+                put("hae", it.hae)
+                put("ce", it.ce)
+            }
+
+            // state information
+            put("isWorn", ss.systemStates.isWorn)
+            put("charging", ss.systemStates.charging)
+            put("bat", ss.batteryPercent)
+            put("latestActRec",repo.latestActivityRecognized.value)
+
+            // optional extras
+            val extrasObj = org.json.JSONObject()
+            for ((k, v) in extra) extrasObj.put(k, v)
+            put("extra", extrasObj)
+        }
+
+        // IMPORTANT: writeToLogFileLocation already adds timestamp + newline
+        writeToLogFileLocation(logFile, obj.toString())
     }
 
     fun jitteredLatLon(lat: Double, lon: Double, maxJitterM: Double): Pair<Double, Double> {

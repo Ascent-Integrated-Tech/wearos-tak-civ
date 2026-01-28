@@ -76,7 +76,6 @@ class SkinTempService : Service() {
 
     }
 
-
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
 

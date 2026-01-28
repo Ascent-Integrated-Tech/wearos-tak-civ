@@ -12,6 +12,10 @@ android {
     namespace 'com.aitech.weartak_civ'
     compileSdk 35
 
+    androidResources {
+        noCompress 'onnx'
+    }
+
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
@@ -203,8 +207,10 @@ dependencies {
     }
     implementation("org.apache.commons:commons-lang3:3.18.0")
 
-    implementation("org.maplibre.compose:maplibre-compose-material3:0.12.1")
+    // Onnx Runtime
+    implementation libs.onnxruntime.android
 
+    implementation("org.maplibre.compose:maplibre-compose-material3:0.12.1")
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
