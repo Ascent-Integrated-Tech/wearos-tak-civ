@@ -687,7 +687,6 @@ class MainActivity : ComponentActivity() {
 
             takServerList = dataRepository.getTakServerList.first()
 
-<<<<<<< Updated upstream
             enableLocationService = dataRepository.getEnableLocationService.first()
             enablePhysiologicalServices = dataRepository.getEnablePhysiologicalServices.first()
             enableHeartrateService = dataRepository.getEnableHeartRateService.first()
@@ -700,7 +699,7 @@ class MainActivity : ComponentActivity() {
             enableHailService = dataRepository.getEnableHailService.first()
             enableBatdokCot = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
-=======
+
             // --- Core service enable flags ---
             enableLocationService          = dataRepository.getEnableLocationService.first()
             enablePhysiologicalServices    = dataRepository.getEnablePhysiologicalServices.first()
@@ -716,10 +715,7 @@ class MainActivity : ComponentActivity() {
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
             enableAudioCaptureService = dataRepository.getEnableAudioCaptureService.first()
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+
 
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
             constantReportingInterval = dataRepository.getConstantReportingInterval.first()

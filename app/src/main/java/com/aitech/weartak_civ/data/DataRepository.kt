@@ -815,11 +815,6 @@ class DataRepository(private val context: Context) {
         }
     }
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
     val getEnableAudioCaptureService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_AUDIO_CAPTURE_SERVICE] ?: DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE
     }
@@ -841,7 +836,6 @@ class DataRepository(private val context: Context) {
         _almightyReportingIntervalSecs.value = intervalInSecs
     }
 
->>>>>>> Stashed changes
     private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
     val reportingUpdateIntervalSecs: StateFlow<Int> = _reportingUpdateIntervalSecs
 
