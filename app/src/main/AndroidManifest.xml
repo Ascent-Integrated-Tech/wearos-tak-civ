@@ -355,14 +355,9 @@
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
         <service
-            android:name=".service.OnnxService"
-            android:enabled="true"
-            android:exported="false" />
-        <service
             android:name=".service.AudioCaptureService"
             android:foregroundServiceType="mediaProjection"
             tools:ignore="ForegroundServicePermission" />
-            
         <!--
        <service
            android:name=".service.PassiveDataService"

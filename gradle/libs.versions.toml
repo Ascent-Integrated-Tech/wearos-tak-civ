@@ -24,7 +24,6 @@ onnxruntime = "1.17.0"
 datastoreCore = "1.1.7"
 appcompat = "1.7.1"
 
-
 [libraries]
 compose-navigation = { module = "androidx.wear.compose:compose-navigation", version.ref = "composeNavigation" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
