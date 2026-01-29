@@ -110,6 +110,9 @@ dependencies {
 =======
     implementation libs.datastore.core
     implementation libs.appcompat
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
     def room_version = "2.7.2"

@@ -25,6 +25,9 @@ onnxruntime = "1.17.0"
 =======
 datastoreCore = "1.1.7"
 appcompat = "1.7.1"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 [libraries]
@@ -56,6 +59,9 @@ animation-core = { group = "androidx.compose.animation", name = "animation-core"
 =======
 datastore-core = { group = "androidx.datastore", name = "datastore-core", version.ref = "datastoreCore" }
 appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 [plugins]

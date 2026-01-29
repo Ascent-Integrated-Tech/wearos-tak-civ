@@ -356,9 +356,15 @@
             android:stopWithTask="false" />
         <service
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             android:name=".service.OnnxService"
             android:enabled="true"
             android:exported="false" />
+=======
+            android:name=".service.AudioCaptureService"
+            android:foregroundServiceType="mediaProjection"
+            tools:ignore="ForegroundServicePermission" />
+>>>>>>> Stashed changes
 =======
             android:name=".service.AudioCaptureService"
             android:foregroundServiceType="mediaProjection"
