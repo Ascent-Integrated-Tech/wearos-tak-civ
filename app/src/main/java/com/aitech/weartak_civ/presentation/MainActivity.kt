@@ -3085,6 +3085,95 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
     }
 }
 
+@Composable
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+    val needleOrientation = activeItem?.orientation ?: properNorthBearing
+    val activeTarget = activeItem?.target ?: ""
+    requestBloodhoundComplicationUpdate(context)
+    Row(
+        modifier = Modifier.clickable(
+            onClick = {
+                if (bloodhoundChecked == true) {
+                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Bloodhound is disabled. Please enable it in Settings.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }),
+        verticalAlignment = Alignment.CenterVertically
+    ){
+        Image(
+            painter = if (activeItem != null) painterResource(R.drawable.compass_1) else painterResource(R.drawable.compass_needle),
+            alpha = if (bloodhoundChecked == true) 1F else 0.5F,
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .size(35.dp)
+                .graphicsLayer {
+                    rotationZ =
+                        needleOrientation.toFloat()
+                }
+        )
+        Column (
+            modifier = Modifier.padding(start = 13.dp)
+        ) {
+            if (bloodhoundChecked == true) {
+                if (activeItem != null) {
+                    Text(
+                        text = activeTarget,
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = activeItem.distance.toString() + " km",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.compass),
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = "---",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.compass_disabled),
+                    fontSize = 12.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = "---",
+                    fontSize = 15.sp,
+                    color = Color.Gray,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
 @SuppressLint("SuspiciousIndentation", "StateFlowValueCalledInComposition")
 @Composable
 fun MarkerDropButton(
