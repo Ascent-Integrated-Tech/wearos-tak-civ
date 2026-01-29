@@ -268,6 +268,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReporti
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAudioCaptureServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAudioCaptureService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -3715,6 +3717,7 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var audioCaptureCheckedChanged: Boolean = true
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
@@ -3919,10 +3922,14 @@ fun SettingsScreen(
                         runBlocking {
                             enableChatServiceSettingsState.postValue(enableChatService)
                         }
-                        //restartTAKConnectService()
-                        //TODO: Find out if we actually need to restart the tak connect service (manager should handle)
-                        requestChatComplicationUpdate(context)
+                    }
 
+                    if (enableAudioCaptureService != enableAudioCaptureServiceSettingsState.value) {
+                        settingsChanged = true; audioCaptureCheckedChanged = true
+                        enableAudioCaptureService = enableAudioCaptureServiceSettingsState.value ?: enableAudioCaptureService
+                        runBlocking {
+                            enableAudioCaptureServiceSettingsState.postValue(enableAudioCaptureService)
+                        }
                     }
 
                     if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
@@ -4096,6 +4103,10 @@ fun SettingsScreen(
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (audioCaptureCheckedChanged) {
+                                 Log.d(TAG, "Storing enableAudioCaptureService $enableAudioCaptureService")
+                                 dataRepository.storeEnableAudiCaptureService(enableAudioCaptureService)
                              }
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")

@@ -36,6 +36,7 @@ import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -814,6 +815,30 @@ class DataRepository(private val context: Context) {
         }
     }
 
+<<<<<<< Updated upstream
+=======
+    val getEnableAudioCaptureService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_AUDIO_CAPTURE_SERVICE] ?: DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE
+    }
+
+    suspend fun storeEnableAudiCaptureService(enableAudioCaptureService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_AUDIO_CAPTURE_SERVICE] = enableAudioCaptureService
+        }
+    }
+
+    private val _almightyReportingIntervalSecs =
+        MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
+
+    val almightyReportingIntervalSecs: StateFlow<Int> =
+        _almightyReportingIntervalSecs.asStateFlow()
+
+    fun setAlmightyReportingInterval(intervalInSecs: Int) {
+        if (_almightyReportingIntervalSecs.value == intervalInSecs) return
+        _almightyReportingIntervalSecs.value = intervalInSecs
+    }
+
+>>>>>>> Stashed changes
     private val _reportingUpdateIntervalSecs = MutableStateFlow<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
     val reportingUpdateIntervalSecs: StateFlow<Int> = _reportingUpdateIntervalSecs
 
@@ -846,6 +871,11 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    suspend fun storeAudioCaptureService(enableCAudioCaptureService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_AUDIO_CAPTURE_SERVICE] = DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE
+        }
+    }
     data class WifiSsidItem(val name: String)
     val gson = Gson()
     val getWifiSsidList: Flow<List<WifiSsidItem>> = context.dataStore.data
@@ -1600,6 +1630,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
+        private val ENABLE_AUDIO_CAPTURE_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")

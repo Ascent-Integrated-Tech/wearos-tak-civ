@@ -216,6 +216,7 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SEC
 import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_USER_TYPE
 import com.aitech.weartak_civ.DEFAULT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -233,6 +234,7 @@ import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAudioCaptureServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -273,6 +275,8 @@ class MainActivity : ComponentActivity() {
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HAIL_SERVICE)
         var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
         var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
+        var enableAudioCaptureService: Boolean = DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE
+        var enableAudioCaptureServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE)
 
         //Enable Global Health Events
         var enablePassiveDataService = false
@@ -683,6 +687,7 @@ class MainActivity : ComponentActivity() {
 
             takServerList = dataRepository.getTakServerList.first()
 
+<<<<<<< Updated upstream
             enableLocationService = dataRepository.getEnableLocationService.first()
             enablePhysiologicalServices = dataRepository.getEnablePhysiologicalServices.first()
             enableHeartrateService = dataRepository.getEnableHeartRateService.first()
@@ -695,6 +700,23 @@ class MainActivity : ComponentActivity() {
             enableHailService = dataRepository.getEnableHailService.first()
             enableBatdokCot = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
+=======
+            // --- Core service enable flags ---
+            enableLocationService          = dataRepository.getEnableLocationService.first()
+            enablePhysiologicalServices    = dataRepository.getEnablePhysiologicalServices.first()
+            enableHeartrateService         = dataRepository.getEnableHeartRateService.first()
+            enableActRecService            = dataRepository.getEnableActRecService.first()
+            enableSkinTempService          = dataRepository.getEnableSkinTempService.first()
+            enableDittoService             = dataRepository.getEnableDittoService.first()
+            enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
+            enableChatService              = dataRepository.getEnableChatService.first()
+            enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
+            enableHailService              = dataRepository.getEnableHailService.first()
+            enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
+            enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
+            enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
+            enableAudioCaptureService = dataRepository.getEnableAudioCaptureService.first()
+>>>>>>> Stashed changes
 
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
             constantReportingInterval = dataRepository.getConstantReportingInterval.first()
@@ -846,6 +868,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Battery Warn Percentage:", battWarnPercent.toString())}
                     ${String.format("%-25s %-30s", "Battery Alert Percentage:", battAlertPercent.toString())}
                     ${String.format("%-25s %-30s", "Enable BleBeacon:", enableBleBeaconService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Audio Capture:", enableAudioCaptureService.toString())}
                     
                     === === Ble Beacons === ===
                     ${String.format("%-25s %-30s", "Number of Localization Ble Beacons:", localizationBleBeaconItemList.size)}
@@ -1079,6 +1102,7 @@ class MainActivity : ComponentActivity() {
         hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
         hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThreshold)
+        enableAudioCaptureServiceSettingsState.postValue(enableAudioCaptureService)
 
         ageState.postValue(ageValue)
         ageSettingsState.postValue(ageValue)
@@ -2708,7 +2732,7 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
     }
 }
 @Composable
-fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
+fun AudioCaptureButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
     val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
     val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
@@ -2759,6 +2783,95 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                             overflow = TextOverflow.Ellipsis,
                             fontWeight = FontWeight.SemiBold,
                         )
+                } else {
+                    Text(
+                        text = stringResource(R.string.compass),
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = "---",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.compass_disabled),
+                    fontSize = 12.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Medium,
+                )
+
+                Text(
+                    text = "---",
+                    fontSize = 15.sp,
+                    color = Color.Gray,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
+    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
+    val needleOrientation = activeItem?.orientation ?: properNorthBearing
+    val activeTarget = activeItem?.target ?: ""
+    requestBloodhoundComplicationUpdate(context)
+    Row(
+        modifier = Modifier.clickable(
+            onClick = {
+                if (bloodhoundChecked == true) {
+                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Bloodhound is disabled. Please enable it in Settings.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }),
+        verticalAlignment = Alignment.CenterVertically
+    ){
+        Image(
+            painter = if (activeItem != null) painterResource(R.drawable.compass_1) else painterResource(R.drawable.compass_needle),
+            alpha = if (bloodhoundChecked == true) 1F else 0.5F,
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .size(35.dp)
+                .graphicsLayer {
+                    rotationZ =
+                        needleOrientation.toFloat()
+                }
+        )
+        Column (
+            modifier = Modifier.padding(start = 13.dp)
+        ) {
+            if (bloodhoundChecked == true) {
+                if (activeItem != null) {
+                    Text(
+                        text = activeTarget,
+                        fontSize = 13.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                    )
+
+                    Text(
+                        text = activeItem.distance.toString() + " km",
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 } else {
                     Text(
                         text = stringResource(R.string.compass),

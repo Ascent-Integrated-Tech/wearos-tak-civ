@@ -57,5 +57,6 @@ const val DEFAULT_BATT_ALERT_PERCENTAGE = 25
 const val HIGH_HEART_RATE_ALERT = "HIGH Heart Rate"
 const val LOW_HEART_RATE_ALERT = "LOW Heart Rate"
 const val HIGH_EXERTION_ALERT = "HIGH Exertion"
+const val DEFAULT_ENABLE_AUDIO_CAPTURE_SERVICE: Boolean = true
 
 
