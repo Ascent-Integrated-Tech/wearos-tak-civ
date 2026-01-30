@@ -409,4 +409,32 @@ class HiveBtleRepository(private val context: Context) {
     fun clearPendingChat() {
         _pendingChat.value = null
     }
+
+    // --- Inbound CannedMessage (for UI overlay) --------------------------------
+
+    data class InboundCannedMessage(
+        val messageCode: Int,
+        val label: String,
+        val sourceNode: Long,
+        val targetNode: Long,
+        val timestamp: Long
+    )
+
+    private val _pendingCannedMessage = MutableStateFlow<InboundCannedMessage?>(null)
+    val pendingCannedMessage: StateFlow<InboundCannedMessage?> = _pendingCannedMessage
+
+    /**
+     * Set a pending CannedMessage for UI display.
+     * Called by HiveBtleService when a CannedMessage is received.
+     */
+    fun setPendingCannedMessage(msg: InboundCannedMessage) {
+        _pendingCannedMessage.value = msg
+    }
+
+    /**
+     * Clear the pending CannedMessage (user dismissed or responded).
+     */
+    fun clearPendingCannedMessage() {
+        _pendingCannedMessage.value = null
+    }
 }

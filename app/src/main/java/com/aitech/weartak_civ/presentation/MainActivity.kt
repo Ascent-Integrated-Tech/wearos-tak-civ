@@ -151,6 +151,7 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.events.HiveCannedMessageEvent
 import com.aitech.weartak_civ.events.HiveDocumentEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
@@ -2310,19 +2311,17 @@ fun MainScreen(
                 HiveChatOverlay(
                     chat = pendingChat,
                     onAck = {
-                        // Send ACK to mesh with replyTo referencing the original message
+                        // Send ACK via CannedMessage to the original sender
                         pendingChat?.let { chat ->
                             try {
-                                val ackCot = "<remarks>ACK</remarks>"
-                                EventBus.getDefault().post(HiveDocumentEvent(
-                                    collection = "chat",
-                                    cotXml = ackCot,
-                                    replyToNode = chat.originNodeId,
-                                    replyToTimestamp = chat.timestamp
+                                EventBus.getDefault().post(HiveCannedMessageEvent(
+                                    messageCode = 0x00,  // CannedMessageCode.ACK
+                                    targetNode = chat.originNodeId,
+                                    originalTimestamp = chat.timestamp
                                 ))
-                                Log.i(TAG, "[CHAT-ACK] ACK sent to mesh (replyTo: ${String.format("%08X", chat.originNodeId)}:${chat.timestamp})")
+                                Log.i(TAG, "[CANNED-ACK] ACK sent to ${String.format("%08X", chat.originNodeId)} (ts=${chat.timestamp})")
                             } catch (e: Exception) {
-                                Log.e(TAG, "[CHAT-ACK] Failed to send ACK: ${e.message}", e)
+                                Log.e(TAG, "[CANNED-ACK] Failed to send ACK: ${e.message}", e)
                             }
                         }
                         // Dismiss overlay
@@ -2332,6 +2331,33 @@ fun MainScreen(
                         hiveBtleRepo.clearPendingChat()
                     }
                 )
+
+                // HIVE mesh canned message overlay - shows incoming canned messages with ACK button
+                val pendingCannedMessage by hiveBtleRepo.pendingCannedMessage.collectAsState()
+                HiveCannedMessageOverlay(
+                    message = pendingCannedMessage,
+                    onAck = {
+                        // Send ACK to the original message using CRDT-proper approach
+                        pendingCannedMessage?.let { msg ->
+                            try {
+                                EventBus.getDefault().post(HiveCannedMessageEvent(
+                                    messageCode = 0x00,  // CannedMessageCode.ACK
+                                    targetNode = msg.sourceNode,
+                                    originalTimestamp = msg.timestamp
+                                ))
+                                Log.i(TAG, "[CANNED-ACK] ACK sent to ${String.format("%08X", msg.sourceNode)} (ts=${msg.timestamp})")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "[CANNED-ACK] Failed to send ACK: ${e.message}", e)
+                            }
+                        }
+                        // Dismiss overlay
+                        hiveBtleRepo.clearPendingCannedMessage()
+                    },
+                    onDismiss = {
+                        hiveBtleRepo.clearPendingCannedMessage()
+                    }
+                )
+
             }
         }
     }

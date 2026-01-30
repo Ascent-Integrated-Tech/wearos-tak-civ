@@ -51,3 +51,13 @@
 # Keep classes that are used in fromJson() / toJson() calls if not already covered
 # Useful if you use reflection-based Gson adapters
 -keep class com.aitech.weartak_civ.** { *; }
+
+# JNA (Java Native Access) - required for uniffi/hive-btle
+-keep class com.sun.jna.** { *; }
+-keep class * implements com.sun.jna.** { *; }
+-keepclassmembers class * extends com.sun.jna.** { public *; }
+-dontwarn java.awt.**
+-dontwarn com.sun.jna.platform.**
+
+# UniFFI generated bindings
+-keep class uniffi.** { *; }
