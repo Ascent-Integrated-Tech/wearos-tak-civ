@@ -25,13 +25,28 @@ import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.events.HiveCannedMessageEvent
 import com.aitech.weartak_civ.events.HiveDocumentEvent
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.hive.CotHiveTranslator
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import android.util.Base64
-import com.revolveteam.hive.DeviceIdentity
+import uniffi.hive_lite_android.CannedMessageAckEventData
+import uniffi.hive_lite_android.CannedMessageEventData
+import uniffi.hive_lite_android.CannedMessageType
+import uniffi.hive_lite_android.cannedMessageAckEventAddAck
+import uniffi.hive_lite_android.cannedMessageAckEventAckCount
+import uniffi.hive_lite_android.cannedMessageAckEventHasAcked
+import uniffi.hive_lite_android.cannedMessageAckEventMerge
+import uniffi.hive_lite_android.cannedMessageMarker
+import uniffi.hive_lite_android.cannedMessageShortName
+import uniffi.hive_lite_android.createCannedMessageAckEvent
+import uniffi.hive_lite_android.createCannedMessageEvent
+import uniffi.hive_lite_android.decodeCannedMessageAckEvent
+import uniffi.hive_lite_android.decodeCannedMessageEvent
+import uniffi.hive_lite_android.encodeCannedMessageAckEvent
+import uniffi.hive_lite_android.encodeCannedMessageEvent
 import com.revolveteam.hive.HiveBtle
 import com.revolveteam.hive.HiveChat
 import com.revolveteam.hive.HiveDocument
@@ -40,8 +55,10 @@ import com.revolveteam.hive.HiveLocation
 import com.revolveteam.hive.HiveMarker
 import com.revolveteam.hive.HiveMeshListener
 import com.revolveteam.hive.HivePeer
-import com.revolveteam.hive.MembershipPolicy
-import com.revolveteam.hive.MeshGenesis
+import uniffi.hive_btle.DeviceIdentity
+import uniffi.hive_btle.MeshGenesis
+import uniffi.hive_btle.restoreDeviceIdentity
+import uniffi.hive_btle.decodeMeshGenesis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -115,13 +132,13 @@ class HiveBtleService : Service(), HiveMeshListener {
             // Load or create mesh genesis (shared across all mesh nodes)
             val genesis = loadOrCreateGenesis(identity)
 
-            Log.d(TAG, "Initializing HiveBtle with encryption: meshId=${genesis.meshId}, callsign=$callsign")
+            Log.d(TAG, "Initializing HiveBtle with encryption: meshId=${genesis.getMeshId()}, callsign=$callsign")
 
             // Create encrypted HiveBtle instance
-            // IMPORTANT: Pass genesis.meshId for BLE advertising!
+            // IMPORTANT: Pass genesis.getMeshId() for BLE advertising!
             hiveBtle = HiveBtle(
                 context = applicationContext,
-                meshId = genesis.meshId,  // Use genesis meshId for advertising
+                meshId = genesis.getMeshId(),  // Use genesis meshId for advertising
                 identity = identity,
                 genesis = genesis
             )
@@ -156,9 +173,14 @@ class HiveBtleService : Service(), HiveMeshListener {
             try {
                 // Restore from persisted 32-byte private key
                 val privateKey = Base64.decode(storedIdentity, Base64.NO_WRAP)
-                val identity = DeviceIdentity.fromPrivateKey(privateKey)
-                Log.d(TAG, "Loaded existing DeviceIdentity: nodeId=${String.format("%08X", identity.nodeId)}")
-                identity
+                val identity = restoreDeviceIdentity(privateKey)
+                if (identity != null) {
+                    Log.d(TAG, "Loaded existing DeviceIdentity: nodeId=${String.format("%08X", identity.getNodeId().toLong())}")
+                    identity
+                } else {
+                    Log.w(TAG, "Failed to restore stored identity, generating new one")
+                    generateAndStoreIdentity()
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to restore stored identity: ${e.message}, generating new one")
                 generateAndStoreIdentity()
@@ -173,9 +195,9 @@ class HiveBtleService : Service(), HiveMeshListener {
     private fun generateAndStoreIdentity(): DeviceIdentity {
         val identity = DeviceIdentity.generate()
         // Store the 32-byte private key (Base64 encoded)
-        val encoded = Base64.encodeToString(identity.privateKey, Base64.NO_WRAP)
+        val encoded = Base64.encodeToString(identity.getPrivateKey(), Base64.NO_WRAP)
         runBlocking { dataRepository.storeHiveDeviceIdentity(encoded) }
-        Log.i(TAG, "Generated and stored new DeviceIdentity: nodeId=${String.format("%08X", identity.nodeId)}")
+        Log.i(TAG, "Generated and stored new DeviceIdentity: nodeId=${String.format("%08X", identity.getNodeId().toLong())}")
         return identity
     }
 
@@ -188,10 +210,10 @@ class HiveBtleService : Service(), HiveMeshListener {
     private fun loadOrCreateGenesis(identity: DeviceIdentity): MeshGenesis {
         // Use the hardcoded shared genesis for WEARTAK mesh
         val bytes = Base64.decode(SHARED_GENESIS_BASE64, Base64.NO_WRAP)
-        val genesis = MeshGenesis.decode(bytes)
+        val genesis = decodeMeshGenesis(bytes)
         if (genesis != null) {
-            Log.i(TAG, "Using SHARED WEARTAK genesis: meshId=${genesis.meshId}")
-            meshId = genesis.meshId
+            Log.i(TAG, "Using SHARED WEARTAK genesis: meshId=${genesis.getMeshId()}")
+            meshId = genesis.getMeshId()
             return genesis
         }
 
@@ -201,21 +223,18 @@ class HiveBtleService : Service(), HiveMeshListener {
     }
 
     private fun createAndStoreGenesis(identity: DeviceIdentity): MeshGenesis {
-        // Create genesis with OPEN policy - WEARTAK mesh for testing
-        val genesis = MeshGenesis.create(
-            meshName = "WEARTAK",
-            identity = identity,
-            policy = MembershipPolicy.OPEN
-        )
+        // Create genesis for WEARTAK mesh
+        val genesis = MeshGenesis.create("WEARTAK", identity)
         val encoded = Base64.encodeToString(genesis.encode(), Base64.NO_WRAP)
         runBlocking { dataRepository.storeHiveMeshGenesis(encoded) }
 
         // Log the genesis for sharing with ATAK Plugin team
         Log.i(TAG, "=== SHAREABLE GENESIS (copy this for ATAK Plugin) ===")
         Log.i(TAG, "GENESIS_BASE64: $encoded")
-        Log.i(TAG, "MESH_ID: ${genesis.meshId}")
+        Log.i(TAG, "MESH_ID: ${genesis.getMeshId()}")
         Log.i(TAG, "=== END GENESIS ===")
 
+        meshId = genesis.getMeshId()
         return genesis
     }
 
@@ -248,26 +267,45 @@ class HiveBtleService : Service(), HiveMeshListener {
     }
 
     /**
-     * Called when a peer sends an event (Emergency, ACK, etc.).
+     * Called when a peer's event state changes in their document.
+     * This fires ONCE when the event type changes, not repeatedly.
      */
     override fun onPeerEvent(peer: HivePeer, eventType: HiveEventType) {
         Log.i(TAG, "Peer event from ${peer.displayName()}: $eventType")
+
+        val timestamp = System.currentTimeMillis()
+        val senderCallsign = hiveBtleRepository.peers.value
+            .find { it.nodeId == peer.nodeId }?.callsign
 
         ioScope.launch {
             when (eventType) {
                 HiveEventType.EMERGENCY -> {
                     Log.w(TAG, "PEER SOS received from ${peer.displayName()}")
-                    val timestamp = System.currentTimeMillis()
                     hiveBtleRepository.startEmergency(peer.nodeId, timestamp)
                     hiveBtleRepository.setPeerEmergency(peer.nodeId, true, timestamp)
-                    // UI observes peersInEmergency StateFlow for flash/indicator
                 }
                 HiveEventType.ACK -> {
                     Log.i(TAG, "ACK received from ${peer.displayName()}")
                     hiveBtleRepository.addEmergencyAck(peer.nodeId)
                 }
+                HiveEventType.MOVING -> {
+                    Log.i(TAG, "MOVING from ${peer.displayName()}")
+                    ChatService.addHiveCannedMessageStatic(peer.nodeId, "MOVING", 0x11, timestamp, senderCallsign)
+                }
+                HiveEventType.IN_POSITION -> {
+                    Log.i(TAG, "IN POSITION from ${peer.displayName()}")
+                    ChatService.addHiveCannedMessageStatic(peer.nodeId, "IN POSITION", 0x13, timestamp, senderCallsign)
+                }
+                HiveEventType.NEED_ASSIST -> {
+                    Log.w(TAG, "NEED ASSIST from ${peer.displayName()}")
+                    ChatService.addHiveCannedMessageStatic(peer.nodeId, "NEED ASSIST", 0x31, timestamp, senderCallsign)
+                }
+                HiveEventType.NONE -> {
+                    // Event cleared - check if emergency was cancelled
+                    hiveBtleRepository.setPeerEmergency(peer.nodeId, false)
+                }
                 else -> {
-                    // Regular sync (NONE, PING, etc.), no special handling
+                    // PING or unknown
                 }
             }
         }
@@ -391,6 +429,13 @@ class HiveBtleService : Service(), HiveMeshListener {
         val nodeIdHex = chat.originNode.toString(16).uppercase()
         Log.i(TAG, "[CHAT-RX] From $nodeIdHex (${chat.sender}): ${chat.message}")
 
+        // Filter out ACKs that aren't meant for us (i.e., ACKs for other peers' messages)
+        val myNodeId = hiveBtle?.nodeId ?: 0L
+        if (chat.message.equals("ACK", ignoreCase = true) && chat.replyToNode != 0L && chat.replyToNode != myNodeId) {
+            Log.v(TAG, "[CHAT-RX] Ignoring ACK for another peer (replyTo: ${String.format("%08X", chat.replyToNode)})")
+            return
+        }
+
         // Build chat CoT XML for existing chat system
         val chatCotXml = buildMeshChatCotXml(chat)
 
@@ -407,6 +452,155 @@ class HiveBtleService : Service(), HiveMeshListener {
 
         hiveBtleRepository.recordDocumentReceived(chat.message.length + 30)
         Log.d(TAG, "[CHAT-RX] Posted TakChatEvent for mesh chat from ${chat.sender}")
+    }
+
+    /**
+     * Called when raw decrypted data is received from a peer.
+     * This is the hive-lite interface - app handles message parsing directly.
+     */
+    // Canned message document storage: (sourceNode, timestamp) -> latest document with ACKs
+    // Key is (sourceNode, timestamp) since that uniquely identifies a message for CRDT merge
+    private val cannedMessageDocs = mutableMapOf<Pair<Long, Long>, CannedMessageAckEventData>()
+    private val CANNED_MESSAGE_TTL_MS = 5 * 60 * 1000L  // 5 minutes
+
+    // Track which messages we've already processed (to avoid duplicate UI updates)
+    private val processedCannedMessages = mutableSetOf<Pair<Long, Long>>()
+
+    override fun onDecryptedData(peer: HivePeer?, data: ByteArray) {
+        if (data.isEmpty()) return
+
+        when (data[0].toUByte()) {
+            cannedMessageMarker() -> {
+                // CannedMessage (0xAF) - decode using hive-lite ACK event API
+                val incomingEvent = decodeCannedMessageAckEvent(data)
+                if (incomingEvent == null) {
+                    Log.w(TAG, "[DECRYPTED] Failed to decode CannedMessageAckEvent")
+                    return
+                }
+
+                val messageType = incomingEvent.message
+                val sourceNode = incomingEvent.sourceNode.toLong()
+                val targetNode = incomingEvent.targetNode.toLong()
+                val timestamp = incomingEvent.timestamp.toLong()
+                val docKey = Pair(sourceNode, timestamp)
+
+                val label = cannedMessageShortName(messageType)
+                val myNodeId = hiveBtle?.nodeId ?: 0L
+
+                // Filter: ignore messages targeted to other nodes
+                if (targetNode != 0L && targetNode != myNodeId) {
+                    Log.v(TAG, "[CANNED-RX] Ignoring $label for another node")
+                    return
+                }
+
+                // CRDT merge: combine incoming ACKs with any we have stored
+                val storedEvent = cannedMessageDocs[docKey]
+                val mergedEvent = if (storedEvent != null) {
+                    cannedMessageAckEventMerge(storedEvent, incomingEvent)
+                } else {
+                    incomingEvent
+                }
+                cannedMessageDocs[docKey] = mergedEvent
+
+                val ackCount = cannedMessageAckEventAckCount(mergedEvent)
+                Log.d(TAG, "[CANNED-RX] $label from ${String.format("%08X", sourceNode)}, ACKs: $ackCount")
+
+                // Update ACK count in ChatService (for UI display)
+                ChatService.updateHiveAckCountStatic(sourceNode, timestamp, ackCount.toInt())
+
+                // Check if this is a new message (not just an ACK update)
+                val isNewMessage = !processedCannedMessages.contains(docKey)
+                if (isNewMessage) {
+                    processedCannedMessages.add(docKey)
+
+                    Log.i(TAG, "[CANNED-RX] NEW $label from ${String.format("%08X", sourceNode)}" +
+                            if (targetNode != 0L) " to ${String.format("%08X", targetNode)}" else " (broadcast)")
+
+                    // Look up callsign
+                    val senderCallsign = hiveBtleRepository.peers.value
+                        .find { it.nodeId == sourceNode }?.callsign
+                        ?: hiveBtle?.getPeer(sourceNode)?.let { blePeer ->
+                            blePeer.name.takeIf { it.isNotEmpty() }
+                        }
+                        ?: peer?.takeIf { it.nodeId == sourceNode }?.name?.takeIf { it.isNotEmpty() }
+
+                    // Handle based on message type
+                    when (messageType) {
+                        CannedMessageType.EMERGENCY,
+                        CannedMessageType.NEED_MEDIC,
+                        CannedMessageType.UNDER_FIRE -> {
+                            Log.w(TAG, "[CANNED-RX] EMERGENCY from ${String.format("%08X", sourceNode)}")
+                            hiveBtleRepository.startEmergency(sourceNode, timestamp)
+                            hiveBtleRepository.setPeerEmergency(sourceNode, true, timestamp)
+                        }
+
+                        CannedMessageType.ALL_CLEAR -> {
+                            Log.i(TAG, "[CANNED-RX] ALL_CLEAR from ${String.format("%08X", sourceNode)}")
+                            hiveBtleRepository.setPeerEmergency(sourceNode, false)
+                        }
+
+                        // Status updates - add to chat
+                        CannedMessageType.CHECK_IN,
+                        CannedMessageType.MOVING,
+                        CannedMessageType.HOLDING,
+                        CannedMessageType.ON_STATION,
+                        CannedMessageType.RETURNING,
+                        CannedMessageType.COMPLETE -> {
+                            Log.i(TAG, "[CANNED-RX] Status: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
+                            ChatService.addHiveCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
+                        }
+
+                        // Alerts - add to chat
+                        CannedMessageType.ALERT,
+                        CannedMessageType.CONTACT -> {
+                            Log.w(TAG, "[CANNED-RX] Alert: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
+                            ChatService.addHiveCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
+                        }
+
+                        // Requests - add to chat
+                        CannedMessageType.NEED_EXTRACT,
+                        CannedMessageType.NEED_SUPPORT,
+                        CannedMessageType.NEED_RESUPPLY -> {
+                            Log.w(TAG, "[CANNED-RX] Request: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
+                            ChatService.addHiveCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
+                        }
+
+                        // ACK types are now handled via embedded ACKs, not as separate messages
+                        CannedMessageType.ACK,
+                        CannedMessageType.ACK_WILCO,
+                        CannedMessageType.ACK_NEGATIVE,
+                        CannedMessageType.ACK_SAY_AGAIN -> {
+                            // Legacy ACK message format - still process for backwards compat
+                            Log.i(TAG, "[CANNED-RX] Legacy ACK type received from ${String.format("%08X", sourceNode)}")
+                            hiveBtleRepository.addEmergencyAck(sourceNode)
+                        }
+
+                        else -> {
+                            Log.d(TAG, "[CANNED-RX] Other message: $label ($messageType)")
+                        }
+                    }
+                }
+
+                // Check for new ACKs in the merged document
+                // For emergency messages, track who has ACKed
+                if (messageType == CannedMessageType.EMERGENCY ||
+                    messageType == CannedMessageType.NEED_MEDIC ||
+                    messageType == CannedMessageType.UNDER_FIRE) {
+                    for (ack in mergedEvent.acks) {
+                        val ackerNodeId = ack.nodeId.toLong()
+                        if (ackerNodeId != sourceNode) {
+                            Log.i(TAG, "[CANNED-RX] ACK for emergency from ${String.format("%08X", ackerNodeId)}")
+                            hiveBtleRepository.addEmergencyAck(ackerNodeId)
+                        }
+                    }
+                }
+            }
+
+            else -> {
+                // Other document types handled by legacy callbacks (onDocumentSynced, onChatReceived, etc.)
+                Log.v(TAG, "[DECRYPTED] Non-CannedMessage data: marker=0x${String.format("%02X", data[0])}, size=${data.size}")
+            }
+        }
     }
 
     /**
@@ -538,6 +732,152 @@ class HiveBtleService : Service(), HiveMeshListener {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to process HiveDocumentEvent: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Handle HiveCannedMessageEvent - sends tactical canned messages via mesh.
+     * Uses hive-lite CannedMessageAckEvent format for proper CRDT ACK tracking.
+     */
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    fun onHiveCannedMessage(evt: HiveCannedMessageEvent) {
+        val btle = hiveBtle ?: run {
+            Log.w(TAG, "[CANNED] HiveBtle not initialized, ignoring canned message")
+            return
+        }
+
+        ioScope.launch {
+            try {
+                // Convert message code to CannedMessageType
+                val messageType = uniffi.hive_lite_android.cannedMessageFromCode(evt.messageCode.toUByte())
+                    ?: run {
+                        Log.w(TAG, "[CANNED-TX] Unknown message code: ${evt.messageCode}")
+                        return@launch
+                    }
+
+                val label = cannedMessageShortName(messageType)
+                val myNodeId = btle.nodeId
+                val timestamp = System.currentTimeMillis()
+
+                // Check if this is an ACK response to an existing message
+                val isAckResponse = messageType == CannedMessageType.ACK ||
+                        messageType == CannedMessageType.ACK_WILCO ||
+                        messageType == CannedMessageType.ACK_NEGATIVE ||
+                        messageType == CannedMessageType.ACK_SAY_AGAIN
+
+                if (isAckResponse && evt.targetNode != 0L) {
+                    // ACK to a specific message - use originalTimestamp if provided, otherwise find latest
+                    val docKey = if (evt.originalTimestamp != 0L) {
+                        Pair(evt.targetNode, evt.originalTimestamp)
+                    } else {
+                        findLatestMessageFromNode(evt.targetNode)
+                    }
+                    if (docKey != null) {
+                        val existingDoc = cannedMessageDocs[docKey]
+                        if (existingDoc != null) {
+                            Log.i(TAG, "[CANNED-TX] Adding ACK to message from ${String.format("%08X", evt.targetNode)} (timestamp=${docKey.second})")
+
+                            // Add our ACK to the document
+                            val updatedDoc = cannedMessageAckEventAddAck(
+                                existingDoc,
+                                myNodeId.toUInt(),
+                                timestamp.toULong()
+                            )
+                            cannedMessageDocs[docKey] = updatedDoc
+
+                            // Encode and broadcast the updated document
+                            val encoded = encodeCannedMessageAckEvent(updatedDoc)
+                            btle.broadcastBytes(encoded)
+                            hiveBtleRepository.recordDocumentSent(encoded.size)
+
+                            val ackCount = cannedMessageAckEventAckCount(updatedDoc)
+                            Log.i(TAG, "[CANNED-TX] Sent ACK update (${encoded.size} bytes), total ACKs: $ackCount")
+                            return@launch
+                        }
+                    }
+                    Log.w(TAG, "[CANNED-TX] No existing message found for ACK, sending legacy ACK message")
+                }
+
+                // New message or fallback: create fresh CannedMessageAckEvent
+                Log.i(TAG, "[CANNED-TX] Sending $label (0x${evt.messageCode.toString(16).uppercase()}) to ${if (evt.targetNode == 0L) "broadcast" else String.format("%08X", evt.targetNode)}")
+
+                val event = createCannedMessageAckEvent(
+                    message = messageType,
+                    sourceNode = myNodeId.toUInt(),
+                    targetNode = evt.targetNode.toUInt(),
+                    timestamp = timestamp.toULong(),
+                    sequence = 0u
+                )
+
+                // Store our own message so we can receive ACKs for it
+                val docKey = Pair(myNodeId, timestamp)
+                cannedMessageDocs[docKey] = event
+                processedCannedMessages.add(docKey)
+
+                // Encode and broadcast
+                val encoded = encodeCannedMessageAckEvent(event)
+                btle.broadcastBytes(encoded)
+                hiveBtleRepository.recordDocumentSent(encoded.size)
+                Log.i(TAG, "[CANNED-TX] Sent $label (${encoded.size} bytes) from ${String.format("%08X", myNodeId)}")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "[CANNED-TX] Failed to send canned message: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Find the most recent message from a specific node.
+     * Used when ACKing a message from a peer.
+     */
+    private fun findLatestMessageFromNode(nodeId: Long): Pair<Long, Long>? {
+        return cannedMessageDocs.keys
+            .filter { it.first == nodeId }
+            .maxByOrNull { it.second }
+    }
+
+    /**
+     * Send an ACK in response to receiving a CannedMessage from a peer.
+     * Uses the new CRDT ACK approach which embeds the ACK in the message document itself.
+     */
+    private fun sendCannedMessageAck(targetNode: Long, originalTimestamp: Long) {
+        val btle = hiveBtle ?: run {
+            Log.w(TAG, "[ACK] HiveBtle not initialized, cannot send ACK")
+            return
+        }
+
+        ioScope.launch {
+            try {
+                val myNodeId = btle.nodeId
+                val docKey = Pair(targetNode, originalTimestamp)
+                val existingDoc = cannedMessageDocs[docKey]
+
+                if (existingDoc != null) {
+                    Log.i(TAG, "[ACK-TX] Adding ACK to message ${String.format("%08X", targetNode)}:$originalTimestamp")
+
+                    // Add our ACK to the document
+                    val updatedDoc = cannedMessageAckEventAddAck(
+                        existingDoc,
+                        myNodeId.toUInt(),
+                        System.currentTimeMillis().toULong()
+                    )
+                    cannedMessageDocs[docKey] = updatedDoc
+
+                    // Encode and broadcast the updated document
+                    val encoded = encodeCannedMessageAckEvent(updatedDoc)
+                    btle.broadcastBytes(encoded)
+                    hiveBtleRepository.recordDocumentSent(encoded.size)
+
+                    val ackCount = cannedMessageAckEventAckCount(updatedDoc)
+                    Log.i(TAG, "[ACK-TX] Sent ACK (${encoded.size} bytes), total ACKs: $ackCount")
+                } else {
+                    Log.w(TAG, "[ACK-TX] No stored document for ${String.format("%08X", targetNode)}:$originalTimestamp, using legacy ACK")
+                    // Fallback: send via HiveBtle sendEvent (legacy path)
+                    btle.sendEvent(HiveEventType.ACK)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "[ACK-TX] Failed to send ACK: ${e.message}", e)
             }
         }
     }

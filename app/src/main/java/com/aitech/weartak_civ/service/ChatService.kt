@@ -46,6 +46,27 @@ class ChatService : Service() {
         @Volatile private var _instance: ChatService? = null
         fun getInstance(): ChatService? = _instance
         fun markRoomReadStatic(id: String) { _instance?.markRoomRead(id) }
+
+        /**
+         * Static helper to add HIVE CannedMessage from anywhere.
+         */
+        fun addHiveCannedMessageStatic(
+            senderNodeId: Long,
+            label: String,
+            messageCode: Int,
+            timestamp: Long,
+            senderCallsign: String? = null
+        ) {
+            _instance?.addHiveCannedMessage(senderNodeId, label, messageCode, timestamp, senderCallsign)
+                ?: Log.w(TAG, "[HIVE] ChatService not running, cannot add CannedMessage")
+        }
+
+        /**
+         * Static helper to update ACK count for a HIVE message.
+         */
+        fun updateHiveAckCountStatic(senderNodeId: Long, timestamp: Long, ackCount: Int) {
+            _instance?.updateHiveAckCount(senderNodeId, timestamp, ackCount)
+        }
     }
 
     override fun onCreate() {
@@ -291,6 +312,85 @@ class ChatService : Service() {
         chatRoomMap[roomId]?.let { room ->
             room.timeLastClosed = System.currentTimeMillis()
             room.newMessagesPresent = false
+        }
+    }
+
+    /**
+     * Send a new chat message into the given room.
+     * Returns true if the send was queued/succeeded locally.
+     */
+    fun sendMessage(roomId: String, text: String): Boolean { return false}
+
+    /**
+     * Add a HIVE mesh CannedMessage to the chat inbox.
+     * Creates a room per sender using their callsign (or node ID if unknown).
+     */
+    fun addHiveCannedMessage(
+        senderNodeId: Long,
+        label: String,
+        messageCode: Int,
+        timestamp: Long,
+        senderCallsign: String? = null
+    ) = synchronized(chatRoomMap) {
+        val senderHex = String.format("%08X", senderNodeId)
+        val displayName = senderCallsign ?: senderHex
+        val roomId = "hive-$senderHex"
+        val roomTitle = displayName  // Room title is callsign or node ID
+
+        val newMessage = Utils.ChatMessage(
+            message = label,
+            uid = "hive-$senderHex-$timestamp",
+            callsign = displayName,
+            timeReceived = timestamp
+        )
+
+        val existing = chatRoomMap[roomId]
+        if (existing != null) {
+            // Append new message to existing room
+            val mergedMessages = existing.messageList + newMessage
+            chatRoomMap[roomId] = existing.copy(
+                messageList = mergedMessages,
+                newMessagesPresent = true
+            )
+        } else {
+            // Create new room for this sender
+            chatRoomMap[roomId] = ChatRoom(
+                uid = roomId,
+                title = roomTitle,
+                messageList = listOf(newMessage),
+                newMessagesPresent = true,
+                timeLastOpened = 0L,
+                timeLastClosed = 0L
+            )
+        }
+
+        Log.i(TAG, "[HIVE] Added CannedMessage to chat: $label from $senderHex")
+        publishInboxToRepo()
+    }
+
+    /**
+     * Update the ACK count for a specific HIVE message.
+     * Called when ACKs are received/propagated through the mesh.
+     */
+    fun updateHiveAckCount(senderNodeId: Long, timestamp: Long, ackCount: Int) = synchronized(chatRoomMap) {
+        val senderHex = String.format("%08X", senderNodeId)
+        val roomId = "hive-$senderHex"
+        val messageUid = "hive-$senderHex-$timestamp"
+
+        val room = chatRoomMap[roomId] ?: return@synchronized
+        val updatedMessages = room.messageList.map { msg ->
+            if (msg.uid == messageUid && msg.ackCount != ackCount) {
+                msg.copy(ackCount = ackCount)
+            } else {
+                msg
+            }
+        }
+
+        // Only update if something changed
+        if (updatedMessages != room.messageList) {
+            chatRoomMap[roomId] = room.copy(messageList = updatedMessages)
+            Log.d(TAG, "[HIVE] Updated ACK count for $messageUid: $ackCount")
+            publishInboxToRepo()
         }
     }
 }

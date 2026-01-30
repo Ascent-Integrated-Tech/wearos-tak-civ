@@ -706,7 +706,8 @@ object Utils {
         val message: String,
         val uid: String,
         val callsign: String,
-        val timeReceived: Long
+        val timeReceived: Long,
+        val ackCount: Int = 0  // Number of ACKs received for this message
     )
 
     data class ChatRoom(

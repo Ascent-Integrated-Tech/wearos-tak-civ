@@ -96,6 +96,7 @@ import com.aitech.weartak_civ.Utils.ChatMessage
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.events.HiveCannedMessageEvent
 import com.aitech.weartak_civ.events.HiveDocumentEvent
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
@@ -458,7 +459,8 @@ fun ChatScreenDetailed(
                             time = utcToHoursMinutes(chatMsg.timeReceived),
                             callsign = chatMsg.callsign,
                             message = chatMsg.message,
-                            uid= chatMsg.uid
+                            uid = chatMsg.uid,
+                            ackCount = chatMsg.ackCount
                         )
                     }
                     item {
@@ -545,21 +547,41 @@ fun ChatScreenDetailed(
                     Button(
                         onClick = {
                             try {
-                                // Send ACK to mesh with replyTo referencing last received mesh chat
-                                val lastChat = hiveBtleRepo.lastMeshChat
-                                val ackCot = "<remarks>ACK</remarks>"
-                                EventBus.getDefault().post(HiveDocumentEvent(
-                                    collection = "chat",
-                                    cotXml = ackCot,
-                                    replyToNode = lastChat?.originNodeId ?: 0L,
-                                    replyToTimestamp = lastChat?.timestamp ?: 0L
-                                ))
-                                if (lastChat != null) {
-                                    Log.i(TAG, "ACK sent (replyTo: ${String.format("%08X", lastChat.originNodeId)}:${lastChat.timestamp})")
+                                // Check if this is HIVE Mesh CannedMessage room (starts with "hive-")
+                                val isHiveMeshRoom = roomId?.startsWith("hive-") == true
+
+                                if (isHiveMeshRoom && roomId != null) {
+                                    // Extract node ID from room ID (format: "hive-XXXXXXXX")
+                                    val nodeIdHex = roomId.removePrefix("hive-")
+                                    val targetNode = nodeIdHex.toLongOrNull(16) ?: 0L
+                                    if (targetNode != 0L) {
+                                        EventBus.getDefault().post(HiveCannedMessageEvent(
+                                            messageCode = 0x00,  // ACK
+                                            targetNode = targetNode
+                                        ))
+                                        Log.i(TAG, "[CANNED-ACK] ACK sent to $nodeIdHex")
+                                        android.widget.Toast.makeText(context, "ACK sent", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Log.w(TAG, "[CANNED-ACK] Invalid node ID in room: $roomId")
+                                        android.widget.Toast.makeText(context, "Invalid sender", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                 } else {
-                                    Log.i(TAG, "ACK sent (no replyTo - no mesh chat received)")
+                                    // Regular chat ACK
+                                    val lastChat = hiveBtleRepo.lastMeshChat
+                                    val ackCot = "<remarks>ACK</remarks>"
+                                    EventBus.getDefault().post(HiveDocumentEvent(
+                                        collection = "chat",
+                                        cotXml = ackCot,
+                                        replyToNode = lastChat?.originNodeId ?: 0L,
+                                        replyToTimestamp = lastChat?.timestamp ?: 0L
+                                    ))
+                                    if (lastChat != null) {
+                                        Log.i(TAG, "ACK sent (replyTo: ${String.format("%08X", lastChat.originNodeId)}:${lastChat.timestamp})")
+                                    } else {
+                                        Log.i(TAG, "ACK sent (no replyTo - no mesh chat received)")
+                                    }
+                                    android.widget.Toast.makeText(context, "ACK sent", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                android.widget.Toast.makeText(context, "ACK sent", android.widget.Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to send ACK: ${e.message}", e)
                                 android.widget.Toast.makeText(context, "ACK failed", android.widget.Toast.LENGTH_SHORT).show()
@@ -584,7 +606,8 @@ fun ChatMessageItem(
     time: String,
     callsign: String,
     message: String,
-    uid: String
+    uid: String,
+    ackCount: Int = 0
 ) {
     Chip(
         onClick = { /* no-op */ },
@@ -594,15 +617,29 @@ fun ChatMessageItem(
             contentColor = if (uid == device_uid) Color.Green else  colors.primary
         ),
         label = {
-            Text(
-                text = "$callsign - $time",
-                maxLines = 1,
-                fontSize = 12.sp,
-                textAlign = if (uid == device_uid) TextAlign.End else TextAlign.Start,
-                fontWeight = FontWeight.Normal,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$callsign - $time",
+                    maxLines = 1,
+                    fontSize = 12.sp,
+                    textAlign = if (uid == device_uid) TextAlign.End else TextAlign.Start,
+                    fontWeight = FontWeight.Normal,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (ackCount > 0) {
+                    Text(
+                        text = "\u2713$ackCount",  // checkmark + count
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF4CAF50),  // green
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+            }
         },
         secondaryLabel = {
             Text(
