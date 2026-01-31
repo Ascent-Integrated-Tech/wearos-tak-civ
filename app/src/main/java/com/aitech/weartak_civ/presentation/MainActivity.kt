@@ -217,6 +217,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIVE_BTLE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
@@ -282,6 +283,8 @@ class MainActivity : ComponentActivity() {
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableHiveBtleService : Boolean = DEFAULT_ENABLE_HIVE_BTLE_SERVICE
         var enableHiveBtleServiceSettingsState = MutableLiveData<Boolean>(false)
+        var hiveCannedMessageTtlSeconds : Int = DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
+        val hiveCannedMessageTtlSecondsSettingsState = MutableLiveData<Int>(DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS)
         var enableCompanionAppService: Boolean = false
         var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DITTO_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
@@ -722,6 +725,7 @@ class MainActivity : ComponentActivity() {
             enableSkinTempService          = dataRepository.getEnableSkinTempService.first()
             enableDittoService             = dataRepository.getEnableDittoService.first()
             enableHiveBtleService          = dataRepository.getEnableHiveBtleService.first()
+            hiveCannedMessageTtlSeconds    = dataRepository.getHiveCannedMessageTtlSeconds.first()
             enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
             enableChatService              = dataRepository.getEnableChatService.first()
             enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
@@ -1109,6 +1113,7 @@ class MainActivity : ComponentActivity() {
         enableHailServiceSettingsState.postValue(enableHailService)
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
+        hiveCannedMessageTtlSecondsSettingsState.postValue(hiveCannedMessageTtlSeconds)
         enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableChatServiceSettingsState.postValue(enableChatService)

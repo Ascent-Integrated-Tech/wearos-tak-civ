@@ -176,6 +176,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoSer
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hiveCannedMessageTtlSeconds
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.hiveCannedMessageTtlSecondsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
@@ -484,6 +486,10 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "while_alerting_reporting_interval_screen") {
             NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, "While Alerting Reporting Interval", context, "reporting_settings_screen")
+        }
+        composable(
+            "hive_message_ttl_screen") {
+            NumericEntryPage(navController, hiveCannedMessageTtlSecondsSettingsState, 3600, "Message TTL (seconds)", context, "settings_screen")
         }
         composable(
             "license_setting_screen") {
@@ -3543,6 +3549,16 @@ fun SettingsScreen(
                 stringResource(R.string.service_on_off)
             )
 
+            // HIVE Message TTL setting (shown when HIVE is enabled)
+            if (hiveBtleCheckedLive == true) {
+                DataMetricsChip(
+                    "hive_message_ttl_screen",
+                    "Message TTL",
+                    "${hiveCannedMessageTtlSecondsSettingsState.value}s",
+                    navController
+                )
+            }
+
             // COMPANION_APP toggle removed - service is disabled in favor of HIVE_BTLE
 
             SettingSwitchToggleLiveData(
@@ -3747,6 +3763,7 @@ fun SettingsScreen(
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var hiveBtleCheckedChanged: Boolean = false
+                    var hiveCannedMessageTtlChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
@@ -3965,6 +3982,11 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (hiveCannedMessageTtlSeconds != hiveCannedMessageTtlSecondsSettingsState.value) {
+                        settingsChanged = true; hiveCannedMessageTtlChanged = true
+                        hiveCannedMessageTtlSeconds = hiveCannedMessageTtlSecondsSettingsState.value ?: hiveCannedMessageTtlSeconds
+                    }
+
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
                         enableChatService = enableChatServiceSettingsState.value ?: enableChatService
@@ -4148,6 +4170,10 @@ fun SettingsScreen(
                              if (hiveBtleCheckedChanged) {
                                  Log.d(TAG, "Storing enableHiveBtleService $enableHiveBtleService")
                                  dataRepository.storeEnableHiveBtleService(enableHiveBtleService)
+                             }
+                             if (hiveCannedMessageTtlChanged) {
+                                 Log.d(TAG, "Storing hiveCannedMessageTtlSeconds $hiveCannedMessageTtlSeconds")
+                                 dataRepository.storeHiveCannedMessageTtlSeconds(hiveCannedMessageTtlSeconds)
                              }
                              if (companionAppCheckedChanged) {
                                  Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
