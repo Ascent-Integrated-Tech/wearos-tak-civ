@@ -45,6 +45,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIVE_BTLE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_HIVE_MESH_ID
 import com.aitech.weartak_civ.DEFAULT_HIVE_POWER_PROFILE
+import com.aitech.weartak_civ.DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
@@ -1202,6 +1203,24 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Get the canned message document TTL in seconds.
+     * Controls how long ACK-tracked messages are kept in memory.
+     * Default: 300 seconds (5 minutes)
+     */
+    val getHiveCannedMessageTtlSeconds: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIVE_CANNED_MESSAGE_TTL_SECONDS] ?: DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
+    }
+
+    /**
+     * Store the canned message document TTL in seconds.
+     */
+    suspend fun storeHiveCannedMessageTtlSeconds(ttlSeconds: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HIVE_CANNED_MESSAGE_TTL_SECONDS] = ttlSeconds
+        }
+    }
+
     // --- End HIVE Settings ---
 
     val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -2077,6 +2096,7 @@ class DataRepository(private val context: Context) {
         private val HIVE_ENCRYPTION_KEY = stringPreferencesKey("hive_encryption_key")
         private val HIVE_DEVICE_IDENTITY = stringPreferencesKey("hive_device_identity")
         private val HIVE_MESH_GENESIS = stringPreferencesKey("hive_mesh_genesis")
+        private val HIVE_CANNED_MESSAGE_TTL_SECONDS = intPreferencesKey("hive_canned_message_ttl_seconds")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
