@@ -91,6 +91,10 @@ class HiveBtleService : Service(), HiveMeshListener {
     private var syncUpdateThread: HandlerThread? = null
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Configurable TTL for canned message documents (observed from DataRepository)
+    @Volatile
+    private var cannedMessageTtlMs: Long = 5 * 60 * 1000L  // Default 5 minutes, updated from settings
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "HiveBtleService onCreate()")
@@ -108,6 +112,9 @@ class HiveBtleService : Service(), HiveMeshListener {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+
+        // Observe canned message TTL setting for dynamic updates
+        observeCannedMessageTtl()
 
         initializeHiveBtle()
         startSyncScheduler()
@@ -462,10 +469,24 @@ class HiveBtleService : Service(), HiveMeshListener {
     // Key is (sourceNode, timestamp) since that uniquely identifies a message for CRDT merge
     private val cannedMessageDocs = mutableMapOf<Pair<Long, Long>, CannedMessageAckEventData>()
     private val cannedMessageStoredAt = mutableMapOf<Pair<Long, Long>, Long>()  // When doc was stored
-    private val CANNED_MESSAGE_TTL_MS = 5 * 60 * 1000L  // 5 minutes
 
     // Track which messages we've already processed (to avoid duplicate UI updates)
     private val processedCannedMessages = mutableSetOf<Pair<Long, Long>>()
+
+    /**
+     * Observe canned message TTL setting for dynamic updates without restart.
+     */
+    private fun observeCannedMessageTtl() {
+        ioScope.launch {
+            dataRepository.getHiveCannedMessageTtlSeconds.collect { ttlSeconds ->
+                val newTtlMs = ttlSeconds * 1000L
+                if (newTtlMs != cannedMessageTtlMs) {
+                    Log.i(TAG, "[CONFIG] Canned message TTL changed: ${cannedMessageTtlMs/1000}s -> ${ttlSeconds}s")
+                    cannedMessageTtlMs = newTtlMs
+                }
+            }
+        }
+    }
 
     /**
      * Clean up expired canned message documents to prevent memory growth.
@@ -473,7 +494,7 @@ class HiveBtleService : Service(), HiveMeshListener {
     private fun cleanupExpiredCannedMessages() {
         val now = System.currentTimeMillis()
         val expiredKeys = cannedMessageStoredAt.filter { (_, storedAt) ->
-            now - storedAt > CANNED_MESSAGE_TTL_MS
+            now - storedAt > cannedMessageTtlMs
         }.keys.toList()
 
         if (expiredKeys.isNotEmpty()) {
@@ -482,7 +503,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                 cannedMessageStoredAt.remove(key)
                 processedCannedMessages.remove(key)
             }
-            Log.d(TAG, "[CANNED] Cleaned up ${expiredKeys.size} expired message docs")
+            Log.d(TAG, "[CANNED] Cleaned up ${expiredKeys.size} expired message docs (TTL: ${cannedMessageTtlMs/1000}s)")
         }
     }
 
