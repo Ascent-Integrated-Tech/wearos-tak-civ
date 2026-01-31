@@ -461,10 +461,30 @@ class HiveBtleService : Service(), HiveMeshListener {
     // Canned message document storage: (sourceNode, timestamp) -> latest document with ACKs
     // Key is (sourceNode, timestamp) since that uniquely identifies a message for CRDT merge
     private val cannedMessageDocs = mutableMapOf<Pair<Long, Long>, CannedMessageAckEventData>()
+    private val cannedMessageStoredAt = mutableMapOf<Pair<Long, Long>, Long>()  // When doc was stored
     private val CANNED_MESSAGE_TTL_MS = 5 * 60 * 1000L  // 5 minutes
 
     // Track which messages we've already processed (to avoid duplicate UI updates)
     private val processedCannedMessages = mutableSetOf<Pair<Long, Long>>()
+
+    /**
+     * Clean up expired canned message documents to prevent memory growth.
+     */
+    private fun cleanupExpiredCannedMessages() {
+        val now = System.currentTimeMillis()
+        val expiredKeys = cannedMessageStoredAt.filter { (_, storedAt) ->
+            now - storedAt > CANNED_MESSAGE_TTL_MS
+        }.keys.toList()
+
+        if (expiredKeys.isNotEmpty()) {
+            expiredKeys.forEach { key ->
+                cannedMessageDocs.remove(key)
+                cannedMessageStoredAt.remove(key)
+                processedCannedMessages.remove(key)
+            }
+            Log.d(TAG, "[CANNED] Cleaned up ${expiredKeys.size} expired message docs")
+        }
+    }
 
     override fun onDecryptedData(peer: HivePeer?, data: ByteArray) {
         if (data.isEmpty()) return
@@ -501,6 +521,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                     incomingEvent
                 }
                 cannedMessageDocs[docKey] = mergedEvent
+                cannedMessageStoredAt[docKey] = System.currentTimeMillis()
 
                 val ackCount = cannedMessageAckEventAckCount(mergedEvent)
                 Log.d(TAG, "[CANNED-RX] $label from ${String.format("%08X", sourceNode)}, ACKs: $ackCount")
@@ -652,6 +673,9 @@ class HiveBtleService : Service(), HiveMeshListener {
                 } else {
                     Log.w(TAG, "Missing data for HIVE sync. Skipping this cycle.")
                 }
+
+                // Cleanup expired canned message documents
+                cleanupExpiredCannedMessages()
             }
 
             // Schedule next run based on reporting interval
@@ -785,6 +809,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                                 timestamp.toULong()
                             )
                             cannedMessageDocs[docKey] = updatedDoc
+                            cannedMessageStoredAt[docKey] = System.currentTimeMillis()
 
                             // Encode and broadcast the updated document
                             val encoded = encodeCannedMessageAckEvent(updatedDoc)
@@ -813,6 +838,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                 // Store our own message so we can receive ACKs for it
                 val docKey = Pair(myNodeId, timestamp)
                 cannedMessageDocs[docKey] = event
+                cannedMessageStoredAt[docKey] = System.currentTimeMillis()
                 processedCannedMessages.add(docKey)
 
                 // Encode and broadcast
@@ -863,6 +889,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                         System.currentTimeMillis().toULong()
                     )
                     cannedMessageDocs[docKey] = updatedDoc
+                    cannedMessageStoredAt[docKey] = System.currentTimeMillis()
 
                     // Encode and broadcast the updated document
                     val encoded = encodeCannedMessageAckEvent(updatedDoc)
