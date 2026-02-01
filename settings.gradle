@@ -28,11 +28,11 @@ dependencyResolutionManagement {
 
 // Composite build for hive-btle development (changes propagate immediately)
 // Enable this for local development, disable for published versions
-// includeBuild('../hive-btle/android') {
-//     dependencySubstitution {
-//         substitute module('com.revolveteam:hive') using project(':')
-//     }
-// }
+includeBuild('../hive-btle/android') {
+    dependencySubstitution {
+        substitute module('com.revolveteam:hive') using project(':')
+    }
+}
 
 rootProject.name = "WearTAK-CIV"
 include ':app'
