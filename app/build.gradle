@@ -45,6 +45,13 @@ android {
             keyAlias 'platform'
             keyPassword '112358key!'
         }
+
+        upload {
+            storeFile file("weartak-upload.keystore")
+            storePassword '112358key!New'
+            keyAlias 'upload'
+            keyPassword '112358key!New'
+        }
     }
 
     splits {
@@ -63,11 +70,18 @@ android {
             shrinkResources false
             signingConfig signingConfigs.debug
         }
+		def isBundleTask = gradle.startParameter.taskNames.any { it.toLowerCase().contains("bundle") }
         release {
             minifyEnabled true
-            shrinkResources true
+            shrinkResources !isBundleTask
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
+        }
+        upload {
+            minifyEnabled true
+            shrinkResources !isBundleTask
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.upload
         }
     }
     compileOptions {
