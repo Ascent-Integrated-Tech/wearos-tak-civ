@@ -188,10 +188,10 @@ fun PeerCard(
     val displayName = peer.callsign ?: peer.name ?: "Node-${peer.nodeId.toString(16).uppercase().takeLast(4)}"
 
     // Calculate distance if we have both locations
-    val distanceText = if (localLat != null && localLon != null && peer.location != null) {
+    val distanceText = if (localLat != null && localLon != null && peer.hasLocation) {
         val distance = Utils.calculateDistanceMeters(
             localLat, localLon,
-            peer.location.latitude, peer.location.longitude
+            peer.latitude!!, peer.longitude!!
         )
         Utils.formatDistance(distance)
     } else {

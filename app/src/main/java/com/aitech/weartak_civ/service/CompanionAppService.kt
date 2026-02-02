@@ -382,8 +382,15 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun updateBluetoothNameFromSnapshot(sys: DataRepository.SystemSnapshot) {
+        // Don't set Bluetooth name if HiveBtleService is running - it handles the name
+        if (HiveBtleService.isRunning.get()) {
+            Log.d(TAG, "Skipping BT name update - HiveBtleService handles it")
+            return
+        }
+
         val adapter = bluetoothAdapter ?: return
-        val desiredName = "WT-${sys.callsign}"          // or just sys.callsign
+        // Use callsign directly (no WT- prefix) for consistency with HiveBtleService
+        val desiredName = sys.callsign
 
         if (adapter.name != desiredName) {
             try {
@@ -572,7 +579,14 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
     private fun startAdvertising() {
-        Log.d(TAG, "startAdvertising(): advertising=$advertising connectedDevice=${connectedDevice?.address}")
+        // DISABLED: CompanionAppService advertising is disabled when using HIVE mesh.
+        // HiveBtleService handles all BLE advertising to prevent duplicates in scanners.
+        // The companion app can still receive connections via GATT server without advertising.
+        Log.d(TAG, "startAdvertising(): DISABLED - HiveBtleService handles advertising")
+        return
+
+        // Original code below is unreachable but kept for reference
+        @Suppress("UNREACHABLE_CODE")
         if (connectedDevice != null) return
 
         if (advertiser == null) {

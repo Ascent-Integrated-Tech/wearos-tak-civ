@@ -25,15 +25,12 @@ import kotlinx.coroutines.flow.stateIn
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /**
- * Repository for HIVE BLE mesh synchronization state.
+ * Repository for HIVE BLE mesh display state.
  *
- * Manages:
- * - BLE mesh connection state
- * - Discovered and connected peers
- * - Emergency/ACK event tracking
- * - Outbound document queue
+ * This repository ONLY stores and exposes mesh state for UI display.
+ * All peer management (tracking, deduplication, cleanup) is handled by hive-btle.
  *
- * Settings (mesh ID, power profile, encryption) are stored in DataRepository.
+ * The app receives peer updates via onMeshUpdated() and stores them directly.
  */
 class HiveBtleRepository(private val context: Context) {
 
@@ -78,34 +75,36 @@ class HiveBtleRepository(private val context: Context) {
         meshStateLiveData.postValue(state)
     }
 
-    // --- Peer tracking -----------------------------------------------------------
+    // --- Peer display (read-only from hive-btle) ---------------------------------
 
-    data class HivePeerLocation(
-        val latitude: Double,
-        val longitude: Double,
-        val altitude: Double
-    )
-
+    /**
+     * Peer info for display. All fields come directly from hive-btle.
+     * The app does NOT manage or modify this data.
+     */
     data class HivePeerInfo(
         val nodeId: Long,
-        val identifier: String,     // BLE address (empty for relayed peers)
+        val identifier: String,     // BLE address
         val name: String?,
-        val callsign: String? = null,
+        val callsign: String?,
         val rssi: Int,
         val isConnected: Boolean,
         val lastSeenMs: Long,
-        val location: HivePeerLocation? = null,
-        val battery: Int? = null,
-        val heartRate: Int? = null,
-        val isInEmergency: Boolean = false,
-        val emergencyTimestamp: Long? = null,
-        val hopCount: Int = 0       // 0 = direct, 1+ = relayed via mesh
+        val latitude: Double?,
+        val longitude: Double?,
+        val altitude: Double?,
+        val battery: Int?,
+        val heartRate: Int?,
+        val isInEmergency: Boolean,
+        val hopCount: Int           // 0 = direct, 1+ = relayed via mesh
     ) {
         /** Whether this peer is directly connected via BLE (not relayed) */
         val isDirect: Boolean get() = hopCount == 0
 
         /** Whether this peer is reached via relay (multi-hop) */
         val isRelayed: Boolean get() = hopCount > 0
+
+        /** Location if available */
+        val hasLocation: Boolean get() = latitude != null && longitude != null
     }
 
     private val _peers = MutableStateFlow<List<HivePeerInfo>>(emptyList())
@@ -138,140 +137,24 @@ class HiveBtleRepository(private val context: Context) {
         .map { it.size }
         .stateIn(scope, SharingStarted.Eagerly, 0)
 
-    private fun updatePeerCountLiveData() {
-        peerCountLiveData.postValue(_peers.value.size)
-    }
-
-    fun updatePeers(peerList: List<HivePeerInfo>) {
-        // Merge new peer info with existing data to preserve callsign/location/battery/emergency
-        val existingMap = _peers.value.associateBy { it.nodeId }
-        val merged = peerList.map { newPeer ->
-            val existing = existingMap[newPeer.nodeId]
-            if (existing != null) {
-                // Preserve existing callsign, location, battery, heartRate, emergency state if not in new data
-                newPeer.copy(
-                    callsign = newPeer.callsign ?: existing.callsign,
-                    location = newPeer.location ?: existing.location,
-                    battery = newPeer.battery ?: existing.battery,
-                    heartRate = newPeer.heartRate ?: existing.heartRate,
-                    isInEmergency = existing.isInEmergency,
-                    emergencyTimestamp = existing.emergencyTimestamp
-                )
-            } else {
-                newPeer
-            }
-        }
-        _peers.value = merged
-        updatePeerCountLiveData()
-    }
-
-    fun addOrUpdatePeer(peer: HivePeerInfo) {
-        val current = _peers.value.toMutableList()
-        val index = current.indexOfFirst { it.nodeId == peer.nodeId }
-        if (index >= 0) {
-            // Preserve emergency state when updating
-            val existing = current[index]
-            current[index] = peer.copy(
-                isInEmergency = existing.isInEmergency,
-                emergencyTimestamp = existing.emergencyTimestamp
-            )
-        } else {
-            current.add(peer)
-        }
-        _peers.value = current
-        updatePeerCountLiveData()
-    }
-
-    fun removePeer(nodeId: Long) {
-        _peers.value = _peers.value.filter { it.nodeId != nodeId }
-        updatePeerCountLiveData()
+    /**
+     * Set peers directly from hive-btle. No processing, no deduplication.
+     * hive-btle handles all peer management.
+     */
+    fun setPeers(peerList: List<HivePeerInfo>) {
+        _peers.value = peerList
+        peerCountLiveData.postValue(peerList.size)
     }
 
     /**
-     * Remove peer by BLE address/identifier.
-     * More reliable than nodeId when the peer was re-keyed after document sync.
+     * Clear all peers (e.g., when mesh stops).
      */
-    fun removePeerByIdentifier(identifier: String) {
-        _peers.value = _peers.value.filter { it.identifier != identifier }
-        updatePeerCountLiveData()
-    }
-
     fun clearPeers() {
         _peers.value = emptyList()
-        updatePeerCountLiveData()
+        peerCountLiveData.postValue(0)
     }
 
-    /**
-     * Mark all peers as disconnected without clearing cached data (callsign, location, etc.).
-     * Used when service stops to preserve data for the next session.
-     */
-    fun markAllPeersDisconnected() {
-        _peers.value = _peers.value.map { peer ->
-            peer.copy(isConnected = false)
-        }
-        // Don't update peer count - we're keeping the peers, just marking disconnected
-    }
-
-    /**
-     * Set a peer's emergency state.
-     * Called when receiving EMERGENCY event from mesh.
-     */
-    fun setPeerEmergency(nodeId: Long, isInEmergency: Boolean, timestamp: Long? = null) {
-        _peers.value = _peers.value.map { peer ->
-            if (peer.nodeId == nodeId) {
-                peer.copy(
-                    isInEmergency = isInEmergency,
-                    emergencyTimestamp = if (isInEmergency) timestamp else null
-                )
-            } else {
-                peer
-            }
-        }
-    }
-
-    /**
-     * Clear all peer emergency states.
-     */
-    fun clearAllPeerEmergencies() {
-        _peers.value = _peers.value.map { peer ->
-            peer.copy(isInEmergency = false, emergencyTimestamp = null)
-        }
-    }
-
-    /**
-     * Update peer location from received HIVE document.
-     * Only updates existing peers - does NOT create new entries.
-     * Peer creation happens via onMeshUpdated/updatePeers.
-     */
-    fun updatePeerLocation(
-        nodeId: Long,
-        latitude: Double,
-        longitude: Double,
-        altitude: Double,
-        callsign: String? = null,
-        battery: Int? = null,
-        heartRate: Int? = null
-    ) {
-        val location = HivePeerLocation(latitude, longitude, altitude)
-        val current = _peers.value.toMutableList()
-        val index = current.indexOfFirst { it.nodeId == nodeId }
-
-        if (index >= 0) {
-            // Update existing peer
-            current[index] = current[index].copy(
-                location = location,
-                callsign = callsign ?: current[index].callsign,
-                battery = battery ?: current[index].battery,
-                heartRate = heartRate ?: current[index].heartRate,
-                lastSeenMs = System.currentTimeMillis()
-            )
-            _peers.value = current
-        }
-        // Don't create new peers here - let onMeshUpdated handle peer creation
-        // This prevents duplicate entries when document nodeId differs from BLE nodeId
-    }
-
-    // --- Emergency/ACK tracking --------------------------------------------------
+    // --- Emergency state (from hive-btle) ----------------------------------------
 
     data class EmergencyState(
         val isActive: Boolean = false,
@@ -287,30 +170,8 @@ class HiveBtleRepository(private val context: Context) {
         .map { it.isActive }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
-    fun updateEmergencyState(state: EmergencyState) {
+    fun setEmergencyState(state: EmergencyState) {
         _emergencyState.value = state
-    }
-
-    fun startEmergency(sourceNodeId: Long, timestamp: Long) {
-        _emergencyState.value = EmergencyState(
-            isActive = true,
-            sourceNodeId = sourceNodeId,
-            timestamp = timestamp,
-            ackedByNodes = emptySet()
-        )
-    }
-
-    fun addEmergencyAck(nodeId: Long) {
-        val current = _emergencyState.value
-        if (current.isActive) {
-            _emergencyState.value = current.copy(
-                ackedByNodes = current.ackedByNodes + nodeId
-            )
-        }
-    }
-
-    fun clearEmergency() {
-        _emergencyState.value = EmergencyState()
     }
 
     // --- Sync statistics ---------------------------------------------------------
@@ -387,25 +248,14 @@ class HiveBtleRepository(private val context: Context) {
     private var _lastMeshChat: InboundChat? = null
     val lastMeshChat: InboundChat? get() = _lastMeshChat
 
-    /**
-     * Set a pending chat message for UI display.
-     * Called by HiveBtleService when a chat is received.
-     */
     fun setPendingChat(chat: InboundChat) {
         _pendingChat.value = chat
     }
 
-    /**
-     * Record the last mesh chat received (for ACK replyTo).
-     * Does NOT trigger popup - just stores for reference.
-     */
     fun setLastMeshChat(chat: InboundChat) {
         _lastMeshChat = chat
     }
 
-    /**
-     * Clear the pending chat (user dismissed or ACK'd).
-     */
     fun clearPendingChat() {
         _pendingChat.value = null
     }
@@ -423,17 +273,10 @@ class HiveBtleRepository(private val context: Context) {
     private val _pendingCannedMessage = MutableStateFlow<InboundCannedMessage?>(null)
     val pendingCannedMessage: StateFlow<InboundCannedMessage?> = _pendingCannedMessage
 
-    /**
-     * Set a pending CannedMessage for UI display.
-     * Called by HiveBtleService when a CannedMessage is received.
-     */
     fun setPendingCannedMessage(msg: InboundCannedMessage) {
         _pendingCannedMessage.value = msg
     }
 
-    /**
-     * Clear the pending CannedMessage (user dismissed or responded).
-     */
     fun clearPendingCannedMessage() {
         _pendingCannedMessage.value = null
     }
