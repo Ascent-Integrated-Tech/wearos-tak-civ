@@ -367,6 +367,11 @@
             android:name=".service.EnvSensorService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".service.WeatherService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!--
        <service
            android:name=".service.PassiveDataService"
