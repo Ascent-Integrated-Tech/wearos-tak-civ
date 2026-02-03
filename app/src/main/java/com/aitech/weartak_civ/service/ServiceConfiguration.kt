@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.service
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.data.DataRepository
@@ -62,6 +63,14 @@ class ServiceConfiguration(
             if (!physioOn) { false } else { hrOn }
         }.distinctUntilChanged()
 
+        // Tie Health SDK HR enablement to the same toggles as HEART_RATE for now
+        ServiceType.HEALTH_SDK -> combine(
+            dataRepository.getEnablePhysiologicalServices.distinctUntilChanged(),
+            dataRepository.getEnableHeartRateService.distinctUntilChanged()
+        ) { physioOn, hrOn ->
+            if (!physioOn) { false } else { hrOn }
+        }.distinctUntilChanged()
+
         ServiceType.SKIN_TEMP -> combine(
             dataRepository.getEnablePhysiologicalServices.distinctUntilChanged(),
             dataRepository.getEnableSkinTempService.distinctUntilChanged()
@@ -102,13 +111,17 @@ class ServiceConfiguration(
             android.Manifest.permission.ACCESS_COARSE_LOCATION
         )
 
-        ServiceType.PHYSIO -> listOf(
-            android.Manifest.permission.BODY_SENSORS,
-//            android.Manifest.permission.BODY_SENSORS_BACKGROUND,
-            android.Manifest.permission.ACTIVITY_RECOGNITION
-        )
+        ServiceType.PHYSIO -> buildList {
+            add(android.Manifest.permission.BODY_SENSORS)
+//            add(android.Manifest.permission.BODY_SENSORS_BACKGROUND)
+            add(android.Manifest.permission.ACTIVITY_RECOGNITION)
+            if (Build.VERSION.SDK_INT >= 35) {
+                add("android.permission.health.READ_HEART_RATE")
+            }
+        }
 
         ServiceType.HEART_RATE,
+        ServiceType.HEALTH_SDK,
         ServiceType.SKIN_TEMP,
         ServiceType.ACTIVITY_RECOGNITION -> requiredPerms(ServiceType.PHYSIO)
 

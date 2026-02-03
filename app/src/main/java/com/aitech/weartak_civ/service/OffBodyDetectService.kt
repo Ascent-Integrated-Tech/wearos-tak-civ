@@ -25,6 +25,7 @@ import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_NOT_WORN
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_WORN
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.service.healthsdk.HealthStreamBus
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
@@ -45,6 +46,11 @@ class OffBodyDetectService: Service() {
             notificationId = OFFBODY_DETECT_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
         )
+
+        val bodySensorsGranted =
+            checkSelfPermission(android.Manifest.permission.BODY_SENSORS) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+        Log.i(TAG, "init: offbody supported=${getSystemService(SENSOR_SERVICE) != null} permission(BODY_SENSORS)=$bodySensorsGranted")
 
         runBlocking {
             dataRepository.storeLatestIsDeviceWorn(false)
@@ -110,12 +116,14 @@ class OffBodyDetectService: Service() {
                         dataRepository.storeLatestIsDeviceWorn(false)
                         Log.i(TAG, "OffBodyDetectService Device is not worn");
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
+                        HealthStreamBus.shared.publishDeviceWorn(false, "OffBodyDetectService")
                     }
                 } else {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(true)
                         Log.i(TAG, "OffBodyDetectService Device is worn");
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))
+                        HealthStreamBus.shared.publishDeviceWorn(true, "OffBodyDetectService")
                     }
                 }
             }

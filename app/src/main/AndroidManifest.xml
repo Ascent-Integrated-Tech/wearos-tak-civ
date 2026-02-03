@@ -28,6 +28,7 @@
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
 
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:ignore="ProtectedPermissions" />
@@ -63,6 +64,7 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
 
     <!--
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
@@ -304,6 +306,12 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
         <service
+            android:name=".service.HealthSDKService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.CotDispatchService"
             android:enabled="true"
             android:exported="false"
@@ -416,6 +424,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
         <activity
             android:name=".presentation.SosActivity"
             android:exported="true"

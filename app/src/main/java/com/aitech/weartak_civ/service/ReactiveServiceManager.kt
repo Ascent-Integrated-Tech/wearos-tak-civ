@@ -902,6 +902,7 @@ class ReactiveServiceManager : Service() {
         LOCATION(true, isKnoxMgdService = true),
         PHYSIO(isKnoxMgdService = true, isNotRunnable = true), // virtual group: not in registry
         HEART_RATE(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
+        HEALTH_SDK(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         SKIN_TEMP(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         ACTIVITY_RECOGNITION(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         HAIL(isKnoxMgdService = true, isNotRunnable = true),
