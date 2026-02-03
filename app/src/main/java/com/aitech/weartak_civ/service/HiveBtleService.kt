@@ -98,6 +98,11 @@ class HiveBtleService : Service(), HiveMeshListener {
     @Volatile
     private var cannedMessageTtlMs: Long = 5 * 60 * 1000L  // Default 5 minutes, updated from settings
 
+    // Track peers in emergency state with timestamp (like ATAK's _activeEmergencies map)
+    // Maps nodeId -> timestamp when emergency was detected
+    // Used to avoid clearing based on stale document data
+    private val peersInEmergency = mutableMapOf<Long, Long>()
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "HiveBtleService onCreate()")
@@ -304,6 +309,19 @@ class HiveBtleService : Service(), HiveMeshListener {
             val location = doc?.location()
             val eventType = peer.currentEventType()
 
+            // Check emergency from both document AND our tracked state
+            // onPeerEvent() handles add/remove from peersInEmergency map
+            // Document eventType used as primary, tracked map as fallback for reliability
+            //
+            // Clear tracking if document shows non-emergency AND document is newer than when we tracked
+            val trackedTimestamp = peersInEmergency[peer.nodeId]
+            if (trackedTimestamp != null && eventType != HiveEventType.EMERGENCY && peer.lastSeen > trackedTimestamp) {
+                peersInEmergency.remove(peer.nodeId)
+                Log.i(TAG, "Cleared emergency for ${peer.displayName()} - newer document shows $eventType")
+            }
+
+            val isEmergency = eventType == HiveEventType.EMERGENCY || peersInEmergency.containsKey(peer.nodeId)
+
             HiveBtleRepository.HivePeerInfo(
                 nodeId = peer.nodeId,
                 identifier = peer.address,
@@ -317,7 +335,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                 altitude = location?.altitude?.toDouble(),
                 battery = doc?.batteryPercent(),
                 heartRate = doc?.heartRate(),
-                isInEmergency = eventType == HiveEventType.EMERGENCY,
+                isInEmergency = isEmergency,
                 hopCount = if (peer.address.isNotEmpty()) 0 else 1
             )
         }
@@ -351,6 +369,8 @@ class HiveBtleService : Service(), HiveMeshListener {
             when (eventType) {
                 HiveEventType.EMERGENCY -> {
                     Log.w(TAG, "PEER SOS received from ${peer.displayName()}")
+                    // Track this peer as in emergency with timestamp (survives document sync cycles)
+                    peersInEmergency[peer.nodeId] = timestamp
                     // Update global emergency state for UI
                     hiveBtleRepository.setEmergencyState(
                         HiveBtleRepository.EmergencyState(
@@ -384,8 +404,16 @@ class HiveBtleService : Service(), HiveMeshListener {
                 }
                 HiveEventType.NONE -> {
                     // Event cleared - peer is no longer in emergency
-                    // Emergency state per-peer is handled by onMeshUpdated extracting from peer.currentEventType()
                     Log.d(TAG, "Event cleared for ${peer.displayName()}")
+                    val wasInEmergency = peersInEmergency.remove(peer.nodeId) != null
+                    if (wasInEmergency) {
+                        Log.i(TAG, "SOS CANCELLED by peer ${peer.displayName()}")
+                        // Clear global emergency state if this was the source
+                        val current = hiveBtleRepository.emergencyState.value
+                        if (current.sourceNodeId == peer.nodeId) {
+                            hiveBtleRepository.setEmergencyState(HiveBtleRepository.EmergencyState())
+                        }
+                    }
                 }
                 else -> {
                     // PING or unknown
@@ -837,9 +865,20 @@ class HiveBtleService : Service(), HiveMeshListener {
                 altitude = location.altitude.toFloat()
             )
 
+            // Preserve emergency state in track updates - if THIS watch initiated an SOS,
+            // send EMERGENCY to keep peers showing the SOS; otherwise send NONE for normal tracking
+            val emergencyState = hiveBtleRepository.emergencyState.value
+            val localNodeId = btle.nodeId
+            val isLocalEmergencyActive = emergencyState.isActive && emergencyState.sourceNodeId == localNodeId
+            val eventType = if (isLocalEmergencyActive) {
+                HiveEventType.EMERGENCY
+            } else {
+                HiveEventType.NONE
+            }
+
             // Send sync event with location and vitals
             btle.sendEvent(
-                eventType = HiveEventType.NONE,
+                eventType = eventType,
                 location = hiveLocation,
                 callsign = callsign,
                 battery = battery,
