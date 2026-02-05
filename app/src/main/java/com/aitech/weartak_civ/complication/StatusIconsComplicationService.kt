@@ -67,6 +67,7 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
+        //Log.d(TAG, "requestStatusIconComplicationUpdate onComplicationRequest called")
         if (null == mainActivityIsInit) {
             return null
         }

@@ -42,6 +42,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -181,6 +182,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -226,6 +228,7 @@ import com.aitech.weartak_civ.DEFAULT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_MULTICAST_ADDRESS
 import com.aitech.weartak_civ.DEFAULT_MULTICAST_PORT
 import com.aitech.weartak_civ.DEFAULT_MULTICAST_PROTOCOL
+import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
@@ -245,6 +248,10 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -441,6 +448,12 @@ class MainActivity : ComponentActivity() {
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
         var smsNumbersListString : String = ""
         val smsNumbersListStringSettingsState = MutableLiveData<String>("")
+
+        var selectedPhysioMetric: String = DEFAULT_SELECTED_PHYSIO_METRIC
+        val selectedPhysioMetricSettingsState = MutableLiveData<String>(DEFAULT_SELECTED_PHYSIO_METRIC)
+        var physioMetricStringComplication: String = ""
+        var physioMetricIconComplication: Int = 0
+
         var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
         var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
 
@@ -834,6 +847,8 @@ class MainActivity : ComponentActivity() {
             smsNumbersListString   =
                 convertSmsNumbersListToStringWithSeparator(dataRepository.getSmsNumbersList.first(), ",")
 
+            selectedPhysioMetric = dataRepository.getSelectedPhysioMetric.first()
+
             enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
             restingHrHighAlertBpmThreshold = dataRepository.getRestingHrHighAlertBpmThreshold.first()
             restingHrLowAlertBpmThreshold = dataRepository.getRestingHrLowAlertBpmThreshold.first()
@@ -948,6 +963,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Wifi ssids list:", wifiSsidList.toString())}
                     ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
+                    ${String.format("%-25s %-30s", "Selected Physio Metric", selectedPhysioMetric)}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
                     ${String.format("%-25s %-30s", "Enable Battery Alerts:", enableBatteryAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
@@ -1178,6 +1194,7 @@ class MainActivity : ComponentActivity() {
         enableChatServiceSettingsState.postValue(enableChatService)
         enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts) // ephemeral ui value
         enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
+        selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
         smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
         enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
         restingHrHighAlertBpmThresholdState.postValue(restingHrHighAlertBpmThreshold)
@@ -1226,12 +1243,17 @@ class MainActivity : ComponentActivity() {
         restingHeartRateSettingsState.postValue(restingHeartRate)
 
         requestCallsignComplicationUpdate(context)
-        requestHeartRateComplicationUpdate(context)
         requestSosComplicationUpdate(context)
         requestStatusIconsComplicationUpdate(context)
         requestChatComplicationUpdate(context)
-        requestPhysioComplicationUpdate(context)
         requestBloodhoundComplicationUpdate(context)
+        requestPhysioStatusAndAlertingComplicationUpdate(context)
+        val logOutput = """
+                    === === Physiological User Metrics === ===
+                    ${String.format("%-25s %-30s", "Icon:", physioMetricIconComplication)}
+                    ${String.format("%-25s %-30s", "Metric:", physioMetricStringComplication)}
+                    """.trimIndent()
+        Log.d(PhysioAlertsActivity.Companion.TAG, logOutput)
     }
 
     private fun takServerConnDetailsChanged(takServer1: DataRepository.TakServerItem, takServer2: DataRepository.TakServerItem) : Boolean {
@@ -2393,6 +2415,7 @@ fun MainScreen(
                             .weight(0.8f)
                             .padding(vertical = 3.dp)
                     ) {
+                        requestPhysioStatusAndAlertingComplicationUpdate(context)
                         HeartRate(context)
                     }
 //                    Spacer(
@@ -2582,6 +2605,44 @@ fun alertChipColors(state: Utils.AlertChipState): Color = when (state) {
         Color.Unspecified
 }
 
+
+@Composable
+fun selectedMetricIconFromKey(key: String?): Int {
+    val icon: Int = when (key) {
+        "key_heart_rate" -> (R.drawable.heart_rate)
+        "key_steps" -> (R.drawable.steps)
+        "key_skin_temp" -> (R.drawable.skin_temp)
+        "key_exertion" -> (R.drawable.exertion)
+        "key_floors" -> (R.drawable.floors)
+        "key_calories" -> (R.drawable.calories)
+        else ->
+            (R.drawable.blank)
+    }
+    physioMetricIconComplication = icon
+    return icon
+}
+
+@Composable
+fun selectedMetricValueFromKey(key: String?): String {
+    val heartRateFlow = dataRepository.latestHeartRate.collectAsState()
+    val exertionFlow = dataRepository.latestExertion.collectAsState()
+    val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
+    val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
+    val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
+
+    val string: String = when (key) {
+        "key_heart_rate" -> if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
+        "key_steps" -> if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"
+        "key_skin_temp" -> if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"
+        "key_exertion" -> if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"
+        "key_floors" -> if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
+        "key_calories" -> if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
+        else -> "ERROR"
+    }
+    physioMetricStringComplication = string
+    return string
+}
+
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun HeartRate(context: Context) {
@@ -2589,6 +2650,7 @@ fun HeartRate(context: Context) {
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val physioAlertsCheckedLive by enablePhysiologicalAlertsSettingState.observeAsState()
     val alerts by dataRepository.physioAlertsFlow.collectAsState() // or collectAsStateWithLifecycle()
+    val metricKey by selectedPhysioMetricSettingsState.observeAsState()
 
     // Derive the chip state from the latest list
     val chipState by remember(alerts) {
@@ -2613,11 +2675,11 @@ fun HeartRate(context: Context) {
             icon = {
                 Icon(
                     painter = if (physioAlertsCheckedLive == true) {
-                        if (alerts.isNotEmpty()) painterResource(R.drawable.warning) else painterResource(R.drawable.vector)
-                    } else painterResource(R.drawable.vector) ,
+                        if (alerts.isNotEmpty()) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
+                    } else painterResource(selectedMetricIconFromKey(metricKey)),
                     contentDescription = "Favorite icon",
                     tint = alertChipColors(chipState),
-                    modifier = Modifier.size(17.dp),
+                    modifier = Modifier.size(19.dp),
                 )
             },
             label = {
@@ -2627,18 +2689,18 @@ fun HeartRate(context: Context) {
                 verticalAlignment = Alignment.Bottom
                 ) {
                     if (physioCheckedLive == true) {
+                        //TODO: In future - make these responsive to different alert types (ex. High HR, exertion, hypothermia)
                         Text(
-                            text = " $heartRateText",
+                            text = if (chipState == Utils.AlertChipState.Warning)
+                                "WARNING"
+                            else if (chipState == Utils.AlertChipState.Emergency)
+                                "ALERT"
+                                else
+                                selectedMetricValueFromKey(metricKey),
                             textAlign = TextAlign.Start,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
-                        )
-                        Text(
-                            text = stringResource(R.string.bpm),
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Light
                         )
                     } else {
                         Text(

@@ -34,7 +34,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
-        if (type != ComplicationType.SHORT_TEXT) {
+        if (type != ComplicationType.LONG_TEXT) {
             return null
         }
         return createComplicationData(callsign, getString(R.string.watch_callsign), R.drawable.compass_1, getString(R.string.compass), 0F)

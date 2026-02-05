@@ -139,7 +139,6 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.setAirplaneMode
-import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
@@ -2985,12 +2984,11 @@ fun LicenseKeyScreen(navController: NavController, licenseLiveDataState: Mutable
                             dataRepository.storeLicense(license)
                         }
                         requestCallsignComplicationUpdate(context)
-                        requestHeartRateComplicationUpdate(context)
                         requestSosComplicationUpdate(context)
                         requestStatusIconsComplicationUpdate(context)
                         requestChatComplicationUpdate(context)
-                        requestPhysioComplicationUpdate(context)
                         requestBloodhoundComplicationUpdate(context)
+                        requestPhysioStatusAndAlertingComplicationUpdate(context)
 
                         Log.d(TAG, "Sending License for Validation.")
                     } else {
@@ -4864,7 +4862,8 @@ fun SettingsScreen(
                         runBlocking {
                             enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
                         }
-                        requestHeartRateComplicationUpdate(context)
+                        requestPhysioStatusAndAlertingComplicationUpdate(context)
+
                     }
 
                     if (enablePhysiologicalAlerts != enablePhysiologicalAlertsSettingState.value) {
@@ -4873,7 +4872,7 @@ fun SettingsScreen(
                         runBlocking {
                             enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
                         }
-                        requestPhysioComplicationUpdate(context)
+                        requestPhysioStatusAndAlertingComplicationUpdate(context)
                     }
 
                      if (settingsChanged) {
@@ -5303,13 +5302,6 @@ fun BackButton(onClick: () -> Unit) {
             contentDescription = "Go back to Main Settings Screen",
         )
     }
-}
-
-fun requestHeartRateComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, HeartRateComplicationService::class.java)
-
-    val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
-    requester.requestUpdateAll()
 }
 
 @Preview(widthDp = 192, heightDp = 1200, showBackground = true)
