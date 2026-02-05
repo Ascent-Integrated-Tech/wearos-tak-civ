@@ -16,6 +16,9 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import android.os.PowerManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
@@ -73,6 +76,7 @@ class SkinTempService : Service() {
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
     private lateinit var spo2Tracker: HealthTracker
+    private lateinit var hrTracker: HealthTracker
     // PPG capability model
     private var ppgTracker: HealthTracker? = null
     private var ppgTrackerType: HealthTrackerType? = null
@@ -87,8 +91,11 @@ class SkinTempService : Service() {
      * - This preserves a stable rolling PPG amplitude for cold‑stress detection while restoring reliable
      *   SpO2 completion behavior.
      */
-    private var ppgPausedForSpo2: Boolean = false
-    private var lastSpo2AttemptWallMs: Long = 0L
+    @Volatile private var ppgPausedForSpo2: Boolean = false
+    // Monotonic timestamp of last SpO2 attempt (attempt recorded when session is started)
+    @Volatile private var lastSpo2AttemptElapsedMs: Long = 0L
+    // Whether the last SpO2 session ended due to TIMEOUT (for additive backoff)
+    @Volatile private var lastSpo2EndedAsTimeout: Boolean = false
     // Short on‑demand SpO2 session timeout and backoff
     /*
      * Session model alignment (Samsung SpO2 codelab):
@@ -102,11 +109,14 @@ class SkinTempService : Service() {
      */
     private val SPO2_TIMEOUT_MS: Long = 30_000L
     private val SPO2_BACKOFF_AFTER_TIMEOUT_MS: Long = 30 * 60_000L // 30 minutes after timeout
-    private val SPO2_MIN_GAP_MS: Long = 10 * 60_000L
+    // Strict 1-hour minimum gap between SpO2 attempts (monotonic)
+    private val SPO2_MIN_GAP_MS: Long = 60 * 60_000L
     // SHS "TIMEOUT" appears as status = -6
     private val SPO2_STATUS_TIMEOUT: Int = -6
-    // Stillness signal placeholder (to be wired to Activity/Accel)
-    @Volatile private var motionActive: Boolean = false
+    // ActivityRecognition stillness gate
+    @Volatile private var isStill: Boolean = false
+    @Volatile private var lastActivityConfidence: Int = 0
+    private val ACTIVITY_STILL_CONFIDENCE_MIN: Int = 50
     // Track last SpO2 outcome for backoff and diagnostics
     @Volatile private var lastSpo2OutcomeWasTimeout: Boolean = false
     @Volatile private var lastSpo2OutcomeWallMs: Long = 0L
@@ -117,6 +127,10 @@ class SkinTempService : Service() {
     @Volatile private var lastPpgSampleCount: Int = 0
     private var lastPpgComputeUptimeMs: Long = 0L
     private val PPG_COMPUTE_PERIOD_MS = 2_000L
+    // PPG raw logging throttle
+    @Volatile private var lastPpgRaw: Int? = null
+    private var lastPpgRawLogElapsedMs: Long = 0L
+    private val PPG_RAW_LOG_PERIOD_MS = 2_000L
 
     // CEP emitter loop
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -127,6 +141,7 @@ class SkinTempService : Service() {
     private lateinit var backgroundHandler: Handler
     private var isHandlerRunning = false
     private var deviceWorn: Boolean = false
+    private var isHrRunning = false
 
     // Running flags for trackers
     @Volatile private var spo2Running: Boolean = false
@@ -160,6 +175,19 @@ class SkinTempService : Service() {
         }
     }
 
+    // Screen state + flush policy for HR
+    private var screenOffFlushEnabled = false
+    private val SCREEN_OFF_FLUSH_INTERVAL_MS = 2 * 60 * 1_000L
+    private val FLUSH_START_DELAY_MS = 5_000L
+    private val powerManager by lazy { getSystemService(POWER_SERVICE) as PowerManager }
+    private val isInteractiveNow get() = powerManager.isInteractive
+
+    // Rolling snapshot for HR/IBI
+    @Volatile private var lastNonZeroHr = 0
+    @Volatile private var lastNonZeroIbi = 0
+    @Volatile private var lastCallbackElapsed = 0L
+    @Volatile private var lastValidHrElapsed = 0L
+
     // ---- Strict measurement state machine for SpO2 → PPG ----
     private enum class MeasurementState { IDLE, SPO2_RUNNING, PPG_RUNNING }
     private val measureState = AtomicReference(MeasurementState.IDLE)
@@ -180,6 +208,13 @@ class SkinTempService : Service() {
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to init SpO2 tracker", t)
             }
+            // Initialize HR continuous tracker
+            try {
+                hrTracker = healthService.getHealthTracker(HealthTrackerType.HEART_RATE_CONTINUOUS)
+                Log.i(TAG, "HR tracker initialized (HEART_RATE_CONTINUOUS)")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to init HR tracker", t)
+            }
             // PPG capability detection with fallbacks
             initPpgCapability()
             startPpgContinuousIfSelected()
@@ -187,6 +222,14 @@ class SkinTempService : Service() {
             pushColdInputsOkFlag()
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
+                // Start HR tracker and apply screen policy
+                startHrTracker()
+                if (!isInteractiveNow) {
+                    enableScreenOffFlushLoop()
+                    flushHr("initial_screen_off")
+                } else {
+                    disableScreenOffFlushLoop()
+                }
                 startSkinTracker()     // only kick off if worn
                 scheduleNextReading()
                 startEmitLoopIfNeeded()
@@ -206,6 +249,7 @@ class SkinTempService : Service() {
             stopSkinTracker(true)
             stopSpo2Tracker()
             stopPpgTracker()
+            stopHrTracker(true)
             stopEmitLoop()
         }
     }
@@ -259,6 +303,77 @@ class SkinTempService : Service() {
             Log.e(TAG, "SkinTempService HealthTracker.TrackerError: $error")
         }
 
+    }
+
+    // ---- HEART RATE CONTINUOUS + IBI listener ----
+    private val hrEventListener = object : HealthTracker.TrackerEventListener {
+        override fun onDataReceived(dataPoints: List<DataPoint>) {
+            lastCallbackElapsed = SystemClock.elapsedRealtime()
+            var batchMostRecentHr = 0
+            var batchMostRecentHrStatus = Int.MIN_VALUE
+            var batchMostRecentIbi = 0
+
+            for (i in dataPoints.indices) {
+                val dp = dataPoints[i]
+                try {
+                    val status = dp.getValue(ValueKey.HeartRateSet.HEART_RATE_STATUS)
+                    val hr = dp.getValue(ValueKey.HeartRateSet.HEART_RATE)
+                    batchMostRecentHr = hr
+                    batchMostRecentHrStatus = status
+                    if (status == 1 && hr > 0) {
+                        lastValidHrElapsed = SystemClock.elapsedRealtime()
+                        lastNonZeroHr = hr
+                    }
+                    if (i == 0) {
+                        val ibiList = dp.getValue(ValueKey.HeartRateSet.IBI_LIST)
+                        val ibiStatusList = dp.getValue(ValueKey.HeartRateSet.IBI_STATUS_LIST)
+                        if (ibiList != null && ibiList.isNotEmpty()) {
+                            val lastIbi = ibiList.last()
+                            batchMostRecentIbi = lastIbi
+                            if (lastIbi > 0) lastNonZeroIbi = lastIbi
+                            Log.i(TAG, "[0] IBI_LIST(ms)=$ibiList")
+                            Log.i(TAG, "[0] IBI_STATUS_LIST=$ibiStatusList")
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "HR parse error", t)
+                }
+            }
+            val effectiveHr = if (batchMostRecentHr > 0 && batchMostRecentHrStatus == 1) batchMostRecentHr else lastNonZeroHr
+            val effectiveIbi = if (batchMostRecentIbi > 0) batchMostRecentIbi else lastNonZeroIbi
+            val reason = if (isInteractiveNow) "interactive" else "flush/off"
+            Log.i(
+                TAG,
+                "HRIBI-SNAPSHOT: HR=$effectiveHr (raw=$batchMostRecentHr status=$batchMostRecentHrStatus lastNonZero=$lastNonZeroHr) " +
+                        "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
+            )
+        }
+
+        override fun onFlushCompleted() {
+            Log.i(TAG, "HR flush completed t=${SystemClock.elapsedRealtime()}")
+        }
+
+        override fun onError(error: HealthTracker.TrackerError) {
+            Log.e(TAG, "HR tracker error: $error")
+        }
+    }
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context, intent: Intent) {
+            val interactive = isInteractiveNow
+            Log.w(TAG, "SCREEN EVENT: ${intent.action} | interactive=$interactive | deviceWorn=$deviceWorn | hrRunning=$isHrRunning")
+            if (!deviceWorn) return
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    enableScreenOffFlushLoop()
+                    flushHr("screen_off_event")
+                }
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> {
+                    disableScreenOffFlushLoop()
+                }
+            }
+        }
     }
 
     private fun pausePpgContinuousForSpo2() {
@@ -359,6 +474,7 @@ class SkinTempService : Service() {
                             lastSpo2Pct = spo2Val?.toDouble()
                             lastSpo2Ts = System.currentTimeMillis()
                             lastSpo2OutcomeWasTimeout = false
+                            lastSpo2EndedAsTimeout = false
                             lastSpo2OutcomeWallMs = System.currentTimeMillis()
                             Log.i(TAG, "[SPO2] Completed status=$status spo2=${lastSpo2Pct ?: -1.0}")
                             stopSpo2Session("completed")
@@ -369,6 +485,7 @@ class SkinTempService : Service() {
                             lastSpo2Pct = null
                             lastSpo2Ts = System.currentTimeMillis()
                             lastSpo2OutcomeWasTimeout = true
+                            lastSpo2EndedAsTimeout = true
                             lastSpo2OutcomeWallMs = System.currentTimeMillis()
                             Log.w(TAG, "[SPO2] TIMEOUT status=$status → stopping session early")
                             stopSpo2Session("status_timeout")
@@ -384,6 +501,8 @@ class SkinTempService : Service() {
                 } catch (t: Throwable) {
                     Log.e(TAG, "[SPO2] onDataReceived error", t)
                     lastSpo2Status = -1
+                    // Treat unknown errors as timeouts for backoff purposes
+                    lastSpo2EndedAsTimeout = true
                     stopSpo2Session("error")
                     transitionToPpgPhase()
                 }
@@ -395,6 +514,8 @@ class SkinTempService : Service() {
                 if (measureState.get() != MeasurementState.SPO2_RUNNING) return@post
                 Log.e(TAG, "[SPO2] Error: $error")
                 lastSpo2Status = -1
+                // Treat callback errors as timeouts for backoff purposes
+                lastSpo2EndedAsTimeout = true
                 stopSpo2Session("onError:$error")
                 transitionToPpgPhase()
             }
@@ -402,24 +523,25 @@ class SkinTempService : Service() {
     }
 
     private fun startSpo2ThenPpgCycle() {
-        // Rate-limit, timeout backoff, and stillness gate before transitioning to SPO2_RUNNING
-        val nowWall = System.currentTimeMillis()
-        val requiredGap = if (lastSpo2OutcomeWasTimeout) SPO2_BACKOFF_AFTER_TIMEOUT_MS else SPO2_MIN_GAP_MS
-        val sinceLastAttempt = nowWall - lastSpo2AttemptWallMs
-        if (sinceLastAttempt < requiredGap) {
-            val reason = if (lastSpo2OutcomeWasTimeout) "timeout backoff" else "rate limit"
-            Log.d(TAG, "[SPO2] Skipping ($reason). sinceLastAttempt=${sinceLastAttempt}ms")
+        // Stillness + strict 1-hour throttle (monotonic) with additive timeout backoff
+        if (!isStill || lastActivityConfidence < ACTIVITY_STILL_CONFIDENCE_MIN) {
+            Log.d(TAG, "[SPO2] Skipping: not STILL/conf too low (isStill=$isStill, conf=$lastActivityConfidence, min=$ACTIVITY_STILL_CONFIDENCE_MIN)")
+            writeToLogFileLocation(logFile, "[SPO2] Skip: not STILL/conf too low (isStill=$isStill conf=$lastActivityConfidence)")
             return
         }
-        if (motionActive) {
-            Log.d(TAG, "[SPO2] Skipping (motion active)")
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val baseReadyAt = lastSpo2AttemptElapsedMs + SPO2_MIN_GAP_MS
+        val timeoutPenalty = if (lastSpo2EndedAsTimeout) SPO2_BACKOFF_AFTER_TIMEOUT_MS else 0L
+        val readyAt = baseReadyAt + timeoutPenalty
+        if (lastSpo2AttemptElapsedMs != 0L && nowElapsed < readyAt) {
+            val remaining = readyAt - nowElapsed
+            val msg = "[SPO2] Skipping (throttle/backoff). remainingMs=$remaining still=$isStill conf=$lastActivityConfidence timeoutBackoffApplied=$lastSpo2EndedAsTimeout"
+            Log.d(TAG, msg)
+            writeToLogFileLocation(logFile, msg)
             return
         }
-        lastSpo2AttemptWallMs = nowWall
-        // If backoff elapsed after a timeout, clear the timeout flag
-        if (lastSpo2OutcomeWasTimeout && sinceLastAttempt >= requiredGap) {
-            lastSpo2OutcomeWasTimeout = false
-        }
+        // Record attempt at decision time (monotonic)
+        lastSpo2AttemptElapsedMs = nowElapsed
 
         if (!measureState.compareAndSet(MeasurementState.IDLE, MeasurementState.SPO2_RUNNING)) {
             Log.d(TAG, "[MEAS] Cycle request ignored, state=${measureState.get()}")
@@ -429,10 +551,12 @@ class SkinTempService : Service() {
         backgroundHandler.post {
             // Pause continuous PPG to avoid optical contention
             pausePpgContinuousForSpo2()
+            Log.d(TAG, "[PPG] Paused for SPO2")
             if (!::spo2Tracker.isInitialized) {
                 Log.w(TAG, "[SPO2] Tracker unavailable, skipping to PPG")
-                // Ensure PPG continuous is resumed if we paused
+                // Ensure PPG is resumed if we paused
                 resumePpgContinuousAfterSpo2()
+                Log.d(TAG, "[PPG] Resumed after SPO2")
                 measureState.set(MeasurementState.PPG_RUNNING)
                 startPpgPhase()
                 return@post
@@ -442,8 +566,9 @@ class SkinTempService : Service() {
                 Log.i(TAG, "[SPO2] Started (timeout ${SPO2_TIMEOUT_MS/1000}s)")
             } catch (ex: Throwable) {
                 Log.e(TAG, "[SPO2] start failed", ex)
-                // Ensure PPG continuous is resumed if we paused
+                // Ensure PPG is resumed if we paused
                 resumePpgContinuousAfterSpo2()
+                Log.d(TAG, "[PPG] Resumed after SPO2")
                 measureState.set(MeasurementState.PPG_RUNNING)
                 startPpgPhase()
                 return@post
@@ -454,6 +579,7 @@ class SkinTempService : Service() {
                     lastSpo2Status = SPO2_STATUS_TIMEOUT
                     lastSpo2Pct = null
                     lastSpo2OutcomeWasTimeout = true
+                    lastSpo2EndedAsTimeout = true
                     lastSpo2OutcomeWallMs = System.currentTimeMillis()
                     stopSpo2Session("timeout_runnable")
                     measureState.set(MeasurementState.PPG_RUNNING)
@@ -485,9 +611,11 @@ class SkinTempService : Service() {
                 Log.e(TAG, "[SPO2] unset error", t)
             }
         }
-        resumePpgContinuousAfterSpo2()
         lastSpo2OutcomeWallMs = System.currentTimeMillis()
         Log.i(TAG, "[SPO2] Session end ($reason)")
+        // Resume continuous PPG after SpO2 completes/ends
+        resumePpgContinuousAfterSpo2()
+        Log.d(TAG, "[PPG] Resumed after SPO2")
     }
     private fun stopSpo2Tracker() {
         if (!::spo2Tracker.isInitialized) return
@@ -515,6 +643,7 @@ class SkinTempService : Service() {
                     // Capture raw PPG sample (PPG_GREEN is Int)
                     try {
                         val raw: Int = dp.getValue(ValueKey.PpgSet.PPG_GREEN)
+                        lastPpgRaw = raw
                         // Maintain rolling 20s window
                         appendPpgSampleAndPrune(raw)
                         // For on-demand burst, also store in burst buffer
@@ -529,6 +658,8 @@ class SkinTempService : Service() {
 
             // Throttled rolling amplitude compute (useful in continuous mode)
             maybeComputePpgThrottled()
+            // Throttled raw value logging (avoid log spam)
+            maybeLogPpgRaw()
 
             // Stop-after-duration is ONLY for on-demand (burst) mode.
             if (ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND) {
@@ -603,6 +734,54 @@ class SkinTempService : Service() {
         }
     }
 
+    // ---- HR tracker lifecycle + screen-off flush helpers ----
+    private fun startHrTracker() {
+        if (!::hrTracker.isInitialized || isHrRunning) return
+        isHrRunning = true
+        backgroundHandler.post { hrTracker.setEventListener(hrEventListener) }
+        Log.i(TAG, "HR tracker started (HEART_RATE_CONTINUOUS)")
+    }
+
+    private fun stopHrTracker(clearQueue: Boolean = false) {
+        if (!isHrRunning) return
+        isHrRunning = false
+        disableScreenOffFlushLoop()
+        backgroundHandler.post {
+            try { hrTracker.unsetEventListener() } catch (_: Throwable) {}
+            if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
+        }
+        Log.i(TAG, "HR tracker stopped")
+    }
+
+    private val hrFlushRunnable = object : Runnable {
+        override fun run() {
+            if (!screenOffFlushEnabled || !deviceWorn || !isHrRunning) return
+            flushHr("screen_off_timer")
+            backgroundHandler.postDelayed(this, SCREEN_OFF_FLUSH_INTERVAL_MS)
+        }
+    }
+
+    private fun enableScreenOffFlushLoop() {
+        if (screenOffFlushEnabled) return
+        screenOffFlushEnabled = true
+        Log.w(TAG, "SCREEN-OFF FLUSH: ENABLED intervalMs=$SCREEN_OFF_FLUSH_INTERVAL_MS")
+        backgroundHandler.removeCallbacks(hrFlushRunnable)
+        backgroundHandler.postDelayed(hrFlushRunnable, FLUSH_START_DELAY_MS)
+    }
+
+    private fun disableScreenOffFlushLoop() {
+        if (!screenOffFlushEnabled) return
+        screenOffFlushEnabled = false
+        Log.w(TAG, "SCREEN-OFF FLUSH: DISABLED")
+        backgroundHandler.removeCallbacks(hrFlushRunnable)
+    }
+
+    private fun flushHr(reason: String) {
+        if (!::hrTracker.isInitialized) return
+        Log.i(TAG, "FLUSH-REQUEST: reason=$reason t=${SystemClock.elapsedRealtime()}")
+        try { hrTracker.flush() } catch (t: Throwable) { Log.e(TAG, "flushHr failed reason=$reason", t) }
+    }
+
     private fun ppgTimeoutCleanup() {
         ppgTimeoutRunnable?.let { backgroundHandler.removeCallbacks(it) }
         ppgTimeoutRunnable = null
@@ -641,6 +820,18 @@ class SkinTempService : Service() {
             lastPpgComputeUptimeMs = now
             computeAndCachePpgAmplitudeIfPossible("throttled")
         }
+    }
+
+    private fun maybeLogPpgRaw() {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed - lastPpgRawLogElapsedMs < PPG_RAW_LOG_PERIOD_MS) return
+        lastPpgRawLogElapsedMs = nowElapsed
+        val raw = lastPpgRaw
+        val amp = lastPpgAmplitude
+        val winSize = lastPpgSampleCount
+        val logLine = "[PPG] raw=${raw ?: -1} window=$winSize amp=${amp ?: -1.0}"
+        Log.d(TAG, logLine)
+        writeToLogFileLocation(logFile, logLine)
     }
 
     private fun completePpgPhase(reason: String) {
@@ -721,6 +912,26 @@ class SkinTempService : Service() {
             }
         }
 
+        // Subscribe to ActivityRecognition state for stillness gating
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                sharedRepo.latestActivityRecognized.collect { act ->
+                    isStill = (act == ActivityRecognitionService.Companion.ActivityRecognized.STILL)
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Activity recognized flow collect failed", t)
+            }
+        }
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                sharedRepo.latestActivityConfidence.collect { conf ->
+                    lastActivityConfidence = conf ?: 0
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Activity confidence flow collect failed", t)
+            }
+        }
+
         // Start a dedicated thread for handling callbacks
         handlerThread = HandlerThread("SkinTempThread").apply { start() }
         backgroundHandler = Handler(handlerThread.looper)
@@ -732,6 +943,17 @@ class SkinTempService : Service() {
         // Listen for wrist wear state changes
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
+        }
+        // Screen on/off receiver
+        try {
+            val f = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+            registerReceiver(screenReceiver, f)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to register screen receiver", t)
         }
     }
 
@@ -754,11 +976,13 @@ class SkinTempService : Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        try { unregisterReceiver(screenReceiver) } catch (_: Throwable) { }
 
         // Ensure listener is removed and thread stopped
         stopSkinTracker(true)
         stopSpo2Tracker()
         stopPpgTracker()
+        stopHrTracker(true)
         spo2TimeoutCleanup()
         ppgTimeoutCleanup()
         measureState.set(MeasurementState.IDLE)
@@ -782,12 +1006,21 @@ class SkinTempService : Service() {
 
         if (nowWorn) {
             deviceWorn = true
+            // HR continuous starts and follow screen policy
+            startHrTracker()
+            if (!isInteractiveNow) {
+                enableScreenOffFlushLoop()
+                flushHr("worn_event_screen_off")
+            } else {
+                disableScreenOffFlushLoop()
+            }
             startSkinTracker()    // immediate snapshot
             scheduleNextReading()
             startEmitLoopIfNeeded()
             writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
+            stopHrTracker(true)
             stopSkinTracker(true)     // shut it down
             stopSpo2Tracker()
             stopPpgTracker()
