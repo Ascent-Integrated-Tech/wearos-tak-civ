@@ -110,22 +110,6 @@
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="0" />
         </service>
-        <service
-            android:name=".complication.HeartRateComplicationService"
-            android:exported="true"
-            android:label="@string/heart_rate_complication"
-            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
-            <intent-filter>
-                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
-            </intent-filter>
-
-            <meta-data
-                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SHORT_TEXT" />
-            <meta-data
-                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
-        </service>
 
         <service
             android:name=".complication.ChatComplicationService"
@@ -177,9 +161,9 @@
                 android:value="0" />
         </service>
         <service
-            android:name=".complication.PhysioAlertComplicationService"
+            android:name=".complication.BloodhoundComplicationService"
             android:exported="true"
-            android:label="@string/physio_alert_complication_service"
+            android:label="Bloodhound Complication"
             android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
             <intent-filter>
                 <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
@@ -187,15 +171,15 @@
 
             <meta-data
                 android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SMALL_IMAGE" />
+                android:value="LONG_TEXT" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="0" />
         </service>
         <service
-            android:name=".complication.BloodhoundComplicationService"
+            android:name=".complication.PhysioStatusAndAlertingComplicationService"
             android:exported="true"
-            android:label="Bloodhound Complication"
+            android:label="Physio Status and Alerting Complication"
             android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
             <intent-filter>
                 <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
