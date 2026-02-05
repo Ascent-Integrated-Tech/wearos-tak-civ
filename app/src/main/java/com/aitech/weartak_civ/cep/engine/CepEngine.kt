@@ -4,11 +4,11 @@ import android.content.Context
 import com.aitech.weartak_civ.cep.bus.CepBus
 import kotlinx.coroutines.*
 import android.util.Log
+import com.aitech.weartak_civ.CAT_MANUAL_ALERT
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
 import firebase.com.protolitewrapper.BuildConfig
 import kotlinx.coroutines.flow.first
 import org.greenrobot.eventbus.EventBus
@@ -148,7 +148,7 @@ class CepEngine(
         }
     }
 
-    private fun checkAndClearAlerts() {
+    private suspend fun checkAndClearAlerts() {
         val now = System.currentTimeMillis()
 
         for (alert in AlertRegistry.allActive()) {
@@ -184,7 +184,7 @@ class CepEngine(
                     val elapsedSec = (now - since) / 1000L
                     if (elapsedSec >= alert.exitSustainSec) {
                         // Safe long enough: send CANCEL with same UID
-                        EventBus.getDefault().post(
+                        /*EventBus.getDefault().post(
                             CustomEmergencyEvent(
                                 uid = alert.uid,
                                 category = CustomEmergencyEvent.CAT_SOS_ALERT_CANCELLED,
@@ -193,7 +193,10 @@ class CepEngine(
                                 sendSms = false,
                                 isCancel = true
                             )
-                        )
+                        )*/
+
+                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+
                         AlertRegistry.clear(alert.ruleId)
                     }
                 }

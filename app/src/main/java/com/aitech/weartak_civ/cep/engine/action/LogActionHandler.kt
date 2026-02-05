@@ -1,7 +1,7 @@
 package com.aitech.weartak_civ.cep.engine.action
 
 import android.util.Log
-import com.aitech.weartak_civ.events.CustomEmergencyEvent
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.service.CotDispatchService
 import org.greenrobot.eventbus.EventBus
 import kotlinx.coroutines.CoroutineScope
@@ -129,7 +129,7 @@ class LogActionHandler(
 
             val uid = rawUid
 
-            EventBus.getDefault().post(
+            /*EventBus.getDefault().post(
                 CustomEmergencyEvent(
                     uid = uid,
                     category = ctx.action.category ?: "CAT_HEALTH_GENERIC",
@@ -138,7 +138,9 @@ class LogActionHandler(
                     sendSms = ctx.action.sendSms,
                     isCancel = false
                 )
-            )
+            )*/
+
+            dataRepository.addPhysioAndAutoGenAlertRequest(uid = uid, category = ctx.action.category ?: "CAT_HEALTH_GENERIC", description = ctx.action.message.ifEmpty { ctx.ruleId }, priority = priority, sendSms = ctx.action.sendSms, timeMillis = System.currentTimeMillis() )
 
             // Optional auto-cancel after timeout using the SAME uid
             /*ctx.action.timeoutSec?.let { seconds ->
