@@ -29,6 +29,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.data.model.LatLon
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -610,6 +611,12 @@ object Utils {
         val time: Long,
         val trigger: String
 	)
+    data class SelectedPhysioMetric(
+        val key: String,
+        val icon: Painter?,
+        val metric: String,
+        val value: String
+    )
     data class TextSelectionButton (
         val shortenedText: String,
         val longText: String

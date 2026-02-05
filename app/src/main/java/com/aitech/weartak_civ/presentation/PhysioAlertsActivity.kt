@@ -18,6 +18,8 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,10 +28,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -50,16 +57,21 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.wear.compose.material.Card
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
@@ -70,15 +82,40 @@ import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.DESC_LOW_HEART_RATE_ALERT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.complication.PhysioAlertComplicationService
+import com.aitech.weartak_civ.complication.BloodhoundComplicationService
+import com.aitech.weartak_civ.complication.PhysioStatusAndAlertingComplicationService
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodTypeValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeight
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRate
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHrLowAlertBpmThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHrLowAlertBpmThresholdState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformPantsLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSize
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.userTypeValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.weightValue
+import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.alertListPreview
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class PhysioAlertsActivity : ComponentActivity() {
     companion object {
@@ -95,6 +132,7 @@ class PhysioAlertsActivity : ComponentActivity() {
         enableEdgeToEdge()
         Log.d(TAG, "Physio Oncreate Called")
         dataRepository = DataRepository(applicationContext)
+        selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
 
         setContent {
             WearTAKCIVTheme {
@@ -243,8 +281,23 @@ fun AlertsScreen(
             Spacer(modifier = Modifier.height(10.dp))
         },
         rowContent = {
-            BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
-
+            BackButton(onClick = {
+                exitActivity(); context.startActivity(Intent(context, MainActivity::class.java))
+                if (selectedPhysioMetric != selectedPhysioMetricSettingsState.value) {
+                    selectedPhysioMetric = selectedPhysioMetricSettingsState.value ?: selectedPhysioMetric
+                    CoroutineScope(Dispatchers.Main).launch {
+                        Log.d(TAG, "Storing selectedPhysioMetric ($selectedPhysioMetric)")
+                        dataRepository.storeSelectedPhysioMetric(selectedPhysioMetric)
+                        requestPhysioStatusAndAlertingComplicationUpdate(context)
+                        val logOutput = """
+                    === === Physiological User Metrics === ===
+                    ${String.format("%-25s %-30s", "Icon:", physioMetricIconComplication)}
+                    ${String.format("%-25s %-30s", "Metric:", physioMetricStringComplication)}
+                    """.trimIndent()
+                        Log.d(PhysioAlertsActivity.Companion.TAG, logOutput)
+                    }
+                }
+            })
         },
         text = ""
     )
@@ -258,14 +311,31 @@ fun ExpandableCard() {
     val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
     val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
     val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
+    val logOutput = """
+                    === === Physiological User Metrics === ===
+                    ${String.format("%-25s %-30s", "heartRateFlow:", heartRateFlow.value)}
+                    ${String.format("%-25s %-30s", "steps:", dailyMetricsFlow.value?.steps)}
+                    ${String.format("%-25s %-30s", "skinTemp:", skinTempFlow.value?.formatDecimal(1))}
+                    ${String.format("%-25s %-30s", "exertion:", exertionFlow.value.toFloat().formatDecimal(2))}
+                    ${String.format("%-25s %-30s", "floors:", dailyMetricsFlow.value?.floors?.toInt())}
+                    ${String.format("%-25s %-30s", "calories:", dailyMetricsFlow.value?.calories?.toInt())}
 
+                    """.trimIndent()
+    Log.d(TAG, logOutput)
+    val activePhysioMetrics = listOf(
+        Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"),
+        Utils.SelectedPhysioMetric("key_steps",painterResource(id = R.drawable.steps), stringResource(R.string.steps), if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"),
+        Utils.SelectedPhysioMetric("key_skin_temp",painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"),
+        Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"),
+        Utils.SelectedPhysioMetric("key_floors",painterResource(id = R.drawable.floors), stringResource(R.string.floors), if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"),
+        Utils.SelectedPhysioMetric("key_calories",painterResource(id = R.drawable.calories), stringResource(R.string.calories), if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}")
+    )
 
     Card(
 //        shape = RoundedCornerShape(8.dp),
         onClick = { expanded = !expanded },
     ) {
         if (expanded) {
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -280,43 +350,18 @@ fun ExpandableCard() {
                     contentDescription = "",
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.height(150.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Column() {
+                items(activePhysioMetrics) { physioMetric ->
                     MetricItem(
-                        painterResource(id = R.drawable.heart_rate),
-                        stringResource(R.string.heart_rate),
-                        if (deviceWorn.value) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
-                    )
-                    MetricItem(
-                        painterResource(id = R.drawable.steps),
-                        stringResource(R.string.steps),
-                        if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"
-                    )
-                    MetricItem(
-                        painterResource(id = R.drawable.skin_temp),
-                        stringResource(R.string.skin_temp),
-                        if (deviceWorn.value) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"
-                    )
-                }
-                Spacer(modifier = Modifier.width(7.dp))
-                Column() {
-                    MetricItem(
-                        painterResource(id = R.drawable.exertion),
-                        stringResource(R.string.exertion),
-                        if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"
-                    )
-                    MetricItem(
-                        painterResource(id = R.drawable.floors),
-                        stringResource(R.string.floors),
-                        if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
-                    )
-                    MetricItem(
-                        painterResource(id = R.drawable.calories),
-                        stringResource(R.string.calories),
-                        if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
+                        physioMetric.icon,
+                        physioMetric.metric,
+                        physioMetric.value,
+                        physioMetric.key
                     )
                 }
             }
@@ -339,33 +384,19 @@ fun ExpandableCard() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.heart_rate),
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(23.dp),
-                    contentDescription = "",
-                )
-                Text(
-                    text = if (deviceWorn.value) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---",
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    modifier = Modifier.padding(start = 5.dp)
+                MetricItem(
+                    painterResource(id = R.drawable.heart_rate),
+                    stringResource(R.string.heart_rate),
+                    if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---",
+                    "key_heart_rate"
                 )
                 Spacer(modifier = Modifier.width(7.dp))
-                Icon(
-                    painter = painterResource(id = R.drawable.exertion),
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(23.dp),
-                    contentDescription = "",
-                )
-                Text(
-                    text = if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---",
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    modifier = Modifier.padding(start = 5.dp)
-                )
+                MetricItem(
+                        painterResource(id = R.drawable.exertion),
+                        stringResource(R.string.exertion),
+                    if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---",
+                    "key_exertion"
+                    )
             }
         }
     }
@@ -375,25 +406,46 @@ fun Float.formatDecimal(numberOfDecimals: Int = 2): String = "%.${numberOfDecima
 
 @Composable
 fun MetricItem(
-    icon: Painter,
+    icon: Painter?,
     metricTitle: String,
-    metricVal: String
+    metricVal: String,
+    metricKey: String
 ) {
+    val selectedMetric = selectedPhysioMetricSettingsState.observeAsState()
+
     Row(
-        modifier = Modifier.padding(bottom = 6.dp)
+        modifier = Modifier.then(
+                if (selectedMetric.value == metricKey) {
+                    Modifier.border(
+                        width = 3.dp,
+                        color = colors.primary.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(5.dp),
+                    )
+                } else {
+                   Modifier
+                }
+            ).padding(4.dp)
+            .clickable(onClick = {
+                selectedPhysioMetricSettingsState.postValue(
+                    metricKey
+                )
+            })
     ) {
-        Icon(
-            painter = icon,
-            tint = Color.Unspecified,
-            modifier = Modifier.size(23.dp),
-            contentDescription = "",
-        )
+        if (icon != null) {
+            Icon(
+                painter = icon,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(20.dp),
+                contentDescription = "",
+            )
+        }
         Column(
             modifier = Modifier.padding(start = 5.dp)
         ) {
             Text(
                 text = metricTitle,
                 fontSize = 11.sp,
+                style = TextStyle(lineHeight = 1.em),
                 fontWeight = FontWeight.Normal,
             )
             Text(
@@ -405,14 +457,13 @@ fun MetricItem(
     }
 }
 
-
-fun requestPhysioComplicationUpdate(context: Context) {
-    val componentName = ComponentName(context, PhysioAlertComplicationService::class.java)
+fun requestPhysioStatusAndAlertingComplicationUpdate(context: Context) {
+    //Log.d(TAG, "Requesting Update of PhysioStatusandAlerting Complication")
+    val componentName = ComponentName(context, PhysioStatusAndAlertingComplicationService::class.java)
 
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
 }
-
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
@@ -430,6 +481,7 @@ fun MetricItemPreview() {
 MetricItem(
     painterResource(id = R.drawable.heart_rate),
     "Heart Rate",
-    "100bpm"
+    "100bpm",
+    "key_heart_rate"
     )
 }

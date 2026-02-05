@@ -66,6 +66,7 @@ const val DEFAULT_BATT_ALERT_PERCENTAGE = 25
 const val CAT_MANUAL_ALERT = "Manual Alert"
 const val DESC_SOS_ALERT = "Manual Alert Pressed by User"
 
+const val DEFAULT_SELECTED_PHYSIO_METRIC = "key_heart_rate"
 const val CAT_PHYSIOLOGICAL_ALERT = "Physiological Alert"
 const val DESC_HIGH_HEART_RATE_ALERT = "HIGH Heart Rate"
 const val DESC_LOW_HEART_RATE_ALERT = "LOW Heart Rate"

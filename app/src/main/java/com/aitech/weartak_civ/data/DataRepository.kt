@@ -65,6 +65,7 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
@@ -2066,6 +2067,17 @@ class DataRepository(private val context: Context) {
             .filterNot { it.target == bloodhoundStr }
     }
 
+    val getSelectedPhysioMetric: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[SELECTED_PHYSIO_METRIC] ?: DEFAULT_SELECTED_PHYSIO_METRIC
+    }
+
+    suspend fun storeSelectedPhysioMetric(metric: String) {
+        context.dataStore.edit { prefs ->
+            prefs[SELECTED_PHYSIO_METRIC] = metric
+        }
+    }
+
+
 //    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
@@ -2381,6 +2393,7 @@ class DataRepository(private val context: Context) {
         private val WHILE_ALERTING_REPORTING_INTERVAL = intPreferencesKey("while_alerting_reporting_interval")
         private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
+        private val SELECTED_PHYSIO_METRIC = stringPreferencesKey("selected_physio_metric")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")

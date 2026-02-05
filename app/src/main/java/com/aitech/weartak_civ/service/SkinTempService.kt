@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.HandlerThread
@@ -22,6 +23,7 @@ import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -49,6 +51,8 @@ class SkinTempService : Service() {
         var DISPATCH_INTERVAL_MS = 60 * 1_000L
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
         val LOG_FILENAME = "skin_temp.log"
+        val context: Context = mainActivity.applicationContext
+
     }
 
 
@@ -136,6 +140,7 @@ class SkinTempService : Service() {
 
                 CoroutineScope(Dispatchers.IO).launch {
                     sharedRepo.storeLatestSkinTemp(tempF)
+
                 }
             }
             // 3️⃣  Schedule the next run *once*, with the helper

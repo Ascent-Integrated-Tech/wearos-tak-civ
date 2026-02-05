@@ -26,7 +26,6 @@ import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
-import com.aitech.weartak_civ.complication.HeartRateComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.CAT_PHYSIOLOGICAL_ALERT
 import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
@@ -36,7 +35,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_
 import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-import com.aitech.weartak_civ.presentation.requestPhysioComplicationUpdate
+import com.aitech.weartak_civ.presentation.requestPhysioStatusAndAlertingComplicationUpdate
 import com.google.common.collect.EvictingQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -169,7 +168,7 @@ class HeartrateService: Service() {
                 hr = -1
                 runBlocking {
                     hrStringLiveData.postValue("N/A")
-                    requestHeartRateComplicationUpdate(context)
+                    requestPhysioStatusAndAlertingComplicationUpdate(context)
                     sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
                 }
             }
@@ -210,14 +209,6 @@ class HeartrateService: Service() {
                 }
             }
         }
-    }
-
-
-    fun requestHeartRateComplicationUpdate(context: Context) {
-        val componentName = ComponentName(context, HeartRateComplicationService::class.java)
-
-        val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
-        requester.requestUpdateAll()
     }
 
     fun startSensors() {
@@ -272,7 +263,7 @@ class HeartrateService: Service() {
                                 val timeMillis = System.currentTimeMillis()
                                 sharedRepository.addPhysioAndAutoGenAlertRequest(highHrAlertUid, CAT_PHYSIOLOGICAL_ALERT, hrAlertDesc, 1, true, timeMillis)
                                 sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Emergency, timeMillis, ""))
-                                requestPhysioComplicationUpdate(applicationContext)
+                                requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
                                 highAlertSent = true
                             }
                         }
@@ -283,7 +274,7 @@ class HeartrateService: Service() {
                                     Log.d(TAG, "Sending clear high heart rate alert for uid=$highHrAlertUid")
                                     sharedRepository.clearPhysioAndAutoGenAlertRequestUid(highHrAlertUid)
                                     sharedRepository.removePhysioAlerts(com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT)
-                                    requestPhysioComplicationUpdate(applicationContext)
+                                    requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
                                     highAlertSent = false
                                 }
                             }
@@ -310,7 +301,7 @@ class HeartrateService: Service() {
                     lastTimeHrSent = currTime
                     runBlocking {
                         hrStringLiveData.postValue(hr.toString())
-                        requestHeartRateComplicationUpdate(context)
+                        requestPhysioStatusAndAlertingComplicationUpdate(context)
 //                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
                         sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
                     }
