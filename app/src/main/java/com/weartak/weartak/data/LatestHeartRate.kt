@@ -1,0 +1,38 @@
+/*
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
+package com.weartak.weartak.data
+
+import androidx.health.services.client.data.DataType
+import androidx.health.services.client.data.HeartRateAccuracy
+import androidx.health.services.client.data.HeartRateAccuracy.SensorStatus.Companion.ACCURACY_HIGH
+import androidx.health.services.client.data.HeartRateAccuracy.SensorStatus.Companion.ACCURACY_MEDIUM
+import androidx.health.services.client.data.SampleDataPoint
+
+fun List<SampleDataPoint<Double>>.latestHeartRate(): Double? {
+
+    return this
+        // dataPoints can have multiple types (e.g. if the app is registered for multiple types).
+        .filter { it.dataType == DataType.HEART_RATE_BPM }
+        // where accuracy information is available, only show readings that are of medium or
+        // high accuracy. (Where accuracy information isn't available, show the reading if it is
+        // a positive value).
+        .filter {
+            it.accuracy == null ||
+                setOf(
+                    ACCURACY_HIGH,
+                    ACCURACY_MEDIUM
+                ).contains((it.accuracy as HeartRateAccuracy).sensorStatus)
+        }
+        .filter {
+            it.value > 0
+        }
+        // HEART_RATE_BPM is a SAMPLE type, so start and end times are the same.
+        .maxByOrNull { it.timeDurationFromBoot }?.value
+}

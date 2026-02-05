@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace 'com.aitech.weartak_civ'
+    namespace 'com.weartak.weartak'
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.aitech.weartak_civ"
+        applicationId "com.weartak.weartak"
         minSdk 34
         targetSdk 34
         versionCode 50

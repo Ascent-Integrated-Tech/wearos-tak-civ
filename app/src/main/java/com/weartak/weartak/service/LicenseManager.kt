@@ -1,0 +1,46 @@
+/*
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
+package com.weartak.weartak.service
+
+object LicenseManager {
+
+    // A static-like boolean to hold the license validity status
+    private var isLicenseValid: Boolean = false
+
+    // Public method to check if the license is valid
+    fun isLicenseValid(): Boolean {
+        return true
+    }
+
+    // Public method to set the license validity status
+    private fun setLicenseValid(licenseValid: Boolean) {
+        isLicenseValid = licenseValid
+    }
+
+    // Optionally, you can add logic here to validate the license as needed
+    fun validateLicense(licenseKey: String) {
+        // Initialize as invalid by default
+//        val isValid = when (licenseKey) {
+//            "AscentFreeLicense",
+//            "1F9A-3F43-E661",
+//            "AE62-FFED-98A6",
+//            "2A2C-3788-CC46",
+//            "A2AB-4954-5277",
+//            "4BB4-1949-287B",
+//            "732A-CB7D-329C",
+//            "2374-6A83-B49E",
+//            "ADEB-4AE5-8F8C",
+//            "BCB8-5D53-5381" -> true
+//            else -> false
+//        }
+        // Set license validity
+        setLicenseValid(true) // Removes license
+    }
+}

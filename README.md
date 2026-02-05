@@ -123,7 +123,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 ```bash
 ./gradlew assembleDebug
 adb install -r app/build/path/to/debug/apk
-adb shell am start -n com.aitech.weartak_civ/.presentation.MainActivity
+adb shell am start -n com.weartak.weartak/.presentation.MainActivity
 ```
 ### Build Types
 Currently, we build `armeabi-v7a` and `universal`. For the Galaxy watches, we use `armeabi-v7a`
@@ -133,17 +133,17 @@ Currently, we build `armeabi-v7a` and `universal`. For the Galaxy watches, we us
 #### ADB Commands
 | Action                  | Command                                       |
 |-------------------------|-----------------------------------------------|
-| Enable Accessibility for WearTAK | `adb shell cmd settings put secure enabled_accessibility_services "com.aitech.weartak_civ/.service.CustomAccessibilityService"` |
+| Enable Accessibility for WearTAK | `adb shell cmd settings put secure enabled_accessibility_services "com.weartak.weartak/.service.CustomAccessibilityService"` |
 | Grant app permission             | `adb shell pm grant $PACKAGE $PERM`   |
 | Get debug APK Path   | ` ls $(find app/build/outputs/apk/debug -type f -name "*arm*.apk")` | 
-| Start WearTAK  | `adb shell am start -n com.aitech.weartak_civ/.presentation.MainActivity` |
-| Stop WearTAK   | `adb shell cmd activity force-stop com.aitech.weartak_civ/.presentation.MainActivity` |
+| Start WearTAK  | `adb shell am start -n com.weartak.weartak/.presentation.MainActivity` |
+| Stop WearTAK   | `adb shell cmd activity force-stop com.weartak.weartak/.presentation.MainActivity` |
 
 #### Logging to a file on device
 
 Import file logging utility in Utils.kt & java File:
 ```kotlin
-//import com.aitech.weartak_civ.Utils
+//import com.weartak.weartak.Utils
 //import java.io.File
 ```
 
@@ -163,13 +163,13 @@ writeToLogFileLocation(logFile, " -- This will be the next line! ")
 `adb shell`
 
 In adb shell:
-`run-as com.aitech.weartak_civ`
+`run-as com.weartak.weartak`
 
 Follow the log:
 `tail -f files/yourLogFileName.log`
 
 Depending on how logs are written, they can appear in other locations. Another directory to check is:
-`ls /storage/emulated/0/Android/data/com.aitech.weartak_civ/files/`
+`ls /storage/emulated/0/Android/data/com.weartak.weartak/files/`
 
 #### App Runtime Permissions Script:
 ```bash
@@ -178,8 +178,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Package name
-PACKAGE="com.aitech.weartak_civ"
-ACCESSIBILITY_SERVICE="com.aitech.weartak_civ/.service.CustomAccessibilityService"
+PACKAGE="com.weartak.weartak"
+ACCESSIBILITY_SERVICE="com.weartak.weartak/.service.CustomAccessibilityService"
 
 # Runtime perms
 PERMISSIONS=(
@@ -219,7 +219,7 @@ echo "▶▶▶ Permissions & accessibility enabled."
 ## 5. Project Layout Cheat-Sheet
 
 ```
-app/src/main/java/com/aitech/weartak_civ
+app/src/main/java/com/weartak/weartak
 ├── presentation/…          ← UI and activities
 ├── service/…               ← Fore/Background Android services
 ├── complication/…          ← Watch-face complications

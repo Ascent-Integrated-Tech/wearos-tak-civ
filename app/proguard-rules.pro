@@ -39,7 +39,7 @@
 }
 
 # Preserve your model classes (adjust the package!)
--keep class com.aitech.weartak_civ.data.DataRepository {
+-keep class com.weartak.weartak.data.DataRepository {
     <fields>;
 }
 
@@ -50,4 +50,4 @@
 
 # Keep classes that are used in fromJson() / toJson() calls if not already covered
 # Useful if you use reflection-based Gson adapters
--keep class com.aitech.weartak_civ.** { *; }
+-keep class com.weartak.weartak.** { *; }

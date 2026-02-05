@@ -1,0 +1,60 @@
+/*
+ * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
+/*
+ * Moving Ditto initialization to onCreate of DittoService as initializing Ditto takes a lot of resources and
+ * causes ANR when the Application is started on boot. Also Ditto initialization should be done only if Ditto service
+ * is started.
+ * Use WearTakApplication to create a single, globally accessible instance that persists for the app's entire lifecycle.
+ */
+
+package com.weartak.weartak
+
+import android.app.Application
+import android.provider.Settings.Secure
+import android.util.Log
+import com.weartak.weartak.data.BloodhoundRepository
+import com.weartak.weartak.data.CompanionAppRepository
+import com.weartak.weartak.data.DataRepository
+import com.weartak.weartak.presentation.MainActivity.Constants.device_uid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+class WearTakApplication : Application() {
+
+    lateinit var repo: DataRepository; private set
+    lateinit var bhRepo: BloodhoundRepository; private set
+    lateinit var capRepo: CompanionAppRepository; private set
+
+    companion object {
+        val TAG = "WearTAK-Applicaton"
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        repo = DataRepository(applicationContext)
+        bhRepo = BloodhoundRepository(applicationContext)
+        capRepo = CompanionAppRepository(applicationContext)
+        AppCtx.init(this)
+        Log.i(TAG, "WearTakApplication Created")
+        // Wipe debug mode to false on every boot! 
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            repo.storeEnableWearTakDevMode(false)
+        }
+    }
+
+    object AppCtx {
+        @Volatile private var _app: Application? = null
+        val app: Application get() = _app ?: error("AppCtx not initialized")
+        fun init(a: Application) { _app = a }
+    }
+}
