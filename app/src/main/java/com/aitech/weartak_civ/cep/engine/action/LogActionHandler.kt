@@ -140,7 +140,7 @@ class LogActionHandler(
                 )
             )*/
 
-            dataRepository.addPhysioAndAutoGenAlertRequest(uid = uid, category = ctx.action.category ?: "CAT_HEALTH_GENERIC", description = ctx.action.message.ifEmpty { ctx.ruleId }, priority = priority, sendSms = ctx.action.sendSms, timeMillis = System.currentTimeMillis() )
+            dataRepository.addPhysioAndAutoGenAlertRequest(uid = uid, category = ctx.action.category ?: "CAT_HEALTH_GENERIC", description = expandedMessage.ifEmpty { ctx.ruleId }, priority = priority, sendSms = ctx.action.sendSms, timeMillis = System.currentTimeMillis() )
 
             // Optional auto-cancel after timeout using the SAME uid
             /*ctx.action.timeoutSec?.let { seconds ->
