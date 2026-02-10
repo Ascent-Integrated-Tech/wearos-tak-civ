@@ -596,6 +596,26 @@ class TAKConnectService: Service() {
             //Log.d(TAG, "setIsAnyNetworkConnecting: $isAnyTakConnecting")
         }
 
+        private fun escapeDnValue(v: String): String {
+            // minimal but practical escaping for DN values
+            return v
+                .replace("\\", "\\\\")
+                .replace(",", "\\,")
+                .replace("+", "\\+")
+                .replace("\"", "\\\"")
+                .replace("<", "\\<")
+                .replace(">", "\\>")
+                .replace(";", "\\;")
+                .replace("=", "\\=")
+                .let { s ->
+                    // escape leading/trailing spaces
+                    var out = s
+                    if (out.startsWith(" ")) out = "\\$out"
+                    if (out.endsWith(" ")) out = out.dropLast(1) + "\\ "
+                    out
+                }
+        }
+
         private fun generateBase64CSR(nameValueList: MutableList<NameValueEntry>, takServerDetail: TakServerDetail): String? {
             val cnName = takServerDetail.username
             var base64CSR: String? = null
@@ -613,12 +633,12 @@ class TAKConnectService: Service() {
                 //    e.g., "C=US, ST=NY, L=New York, O=MyOrg, CN=example.com"
                 // TAK Server expects exactly those name value fields input as well as CN=$cnName
                 // TODO: Also send version information as separate POST message I think??
-                var subjectStr = "CN=$cnName"
+                var subjectStr = "CN=${escapeDnValue(cnName)}"
                 if (nameValueList.size == 0) {
                     Log.w(TAG, "generateBase64CSR: size of nameValueList is 0")
                 } else {
                     for (nameValueEntry in nameValueList) {
-                        subjectStr = "$subjectStr, ${nameValueEntry.name}=${nameValueEntry.value}"
+                        subjectStr = "$subjectStr, ${nameValueEntry.name}=${escapeDnValue(nameValueEntry.value)}"
                     }
                 }
                 Log.d(TAG, "subjectStr =($subjectStr)")
