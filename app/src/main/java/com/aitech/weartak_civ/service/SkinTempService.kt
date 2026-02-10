@@ -16,6 +16,9 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import android.os.PowerManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
@@ -57,15 +60,38 @@ class SkinTempService : Service() {
 
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
+    private lateinit var hrTracker: HealthTracker
 
     private lateinit var handlerThread: HandlerThread
     private lateinit var backgroundHandler: Handler
     private var isHandlerRunning = false
     private var deviceWorn: Boolean = false
+    private var isHrRunning = false
 
     private var nextFireMs = 0L          // wall-clock target for the next run
     // One monotonic clock – the same one Handler uses
     private val nowUptime get() = SystemClock.uptimeMillis()
+
+    // Screen state + flush policy for HR
+    private var screenOffFlushEnabled = false
+    private val SCREEN_OFF_FLUSH_INTERVAL_MS = 2 * 60 * 1_000L
+    private val FLUSH_START_DELAY_MS = 5_000L
+    private val powerManager by lazy { getSystemService(POWER_SERVICE) as PowerManager }
+    private val isInteractiveNow get() = powerManager.isInteractive
+
+    // Rolling snapshot for HR/IBI
+    @Volatile private var lastNonZeroHr = 0
+    @Volatile private var lastNonZeroIbi = 0
+    @Volatile private var lastCallbackElapsed = 0L
+    @Volatile private var lastValidHrElapsed = 0L
+
+    // HRV / RMSSD buffer + params
+    private val nnBuffer = ArrayDeque<Int>(128)
+    private val MIN_NN_FOR_RMSSD = 10
+    private val MAX_NN_BUFFER = 60
+    private val NN_MIN_MS = 300
+    private val NN_MAX_MS = 2000
+    @Volatile private var lastNonZeroRmssdMs: Double = 0.0
 
     // One function that always schedules the NEXT reading
     private fun scheduleNextReading() {
@@ -88,9 +114,19 @@ class SkinTempService : Service() {
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
-            Log.i(TAG, "Health SDK Connected")
+            hrTracker = healthService.getHealthTracker(HealthTrackerType.HEART_RATE_CONTINUOUS)
+            Log.i(TAG, "Health SDK Connected: skinTracker + hrTracker initialized")
             if (deviceWorn) {
-                startSkinTracker()     // only kick off if worn
+                // HR: start continuous based on current screen state
+                startHrTracker()
+                if (!isInteractiveNow) {
+                    enableScreenOffFlushLoop()
+                    flushHr("initial_screen_off")
+                } else {
+                    disableScreenOffFlushLoop()
+                }
+                // SkinTemp on-demand snapshot + schedule next run
+                startSkinTracker()
                 scheduleNextReading()
             }
         }
@@ -106,6 +142,90 @@ class SkinTempService : Service() {
             Log.w(TAG, "SkinTempService onConnectionEnded(): HealthPlatform DISCONNECTED")
             // Clean up when disconnected
             stopSkinTracker(true)
+        }
+    }
+
+    private val hrEventListener = object : HealthTracker.TrackerEventListener {
+        override fun onDataReceived(dataPoints: List<DataPoint>) {
+            lastCallbackElapsed = SystemClock.elapsedRealtime()
+            var batchMostRecentHr = 0
+            var batchMostRecentHrStatus = Int.MIN_VALUE
+            var batchMostRecentIbi = 0
+
+            var firstIbiList: List<Int>? = null
+            var firstIbiStatusList: List<Int>? = null
+
+            for (i in dataPoints.indices) {
+                val dp = dataPoints[i]
+                try {
+                    val status = dp.getValue(ValueKey.HeartRateSet.HEART_RATE_STATUS)
+                    val hr = dp.getValue(ValueKey.HeartRateSet.HEART_RATE)
+                    batchMostRecentHr = hr
+                    batchMostRecentHrStatus = status
+                    if (status == 1 && hr > 0) {
+                        lastValidHrElapsed = SystemClock.elapsedRealtime()
+                        lastNonZeroHr = hr
+                    }
+                    if (i == 0) {
+                        val ibiList = dp.getValue(ValueKey.HeartRateSet.IBI_LIST)
+                        val ibiStatusList = dp.getValue(ValueKey.HeartRateSet.IBI_STATUS_LIST)
+                        firstIbiList = ibiList
+                        firstIbiStatusList = ibiStatusList
+                        if (ibiList != null && ibiList.isNotEmpty()) {
+                            val lastIbi = ibiList.last()
+                            batchMostRecentIbi = lastIbi
+                            if (lastIbi > 0) lastNonZeroIbi = lastIbi
+                            Log.i(TAG, "[0] IBI_LIST(ms)=$ibiList")
+                            Log.i(TAG, "[0] IBI_STATUS_LIST=$ibiStatusList")
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "HR parse error", t)
+                }
+            }
+            val effectiveHr = if (batchMostRecentHr > 0 && batchMostRecentHrStatus == 1) batchMostRecentHr else lastNonZeroHr
+            val effectiveIbi = if (batchMostRecentIbi > 0) batchMostRecentIbi else lastNonZeroIbi
+            val reason = if (isInteractiveNow) "interactive" else "flush/off"
+            Log.i(
+                TAG,
+                "HRIBI-SNAPSHOT: HR=$effectiveHr (raw=$batchMostRecentHr status=$batchMostRecentHrStatus lastNonZero=$lastNonZeroHr) " +
+                    "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
+            )
+
+            // Update NN buffer with newly received (valid) intervals and compute RMSSD
+            addValidNnIntervals(firstIbiList, firstIbiStatusList)
+            val rmssd = computeRmssdMs()
+            if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) {
+                lastNonZeroRmssdMs = rmssd
+            }
+            val effectiveRmssd = if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) rmssd else lastNonZeroRmssdMs
+            Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
+        }
+
+        override fun onFlushCompleted() {
+            Log.i(TAG, "HR flush completed t=${SystemClock.elapsedRealtime()}")
+        }
+
+        override fun onError(error: HealthTracker.TrackerError) {
+            Log.e(TAG, "HR tracker error: $error")
+        }
+    }
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context, intent: Intent) {
+            val interactive = isInteractiveNow
+            Log.w(TAG, "SCREEN EVENT: ${intent.action} | interactive=$interactive | deviceWorn=$deviceWorn | hrRunning=$isHrRunning")
+            if (!deviceWorn) return
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    enableScreenOffFlushLoop()
+                    flushHr("screen_off_event")
+                }
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> {
+                    disableScreenOffFlushLoop()
+                }
+            }
         }
     }
 
@@ -188,6 +308,13 @@ class SkinTempService : Service() {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
+        // Screen on/off receiver
+        val f = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        registerReceiver(screenReceiver, f)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -204,9 +331,11 @@ class SkinTempService : Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        try { unregisterReceiver(screenReceiver) } catch (_: Throwable) {}
 
         // Ensure listener is removed and thread stopped
         stopSkinTracker(true)
+        stopHrTracker(true)
         healthService.disconnectService()
         handlerThread.quitSafely()
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -224,11 +353,21 @@ class SkinTempService : Service() {
 
         if (nowWorn) {
             deviceWorn = true
-            startSkinTracker()    // immediate snapshot
+            // HR continuous starts and follow screen policy
+            startHrTracker()
+            if (!isInteractiveNow) {
+                enableScreenOffFlushLoop()
+                flushHr("worn_event_screen_off")
+            } else {
+                disableScreenOffFlushLoop()
+            }
+            // Skin temp snapshot and schedule
+            startSkinTracker()
             scheduleNextReading()
             writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
+            stopHrTracker(true)
             stopSkinTracker(true)     // shut it down
             writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
@@ -247,6 +386,82 @@ class SkinTempService : Service() {
             skinTracker.unsetEventListener()
             if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
         }
+    }
+
+    private fun startHrTracker() {
+        if (!::hrTracker.isInitialized || isHrRunning) return
+        isHrRunning = true
+        backgroundHandler.post { hrTracker.setEventListener(hrEventListener) }
+        Log.i(TAG, "HR tracker started (HEART_RATE_CONTINUOUS)")
+    }
+
+    private fun stopHrTracker(clearQueue: Boolean = false) {
+        if (!isHrRunning) return
+        isHrRunning = false
+        disableScreenOffFlushLoop()
+        backgroundHandler.post {
+            try { hrTracker.unsetEventListener() } catch (_: Throwable) {}
+            if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
+        }
+        Log.i(TAG, "HR tracker stopped")
+    }
+
+    private val hrFlushRunnable = object : Runnable {
+        override fun run() {
+            if (!screenOffFlushEnabled || !deviceWorn || !isHrRunning) return
+            flushHr("screen_off_timer")
+            backgroundHandler.postDelayed(this, SCREEN_OFF_FLUSH_INTERVAL_MS)
+        }
+    }
+
+    private fun addValidNnIntervals(ibiList: List<Int>?, ibiStatusList: List<Int>?) {
+        if (ibiList.isNullOrEmpty()) return
+        val hasStatus = !ibiStatusList.isNullOrEmpty() && ibiStatusList.size == ibiList.size
+        for (i in ibiList.indices) {
+            val ibi = ibiList[i]
+            val statusOk = if (hasStatus) (ibiStatusList!![i] == 0) else true
+            if (!statusOk) continue
+            if (ibi < NN_MIN_MS || ibi > NN_MAX_MS) continue
+            nnBuffer.addLast(ibi)
+            while (nnBuffer.size > MAX_NN_BUFFER) nnBuffer.removeFirst()
+        }
+    }
+
+    private fun computeRmssdMs(): Double? {
+        if (nnBuffer.size < MIN_NN_FOR_RMSSD) return null
+        var sumSq = 0.0
+        var n = 0
+        var prev = nnBuffer.first()
+        for (i in 1 until nnBuffer.size) {
+            val cur = nnBuffer.elementAt(i)
+            val diff = (cur - prev).toDouble()
+            sumSq += diff * diff
+            n++
+            prev = cur
+        }
+        if (n <= 0) return null
+        return kotlin.math.sqrt(sumSq / n)
+    }
+
+    private fun enableScreenOffFlushLoop() {
+        if (screenOffFlushEnabled) return
+        screenOffFlushEnabled = true
+        Log.w(TAG, "SCREEN-OFF FLUSH: ENABLED intervalMs=$SCREEN_OFF_FLUSH_INTERVAL_MS")
+        backgroundHandler.removeCallbacks(hrFlushRunnable)
+        backgroundHandler.postDelayed(hrFlushRunnable, FLUSH_START_DELAY_MS)
+    }
+
+    private fun disableScreenOffFlushLoop() {
+        if (!screenOffFlushEnabled) return
+        screenOffFlushEnabled = false
+        Log.w(TAG, "SCREEN-OFF FLUSH: DISABLED")
+        backgroundHandler.removeCallbacks(hrFlushRunnable)
+    }
+
+    private fun flushHr(reason: String) {
+        if (!::hrTracker.isInitialized) return
+        Log.i(TAG, "FLUSH-REQUEST: reason=$reason t=${SystemClock.elapsedRealtime()}")
+        try { hrTracker.flush() } catch (t: Throwable) { Log.e(TAG, "flushHr failed reason=$reason", t) }
     }
 
 }

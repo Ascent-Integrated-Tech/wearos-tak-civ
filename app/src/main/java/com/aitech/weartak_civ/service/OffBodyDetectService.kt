@@ -25,7 +25,6 @@ import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_NOT_WORN
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_WORN
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.service.healthsdk.HealthStreamBus
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
@@ -116,14 +115,12 @@ class OffBodyDetectService: Service() {
                         dataRepository.storeLatestIsDeviceWorn(false)
                         Log.i(TAG, "OffBodyDetectService Device is not worn");
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
-                        HealthStreamBus.shared.publishDeviceWorn(false, "OffBodyDetectService")
                     }
                 } else {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(true)
                         Log.i(TAG, "OffBodyDetectService Device is worn");
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))
-                        HealthStreamBus.shared.publishDeviceWorn(true, "OffBodyDetectService")
                     }
                 }
             }
