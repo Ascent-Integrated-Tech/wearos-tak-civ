@@ -23,6 +23,7 @@ animationCore = "1.9.2"
 datastoreCore = "1.1.7"
 uiGraphics = "1.10.1"
 foundationLayout = "1.10.1"
+navigationComposeVersion = "2.9.7"
 
 [libraries]
 compose-navigation = { module = "androidx.wear.compose:compose-navigation", version.ref = "composeNavigation" }
@@ -51,6 +52,7 @@ animation-core = { group = "androidx.compose.animation", name = "animation-core"
 datastore-core = { group = "androidx.datastore", name = "datastore-core", version.ref = "datastoreCore" }
 ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics", version.ref = "uiGraphics" }
 foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationComposeVersion" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -330,6 +330,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
+import org.maplibre.compose.camera.CameraPosition
+import org.maplibre.compose.camera.rememberCameraState
+import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.style.BaseStyle
+import org.maplibre.spatialk.geojson.Position
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.ZoneId
@@ -5145,7 +5150,7 @@ fun DebugVersionText(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val colors = MaterialTheme.colors
+    val colors = colors
 
     val devModeEnabled by MainActivity.Constants.dataRepository
         .getEnableWearTakDevMode

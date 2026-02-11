@@ -260,8 +260,20 @@ fun BloodhoundScreen(
                         .padding(vertical = 10.dp, horizontal = 20.dp)
                         .align(Alignment.CenterHorizontally)
                 )
+                Button(
+                    onClick = {context.startActivity(Intent(context, MapActivity::class.java)) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.primary,
+                        contentColor = Color.Black
+                    ),
+                    content = {
+                        Text(
+                            text = "View Map",
+                            color = Color.Black)
+                    }
+                )
                 LazyColumn(modifier = Modifier
-                    .height(200.dp)){
+                    .height(200.dp).padding(top = 10.dp)){
                     itemsIndexed(bloodhounds){ index, bloodhoundItem ->
                         BloodhoundChip(
                             bloodhoundItem.target,
