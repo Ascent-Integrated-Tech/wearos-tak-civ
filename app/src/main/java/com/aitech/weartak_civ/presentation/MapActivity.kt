@@ -1,0 +1,417 @@
+/*
+ * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+package com.aitech.weartak_civ.presentation
+
+import androidx.compose.ui.graphics.Color
+import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material.Button
+import androidx.wear.compose.material.MaterialTheme.colors
+import androidx.wear.compose.material.Text
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.brown
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.dark_blue
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.dark_green
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.maroon
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.orange
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.purple
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.teal
+import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.provider.RepoLocationProvider
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import org.maplibre.compose.camera.CameraPosition
+import org.maplibre.compose.camera.rememberCameraState
+import org.maplibre.compose.location.LocationPuck
+import org.maplibre.compose.location.LocationPuckColors
+import org.maplibre.compose.location.rememberUserLocationState
+import org.maplibre.compose.map.GestureOptions
+import org.maplibre.compose.map.MapOptions
+import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.map.OrnamentOptions
+import org.maplibre.compose.material3.ScaleBar
+import org.maplibre.compose.style.BaseStyle
+import org.maplibre.spatialk.geojson.Position
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+
+class MapActivity : ComponentActivity() {
+
+    companion object Constants {
+        val TAG = "WearTAK-" + MapActivity::class.java.simpleName
+        lateinit var mapActivity: MapActivity
+        val orange = Color(0xFFFF7700)
+        val maroon = Color(0xFF7F0000)
+        val purple = Color(0xFF7F007F)
+        val dark_blue = Color(0xFF00007F)
+        val teal = Color(0xFF007F7F)
+        val dark_green = Color(0xFF007F00)
+        val brown = Color(0xFF964B00)
+
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        mapActivity = this
+        Log.i(TAG, "MapActivity onCreate called")
+
+        enableEdgeToEdge()
+        setContent {
+            WearTAKCIVTheme {
+                    MapApp(exitActivity = {finishAndRemoveTask() })
+            }
+        }
+    }
+}
+
+@Composable
+fun MapApp(exitActivity: () -> Unit) {
+        val locationFlow by dataRepository.latestLocation.collectAsState()
+    // TODO: Will these always be not null?
+    val lat = locationFlow?.latitude ?: 0.0
+    val lon = locationFlow?.longitude ?: 0.0
+    Log.d(TAG, "latitude = $lat | longitude = $lon")
+    Log.d(TAG, "${locationFlow?.latitude ?: 0.0}")
+    val cameraState = rememberCameraState(
+        firstPosition = CameraPosition(
+            target = Position(lon, lat), // lng, lat
+            zoom = 15.0,
+        )
+    )
+    val scope = rememberCoroutineScope()
+    val locationProvider = remember(scope) {
+        RepoLocationProvider(dataRepository.latestLocation, scope)
+    }
+    val userLocationState = rememberUserLocationState(locationProvider)
+
+
+    Box(Modifier.fillMaxSize()) {
+        MaplibreMap(
+            modifier = Modifier.fillMaxSize(),
+            baseStyle = BaseStyle.Uri("asset://style.json"),
+            cameraState = cameraState,
+            options = MapOptions(
+                ornamentOptions = OrnamentOptions.AllDisabled,
+                gestureOptions = GestureOptions.RotationLocked),
+            zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
+        ) {
+            if (locationProvider.location.collectAsState().value != null) {
+                LocationPuck(
+                    idPrefix = "me",
+                    locationState = userLocationState,
+                    cameraState = cameraState,
+                    colors = LocationPuckColors(
+                        dotFillColorCurrentLocation =
+                            when (team){
+                                "White" -> Color.White
+                                "Yellow" -> Color.Yellow
+                                "Orange" -> orange
+                                "Magenta" -> Color.Magenta
+                                "Red" -> Color.Red
+                                "Maroon" -> maroon
+                                "Purple" ->purple
+                                "Dark Blue" -> dark_blue
+                                "Blue" -> Color.Blue
+                                "Cyan" -> Color.Cyan
+                                "Teal" -> teal
+                                "Green" -> Color.Green
+                                "Dark Green" -> dark_green
+                                "Brown" -> brown
+                                else -> Color.Unspecified
+                            }
+                    )
+                )
+            }
+        }
+        Image(
+            painter = painterResource(com.aitech.weartak_civ.R.drawable.north_arrow),
+            contentDescription = "North Arrow",
+            modifier = Modifier.align(Alignment.TopCenter).size(40.dp),
+            alignment = Alignment.TopCenter
+        )
+        val current = cameraState.position
+        Box(Modifier
+            .fillMaxSize()
+            .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ){
+
+            ScaleBar(
+                cameraState.metersPerDpAtTarget,
+                modifier = Modifier.align(Alignment.TopCenter).width(100.dp),
+                color = colors.primary,
+                textStyle = MaterialTheme.typography.bodySmall,
+                barWidth = 1.dp
+            )
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                BackButton(
+                    onClick = {
+                        exitActivity()
+                    })
+            }
+        }
+//        MapUi(
+//            moveUp = {
+//                val cur = cameraState.position
+//                val curTarget = cur.target
+//
+//                val stepLat = 14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
+//                val newLat = (curTarget.latitude + stepLat).coerceIn(-90.0, 90.0)
+//                val newTarget = Position(curTarget.longitude, newLat)
+//
+//                scope.launch {
+//                    cameraState.animateTo(
+//                        cur.copy(target = newTarget),
+//                        duration = 120.milliseconds
+//                    )
+//                }
+//            },
+//            moveDown = { val cur = cameraState.position
+//                val curTarget = cur.target
+//
+//                val stepLat = -14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
+//                val newLat = (curTarget.latitude + stepLat).coerceIn(-90.0, 90.0)
+//                val newTarget = Position(curTarget.longitude, newLat)
+//
+//                scope.launch {
+//                    cameraState.animateTo(
+//                        cur.copy(target = newTarget),
+//                        duration = 120.milliseconds
+//                    )
+//                } },
+//            moveLeft = {
+//                val cur = cameraState.position
+//                val curTarget = cur.target
+//
+//                val stepLong = -14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
+//                val newLong = (curTarget.longitude + stepLong).coerceIn(-180.0, 180.0)
+//                val newTarget = Position(newLong, curTarget.latitude)
+//
+//                scope.launch {
+//                    cameraState.animateTo(
+//                        cur.copy(target = newTarget),
+//                        duration = 120.milliseconds
+//                    )
+//                } },
+//            moveRight = {
+//                val cur = cameraState.position
+//                val curTarget = cur.target
+//
+//                val stepLong = 14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
+//                val newLong = (curTarget.longitude + stepLong).coerceIn(-180.0, 180.0)
+//                val newTarget = Position(newLong, curTarget.latitude)
+//
+//                scope.launch {
+//                    cameraState.animateTo(
+//                        cur.copy(target = newTarget),
+//                        duration = 120.milliseconds
+//                    )
+//                }
+//            },
+//            zoomIn = {
+//                val nextZoom = (current.zoom + 1f).coerceAtMost(25.5)
+//                scope.launch {
+//                    cameraState.animateTo(
+//                        finalPosition = current.copy(zoom = nextZoom),
+//                        duration = 120.milliseconds
+//                    )
+//                }
+//                Log.d(TAG, "zoom = $nextZoom")
+//            },
+//            zoomOut = { val nextZoom = (current.zoom - 1f).coerceAtLeast(0.0)
+//                scope.launch {
+//                    cameraState.animateTo(
+//                        finalPosition = current.copy(zoom = nextZoom),
+//                        duration = 120.milliseconds
+//                    )
+//                }
+//                Log.d(TAG, "zoom = $nextZoom") }
+//        )
+    }
+}
+@Composable
+fun MapUi(
+    moveUp: () -> Unit,
+    moveDown: () -> Unit,
+    moveLeft: () -> Unit,
+    moveRight: () -> Unit,
+    zoomIn: () -> Unit,
+    zoomOut: () -> Unit,
+    ){
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+
+        val radiusPx = min(wPx, hPx) / 2f
+        val centerX = wPx / 2f
+        val centerY = hPx / 2f
+
+        // We pull the button *in* by half its size so it stays fully visible,
+        // while still visually "touching" the circular edge.
+        val btnPx = with(density) { 40.dp.toPx() }
+        val btnR = btnPx / 2f
+        val edgeDist = radiusPx - btnR
+
+        fun polarOffset(angleDeg: Float, dist: Float = edgeDist): IntOffset {
+            val a = Math.toRadians(angleDeg.toDouble())
+            val x = centerX + (dist * cos(a)).toFloat() - btnR
+            val y = centerY + (dist * sin(a)).toFloat() - btnR
+            return IntOffset(x.roundToInt(), y.roundToInt())
+        }
+
+        val context = LocalContext.current
+
+        val interactionSource = remember { MutableInteractionSource() }
+
+        val viewConfiguration = LocalViewConfiguration.current
+
+
+        LaunchedEffect(interactionSource) {
+            var isLongClick = false
+
+            interactionSource.interactions.collectLatest { interaction ->
+                when (interaction) {
+                    is PressInteraction.Press -> {
+                        isLongClick = false
+                        delay(viewConfiguration.longPressTimeoutMillis)
+                        isLongClick = true
+                        Toast.makeText(context, "LONG", Toast.LENGTH_SHORT).show()
+
+                    }
+
+                    is PressInteraction.Release -> {
+                        if (isLongClick.not()) {
+                            Toast.makeText(context, "click", Toast.LENGTH_SHORT).show()
+                        }
+
+                    }
+
+                }
+            }
+            while(isLongClick){
+                moveUp()
+                delay(5000) // Delay for 5 seconds
+                Log.d(TAG, "isLongClick = $isLongClick")
+            }
+        }
+
+
+        // --- 4 arrow buttons on top/bottom/left/right ---
+        Button(
+//            interactionSource = interactionSource,
+            onClick = { moveUp() },
+            modifier = Modifier
+                .offset { polarOffset(-90f) }
+                .size(40.dp), // top,
+            shape = RoundedCornerShape(0.dp,0.dp,40.dp,40.dp),
+            ) { Text("▲") }
+
+        Button(
+//            interactionSource = interactionSource,
+            onClick = { moveDown() },
+            modifier = Modifier
+                .offset { polarOffset(90f) }
+                .size(40.dp),  // bottom
+            shape = RoundedCornerShape(40.dp,40.dp,0.dp,0.dp),
+            ) { Text("▼") }
+
+        Button(
+//            interactionSource = interactionSource,
+            onClick = { moveLeft() },
+            modifier = Modifier
+                .offset { polarOffset(180f) }
+                .size(40.dp), // left
+            shape = RoundedCornerShape(0.dp,40.dp,40.dp,0.dp),
+            ) { Text("◀") }
+
+        Button(
+//            interactionSource = interactionSource,
+            onClick = { moveRight() },
+            modifier = Modifier
+                .offset { polarOffset(0f) }
+                .size(40.dp),   // right
+            shape = RoundedCornerShape(40.dp,0.dp,0.dp,40.dp),
+            ) { Text("▶") }
+
+        // --- + / − on lower-right ---
+        // Place a *cluster anchor* on the circle at 315° (lower-right),
+        // then offset + and − up/down from that anchor.
+        val gapPx = with(density) { 10.dp.toPx() }
+        val stackDelta = (btnPx + gapPx) / 2f
+
+        // Pull the anchor inward so the top/bottom buttons don't clip out of the circle.
+        val clusterDist = edgeDist - stackDelta * 0.6f
+        val anchor = polarOffset(angleDeg = 315f, dist = clusterDist)
+
+        Button(
+            onClick = { zoomIn() },
+            modifier = Modifier
+                .offset { polarOffset(33f) }
+                .size(40.dp)
+                .rotate(45f),  // bottom
+            shape = RoundedCornerShape(20.dp,20.dp,0.dp,0.dp),
+        ) { Text("+", modifier = Modifier.rotate(-45f))}
+
+        Button(
+            onClick = { zoomOut() },
+            modifier = Modifier
+                .offset { polarOffset(57f) }
+                .size(40.dp)
+                .rotate(45f),  // bottom
+            shape = RoundedCornerShape(0.dp,0.dp,20.dp,20.dp),
+            ) { Text("−", modifier = Modifier.rotate(-45f)) }
+    }
+}
+
+
+@Preview(widthDp = 192, heightDp = 192, showBackground = true)
+@Composable
+fun MyAppPreview() {
+//    MapUi()
+}
