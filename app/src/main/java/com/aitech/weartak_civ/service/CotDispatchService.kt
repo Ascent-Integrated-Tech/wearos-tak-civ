@@ -29,6 +29,7 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.PhysioData
+import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
@@ -49,6 +50,8 @@ import com.aitech.weartak_civ.service.HailService.checkLicense
 import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
+import com.aitech.weartak_civ.service.sitx.SitxServiceCommand
+import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
 import com.rain.hail.sdk.HailDetail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -225,7 +228,6 @@ class CotDispatchService : Service() {
                         return@collect
                     }
 
-                    // TODO Senni: Check where we send mullitcast??
                     val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first() || companionAppAvailable())
 
                     if (endpointsToSendTo) {
@@ -253,6 +255,8 @@ class CotDispatchService : Service() {
                                     if (companionAppAvailable()) {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+                                    SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
+
 
                                     sentBatteryWarnChatMsg = true
                                 }
@@ -273,6 +277,7 @@ class CotDispatchService : Service() {
                                     if (companionAppAvailable()) {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+                                    SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
                                     sentBatteryAlertChatMsg = true
                                 }
@@ -306,6 +311,7 @@ class CotDispatchService : Service() {
                         if (sendToTak) {
                             val chatCot = buildChatCotFromSnapshot(chatSnap)
                             sendDataTAKServers(chatCot, true)
+                            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
                             Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
                         }
 
@@ -631,6 +637,10 @@ class CotDispatchService : Service() {
         }
         if (TAKConnectService.isAnyTakConnected) {
             sendDataTAKServers(chatCotXml, true)
+            sent = true
+        }
+        if (sitxAvailable()) {
+            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCotXml))
             sent = true
         }
 
@@ -1698,6 +1708,13 @@ class CotDispatchService : Service() {
         return enabled && ready
     }
 
+    private suspend fun sitxAvailable(): Boolean {
+        val enabled = dataRepository.getEnableSitxService.first()
+        val connected = dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED
+        //Log.i(TAG, "sitx available: $enabled, $connected")
+        return enabled && connected
+    }
+
     private suspend fun handleClearMarkerUid(uid: String) {
         val snapshot = markerDropMap[uid]  // may be null for very old markers
         // TODO: How do we inject clearing via stale time flip?
@@ -1716,6 +1733,10 @@ class CotDispatchService : Service() {
         }
         if (TAKConnectService.isAnyTakConnected) {
             sendDataTAKServers(clearXml, true)
+            sent = true
+        }
+        if (sitxAvailable()) {
+            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(clearXml))
             sent = true
         }
         if (!sent) return
@@ -1757,6 +1778,7 @@ class CotDispatchService : Service() {
                 }
                 markerDropToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
+                SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(cotMessage))
                 sendMulticastDatagram(cotMessage)
 //                Log.v(TAG, "Marker CoT sent to TAK: $cotMessage")
             } else {
@@ -1821,9 +1843,11 @@ class CotDispatchService : Service() {
                 }
                 manualSosToBeSent.set(false)
                 sendDataTAKServers(cotMessage, true)
+                SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(cotMessage))
                 if (!takGptChatMessage.isEmpty()) {
                     //val rawXml="<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" uid=\"GeoChat.TAKBot.Chat\" type=\"b-t-f\" how=\"h-g-i-g-o\" time=\"2025-08-27T18:12:54Z\" start=\"2025-08-27T18:12:54Z\" stale=\"2025-08-28T06:12:54Z\"><point lat=\"0.0\" lon=\"0.0\" hae=\"999999.0\" ce=\"999999.0\" le=\"999999.0\"/><detail><__chat parent=\"RootContactGroup\" messageId=\"3c5eb0a3-31f8-4a32-b6cc-6916eff3cbd1\" senderCallsign=\"takGPT\" chatroom=\"takGPT\" id=\"TAKBOT-12345\"><chatgrp id=\"WEAROS-dce34c83708172e9\" uid1=\"WEAROS-dce34c83708172e9\" uid0=\"TAKBOT-12345\"/></__chat><remarks time=\"2025-08-27T18:12:54Z\" to=\"SP-Dev\">**CONFIDENCE:** HIGH - Patient’s heart rate &gt;150 bpm sustained for 30 seconds is a clinically significant tachycardia warranting immediate assessment and intervention.**CLINICAL REASONING:**1. Sustained heart rate &gt;150 bpm suggests a tachyarrhythmia that may compromise cardiac output.2. Assess for hemodynamic stability, symptoms, and possible causes (hypovolemia, hypoxia, pain, anxiety, or arrhythmia).3. Prioritize restoring effective circulation to prevent shock or cardiac arrest.4. Interventions depend on clinical context; chemical or electrical cardioversion considered for unstable supraventricular or ventricular tachycardia with appropriate diagnosis.5. Follow MARCH priority focused on Circulation due to hemodynamic compromise risk.**PRIORITY:**Circulation is the greatest immediate threat for this scenario due to the risk of hemodynamic instability or progression to cardiac arrest from sustained high-rate tachycardia.**IMMEDIATE ACTIONS:**- Assess airway patency and respiratory effort.- Provide high-flow oxygen via non-rebreather mask or appropriate delivery device.- Establish large-bore IV access.- Perform focused history/physical to identify tachycardia etiology.- Obtain a 12-lead ECG ASAP.- If unstable (hypotension, altered LOC, chest pain, signs of shock), prepare for synchronized cardioversion.- Fluid resuscitation if hypovolemia suspected.- Consider analgesia/anxiolysis if pain or anxiety contributing.**MEDICATIONS:**- Adenosine or other antiarrhythmics only after rhythm diagnosis via ECG and following ACLS protocols.- Vasopressors/inotropes per hemodynamics if indicated.- Specific medication agents and doses depend on arrhythmia type and patient status.**If additional clinical data or diagnostics become available, recommendations can be refined.**</remarks><link relation=\"p-p\" type=\"a-f-G-U-C-I\" uid=\"TAKBOT-12345\"/><_flow-tags_ TAK-Server-7b47b67360f347689e0c580092d1c325=\"2025-08-27T18:12:54Z\"/></detail></event>"
                     sendDataTAKServers(takGptChatMessage, true)
+                    SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(cotMessage))
                     Log.d(TAG, "Sending takGPT chat msg: $takGptChatMessage")
                     //EventBus.getDefault().post(TakChatEvent(rawXml))
                 }
@@ -1876,6 +1900,11 @@ class CotDispatchService : Service() {
             sendDataTAKServers(xml, true)
             sent = true
         }
+        if (sitxAvailable()) {
+            //Log.i(TAG, "Sending emergency alert via SitxServiceCommandBus ...")
+            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
+            sent = true
+        }
 
         if (sent) {
             Log.i(TAG, "sendEmergencyAlert: Sent alert: $alertWithSmsSentState")
@@ -1893,11 +1922,10 @@ class CotDispatchService : Service() {
 
             val xml = buildPliCot(snapshot)
 
-            if (!TAKConnectService.isAnyTakConnected) {
-                Log.w(TAG, "Not connected to a TAK Server. Not sending to TAK Server. Attempting Multicast…")
-            } else {
+            if (TAKConnectService.isAnyTakConnected) {
                 sendDataTAKServers(xml, false)
             }
+            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
 
             if (companionAppAvailable()) {
                 capRepo.enqueuePliSnapshotForBle(snapshot)
@@ -1997,6 +2025,10 @@ class CotDispatchService : Service() {
         }
         if (TAKConnectService.isAnyTakConnected) {
             sendDataTAKServers(xml, true)
+            sent = true
+        }
+        if (sitxAvailable()) {
+            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
             sent = true
         }
 

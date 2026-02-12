@@ -10,7 +10,6 @@
 package com.aitech.weartak_civ.presentation
 
 import android.annotation.SuppressLint
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -21,6 +20,7 @@ import android.view.MotionEvent
 import android.view.Gravity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
@@ -108,6 +108,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -136,7 +137,6 @@ import androidx.wear.compose.material.rememberPickerState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.Utils.setAirplaneMode
@@ -260,6 +260,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRa
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.constantReportingIntervalState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCot
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCotSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
@@ -303,6 +304,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndp
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
@@ -313,6 +316,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastProto
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastProtocolSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastPort
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastPortSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxRepo
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakClientId
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakClientIdSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakUrl
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakUrlSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikeySettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandEndpoint
@@ -323,7 +331,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.vehicleReporti
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingInterval
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalState
+import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.aitech.weartak_civ.service.sitx.SitxServiceCommand
+import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
+import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -331,17 +343,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
-import org.maplibre.compose.camera.CameraPosition
-import org.maplibre.compose.camera.rememberCameraState
-import org.maplibre.compose.map.MaplibreMap
-import org.maplibre.compose.style.BaseStyle
-import org.maplibre.spatialk.geojson.Position
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.String
 
 
 class SettingsActivity : ComponentActivity() {
@@ -368,9 +376,10 @@ class SettingsActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
+            val sitxVm: SitxViewModel = viewModel()
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    WearTAKCivSettings(callsignState, licenseState)
+                    WearTAKCivSettings(callsignState, licenseState, sitxVm = sitxVm)
                 }
             }
         }
@@ -409,6 +418,10 @@ fun loadSettingsValues(){
     enableMulticastSettingsState.postValue(enableMulticastOnWifi)
     enableTabletCommandEndpointSettingsState.postValue(enableTabletCommandEndpoint)
     enableEsriEndpointSettingsState.postValue(enableEsriEndpoint)
+    enableSitxServiceSettingsState.postValue(enableSitxService)
+    sitxTakUrlSettingsState.postValue(sitxTakUrl)
+    sitxTakClientIdSettingsState.postValue(sitxTakClientId)
+
     enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
     enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
     enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization)
@@ -456,7 +469,7 @@ fun loadSettingsValues(){
 }
 
 @Composable
-fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
+fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>, sitxVm: SitxViewModel) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
 //    var selectedCategoryAndRoleIndex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -612,6 +625,27 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 stringResource(R.string.server_port),
                 context,
                 "tak_sa_multicast_screen")
+        }
+        composable("sitx_tak_screen") {
+            ManageOutputsSitxSetting(navController, sitxVm = sitxVm)
+        }
+        composable("sitx_tak_url_screen") {
+            StringEntryPage(
+                navController,
+                sitxTakUrlSettingsState,
+                stringResource(R.string.address_url),
+                stringResource(R.string.address_url),
+                "sitx_tak_screen"
+            )
+        }
+        composable("sitx_tak_client_id_screen") {
+            StringEntryPage(
+                navController,
+                sitxTakClientIdSettingsState,
+                stringResource(R.string.client_id),
+                stringResource(R.string.client_id),
+                "sitx_tak_screen"
+            )
         }
         composable(
             "tablet_command_screen") {
@@ -782,6 +816,9 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "hail_pairing_screen") {
             InvalidHailScreen(navController)
+        }
+        composable("sitx_status_authorization_screen") {
+            SitxStatusAuthorizationScreen(navController, sitxVm)
         }
     }
 
@@ -2761,6 +2798,8 @@ fun ManageOutputsSetting(navController: NavController) {
         columnContent = {
             DataMetricsChip("tak_sa_multicast_screen", stringResource(R.string.tak_sa_multicast),
                 enableDisableFromBoolean(enableMulticastSettingsState.value), navController)
+            DataMetricsChip("sitx_tak_screen", stringResource(R.string.sitx_tak),
+                enableDisableFromBoolean(enableSitxServiceSettingsState.value), navController)
             DataMetricsChip("tablet_command_screen", stringResource(R.string.tablet_command),
                 enableDisableFromBoolean(enableTabletCommandEndpointSettingsState.value), navController)
             DataMetricsChip("esri_screen", stringResource(R.string.esri),
@@ -2775,6 +2814,7 @@ fun ManageOutputsSetting(navController: NavController) {
                     enableMulticastSettingsState.setValue(enableMulticastOnWifi)
                     enableTabletCommandEndpointSettingsState.setValue(enableTabletCommandEndpoint)
                     enableEsriEndpointSettingsState.setValue(enableEsriEndpoint)
+                    enableSitxServiceSettingsState.setValue(enableSitxService)
 
                     multicastAddressSettingsState.setValue(multicastAddress)
                     multicastProtocolSettingsState.setValue(multicastProtocol)
@@ -2782,7 +2822,8 @@ fun ManageOutputsSetting(navController: NavController) {
                     tabletCommandEndpointSettingsState.setValue(tabletCommandEndpoint)
                     tabletCommandApikeySettingsState.setValue(tabletCommandApikey)
                     esriEndpointSettingsState.setValue(esriEndpoint)
-
+                    sitxTakUrlSettingsState.setValue(sitxTakUrl)
+                    sitxTakClientIdSettingsState.setValue(sitxTakClientId)
 
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
@@ -2849,6 +2890,228 @@ fun ManageOutputsMulticastSetting(navController: NavController) {
                 })
         },
         text = stringResource(R.string.tak_sa_multicast)
+    )
+}
+
+@Composable
+fun SitxStatusAuthorizationScreen(navController: NavController, sitxVm: SitxViewModel) {
+    val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
+    var title = ""
+    var secondaryText = ""
+    var userCode = ""
+
+    when (val e = sitxEvent) {
+        is SitxServiceEvent.NeedsUserAction -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) Needs User Action: (${e.userCode}) and (${e.verificationUriComplete})")
+            title = "Authorize Device"
+            userCode = e.userCode
+            secondaryText = "Authorize device at: ${e.verificationUriComplete} and then press Authorize below"
+        }
+        is SitxServiceEvent.Pending -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) Pending:(${e.userCode}) and (${e.verificationUriComplete}) with (${e.message})")
+            title = "Pending Auth"
+            userCode = e.userCode
+            secondaryText = "Device authorization pending: ${e.message}"
+        }
+        is SitxServiceEvent.Error -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) Error: ${e.message}")
+            title = "Error"
+            secondaryText = "Error: ${e.message}"
+        }
+        is SitxServiceEvent.Info -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) Info: ${e.message}")
+            title = "Info"
+            secondaryText = "Info: ${e.message}"
+        }
+        is SitxServiceEvent.Authorized -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) Authorized: ${e.message}")
+            title = "Device Authorized"
+            secondaryText = "Device Authorized: ${e.message}"
+        }
+        is SitxServiceEvent.SocketsConnected -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) SocketsConnected(${e.count}): ${e.message}")
+            title = "Sit(x) Connected"
+            secondaryText = "Connected to Sit(x): ${e.message}"
+        }
+        is SitxServiceEvent.SocketStatus -> {
+            title = "Socket Status"
+            Log.d(TAG, "SitxStatusAuthorizationScreen Sit(x) SocketStatus(flowTag=${e.flowTag}, status=${e.status}): ${e.message}")
+            secondaryText = "Connected to Sit(x) w/ ${e.status}: ${e.message}"
+        }
+        is SitxServiceEvent.Disconnected -> {
+            Log.i(TAG, "SitxStatusAuthorizationScreen Sit(x) Disconnected")
+            title = "Sit(x) Disconnected"
+            secondaryText = "Disconnected from Sit(x)"
+        }
+        else -> Unit
+    }
+
+    WearTAKCIVTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(vertical = 10.dp, horizontal = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+            if (sitxEvent is SitxServiceEvent.NeedsUserAction) {
+                Text(
+                    text = userCode,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 25.sp,
+                    modifier = Modifier
+                        .padding(vertical = 7.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+            }
+            Text(
+                text = secondaryText,
+                textAlign = TextAlign.Center,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+            )
+            Spacer(modifier = Modifier.size(5.dp))
+            Row(
+                modifier = Modifier
+                    .padding(bottom = 10.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center) {
+                Button(
+                    onClick = {
+                        navController.navigate("sitx_tak_screen") {
+                            popUpTo("sitx_tak_screen") { inclusive = true }
+                        }
+                    },
+                    contentPadding = PaddingValues(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.dismiss),
+                    )
+                }
+
+                if (sitxEvent is SitxServiceEvent.NeedsUserAction) {
+                    Spacer(modifier = Modifier.size(10.dp))
+
+                    Button(
+                        onClick = {
+                            SitxServiceCommandBus.trySend(SitxServiceCommand.PollDeviceToken)
+                        },
+                        contentPadding = PaddingValues(10.dp),
+                        colors = ButtonDefaults.buttonColors(colors.primary),
+                    ) {
+                        Text(
+                            text = "Authorize",
+                            color = Color.Black
+                        )
+                    }
+                } else if (sitxEvent is SitxServiceEvent.Error) {
+                    Spacer(modifier = Modifier.size(10.dp))
+
+                    Button(
+                        onClick = {
+                            runBlocking {
+                                SitxServiceCommandBus.trySend(SitxServiceCommand.BeginAuth(
+                                        baseUrl = sitxRepo.baseUrl.first(),
+                                        clientId = sitxRepo.clientId.first() ?: "",
+                                        callsign = callsign,
+                                        deviceName = device_uid,
+                                        deviceId = device_uid
+                                    )
+                                )
+                            }
+                        },
+                        contentPadding = PaddingValues(10.dp),
+                        colors = ButtonDefaults.buttonColors(colors.primary),
+                    ) {
+                        Text(
+                            text = "Re-Auth",
+                            color = Color.Black
+                        )
+                    }
+                }
+            }
+        }
+        // Render the dialog ONCE, using the remembered state (no inline mutableStateOf(true))
+        //LoadingDialog(shouldShowDialog = showLoadingDialog, secondaryText = "Checking License Status")
+    }
+}
+
+@Composable
+fun sitxStatusText(sitxEvent: SitxServiceEvent?): String {
+    return when (sitxEvent) {
+        is SitxServiceEvent.NeedsUserAction -> "Needs User Action"
+        is SitxServiceEvent.Pending -> "Pending Authorization"
+        is SitxServiceEvent.Authorized -> "Device Authorized"
+        is SitxServiceEvent.SocketStatus -> "Connected"
+        is SitxServiceEvent.SocketsConnected -> "Connected"
+        is SitxServiceEvent.Info -> "Info"
+        is SitxServiceEvent.Error -> "Error"
+        is SitxServiceEvent.Disconnected -> "Disconnected"
+        else -> "Unknown"
+    }
+}
+
+@Composable
+fun ManageOutputsSitxSetting(navController: NavController, sitxVm: SitxViewModel) {
+    Log.d(TAG, "ManageOutputsSitxSetting called")
+    val sitxServiceCheckedLive by enableSitxServiceSettingsState.observeAsState()
+    val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            SettingSwitchToggleLiveData(
+                sitxServiceCheckedLive,
+                { enableSitxServiceSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.sitx_tak),
+                stringResource(R.string.on_off)
+            )
+
+            DataMetricsChip("sitx_tak_url_screen", stringResource(R.string.address), sitxTakUrlSettingsState.value.toString(), navController)
+            DataMetricsChip("sitx_tak_client_id_screen", stringResource(R.string.client_id), sitxTakClientIdSettingsState.value.toString(), navController)
+            if (true == enableSitxServiceSettingsState.value) {
+                val nameSecondary = if (enableSitxService) sitxStatusText(sitxEvent) else "Service not enabled"
+                DataMetricsChip("sitx_status_authorization_screen", "Sit(x) State", nameSecondary, navController)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Sit(x) TAK Settings NOT saved")
+                    enableSitxServiceSettingsState.setValue(enableSitxService)
+                    sitxTakUrlSettingsState.setValue(sitxTakUrl)
+                    sitxTakClientIdSettingsState.setValue(sitxTakClientId)
+
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    navController.navigate("manage_outputs_screen") {
+                        popUpTo(("manage_outputs_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.sitx_tak)
     )
 }
 
@@ -4155,7 +4418,6 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(bottom = 3.dp)
             )
-
             Chip(
                 onClick = {
                     navController.navigate("reporting_settings_screen") {
@@ -4361,28 +4623,30 @@ fun SettingsScreen(
                 stringResource(R.string.physiological_monitoring),
                 stringResource(R.string.service_on_off)
             )
-//            SettingSwitchToggleLiveData(
-//                hailCheckedLive,
-//                { enableHailServiceSettingsState.postValue(it) },
-//                { Icon(
-//                    painter = painterResource(id = R.drawable.hail_icon),
-//                    tint = Color.Unspecified,
-//                    contentDescription = "null",
-//                    modifier = Modifier
-//                        .size(20.dp),
-//                ) },
-//                "HAIL",
-//                stringResource(R.string.service_on_off)
-//            )
-//            if (enableHailServiceSettingsState.value == true){
-//                DataMetricsChip(
-//                    if (hailLicenseState == HailLicenseStates.INVALID) {
-//                        "hail_pairing_screen"
-//                    } else {
-//                        "hail_setting_screen"
-//                    },
-//                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
-//            }
+            /*
+            SettingSwitchToggleLiveData(
+                hailCheckedLive,
+                { enableHailServiceSettingsState.postValue(it) },
+                { Icon(
+                    painter = painterResource(id = R.drawable.hail_icon),
+                    tint = Color.Unspecified,
+                    contentDescription = "null",
+                    modifier = Modifier
+                        .size(20.dp),
+                ) },
+                "HAIL",
+                stringResource(R.string.service_on_off)
+            )
+            if (enableHailServiceSettingsState.value == true){
+                DataMetricsChip(
+                    if (hailLicenseState == HailLicenseStates.INVALID) {
+                        "hail_pairing_screen"
+                    } else {
+                        "hail_setting_screen"
+                    },
+                    "HAIL Settings", hailLicenseStatusTextFromString(hailLicenseState), navController)
+            }
+             */
             SettingSwitchToggleLiveData(
                 batdokCheckedLive,
                 { enableBatdokCotSettingsState.postValue(it) },
@@ -4522,6 +4786,9 @@ fun SettingsScreen(
                     var tabletCommandAPIKeyChanged = false
                     var enableEsriChanged = false
                     var esriEndpointChanged = false
+                    var sitxCheckedChanged = false
+                    var sitxUrlChanged = false
+                    var sitxClientIdChanged = false
                     var heightFeetChanged: Boolean = false
                     var heightInchesChanged: Boolean = false
                     var weightChanged: Boolean = false
@@ -4801,6 +5068,22 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (enableSitxService != enableSitxServiceSettingsState.value) {
+                        settingsChanged = true; sitxCheckedChanged = true
+                        enableSitxService = enableSitxServiceSettingsState.value ?: enableSitxService
+                        runBlocking {
+                            enableSitxServiceSettingsState.postValue(enableSitxService)
+                        }
+                    }
+                    if (sitxTakUrl != sitxTakUrlSettingsState.value) {
+                        settingsChanged = true; sitxUrlChanged = true
+                        sitxTakUrl = sitxTakUrlSettingsState.value ?: sitxTakUrl
+                    }
+                    if (sitxTakClientId != sitxTakClientIdSettingsState.value) {
+                        settingsChanged = true; sitxClientIdChanged = true
+                        sitxTakClientId = sitxTakClientIdSettingsState.value ?: sitxTakClientId
+                    }
+
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
                         enableChatService = enableChatServiceSettingsState.value ?: enableChatService
@@ -5051,6 +5334,20 @@ fun SettingsScreen(
                              if (dittoCheckedChanged) {
                                  Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                  dataRepository.storeEnableDittoService(enableDittoService)
+                             }
+                             if (sitxCheckedChanged) {
+                                 Log.d(TAG, "Storing enableSitxService $enableSitxService")
+                                 dataRepository.storeEnableSitxService(enableSitxService)
+                             }
+                             if (sitxUrlChanged) {
+                                 Log.d(TAG, "Storing Sitx URL: $sitxTakUrl")
+                                 sitxRepo.setBaseUrl(sitxTakUrl)
+                                 // TODO Senni: Need to restart the device authorization
+                             }
+                             if (sitxClientIdChanged) {
+                                 Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
+                                 sitxRepo.setClientId(sitxTakClientId)
+                                 // TODO Senni: Need to restart the device authorization
                              }
                              if (companionAppCheckedChanged) {
                                  Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")

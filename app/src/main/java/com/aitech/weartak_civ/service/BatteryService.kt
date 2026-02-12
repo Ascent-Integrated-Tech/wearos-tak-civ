@@ -77,7 +77,7 @@ class BatteryService: Service() {
                 intent.action != Intent.ACTION_POWER_DISCONNECTED
             ) return
 
-            Log.v(TAG, "batteryPowerReceiver: intent.action --> ${intent.action}")
+            //Log.v(TAG, "batteryPowerReceiver: intent.action --> ${intent.action}")
 
             // ACTION_BATTERY_CHANGED carries the extras we care about.
             // POWER_CONNECTED / DISCONNECTED may not include EXTRA_PLUGGED on all devices,

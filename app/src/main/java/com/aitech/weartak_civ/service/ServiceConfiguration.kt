@@ -46,6 +46,9 @@ class ServiceConfiguration(
         ServiceType.LOCATION ->
             dataRepository.getEnableLocationService.distinctUntilChanged()
 
+        ServiceType.SITX_SERVICE ->
+            dataRepository.getEnableSitxService.distinctUntilChanged()
+
         /* PHYSIO Service is virtual group – not used to start a real service.
          * It is like an API for the UI and Knox to gate the HR, Skin, and
          * Act Rec Services. If disabled, nothing runs. If Enabled, we check
@@ -139,6 +142,8 @@ class ServiceConfiguration(
             android.Manifest.permission.BODY_SENSORS,
 //            android.Manifest.permission.BODY_SENSORS_BACKGROUND
         )
+
+        ServiceType.SITX_SERVICE -> emptyList()
 
         ServiceType.TAK_CONNECT,
         ServiceType.CUST_ACCESS,

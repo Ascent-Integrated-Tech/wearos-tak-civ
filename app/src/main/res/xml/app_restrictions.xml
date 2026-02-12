@@ -508,6 +508,27 @@
         android:defaultValue="@string/update_interval_default" />
 
     <restriction
+        android:key="sitx_service_enabled"
+        android:restrictionType="bool"
+        android:title="@string/sitx_service_title"
+        android:description="@string/sitx_service_description"
+        android:defaultValue="@string/sitx_service_enabled_default" />
+
+    <restriction
+        android:key="sitx_tak_url"
+        android:restrictionType="string"
+        android:title="@string/sitx_tak_url_title"
+        android:description="@string/sitx_tak_url_description"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="sitx_tak_client_id"
+        android:restrictionType="string"
+        android:title="@string/sitx_tak_client_id_title"
+        android:description="@string/sitx_tak_client_id_description"
+        android:defaultValue="" />
+
+    <restriction
         android:key="ble_beacon_service_enabled"
         android:restrictionType="bool"
         android:title="@string/ble_beacon_service_enabled_title"

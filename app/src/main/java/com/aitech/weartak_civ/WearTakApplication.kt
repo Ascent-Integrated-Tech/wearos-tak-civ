@@ -24,6 +24,8 @@ import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
+import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +41,7 @@ class WearTakApplication : Application() {
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
+    lateinit var sitxRepo: SitxSecretsRepository; private set
 
     companion object {
         val TAG = "WearTAK-Applicaton"
@@ -50,6 +53,8 @@ class WearTakApplication : Application() {
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
         capRepo = CompanionAppRepository(applicationContext)
+        sitxRepo = SitxSecretsRepository(SitxEncryptedDataStore(applicationContext))
+
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
         // Wipe debug mode to false on every boot!

@@ -213,6 +213,20 @@ class SkinTempService : Service() {
     @Volatile private var lastPpgAmplitude: Double? = null
     @Volatile private var lastPpgTs: Long? = null
 
+    fun deleteLogFile() {
+        if (!logFile.exists()) {
+            Log.i(TAG, "Log file does not exist")
+            return
+        }
+
+        val deleted = logFile.delete()
+        if (deleted) {
+            Log.i(TAG, "Log file deleted")
+        } else {
+            Log.e(TAG, "Failed to delete log file")
+        }
+    }
+
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
@@ -289,7 +303,7 @@ class SkinTempService : Service() {
                     val logLine =
                         "SkinTempService status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
                                 "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
-                    writeToLogFileLocation(logFile, logLine)
+                    //writeToLogFileLocation(logFile, logLine)
                 } else {
                     tempF = -1f
                     skinTempLiveData.postValue("N/A")
@@ -476,11 +490,12 @@ class SkinTempService : Service() {
         val ok = if (ppgAvailable) 1.0 else 0.0
         runCatching {
             CepProvider.getOrCreateEngine(applicationContext).ingest("features.cold.inputs_ok", ok)
+            /*
             if (ok == 0.0) {
                 Log.w(TAG, "[COLD] inputs_ok=false (PPG_UNAVAILABLE) — gating cold stress")
             } else {
                 Log.i(TAG, "[COLD] inputs_ok=true")
-            }
+            } */
         }.onFailure { t ->
             Log.e(TAG, "[COLD] Failed to push inputs_ok flag", t)
         }
@@ -553,8 +568,8 @@ class SkinTempService : Service() {
     private fun startSpo2ThenPpgCycle() {
         // Stillness + strict 1-hour throttle (monotonic) with additive timeout backoff
         if (!isStill || lastActivityConfidence < ACTIVITY_STILL_CONFIDENCE_MIN) {
-            Log.d(TAG, "[SPO2] Skipping: not STILL/conf too low (isStill=$isStill, conf=$lastActivityConfidence, min=$ACTIVITY_STILL_CONFIDENCE_MIN)")
-            writeToLogFileLocation(logFile, "[SPO2] Skip: not STILL/conf too low (isStill=$isStill conf=$lastActivityConfidence)")
+            //Log.i(TAG, "[SPO2] Skipping: not STILL/conf too low (isStill=$isStill, conf=$lastActivityConfidence, min=$ACTIVITY_STILL_CONFIDENCE_MIN)")
+            //writeToLogFileLocation(logFile, "[SPO2] Skip: not STILL/conf too low (isStill=$isStill conf=$lastActivityConfidence)")
             return
         }
         val nowElapsed = SystemClock.elapsedRealtime()
@@ -564,8 +579,8 @@ class SkinTempService : Service() {
         if (lastSpo2AttemptElapsedMs != 0L && nowElapsed < readyAt) {
             val remaining = readyAt - nowElapsed
             val msg = "[SPO2] Skipping (throttle/backoff). remainingMs=$remaining still=$isStill conf=$lastActivityConfidence timeoutBackoffApplied=$lastSpo2EndedAsTimeout"
-            Log.d(TAG, msg)
-            writeToLogFileLocation(logFile, msg)
+            //Log.d(TAG, msg)
+            //writeToLogFileLocation(logFile, msg)
             return
         }
         // Record attempt at decision time (monotonic)
@@ -870,7 +885,7 @@ class SkinTempService : Service() {
         lastPpgTs = System.currentTimeMillis()
         // reuse quality heuristic
         lastPpgQuality = (amp.toFloat() / (amp.toFloat() + 50f)).coerceIn(0f, 1f)
-        Log.i(TAG, "[PPG] amplitude=$amp samples=${ppgWindow.size} ($reason)")
+        //Log.i(TAG, "[PPG] amplitude=$amp samples=${ppgWindow.size} ($reason)")
     }
     private fun maybeComputePpgThrottled() {
         val now = SystemClock.uptimeMillis()
@@ -888,8 +903,8 @@ class SkinTempService : Service() {
         val amp = lastPpgAmplitude
         val winSize = lastPpgSampleCount
         val logLine = "[PPG] raw=${raw ?: -1} window=$winSize amp=${amp ?: -1.0}"
-        Log.d(TAG, logLine)
-        writeToLogFileLocation(logFile, logLine)
+        //Log.i(TAG, logLine)
+        //writeToLogFileLocation(logFile, logLine)
     }
 
     private fun completePpgPhase(reason: String) {
@@ -954,6 +969,7 @@ class SkinTempService : Service() {
         isRunning.set(true)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
 
+        deleteLogFile()
         CoroutineScope(Dispatchers.IO).launch{
             sharedRepo.reportingUpdateIntervalSecs.collect { secs ->
                 val newIntervalMs = (secs * 1_000L).coerceAtLeast(MIN_SKIN_TEMP_INTERVAL_MS)
@@ -1017,7 +1033,7 @@ class SkinTempService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "SkinTempService OnStartCommand()")
-        writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
+        //writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
         return START_NOT_STICKY
     }
 
@@ -1075,7 +1091,7 @@ class SkinTempService : Service() {
             startSkinTracker()    // immediate snapshot
             scheduleNextReading()
             startEmitLoopIfNeeded()
-            writeToLogFileLocation(logFile, "deviceWorn=true.")
+            //writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
             stopHrTracker(true)
@@ -1086,7 +1102,7 @@ class SkinTempService : Service() {
             spo2TimeoutCleanup()
             ppgTimeoutCleanup()
             measureState.set(MeasurementState.IDLE)
-            writeToLogFileLocation(logFile, "deviceWorn=false.")
+            //writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
 

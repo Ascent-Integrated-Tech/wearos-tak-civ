@@ -58,8 +58,8 @@ class WeatherService : Service() {
 	}
 
 	// Configuration defaults (can later be wired to DataRepository/Knox)
-	private var configuredPollIntervalMinutes: Long = 3L   // test default: 3 minutes
-	private var hardMinimumIntervalMinutes: Long = 3L      // allow 3-minute minimum during testing
+	private var configuredPollIntervalMinutes: Long = 60L   // test default: 3 minutes
+	private var hardMinimumIntervalMinutes: Long = 60L      // allow 3-minute minimum during testing
 	private var minDistanceMeters: Double = 1500.0         // default
 	private var popWetThreshold: Double = 0.5              // default
 
@@ -96,8 +96,8 @@ class WeatherService : Service() {
 		// Fail-fast if API key missing
 		val apiKey = OpenWeatherConfig.getApiKey()
 		if (apiKey.isNullOrBlank()) {
-			Log.e(TAG, "OpenWeather API key missing. WeatherService will stop.")
-			stopSelfSafely()
+			Log.e(TAG, "OpenWeather API key missing.")
+			//stopSelfSafely()
 			return
 		}
 
