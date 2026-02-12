@@ -302,7 +302,7 @@ fun SuccessDialogActivity(
                         },
                         textAlign = TextAlign.Center,
                     )
-                    Log.w(TAG, "isAlertingLiveData = ${isAlertingLiveData.observeAsState()}")
+                    Log.w(TAG, "SuccessDialogActivity (successBoolean=true) isAlertingLiveData = ${isAlertingLiveData.value}")
                 } else {
                     Icon(
                         Icons.Rounded.Clear,
@@ -326,22 +326,22 @@ fun SuccessDialogActivity(
 
                     isAlerting.value = isAlerting.value == true
                     isAlerting.postValue(isAlerting.value)
-                    Log.w(TAG, "isAlertingLiveData = ${isAlertingLiveData.observeAsState()}")
+                    Log.w(TAG, "SuccessDialogActivity (successBoolean=false) isAlertingLiveData = ${isAlertingLiveData.value}")
                 }
             }
         }
     }
 }
 
-fun manualAlertOrClearRequest(isAlertingLiveData: MutableLiveData<Boolean>){
+fun manualAlertOrClearRequest(isAlerting: Boolean){
     CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
         val timeMillis = System.currentTimeMillis()
-        if (isAlertingLiveData.value != true) {
-            Log.d(MainActivity.Constants.TAG, "Manual Alert Triggered")
+        if (isAlerting != true) {
+            Log.d(TAG, "Manual Alert Triggered")
             val descManualAlert = manualAlertTypeSaved.value
             dataRepository.addManualAlertRequest(DataRepository.AlertState.ALERT, CAT_MANUAL_ALERT, if (descManualAlert.isNullOrEmpty()) DESC_SOS_ALERT else descManualAlert.trim(), timeMillis)
         } else {
-            Log.d(MainActivity.Constants.TAG, "Cancel Manual Alert Triggered")
+            Log.d(TAG, "Cancel Manual Alert Triggered")
             dataRepository.clearManualAlertRequestLast()
         }
     }
@@ -413,7 +413,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isAlertingLiveData,
                 {
                     successBoolean.value = (locationEnabled && anyEndpointConnected)
-                    if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData)}
+                    if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)}
                 },
                 {exitActivity()}
             )

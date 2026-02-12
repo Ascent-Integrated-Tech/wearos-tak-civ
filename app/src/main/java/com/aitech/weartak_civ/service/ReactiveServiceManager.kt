@@ -899,6 +899,7 @@ class ReactiveServiceManager : Service() {
         CHAT(true, dependencies = listOf(TAK_CONNECT), isKnoxMgdService = true),
         COT_DISPATCH(true, isKnoxMgdService = false),
         REPORTING_INTERVAL(true, isKnoxMgdService = false),
+        SITX_SERVICE(true, isKnoxMgdService = true),
         CUST_ACCESS(isKnoxMgdService = false, isNotRunnable = true),
         LOCATION(true, isKnoxMgdService = true),
         PHYSIO(isKnoxMgdService = true, isNotRunnable = true), // virtual group: not in registry

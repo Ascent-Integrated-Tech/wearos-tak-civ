@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
     id 'com.google.devtools.ksp'
     //id 'com.android.application'
     //id 'org.jetbrains.kotlin.android'
@@ -112,12 +113,15 @@ dependencies {
     implementation libs.ui.graphics
     implementation libs.foundation.layout
     implementation libs.androidx.navigation.compose
+    implementation libs.lifecycle.runtime.compose
+    implementation libs.lifecycle.viewmodel.compose
 
     def room_version = "2.7.2"
     implementation "androidx.room:room-runtime:$room_version"
     ksp "androidx.room:room-compiler:$room_version"
 
     implementation 'com.google.code.gson:gson:2.13.1'
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0"
 
     implementation "live.ditto:ditto:4.10.2"
     implementation libs.play.services.wearable
@@ -182,6 +186,7 @@ dependencies {
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation libs.tink.android
     implementation libs.play.services.location
     implementation "androidx.wear:wear-ongoing:1.0.0"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"

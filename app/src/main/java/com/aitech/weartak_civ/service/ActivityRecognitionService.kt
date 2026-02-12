@@ -237,7 +237,7 @@ class ActivityRecognitionService : Service() {
 
             // DEBUG LOG: shows the cached snapshot
             val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
-            Log.d(TAG, logStr)
+            //Log.i(TAG, logStr)
             //writeToLogFileLocation(logFile, logStr)
 
             // Push snapshot to repository

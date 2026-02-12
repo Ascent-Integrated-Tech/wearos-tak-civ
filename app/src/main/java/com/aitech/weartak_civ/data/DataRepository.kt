@@ -55,6 +55,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
+import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
@@ -1626,7 +1627,7 @@ class DataRepository(private val context: Context) {
         _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
     }
 
-    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP }
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, SITX }
 
     private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
     val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
@@ -1661,6 +1662,33 @@ class DataRepository(private val context: Context) {
     val isCompanionConnected: StateFlow<Boolean> = _companionAppConnected
         .stateIn(repoScope, SharingStarted.Eagerly, false)
 
+    enum class SitxServerStatus {
+        CONNECTED,
+        CONNECTING,
+        DISCONNECTED
+    }
+
+    private val _sitxStatus = MutableStateFlow(SitxServerStatus.DISCONNECTED)
+
+    val sitxStatus: StateFlow<SitxServerStatus> = _sitxStatus.stateIn(
+        repoScope,
+        SharingStarted.Eagerly,
+        SitxServerStatus.DISCONNECTED)
+
+    fun setSitxConnecting() {
+        _sitxStatus.value = SitxServerStatus.CONNECTING
+    }
+
+    fun setSitxConnected() {
+        setEndpointConnected(Endpoint.SITX)
+        _sitxStatus.value = SitxServerStatus.CONNECTED
+    }
+
+    fun setSitxDisconnected() {
+        setEndpointDisconnected(Endpoint.SITX)
+        _sitxStatus.value = SitxServerStatus.DISCONNECTED
+    }
+
 //    val isCompanionConnected: StateFlow<Boolean> =
 //        endpointConnected
 //            .map { set -> set.contains(Endpoint.COMPANION_APP)}
@@ -1675,6 +1703,16 @@ class DataRepository(private val context: Context) {
      */
     suspend fun getUnreadMsgsCount(): Int =
         ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
+
+    val getEnableSitxService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SITX_SERVICE] ?: DEFAULT_ENABLE_SITX_SERVICE
+    }
+
+    suspend fun storeEnableSitxService(enableSitxService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_SITX_SERVICE] = enableSitxService
+        }
+    }
 
     val getEnableTakEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_TAK_ENDPOINT] ?: DEFAULT_ENABLE_TAK_ENDPOINT
@@ -2444,6 +2482,7 @@ class DataRepository(private val context: Context) {
         private val MULTICAST_ADDRESS = stringPreferencesKey("multicast_address")
         private val MULTICAST_PROTOCOL = stringPreferencesKey("multicast_protocol")
         private val MULTICAST_PORT =intPreferencesKey("multicast_port")
+        private val ENABLE_SITX_SERVICE = booleanPreferencesKey("enable_sitx_service")
         private val ENABLE_TAK_ENDPOINT = booleanPreferencesKey("enable_tak_endpoint")
         private val ENABLE_ESRI_ENDPOINT = booleanPreferencesKey("enable_esri_endpoint")
         private val ESRI_ENDPOINT = stringPreferencesKey("esri_endpoint")

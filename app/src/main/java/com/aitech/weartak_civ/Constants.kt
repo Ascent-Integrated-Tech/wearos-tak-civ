@@ -27,6 +27,7 @@ const val DEFAULT_ENABLE_MULTICAST_ON_WIFI: Boolean = true
 const val DEFAULT_ENABLE_BATDOK_COT: Boolean = true
 const val DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION: Boolean = true
 const val DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION: Boolean = true
+const val DEFAULT_ENABLE_SITX_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_TAK_ENDPOINT: Boolean = true
 const val DEFAULT_ENABLE_ESRI_ENDPOINT: Boolean = false
 const val DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT: Boolean = false

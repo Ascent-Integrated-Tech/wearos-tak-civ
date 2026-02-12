@@ -298,6 +298,16 @@
     <string name="ditto_service_description" translatable="false">Enable or disable the Ditto service</string>
     <string name="ditto_service_enabled_default" translatable="false">false</string>
 
+    <string name="sitx_service_title" translatable="false">Enable Sit(x) Service</string>
+    <string name="sitx_service_description" translatable="false">Enable or disable the Sit(x) service</string>
+    <string name="sitx_service_enabled_default" translatable="false">false</string>
+
+    <string name="sitx_tak_url_title" translatable="false">Sit(x) URL</string>
+    <string name="sitx_tak_url_description" translatable="false">Enter URL of Sit(x) server</string>
+
+    <string name="sitx_tak_client_id_title" translatable="false">Sit(x) Client ID</string>
+    <string name="sitx_tak_client_id_description" translatable="false">Enter Sit(x) Client ID</string>
+
     <string name="chat_service_title" translatable="false">Enable Chat Service</string>
     <string name="chat_service_description" translatable="false">Enable or disable Chat service</string>
     <string name="chat_service_enabled_default" translatable="false">true</string>
@@ -590,4 +600,6 @@
     <string name="disabled">Disabled</string>
     <string name="enabled">Enabled</string>
     <string name="airplane_mode">Airplane Mode</string>
+    <string name="sitx_tak" translatable="false">Sit(x) TAK</string>
+    <string name="client_id" translatable="false">Client ID</string>
 </resources>
