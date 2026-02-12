@@ -239,7 +239,13 @@
             android:name=".service.TAKConnectService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
+        <service
+            android:name=".service.SitxTakService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
         <service
             android:name=".service.LocationService"

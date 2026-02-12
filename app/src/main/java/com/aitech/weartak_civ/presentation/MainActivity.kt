@@ -186,6 +186,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
@@ -210,6 +211,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
+import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
@@ -253,12 +255,17 @@ import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
+import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
+import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
+import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -275,7 +282,7 @@ class MainActivity : ComponentActivity() {
         var mainActivityIsInit : MainActivity? = null
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
-        // TODO Senni: Use MC and dataRepo; Can remove this finally.
+        // TODO: Use MC and dataRepo; Can remove this finally.
         var quickReplyOptions: List<Utils.TextSelectionButton> = listOf(
             Utils.TextSelectionButton("RGR", "Roger"),
             Utils.TextSelectionButton("NEG", "Negative"),
@@ -305,6 +312,12 @@ class MainActivity : ComponentActivity() {
         var enableHailServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HAIL_SERVICE)
         var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
         var enableBatdokCotSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATDOK_COT)
+        var enableSitxService: Boolean = DEFAULT_ENABLE_SITX_SERVICE
+        var enableSitxServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_SITX_SERVICE)
+        var sitxTakUrl : String = ""
+        var sitxTakUrlSettingsState = MutableLiveData<String>("")
+        var sitxTakClientId : String = ""
+        var sitxTakClientIdSettingsState = MutableLiveData<String>("")
 
         //Enable Global Health Events
         var enablePassiveDataService = false
@@ -320,6 +333,7 @@ class MainActivity : ComponentActivity() {
         var isConnected : Boolean = true
         lateinit var dataRepository: DataRepository
         lateinit var bhRepo: BloodhoundRepository
+        lateinit var sitxRepo: SitxSecretsRepository
 
         @SuppressLint("StaticFieldLeak")
         var networkManager : NetworkManager? = null
@@ -748,8 +762,11 @@ class MainActivity : ComponentActivity() {
 
         fun seedVariablesFromRepo() {
         // This function reads in data from dataRepository and sets MainActivity settings (except those for UI settings screens) as well as other service settings
-        runBlocking {
+            runBlocking {
             Log.d(TAG, """=== === Initializing Settings === === ===""".trimIndent())
+            // TODO Senni: Remove 2 lines below
+            //sitxRepo.setRefreshToken(null)
+            //sitxRepo.setClientId("D4RTE81TJjccxlc8LPD7QQ")
 
             // --- Identity / Callsign ---
 
@@ -790,6 +807,7 @@ class MainActivity : ComponentActivity() {
             enableChatService              = dataRepository.getEnableChatService.first()
             enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
             enableHailService              = dataRepository.getEnableHailService.first()
+            enableSitxService              = dataRepository.getEnableSitxService.first()
             enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
@@ -798,6 +816,10 @@ class MainActivity : ComponentActivity() {
             multicastAddress = dataRepository.getMulticastAddress.first()
             multicastProtocol = dataRepository.getMulticastProtocol.first()
             multicastPort = dataRepository.getMulticastPort.first()
+
+            // --- Sitx options ---
+            sitxTakUrl = sitxRepo.baseUrl.first()
+            sitxTakClientId = sitxRepo.clientId.first() ?: ""
 
             // --- Reporting intervals / strategy ---
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
@@ -908,6 +930,7 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Category Roles List:", categoryRolesEntryLists.toString())}
 
                     ${String.format("%-25s %-30s", "Enable Tak Endpoint:", enableTakEndpoint)}
+                    ${String.format("%-25s %-30s", "Enable Sit(x) Endpoint:", enableSitxService.toString())}
                     ${String.format("%-25s %-30s", "Enable Esri Endpoint:", enableEsriEndpoint)}
                     ${String.format("%-25s %-30s", "Enable Tablet Command Endpoint:", enableTabletCommandEndpoint)}
                     
@@ -925,15 +948,14 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Server $i Port:", takServer.port)}
                     ${String.format("%-25s %-30s", "Server $i Uses Cert:", takServer.isP12Cert)}
                     ${String.format("%-25s %-30s", "Server $i User:", takServer.username)}
-                    ${String.format("%-25s %-30s", "Server $i Pswd:", takServer.password)}
+                    ${String.format("%-25s %-30s", "Server $i Pswd:", "${takServer.password.take(2)}...(${takServer.password.length})")}
                     ${String.format("%-25s %-30s", "Server $i Cert:", takServer.p12Cert)}
-                    ${String.format("%-25s %-30s", "Server $i Cert Pswd:", takServer.p12CertPassword)}
+                    ${String.format("%-25s %-30s", "Server $i Cert Pswd:", "${takServer.p12CertPassword.take(2)}...(${takServer.p12CertPassword.length})")}
                        
                     
                     """.trimIndent()
         }
 
-        // TODO: Maybe obfuscate Tablet Command Apikey
         logOutput += """
                     === === TAK SA Multicast Settings === ===
                     ${String.format("%-25s %-30s", "Enable Multicast on WiFi:", enableMulticastOnWifi.toString())}
@@ -941,13 +963,17 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Multicast Output Protocol:", multicastProtocol)}
                     ${String.format("%-25s %-30s", "Multicast Server Port:", multicastPort)}
                     
+                    === === Sitx TAK Server Settings === ===
+                    ${String.format("%-25s %-30s", "Sitx TAK URL:", sitxTakUrl)}
+                    ${String.format("%-25s %-30s", "Sitx TAK Client ID:", "${sitxTakClientId.take(3)}...(${sitxTakClientId.length})")}
+                    
                     === === ESRI Server Settings === ===
                     ${String.format("%-25s %-30s", "ESRI Endpoint:", esriEndpoint)}
                     ${String.format("%-25s %-30s", "ESRI Reporting Interval:", esriReportingUpdateInterval)}
                     
                     === === Tablet Command Server Settings === ===
                     ${String.format("%-25s %-30s", "Tablet Command Endpoint:", tabletCommandEndpoint)}
-                    ${String.format("%-25s %-30s", "Tablet Command Apikey:", tabletCommandApikey)}
+                    ${String.format("%-25s %-30s", "Tablet Command Apikey:", "${tabletCommandApikey.take(3)}...(${tabletCommandApikey.length})")}
                     ${String.format("%-25s %-30s", "Tablet Command Reporting Interval:", tabletCommandReportingUpdateInterval)}
                     
                     === === Service Settings === ===
@@ -1066,6 +1092,7 @@ class MainActivity : ComponentActivity() {
         val context = mainActivity.applicationContext
         dataRepository = (context.applicationContext as WearTakApplication).repo
         bhRepo = (context.applicationContext as WearTakApplication).bhRepo
+        sitxRepo = (context.applicationContext as WearTakApplication).sitxRepo
 
         seedVariablesFromRepo()
         refreshUI(context)
@@ -1119,7 +1146,7 @@ class MainActivity : ComponentActivity() {
              */
 
             gotoAccessibilitySettings(mainActivity)
-            for (i in 0..3) {
+            for (i in 0..1) {
                 Toast.makeText(mainActivity,
                     getString(R.string.weartak_accessibility_settings_toast), Toast.LENGTH_LONG).show()
             }
@@ -1127,8 +1154,9 @@ class MainActivity : ComponentActivity() {
 
 
         setContent {
+            val sitxVm: SitxViewModel = viewModel()
             WearTAKCIVTheme {
-                WearTAKCivApp(callsignSettingsState, licenseState)
+                WearTAKCivApp(callsignSettingsState, licenseState, sitxVm)
             }
         }
 
@@ -1164,6 +1192,9 @@ class MainActivity : ComponentActivity() {
         multicastAddressSettingsState.postValue(multicastAddress)
         multicastProtocolSettingsState.postValue(multicastProtocol)
         multicastPortSettingsState.postValue(multicastPort)
+        enableSitxServiceSettingsState.postValue(enableSitxService)
+        sitxTakUrlSettingsState.postValue(sitxTakUrl)
+        sitxTakClientIdSettingsState.postValue(sitxTakClientId)
         enableTabletCommandEndpointSettingsState.postValue(enableTabletCommandEndpoint)
         tabletCommandEndpointSettingsState.postValue(tabletCommandEndpoint)
         tabletCommandApikeySettingsState.postValue(tabletCommandApikey)
@@ -1471,6 +1502,9 @@ class MainActivity : ComponentActivity() {
         val tabletCommandReportingIntervalConfigUpdate = appRestrictions.getInt("tabletcommand_reporting_interval")
         Log.d(TAG, "tabletCommandEndpoint($tabletCommandEndpointConfigUpdate), tabletCommandApikey($tabletCommandApikeyConfigUpdate), tabletCommandReportingInterval($tabletCommandReportingIntervalConfigUpdate)")
 
+        val sitxTakUrlConfigUpdate = appRestrictions.getString("sitx_tak_url", null)
+        val sitxTakClientIdConfigUpdate = appRestrictions.getString("sitx_tak_client_id", null)
+
         val enableWifiBatteryOptimizationConfigUpdate = appRestrictions.getBoolean("wifiOptimization_service_enabled", enableWifiBatteryOptimization)
         val enableAllWifiBatteryOptimizationConfigUpdate = appRestrictions.getBoolean("wifiOptimization_all_enabled", enableAllWifiBatteryOptimization)
         val wifiOptimizationSsidString = appRestrictions.getString("wifiOptimization_ssid_list", convertWifiSsidListToStringWithSeparator(wifiSsidList, "||"))
@@ -1505,6 +1539,8 @@ class MainActivity : ComponentActivity() {
         knoxMap[ServiceType.CHAT] = appRestrictions.getNullableBoolean("chat_service_enabled")
         knoxMap[ServiceType.BLE_BEACON] = appRestrictions.getNullableBoolean("ble_beacon_service_enabled")
         knoxMap[ServiceType.HAIL]       = appRestrictions.getNullableBoolean("hail_service_enabled")
+        knoxMap[ServiceType.SITX_SERVICE]       = appRestrictions.getNullableBoolean("sitx_service_enabled")
+        knoxMap[ServiceType.GEOFENCE] = appRestrictions.getNullableBoolean("geofence_service_enabled")
         knoxMap[ServiceType.TAK_CONNECT]           = null
         knoxMap[ServiceType.COT_DISPATCH]          = null
         knoxMap[ServiceType.MOVEMENT_DETECTION]    = null
@@ -1526,6 +1562,8 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
         localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
         localMap[ServiceType.HAIL]        = enableHailService
+        localMap[ServiceType.GEOFENCE] = enableGeofenceService
+        localMap[ServiceType.SITX_SERVICE] = enableSitxService
         localMap[ServiceType.TAK_CONNECT]           = null
         localMap[ServiceType.COT_DISPATCH]          = null
         localMap[ServiceType.MOVEMENT_DETECTION]    = null
@@ -1555,6 +1593,7 @@ class MainActivity : ComponentActivity() {
         val enableBleBeaconServiceConfigUpdate =
             appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
+        val enableSitxServiceConfigUpdate = appRestrictions.getBoolean("sitx_service_enabled", enableSitxService)
         val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
         val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
         val enableGeofenceServiceConfigUpdate = appRestrictions.getBoolean("geofence_service_enabled", enableGeofenceService)
@@ -1568,6 +1607,7 @@ class MainActivity : ComponentActivity() {
         cfgUpdateMap[ServiceType.CHAT] = enableChatServiceConfigUpdate
         cfgUpdateMap[ServiceType.BLE_BEACON] = enableBleBeaconServiceConfigUpdate
         cfgUpdateMap[ServiceType.HAIL]       = enableHailServiceConfigUpdate
+        cfgUpdateMap[ServiceType.SITX_SERVICE] = enableSitxServiceConfigUpdate
         cfgUpdateMap[ServiceType.GEOFENCE] = enableGeofenceServiceConfigUpdate
         cfgUpdateMap[ServiceType.TAK_CONNECT]           = null
         cfgUpdateMap[ServiceType.COT_DISPATCH]          = null
@@ -1826,6 +1866,15 @@ class MainActivity : ComponentActivity() {
                 dataRepository.storeEnableTakEndpoint(enableTakEndpointConfigUpdate)
             }
 
+            if ((null != sitxTakUrlConfigUpdate) && (sitxTakUrl != sitxTakUrlConfigUpdate)) {
+                sitxTakUrl = sitxTakUrlConfigUpdate
+                sitxRepo.setBaseUrl(sitxTakUrlConfigUpdate)
+            }
+            if ((null != sitxTakClientIdConfigUpdate) && (sitxTakClientId != sitxTakClientIdConfigUpdate)) {
+                sitxTakClientId = sitxTakClientIdConfigUpdate
+                sitxRepo.setClientId(sitxTakClientIdConfigUpdate)
+            }
+
             changed = false
             if (bleBeaconMutableList.size > 0) {
                 if (bleBeaconMutableList.size != localizationBleBeaconItemList.size) {
@@ -1913,6 +1962,7 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
             dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
+            dataRepository.storeEnableSitxService(enableSitxServiceConfigUpdate)
             dataRepository.storeEnableBatdokCot(enableBatdokCotConfigUpdate)
             dataRepository.storeEnableMulticast(enableMulticastConfigUpdate)
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
@@ -1977,6 +2027,10 @@ class MainActivity : ComponentActivity() {
                 enableGeofenceService = enableGeofenceServiceConfigUpdate
                 if (!calledOnCreate) dataRepository.storeEnableGeofenceService(enableGeofenceService)
             }
+            if (enableSitxServiceConfigUpdate != enableSitxService) {
+                enableSitxService = enableSitxServiceConfigUpdate
+                if (!calledOnCreate) dataRepository.storeEnableSitxService(enableSitxService)
+            }
             if (enablePhysiologicalServicesConfigUpdate != enablePhysiologicalServices) {
                 enablePhysiologicalServices = enablePhysiologicalServicesConfigUpdate
                 Log.d(TAG, "enablePhysiologicalServices=$enablePhysiologicalServices")
@@ -2040,6 +2094,7 @@ class MainActivity : ComponentActivity() {
                 if (!calledOnCreate) dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
             }
             enableHailService = enableHailServiceConfigUpdate
+            enableSitxService = enableSitxServiceConfigUpdate
             enableBatdokCot = enableBatdokCotConfigUpdate
             enableMulticastOnWifi = enableMulticastConfigUpdate
 
@@ -2325,7 +2380,7 @@ fun requestStatusIconsComplicationUpdate(context: Context) {
 
 //Contains functionality for all watch screens
 @Composable
-fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>) {
+fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>, sitxVm: SitxViewModel) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
 
@@ -2360,6 +2415,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
                 callsignState = callsignLiveDataState,
                 dataRepository = dataRepository,
                 bhRepo = bhRepo,
+                sitxVm = sitxVm,
                 context = context
             )
         }
@@ -2381,6 +2437,7 @@ fun MainScreen(
     callsignState: MutableLiveData<String>,
     dataRepository: DataRepository, // Add dataRepository parameter,
     bhRepo: BloodhoundRepository,
+    sitxVm: SitxViewModel,
     context: Context // Add context parameter
 ) {
     //Log.d(TAG, "MainScreen called")
@@ -2507,7 +2564,7 @@ fun MainScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
-                TroubleshootingIcons()
+                TroubleshootingIcons(sitxVm)
 
                 TimeWithSecondsAware(context)
             }
@@ -2813,7 +2870,7 @@ fun chatComplicationString() {
 }
 
 @Composable
-fun TroubleshootingIcons() {
+fun TroubleshootingIcons(sitxVm: SitxViewModel) {
     val iconSizeSmall= 20.dp
     networkManager?.checkNetworkConnected()
 
@@ -2838,15 +2895,20 @@ fun TroubleshootingIcons() {
 //        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
 //        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
         val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
+        val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
 
         val painter = when {
             companionConnected ->
                 painterResource(R.drawable.tak_companion_app_connected)
 
-            anyTakServerConnected == true ->
+            ((anyTakServerConnected == true) || sitxEvent is SitxServiceEvent.SocketsConnected) ->
                 painterResource(R.drawable.tak_server_connected)
 
-            anyTakServerConnecting == true ->
+            ((anyTakServerConnecting == true) ||
+                    (sitxEvent is SitxServiceEvent.NeedsUserAction) ||
+                    (sitxEvent is SitxServiceEvent.Pending) ||
+                    (sitxEvent is SitxServiceEvent.Authorized) ||
+                    (sitxEvent is SitxServiceEvent.SocketStatus)) ->
                 painterResource(R.drawable.tak_server_connecting)
 
             else ->
@@ -3360,8 +3422,9 @@ fun OrientationAware() {
 fun DefaultPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     var licenseState = MutableLiveData<String>("WEAROS-0")
+    val sitxVm: SitxViewModel = viewModel()
 
-    WearTAKCivApp(callsignState, licenseState)
+    WearTAKCivApp(callsignState, licenseState, sitxVm)
 }
 
 

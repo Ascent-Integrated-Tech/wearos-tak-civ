@@ -49,6 +49,8 @@ import com.aitech.weartak_civ.service.HailService.checkLicense
 import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
+import com.aitech.weartak_civ.service.sitx.SitxServiceCommand
+import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
 import com.rain.hail.sdk.HailDetail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -225,7 +227,6 @@ class CotDispatchService : Service() {
                         return@collect
                     }
 
-                    // TODO Senni: Check where we send mullitcast??
                     val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first() || companionAppAvailable())
 
                     if (endpointsToSendTo) {
@@ -1898,6 +1899,8 @@ class CotDispatchService : Service() {
             } else {
                 sendDataTAKServers(xml, false)
             }
+            Log.d(TAG, "Sending WearTAK-Sitx COT message: $xml")
+            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
 
             if (companionAppAvailable()) {
                 capRepo.enqueuePliSnapshotForBle(snapshot)
