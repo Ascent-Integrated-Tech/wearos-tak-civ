@@ -822,7 +822,7 @@ class DataRepository(private val context: Context) {
     data class MarkerSnapshot(
         val uid: String,
         val markerType: MarkerType,
-        val remark: String,
+        val title: String,
         val iconSetPath: String?,
         val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
@@ -843,7 +843,7 @@ class DataRepository(private val context: Context) {
         return MarkerSnapshot(
             uid = UUID.randomUUID().toString(),
             markerType = req.markerType,
-            remark = req.remark,
+            title = req.title,
             iconSetPath = req.markerType.icon,
             loc = loc,
             time = timeSnapshot,
@@ -1077,7 +1077,7 @@ class DataRepository(private val context: Context) {
     data class DroppedMarker(
         val uid: String,
         val markerType: String,
-        val remark: String,
+        val title: String,
         val timeDropped: Long
     )
 
@@ -1120,7 +1120,7 @@ class DataRepository(private val context: Context) {
     // --- request flows (UI -> backend) ---
     data class MarkerDropRequest(
         val markerType: MarkerType,
-        val remark: String,
+        val title: String,
         val timeMillis: Long
     )
 
@@ -1134,9 +1134,9 @@ class DataRepository(private val context: Context) {
     suspend fun requestMarkerDrop(markerType: MarkerType, remark: String, timeMillis: Long) =
         _markerDropRequests.emit(MarkerDropRequest(markerType, remark, timeMillis))
 
-    suspend fun requestMarkerDrop(markerTypeRaw: String, remark: String, timeMillis: Long): Boolean {
+    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _markerDropRequests.emit(MarkerDropRequest(parsed, remark, timeMillis))
+        _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis))
         return true
     }
 
