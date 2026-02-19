@@ -103,6 +103,14 @@ class ServiceConfiguration(
         ServiceType.POWER_MGR -> flowOf(true).distinctUntilChanged()
         ServiceType.OFF_BODY_DETECT -> flowOf(true).distinctUntilChanged()
         ServiceType.COMPANION_APP -> dataRepository.getEnableCompanionAppService.distinctUntilChanged()
+        ServiceType.PRESSURE -> combine(
+            dataRepository.getEnableImmersionAlerts.distinctUntilChanged(),
+            dataRepository.getEnableLowAtmPressureAlert.distinctUntilChanged(),
+            dataRepository.getEnableHighAtmPressureAlert.distinctUntilChanged()
+        ) { immersionOn, lowPressureOn, highPressureOn ->
+            immersionOn || lowPressureOn || highPressureOn
+        }.distinctUntilChanged()
+
     }
 
     private fun requiredPerms(type: ServiceType): List<String> = when (type) {
@@ -139,6 +147,8 @@ class ServiceConfiguration(
             android.Manifest.permission.BODY_SENSORS,
             //android.Manifest.permission.BODY_SENSORS_BACKGROUND
         )
+        ServiceType.PRESSURE -> emptyList()
+
 
         ServiceType.CHAT -> emptyList()
         ServiceType.BLOOD_HOUND -> listOf(

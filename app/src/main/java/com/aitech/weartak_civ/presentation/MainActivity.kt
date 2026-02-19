@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024-2025, Ascent Integrated Tech. All rights reserved.
+ * Copyright (C) 2024, Ascent Integrated Tech. All rights reserved.
  *
  * The copyright to the computer software herein is the property of Ascent Integrated Tech.
  * This software may not be used and/or copied without the explicit written permission
@@ -206,6 +206,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_GEOFENCE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
@@ -273,10 +274,16 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricTi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
 import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
+import com.aitech.weartak_civ.DEFAULT_ENABLE_IMMERSION_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
+import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
+import com.aitech.weartak_civ.data.model.PressureReading
+import java.io.File
 
 
 class MainActivity : ComponentActivity() {
@@ -327,7 +334,16 @@ class MainActivity : ComponentActivity() {
         var sitxTakUrlSettingsState = MutableLiveData<String>("")
         var sitxTakClientId : String = ""
         var sitxTakClientIdSettingsState = MutableLiveData<String>("")
-
+        var enableImmersionAlerts: Boolean = DEFAULT_ENABLE_IMMERSION_ALERTS
+        var enableImmersionAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_IMMERSION_ALERTS)
+        var enableLowAtmPressureAlert: Boolean = DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
+        var enableLowAtmPressureAlertSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT)
+        var lowAtmPressureAlertThreshold: Int = DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+        var lowAtmPressureAlertThresholdSettingsState = MutableLiveData<Int>(DEFAULT_LOW_ATM_PRESSURE_THRESHOLD)
+        var enableHighAtmPressureAlert: Boolean = DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
+        var enableHighAtmPressureAlertSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT)
+        var highAtmPressureAlertThreshold: Int = DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
+        var highAtmPressureAlertThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD)
         //Enable Global Health Events
         var enablePassiveDataService = false
 
@@ -872,6 +888,9 @@ class MainActivity : ComponentActivity() {
             enableHeartrateService         = dataRepository.getEnableHeartRateService.first()
             enableActRecService            = dataRepository.getEnableActRecService.first()
             enableSkinTempService          = dataRepository.getEnableSkinTempService.first()
+            enableImmersionAlerts          = dataRepository.getEnableImmersionAlerts.first()
+            enableLowAtmPressureAlert      = dataRepository.getEnableLowAtmPressureAlert.first()
+            enableHighAtmPressureAlert     = dataRepository.getEnableHighAtmPressureAlert.first()
             enableDittoService             = dataRepository.getEnableDittoService.first()
             enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
             enableChatService              = dataRepository.getEnableChatService.first()
@@ -883,7 +902,10 @@ class MainActivity : ComponentActivity() {
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
 
-			// --- Multicast options ---
+            lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
+            highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
+
+                        // --- Multicast options ---
             multicastAddress = dataRepository.getMulticastAddress.first()
             multicastProtocol = dataRepository.getMulticastProtocol.first()
             multicastPort = dataRepository.getMulticastPort.first()
@@ -1072,6 +1094,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Selected Physio Metric:", selectedPhysioMetric)}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Immersion Alerts:", enableImmersionAlerts.toString())}
+                    ${String.format("%-25s %-30s", "Enable Low Atm Pressure Alert:", enableLowAtmPressureAlert.toString())}
+                    ${String.format("%-25s %-30s", "Low Atm Pressure Alert Threshold (hPa):", lowAtmPressureAlertThreshold.toString())}
+                    ${String.format("%-25s %-30s", "Enable High Atm Pressure Alert:", enableHighAtmPressureAlert.toString())}
+                    ${String.format("%-25s %-30s", "High Atm Pressure Alert Threshold (hPa):", highAtmPressureAlertThreshold.toString())}
                     ${String.format("%-25s %-30s", "Enable Battery Alerts:", enableBatteryAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Hail:", enableHailService.toString())}
                     ${String.format("%-25s %-30s", "Enable Batdok COT:", enableBatdokCot.toString())}
@@ -1242,6 +1269,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        //debugPressureRepoTest()
         /*
         if (Settings.Secure.putString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, "com.aitech.weartak_civ/.service.CustomAccessibilityService")) {
             Log.d(TAG, "Able to set ENABLED_ACCESSIBILITY_SERVICES to com.aitech.weartak_civ/.service.CustomAccessibilityService")
@@ -1256,6 +1284,43 @@ class MainActivity : ComponentActivity() {
         }
          */
         Log.i(TAG, "MainActivity onCreate(): End.")
+    }
+
+    private fun debugPressureRepoTest() {
+        // temporary pressure repository test
+        // this manually inserts 2 fake pressure readings to verify:
+        // 1) storeLatestPressure() updates latestPressure
+        // 2) pressureHistory is capped correctly
+        // 3) logging to pressure_test.log works
+
+        lifecycleScope.launch {
+            try {
+                repeat(2) { idx ->
+
+                    // create a simulated pressure reading
+                    // second reading is slightly higher to mimic change
+                    val reading = PressureReading(
+                        pressure = 1013.25f + idx,
+                        timestamp = System.currentTimeMillis()
+                    )
+
+                    // store reading in repository (updates latest + history)
+                    dataRepository.storeLatestPressure(reading)
+
+                    // write current repository state to file for verification
+                    val logFile = File(filesDir, "pressure_test.log")
+                    Utils.writeToLogFileLocation(
+                        logFile,
+                        "latest=${dataRepository.latestPressure.value}, historySize=${dataRepository.pressureHistory.value.size}"
+                    )
+
+                    // small delay to simulate time between sensor updates
+                    kotlinx.coroutines.delay(500)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "pressure test failed", e)
+            }
+        }
     }
 
     private fun refreshUI(context: Context) {
@@ -1312,6 +1377,11 @@ class MainActivity : ComponentActivity() {
         enableDittoServiceSettingsState.postValue(enableDittoService)
         enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
+        enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
+        enableLowAtmPressureAlertSettingsState.postValue(enableLowAtmPressureAlert)
+        lowAtmPressureAlertThresholdSettingsState.postValue(lowAtmPressureAlertThreshold)
+        enableHighAtmPressureAlertSettingsState.postValue(enableHighAtmPressureAlert)
+        highAtmPressureAlertThresholdSettingsState.postValue(highAtmPressureAlertThreshold)
         enableChatServiceSettingsState.postValue(enableChatService)
         enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts) // ephemeral ui value
         enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
@@ -1590,7 +1660,7 @@ class MainActivity : ComponentActivity() {
 
         val tabletCommandEndpointConfigUpdate = appRestrictions.getString("tabletcommand_endpoint", null)
         val tabletCommandApikeyConfigUpdate = appRestrictions.getString("tabletcommand_apikey", null)
-        val tabletCommandReportingIntervalConfigUpdate = appRestrictions.getInt("tabletcommand_reporting_interval")
+        val tabletCommandReportingIntervalConfigUpdate = appRestrictions.getInt("tabletcommand_reporting_interval", tabletCommandReportingUpdateInterval)
         Log.d(TAG, "tabletCommandEndpoint($tabletCommandEndpointConfigUpdate), tabletCommandApikey($tabletCommandApikeyConfigUpdate), tabletCommandReportingInterval($tabletCommandReportingIntervalConfigUpdate)")
 
         val sitxTakUrlConfigUpdate = appRestrictions.getString("sitx_tak_url", null)
@@ -1685,6 +1755,11 @@ class MainActivity : ComponentActivity() {
             appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
         val enableSitxServiceConfigUpdate = appRestrictions.getBoolean("sitx_service_enabled", enableSitxService)
+        val enableImmersionAlertsConfigUpdate = appRestrictions.getBoolean("enable_immersion_alerts", enableImmersionAlerts)
+        val enableLowAtmPressureAlertConfigUpdate = appRestrictions.getBoolean("enable_low_atm_pressure_alert", enableLowAtmPressureAlert)
+        val enableHighAtmPressureAlertConfigUpdate = appRestrictions.getBoolean("enable_high_atm_pressure_alert", enableHighAtmPressureAlert)
+        val lowAtmPressureAlertThresholdConfigUpdate = appRestrictions.getInt("low_atm_pressure_alert_threshold", lowAtmPressureAlertThreshold)
+        val highAtmPressureAlertThresholdConfigUpdate = appRestrictions.getInt("high_atm_pressure_alert_threshold", highAtmPressureAlertThreshold)
         val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
         val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
         val enableGeofenceServiceConfigUpdate = appRestrictions.getBoolean("geofence_service_enabled", enableGeofenceService)
@@ -2053,6 +2128,11 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            dataRepository.storeEnableImmersionAlerts(enableImmersionAlertsConfigUpdate)
+            dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlertConfigUpdate)
+            dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThresholdConfigUpdate)
+            dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlertConfigUpdate)
+            dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThresholdConfigUpdate)
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
             dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
@@ -2172,6 +2252,32 @@ class MainActivity : ComponentActivity() {
                     enableBleBeaconService
                 )
             }
+            if (enableImmersionAlertsConfigUpdate != enableImmersionAlerts) {
+                enableImmersionAlerts = enableImmersionAlertsConfigUpdate
+                Log.i(TAG, "enableImmersionAlertsConfigUpdate=$enableImmersionAlerts")
+                if (!calledOnCreate) dataRepository.storeEnableImmersionAlerts(enableImmersionAlerts)
+            }
+            if (enableLowAtmPressureAlertConfigUpdate != enableLowAtmPressureAlert) {
+                enableLowAtmPressureAlert = enableLowAtmPressureAlertConfigUpdate
+                Log.i(TAG, "enableLowAtmPressureAlertConfigUpdate=$enableLowAtmPressureAlert")
+                if (!calledOnCreate) dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlert)
+            }
+            if (enableHighAtmPressureAlertConfigUpdate != enableHighAtmPressureAlert) {
+                enableHighAtmPressureAlert = enableHighAtmPressureAlertConfigUpdate
+                Log.i(TAG, "enableHighAtmPressureAlertConfigUpdate=$enableHighAtmPressureAlert")
+                if (!calledOnCreate) dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlert)
+            }
+            if (lowAtmPressureAlertThresholdConfigUpdate != lowAtmPressureAlertThreshold) {
+                lowAtmPressureAlertThreshold = lowAtmPressureAlertThresholdConfigUpdate
+                Log.i(TAG, "lowAtmPressureAlertThresholdConfigUpdate=$lowAtmPressureAlertThreshold")
+                if (!calledOnCreate) dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThreshold)
+            }
+            if (highAtmPressureAlertThresholdConfigUpdate != highAtmPressureAlertThreshold) {
+                highAtmPressureAlertThreshold = highAtmPressureAlertThresholdConfigUpdate
+                Log.i(TAG, "highAtmPressureAlertThresholdConfigUpdate=$highAtmPressureAlertThreshold")
+                if (!calledOnCreate) dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
+            }
+
             if (enableDynamicReportingStrategy != enableDynamicReportingStrategyConfigUpdate) {
                 enableDynamicReportingStrategy = enableDynamicReportingStrategyConfigUpdate
                 Log.d(TAG, "enableDynamicReportingStrategy=$enableDynamicReportingStrategy")

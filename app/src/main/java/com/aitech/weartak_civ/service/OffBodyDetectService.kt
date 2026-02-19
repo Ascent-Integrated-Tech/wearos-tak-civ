@@ -18,7 +18,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.IBinder
 import android.util.Log
-import androidx.lifecycle.MutableLiveData
+//import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
@@ -134,7 +134,7 @@ class OffBodyDetectService: Service() {
         private val TAG = "WearTAK-" + OffBodyDetectService::class.java.simpleName
         private val OFFBODY_DETECT_SERVICE_NOTIFICATION_ID = 103
         private val TOLERANCE = 0.001F
-        val offBodyDetectLiveData = MutableLiveData<Boolean>(true)
+//        val offBodyDetectLiveData = MutableLiveData<Boolean>(true)
         val isRunning = AtomicBoolean(false)
         private lateinit var instance : OffBodyDetectService
     }

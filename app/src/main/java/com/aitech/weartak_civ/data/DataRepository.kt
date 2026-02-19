@@ -125,6 +125,12 @@ import java.util.UUID
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
+import com.aitech.weartak_civ.DEFAULT_ENABLE_IMMERSION_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
+import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.data.model.PressureReading
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -463,6 +469,35 @@ class DataRepository(private val context: Context) {
 
     private val _latestSkinTemp = MutableStateFlow<Float?>(null)
     val latestSkinTemp: StateFlow<Float?> = _latestSkinTemp
+
+    // PRESSURE SENSOR START
+    private val _latestPressure = MutableStateFlow<PressureReading?>(null)
+    val latestPressure: StateFlow<PressureReading?> = _latestPressure.asStateFlow()
+
+    private val _pressureHistory = MutableStateFlow<List<PressureReading>>(emptyList())
+    val pressureHistory: StateFlow<List<PressureReading>> = _pressureHistory.asStateFlow()
+
+    suspend fun storeLatestPressure(reading: PressureReading) {
+        _latestPressure.emit(reading)
+
+        // keep last 20 samples
+        val updated = (_pressureHistory.value + reading).takeLast(20)
+        _pressureHistory.emit(updated)
+    }
+    suspend fun debugPressureTestOnce() {
+        val reading = PressureReading(
+            pressure = 1013.25f,
+            timestamp = System.currentTimeMillis()
+        )
+        storeLatestPressure(reading)
+
+        Log.i(TAG, "pressure debug: latest=${latestPressure.value}")
+        Log.i(TAG, "pressure debug: historySize=${pressureHistory.value.size}")
+        Log.i(TAG, "pressure debug: historyLast=${pressureHistory.value.lastOrNull()}")
+    }
+
+
+    // PRESSURE SENSOR END
 
     private val _latestLocation = MutableStateFlow<Location?>(null)
     val latestLocation: StateFlow<Location?> = _latestLocation
@@ -1514,6 +1549,56 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableHeartRateService(enableHeartRateService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_HEART_RATE_SERVICE] = enableHeartRateService
+        }
+    }
+
+    val getEnableImmersionAlerts: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_IMMERSION_ALERTS] ?: DEFAULT_ENABLE_IMMERSION_ALERTS
+    }
+
+    suspend fun storeEnableImmersionAlerts(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_IMMERSION_ALERTS] = enable
+        }
+    }
+
+    val getEnableLowAtmPressureAlert: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_LOW_ATM_PRESSURE_ALERT] ?: DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
+    }
+
+    suspend fun storeEnableLowAtmPressureAlert(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_LOW_ATM_PRESSURE_ALERT] = enable
+        }
+    }
+
+    val getLowAtmPressureAlertThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOW_ATM_PRESSURE_ALERT_THRESHOLD] ?: DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+    }
+
+    suspend fun storeLowAtmPressureAlertThreshold(threshold: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOW_ATM_PRESSURE_ALERT_THRESHOLD] = threshold
+        }
+    }
+
+    val getEnableHighAtmPressureAlert: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_HIGH_ATM_PRESSURE_ALERT] ?: DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
+    }
+
+    suspend fun storeEnableHighAtmPressureAlert(enable: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_HIGH_ATM_PRESSURE_ALERT] = enable
+        }
+    }
+
+    val getHighAtmPressureAlertThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIGH_ATM_PRESSURE_ALERT_THRESHOLD] ?: DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
+    }
+
+    suspend fun storeHighAtmPressureAlertThreshold(threshold: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HIGH_ATM_PRESSURE_ALERT_THRESHOLD] = threshold
         }
     }
 
@@ -2854,7 +2939,12 @@ class DataRepository(private val context: Context) {
         private val ENABLE_PHYSIOLOGICAL_SERVICES = booleanPreferencesKey("enable_physiological_services")
         private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_HEART_RATE_SERVICE = booleanPreferencesKey("enable_heart_rate_service")
-        private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
+        private val ENABLE_IMMERSION_ALERTS = booleanPreferencesKey("enable_immersion_alerts")
+        private val ENABLE_LOW_ATM_PRESSURE_ALERT = booleanPreferencesKey("enable_low_atm_pressure_alert")
+        private val LOW_ATM_PRESSURE_ALERT_THRESHOLD = intPreferencesKey("low_atm_pressure_alert_threshold")
+        private val ENABLE_HIGH_ATM_PRESSURE_ALERT = booleanPreferencesKey("enable_high_atm_pressure_alert")
+        private val HIGH_ATM_PRESSURE_ALERT_THRESHOLD = intPreferencesKey("high_atm_pressure_alert_threshold")
+        private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_activity_recognition_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")

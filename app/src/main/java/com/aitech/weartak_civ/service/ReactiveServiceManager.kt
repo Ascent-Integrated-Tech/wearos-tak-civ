@@ -772,6 +772,7 @@ class ReactiveServiceManager : Service() {
             put(ServiceType.CUST_ACCESS,           CustomAccessibilityService.isRunning.get())
             put(ServiceType.HEART_RATE,            HeartrateService.isRunning.get())
             put(ServiceType.SKIN_TEMP,             SkinTempService.isRunning.get())
+            put(ServiceType.PRESSURE, PressureService.isRunning.get())
             put(ServiceType.PHYSIO,                desiredServicesStateMap.get(ServiceType.PHYSIO))
             put(ServiceType.DITTO,                 DittoService.isRunning.get())
             put(ServiceType.CHAT,                  ChatService.isRunning.get())
@@ -907,6 +908,7 @@ class ReactiveServiceManager : Service() {
         PHYSIO(isKnoxMgdService = true, isNotRunnable = true), // virtual group: not in registry
         HEART_RATE(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         SKIN_TEMP(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
+        PRESSURE(true, isKnoxMgdService = true),
         ACTIVITY_RECOGNITION(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         HAIL(isKnoxMgdService = true, isNotRunnable = true),
         DITTO(true, isKnoxMgdService = true),
