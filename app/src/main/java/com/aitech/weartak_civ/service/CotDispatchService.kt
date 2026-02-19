@@ -1466,10 +1466,24 @@ class CotDispatchService : Service() {
         }
     }
 
+    private fun escapeXmlText(s: String): String {
+        val out = StringBuilder(s.length)
+        for (ch in s) {
+            when (ch) {
+                '&' -> out.append("&amp;")
+                '<' -> out.append("&lt;")
+                '>' -> out.append("&gt;")
+                '"' -> out.append("&quot;") // only strictly needed in attributes, but safe
+                '\'' -> out.append("&apos;") // only strictly needed in attributes, but safe
+                else -> out.append(ch)
+            }
+        }
+        return out.toString()
+    }
     private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot?): String {
         val uid         = ms?.uid
         val markerType  = ms?.markerType?.type
-        val markerRemark = ms?.remark
+        val markerTitle = ms?.title
         val battery     = ms?.system?.batteryPercent
 
         val startTime   = ms?.time?.startCot
@@ -1482,7 +1496,11 @@ class CotDispatchService : Service() {
         val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
         markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
         val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
-        val markerCallsign_Time = "${callsign}_$markerCallsignAppendTime"
+        val markerTitleCallsignOrCustom = if (markerTitle.isNullOrEmpty()) {
+            "${callsign}_$markerCallsignAppendTime"
+        } else {
+            escapeXmlText(markerTitle)
+        }
 
         val lat   = loc?.lat
         val lon   = loc?.lon
@@ -1493,6 +1511,7 @@ class CotDispatchService : Service() {
         if (le.isNaN()) le = 9999999.0F
 
         val linkUid = MainActivity.device_uid
+        //Log.d(TAG, "Dropped marker: $markerType, $markerTitleCallsignOrCustom, $callsign")
 
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1504,8 +1523,8 @@ class CotDispatchService : Service() {
                 <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
                 <usericon iconsetpath="$iconSetPath"/>
-                <remarks>$markerRemark</remarks> 
-                <contact callsign="$markerCallsign_Time"/>
+                <remarks></remarks> 
+                <contact callsign="$markerTitleCallsignOrCustom"/>
             </detail>
         </event>
         """.trimIndent()
@@ -1982,7 +2001,7 @@ class CotDispatchService : Service() {
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, remark = snapshot.remark, timeDropped = req.timeMillis)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = snapshot.title, timeDropped = req.timeMillis)
         )
     }
 

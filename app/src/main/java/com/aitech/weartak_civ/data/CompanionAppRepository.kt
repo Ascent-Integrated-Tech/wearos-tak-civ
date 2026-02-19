@@ -289,7 +289,7 @@ class CompanionAppRepository(private val context: Context) {
         val tStale: String,
         val cs: String,
         val hr: String,
-        val remarks: String,
+        val title: String,
         val bat: Int?
     )
 
@@ -593,7 +593,7 @@ class CompanionAppRepository(private val context: Context) {
             tStale      = snapshot.time.staleCot,
             cs        = snapshot.system.callsign,
             hr      = hrStr,
-            remarks = snapshot.remark,
+            title = snapshot.title,
             bat = snapshot.system.batteryPercent
         )
 

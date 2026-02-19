@@ -127,7 +127,7 @@ import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.TAG
-import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.remarkSettingsState
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerTitleSettingsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -143,7 +143,7 @@ class MarkerActivity : ComponentActivity() {
         lateinit var markerActivity : MarkerActivity
         var markerType: String = ""
         const val TAG = "WearTAK-MarkerActivity"
-        var remarkSettingsState = MutableLiveData<String>("")
+        var markerTitleSettingsState = MutableLiveData<String>("")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -191,7 +191,7 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
 //                        markerScope.launch {
 //                            dataRepository.requestMarkerDrop(markerType,
-//                                remarkSettingsState.value.toString(), time)
+//                                markerTitleSettingsState.value.toString(), time)
 //                        }
                     }
                 )
@@ -499,7 +499,7 @@ fun DroppedMarkerSetting(navController: NavController, shouldShowDialog: Mutable
                 ){ index, droppedMarker ->
                     SwipeableMarkerChip(
                         droppedMarker.markerType,
-                        droppedMarker.remark,
+                        droppedMarker.title,
                         droppedMarker.timeDropped,
                         onPrimaryActionClick = {
                             Log.d(Constants.TAG, "Request clear for marker uid=${droppedMarker.uid}")
@@ -555,7 +555,7 @@ fun DroppedMarkerSetting(navController: NavController, shouldShowDialog: Mutable
 @Composable
 fun SwipeableMarkerChip(
     markerType: String,
-    markerRemark: String,
+    markerTitle: String,
     timeStamp: Long,
     onPrimaryActionClick: () -> Unit,
 ) {
@@ -612,10 +612,10 @@ fun SwipeableMarkerChip(
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold
                 )
-                if (markerRemark.isNotEmpty()) {
+                if (markerTitle.isNotEmpty()) {
                     Text(
                         text =
-                            markerRemark,
+                            markerTitle,
                         maxLines = 2,
                         fontSize = 12.sp,
                         overflow = TextOverflow.Ellipsis,
@@ -835,8 +835,8 @@ fun DropMarkerConfirmationDialog(
                     )
                     Spacer(modifier = Modifier.height(5.dp))
                     var textField = GenericOutlinedTextField(
-                        remarkSettingsState,
-                        "Optional Remark",
+                        markerTitleSettingsState,
+                        "Optional Title",
                         ""
                     )
                     Spacer(modifier = Modifier.height(5.dp))
@@ -861,13 +861,13 @@ fun DropMarkerConfirmationDialog(
                             onClick = {
                                 shouldShowDialog.value = false
                                 isConfirmed.value = true
-                                remarkSettingsState.value = textField.text
+                                markerTitleSettingsState.value = textField.text
                                 val time = System.currentTimeMillis()
                                 markerScope.launch {
                                     dataRepository.requestMarkerDrop(markerType,
                                         textField.text, time)
                                 }
-                                Log.d(TAG, "${remarkSettingsState.value}")
+                                Log.d(TAG, "${markerTitleSettingsState.value}")
                                 confirmFunction()
                             },
                             colors = ButtonDefaults.buttonColors(
@@ -1023,7 +1023,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
     ) {
         composable("marker_screen" ) {
             MarkerSelectionScreen(exitActivity = {exitActivity()}, shouldShowConfirm, navController)
-            remarkSettingsState.value = ""
+            markerTitleSettingsState.value = ""
 
             DropMarkerConfirmationDialog(
                 shouldShowDialog = shouldShowConfirm,
@@ -1056,7 +1056,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                         },
                         {
                             Spacer(modifier = Modifier.height(10.dp))
-                            if (remarkSettingsState.value.isNullOrEmpty()) {
+                            if (markerTitleSettingsState.value.isNullOrEmpty()) {
                                 Text(
                                     text = "$markerType Marker Dropped",
                                     textAlign = TextAlign.Center,
@@ -1064,7 +1064,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                                 )
                             } else {
                                 Text(
-                                    text = "Dropped $markerType: ${remarkSettingsState.value}",
+                                    text = "Dropped $markerType: ${markerTitleSettingsState.value}",
                                     textAlign = TextAlign.Center,
                                     color = Color.White
                                 )
@@ -1092,7 +1092,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
             if (droppedMarkerListSetting.isNotEmpty()) {
                 ClearMarkerConfirmationDialog(
                     shouldShowClearLastDialog,
-                    "Clear Last Marker?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType)}: ${droppedMarkerListSetting.last().remark}\n\r" + utcToHoursMinutesSeconds(
+                    "Clear Last Marker?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType)}: ${droppedMarkerListSetting.last().title}\n\r" + utcToHoursMinutesSeconds(
                         droppedMarkerListSetting.last().timeDropped
                     ),
                     {
@@ -1173,7 +1173,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                 anyEndpointConnected,
                 context,
                 {
-                    remarkSettingsState.value = ""
+                    markerTitleSettingsState.value = ""
                     exitActivity()
                 },
                 successBoolean,
