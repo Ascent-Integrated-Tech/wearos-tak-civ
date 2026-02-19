@@ -300,7 +300,7 @@
 
     <string name="chat_service_title" translatable="false">Enable Chat Service</string>
     <string name="chat_service_description" translatable="false">Enable or disable Chat service</string>
-    <string name="chat_service_enabled_default" translatable="false">false</string>
+    <string name="chat_service_enabled_default" translatable="false">true</string>
 
     <string name="hail_service_title" translatable="false">Enable Hail Service</string>
     <string name="hail_service_description" translatable="false">Enable or disable Hail service</string>
@@ -328,7 +328,7 @@
 
     <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
     <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval dynamically changes based on motion and alerting status OR if it is constant.</string>
-    <string name="enable_dynamic_reporting_strategy_default" translatable="false">false</string>
+    <string name="enable_dynamic_reporting_strategy_default" translatable="false">true</string>
 
     <string name="constant_reporting_interval_title" translatable="false">Constant Reporting Interval (Constant Reporting Strategy)</string>
     <string name="constant_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when using Constant Reporting Strategy)</string>
@@ -340,7 +340,7 @@
 
     <string name="on_foot_walking_reporting_interval_title" translatable="false">Walking/On Foot Reporting Interval (Dynamic Reporting Strategy)</string>
     <string name="on_foot_walking_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is walking/on foot (part of Dynamic Reporting Strategy)</string>
-    <string name="on_foot_walking_reporting_interval_default" translatable="false">20</string>
+    <string name="on_foot_walking_reporting_interval_default" translatable="false">60</string>
 
     <string name="in_vehicle_reporting_interval_title" translatable="false">In Vehicle/Driving Reporting Interval (Dynamic Reporting Strategy)</string>
     <string name="in_vehicle_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is in vehicel/driving (part of Dynamic Reporting Strategy)</string>
@@ -348,7 +348,7 @@
 
     <string name="stationary_reporting_interval_title" translatable="false">Stationary Reporting Interval (Dynamic Reporting Strategy)</string>
     <string name="stationary_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is stationary (part of Dynamic Reporting Strategy)</string>
-    <string name="stationary_reporting_interval_default" translatable="false">300</string>
+    <string name="stationary_reporting_interval_default" translatable="false">3600</string>
 
     <string name="enable_sms_title" translatable="false">Enable SMS for Alerts</string>
     <string name="enable_sms_description" translatable="false">Boolean that determines if SMS will be sent on detection of alerts.</string>
@@ -536,8 +536,10 @@
     <string name="exertion_threshold_length_description" translatable="false">Length in seconds for when the exertion alert or warning should trigger</string>
     <string name="enable_companion_plugin" translatable="false">Enable Companion Plugin</string>
     <string name="enable_companion_plugin_desc" translatable="false">Enable the service for the companion WearTAK ATAK app</string>
+    <string name="enable_companion_plugin_default" translatable="false">false</string>
     <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound/Compass</string>
     <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
+    <string name="enable_bloodhound_compass_default" translatable="false">false</string>
     <string name="enable_battery_alerts" translatable="false">Enable Battery Alerts</string>
     <string name="enable_battery_alerts_desc" translatable="false">Enables wearTAK to send battery alerts via chat</string>
     <string name="enable_battery_alerts_default" translatable="false">false</string>
