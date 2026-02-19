@@ -199,7 +199,6 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
-import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
@@ -287,8 +286,8 @@ class MainActivity : ComponentActivity() {
         var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
         var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableCompanionAppService: Boolean = DEFAULT_ENABLE_COMPANION_APP_SERVICE
-        var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_COMPANION_APP_SERVICE)
+        var enableCompanionAppService: Boolean = false
+        var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DITTO_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
         var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE)
         var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE

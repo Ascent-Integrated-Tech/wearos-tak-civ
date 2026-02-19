@@ -44,7 +44,6 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
-import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
@@ -1867,7 +1866,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getEnableCompanionAppService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_COMPANION_APP_SERVICE] ?: DEFAULT_ENABLE_COMPANION_APP_SERVICE
+        prefs[ENABLE_COMPANION_APP_SERVICE] ?: true
     }
 
     suspend fun storeEnableCompanionAppService(enableCompanionAppService: Boolean) {
