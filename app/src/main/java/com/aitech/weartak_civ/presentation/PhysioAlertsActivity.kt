@@ -209,6 +209,11 @@ fun alertIconFromString(category: String): Painter {
         "CAT_HR_LOW" -> painterResource(R.drawable.low_hr_alert)
         "CAT_HR_REST_LOW" -> painterResource(R.drawable.low_hr_alert)
         "CAT_HR_ALERT" -> painterResource(R.drawable.high_exertion_alert)
+        "CAT_IMMERSION_WARN" -> painterResource(R.drawable.immersion_icon)
+        "CAT_IMMERSION_ALERT" -> painterResource(R.drawable.immersion_icon)
+        "CAT_LOW_PRESSURE_ALERT" -> painterResource(R.drawable.pressure_icon)
+        "CAT_HIGH_PRESSURE_ALERT" -> painterResource(R.drawable.pressure_icon)
+
 
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.heart_rate)
@@ -230,6 +235,10 @@ fun alertCategoryFromString(category: String): String {
         "CAT_HR_LOW" -> "Low Resting HR"
         "CAT_HR_REST_LOW" -> "Low Resting HR"
         "CAT_HR_ALERT" -> "High Exertion"
+        "CAT_IMMERSION_WARN" -> "Immersion Warning"
+        "CAT_IMMERSION_ALERT" -> "Immersion Alert"
+        "CAT_LOW_PRESSURE_ALERT" -> "Low Pressure Alert"
+        "CAT_HIGH_PRESSURE_ALERT" -> "High Pressure Alert"
         else ->
             "ERROR"
     }

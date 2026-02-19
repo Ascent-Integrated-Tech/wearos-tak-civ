@@ -297,6 +297,12 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSizeState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpointSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHighAtmPressureAlert
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHighAtmPressureAlertSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableImmersionAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableImmersionAlertsSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLowAtmPressureAlert
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLowAtmPressureAlertSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxService
@@ -307,12 +313,16 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpointSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.highAtmPressureAlertThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.highAtmPressureAlertThresholdSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrAlertThresholdLength
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrAlertThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrAlertThresholdLengthState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrWarningThresholdLength
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrWarningThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrWarningThresholdLengthState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowAtmPressureAlertThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowAtmPressureAlertThresholdSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrAlertThresholdLength
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrAlertThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrAlertThresholdLengthState
@@ -411,6 +421,11 @@ fun loadSettingsValues(){
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
+    enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
+    enableLowAtmPressureAlertSettingsState.postValue(enableLowAtmPressureAlert)
+    lowAtmPressureAlertThresholdSettingsState.postValue(lowAtmPressureAlertThreshold)
+    enableHighAtmPressureAlertSettingsState.postValue(enableHighAtmPressureAlert)
+    highAtmPressureAlertThresholdSettingsState.postValue(highAtmPressureAlertThreshold)
     enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
     enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
     enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
@@ -703,6 +718,32 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 stringResource(R.string.endpoint),
                 "esri_screen"
             )
+        }
+        composable(
+            "atm_pressure_alerts_screen") {
+            AtmPressureAlertSettings(navController)
+        }
+        composable(
+            "low_atm_pressure_threshold_screen") {
+            NumericEntryPage(
+                navController,
+                lowAtmPressureAlertThresholdSettingsState,
+                1500,
+                0,
+                stringResource(R.string.low_atm_pressure_threshold),
+                context,
+                "atm_pressure_alerts_screen")
+        }
+        composable(
+            "high_atm_pressure_threshold_screen") {
+            NumericEntryPage(
+                navController,
+                highAtmPressureAlertThresholdSettingsState,
+                99999,
+                500,
+                stringResource(R.string.high_atm_pressure_threshold),
+                context,
+                "atm_pressure_alerts_screen")
         }
 
         composable(
@@ -2819,6 +2860,60 @@ fun enableDisableFromBoolean(boolean: Boolean?): String {
     }
     return enableDisableString
 }
+
+@Composable
+fun AtmPressureAlertSettings(navController: NavController) {
+    Log.i(TAG, "AtmPressureAlertSettings called")
+    val lowAtmPressureAlertCheckedLive by enableLowAtmPressureAlertSettingsState.observeAsState()
+    val highAtmPressureAlertCheckedLive by enableHighAtmPressureAlertSettingsState.observeAsState()
+
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            SettingSwitchToggleLiveData(
+                lowAtmPressureAlertCheckedLive,
+                { enableLowAtmPressureAlertSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.low_atm_pressure_alert),
+                stringResource(R.string.on_off)
+            )
+            DataMetricsChip("low_atm_pressure_threshold_screen", stringResource(R.string.low_atm_pressure_threshold), lowAtmPressureAlertThresholdSettingsState.value.toString(), navController)
+            Spacer(modifier = Modifier.height(16.dp))
+            SettingSwitchToggleLiveData(
+                highAtmPressureAlertCheckedLive,
+                { enableHighAtmPressureAlertSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.high_atm_pressure_alert),
+                stringResource(R.string.on_off)
+            )
+            DataMetricsChip("high_atm_pressure_threshold_screen", stringResource(R.string.high_atm_pressure_threshold), highAtmPressureAlertThresholdSettingsState.value.toString(), navController)
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.i(TAG, "Atm Pressure Alert Settings NOT saved")
+                    enableLowAtmPressureAlertSettingsState.setValue(enableLowAtmPressureAlert)
+                    lowAtmPressureAlertThresholdSettingsState.setValue(lowAtmPressureAlertThreshold)
+                    enableHighAtmPressureAlertSettingsState.setValue(enableHighAtmPressureAlert)
+                    highAtmPressureAlertThresholdSettingsState.setValue(highAtmPressureAlertThreshold)
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.atm_pressure_alerts)
+    )
+}
 @Composable
 fun ManageOutputsSetting(navController: NavController) {
     Log.d(TAG, "ManageOutputsSetting called")
@@ -4413,6 +4508,7 @@ fun SettingsScreen(
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
     val companionAppCheckedLive by enableCompanionAppServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val immersionAlertsCheckedLive by enableImmersionAlertsSettingsState.observeAsState()
     val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
     var smsListTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(smsNumbersListString)) }
@@ -4606,6 +4702,30 @@ fun SettingsScreen(
                 {},
                 "Bloodhound & Compass",
                 stringResource(R.string.service_on_off)
+            )
+            SettingSwitchToggleLiveData(
+                immersionAlertsCheckedLive,
+                { enableImmersionAlertsSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.immersion_alerts),
+                stringResource(R.string.on_off)
+            )
+            Chip(
+                onClick = {
+                    navController.navigate("atm_pressure_alerts_screen") {
+                        popUpTo("atm_pressure_alerts_screen") { inclusive = true }
+                    }
+                },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.atm_pressure_alerts)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
             )
 
             if (wearTakDevModeEnabled) {
@@ -4821,6 +4941,11 @@ fun SettingsScreen(
                     var batdokCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
+                    var immersionAlertsChanged = false
+                    var lowPressureAlertChanged = false
+                    var lowPressureAlertThresholdChanged = false
+                    var highPressureAlertChanged = false
+                    var highPressureAlertThresholdChanged = false
                     var onnxGunDetectChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
@@ -5166,6 +5291,41 @@ fun SettingsScreen(
                         requestChatComplicationUpdate(context)
 
                     }
+                    if (enableImmersionAlerts != enableImmersionAlertsSettingsState.value) {
+                        settingsChanged = true; immersionAlertsChanged = true
+                        enableImmersionAlerts = enableImmersionAlertsSettingsState.value ?: enableImmersionAlerts
+                        runBlocking {
+                            enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
+                        }
+                    }
+                    if (enableLowAtmPressureAlert != enableLowAtmPressureAlertSettingsState.value) {
+                        settingsChanged = true; lowPressureAlertChanged = true
+                        enableLowAtmPressureAlert = enableLowAtmPressureAlertSettingsState.value ?: enableLowAtmPressureAlert
+                        runBlocking {
+                            enableLowAtmPressureAlertSettingsState.postValue(enableLowAtmPressureAlert)
+                        }
+                    }
+                    if (lowAtmPressureAlertThreshold != lowAtmPressureAlertThresholdSettingsState.value) {
+                        settingsChanged = true; lowPressureAlertThresholdChanged = true
+                        lowAtmPressureAlertThreshold = lowAtmPressureAlertThresholdSettingsState.value ?: lowAtmPressureAlertThreshold
+                        runBlocking {
+                            lowAtmPressureAlertThresholdSettingsState.postValue(lowAtmPressureAlertThreshold)
+                        }
+                    }
+                    if (enableHighAtmPressureAlert != enableHighAtmPressureAlertSettingsState.value) {
+                        settingsChanged = true; highPressureAlertChanged = true
+                        enableHighAtmPressureAlert = enableHighAtmPressureAlertSettingsState.value ?: enableHighAtmPressureAlert
+                        runBlocking {
+                            enableHighAtmPressureAlertSettingsState.postValue(enableHighAtmPressureAlert)
+                        }
+                    }
+                    if (highAtmPressureAlertThreshold != highAtmPressureAlertThresholdSettingsState.value) {
+                        settingsChanged = true; highPressureAlertThresholdChanged = true
+                        highAtmPressureAlertThreshold = highAtmPressureAlertThresholdSettingsState.value ?: highAtmPressureAlertThreshold
+                        runBlocking {
+                            highAtmPressureAlertThresholdSettingsState.postValue(highAtmPressureAlertThreshold)
+                        }
+                    }
 
                     if (enableOnnxGunshotService != enableOnnxGunshotServiceSettingsState.value) {
                         settingsChanged = true; onnxGunDetectChanged = true
@@ -5434,6 +5594,26 @@ fun SettingsScreen(
                              if (chatCheckedChanged) {
                                  Log.d(TAG, "Storing enableChatService $enableChatService")
                                  dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (immersionAlertsChanged) {
+                                 Log.d(TAG, "Storing enableImmersionAlerts $enableImmersionAlerts")
+                                 dataRepository.storeEnableImmersionAlerts(enableImmersionAlerts)
+                             }
+                             if (lowPressureAlertChanged) {
+                                 Log.d(TAG, "Storing enableLowAtmPressureAlert $enableLowAtmPressureAlert")
+                                 dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlert)
+                             }
+                             if (lowPressureAlertThresholdChanged) {
+                                 Log.d(TAG, "Storing lowAtmPressureAlertThreshold $lowAtmPressureAlertThreshold")
+                                 dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThreshold)
+                             }
+                             if (highPressureAlertChanged) {
+                                 Log.d(TAG, "Storing enableHighAtmPressureAlert $enableHighAtmPressureAlert")
+                                 dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlert)
+                             }
+                             if (highPressureAlertThresholdChanged) {
+                                 Log.d(TAG, "Storing highAtmPressureAlertThreshold $highAtmPressureAlertThreshold")
+                                 dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
                              }
                              if (onnxGunDetectChanged) {
                                  Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")

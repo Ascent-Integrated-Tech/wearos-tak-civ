@@ -175,4 +175,10 @@
     <string name="disabled">Disabled</string>
     <string name="enabled">Enabled</string>
     <string name="airplane_mode">Airplane Mode</string>
+    <string name="immersion_alerts">Immersion Alerts</string>
+    <string name="atm_pressure_alerts">Atm Pressure Alerts</string>
+    <string name="low_atm_pressure_alert">Low Pressure Alert</string>
+    <string name="low_atm_pressure_threshold">Low Pressure Threshold (hPa)</string>
+    <string name="high_atm_pressure_alert">High Pressure Alert</string>
+    <string name="high_atm_pressure_threshold">High Pressure Threshold (hPa)</string>
 </resources>

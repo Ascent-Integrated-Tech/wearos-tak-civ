@@ -87,6 +87,36 @@
         android:title="@string/skin_temp_service_title"
         android:description="@string/skin_temp_service_description"
         android:defaultValue="@string/skin_temp_service_enabled_default" />
+    <restriction
+        android:key="enable_immersion_alerts"
+        android:restrictionType="bool"
+        android:title="@string/enable_immersion_alerts_title"
+        android:description="@string/enable_immersion_alerts_description"
+        android:defaultValue="@string/enable_immersion_alerts_default" />
+    <restriction
+        android:key="enable_low_atm_pressure_alert"
+        android:restrictionType="bool"
+        android:title="@string/enable_low_atm_pressure_alert_title"
+        android:description="@string/enable_low_atm_pressure_alert_description"
+        android:defaultValue="@string/enable_low_atm_pressure_alert_default" />
+    <restriction
+        android:key="low_atm_pressure_alert_threshold"
+        android:restrictionType="integer"
+        android:title="@string/low_atm_pressure_alert_threshold_title"
+        android:description="@string/low_atm_pressure_alert_threshold_description"
+        android:defaultValue="@string/low_atm_pressure_alert_threshold_default" />
+    <restriction
+        android:key="enable_high_atm_pressure_alert"
+        android:restrictionType="bool"
+        android:title="@string/enable_high_atm_pressure_alert_title"
+        android:description="@string/enable_high_atm_pressure_alert_description"
+        android:defaultValue="@string/enable_high_atm_pressure_alert_default" />
+    <restriction
+        android:key="high_atm_pressure_alert_threshold"
+        android:restrictionType="integer"
+        android:title="@string/high_atm_pressure_alert_threshold_title"
+        android:description="@string/high_atm_pressure_alert_threshold_description"
+        android:defaultValue="@string/high_atm_pressure_alert_threshold_default" />
 
     <restriction
         android:key="ditto_service_enabled"

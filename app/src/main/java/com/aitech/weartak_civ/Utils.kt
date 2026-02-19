@@ -77,7 +77,7 @@ import dalvik.system.PathClassLoader
 
 object Utils {
     private const val TAG = "WearTAK-Utils"
-    private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    private var logFileFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
     private const val DECIMAL_DEGREES_PER_METER = 3.631033E-06 //Approximate decimal degrees per meter at the equator
     const val EARTH_RADIUS = 6378137.0  // in meters
     const val GPS_ALARM_REQUEST_CODE = 234324243
