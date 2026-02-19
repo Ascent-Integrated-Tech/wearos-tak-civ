@@ -119,7 +119,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
@@ -351,9 +351,9 @@ class MainActivity : ComponentActivity() {
 
         var battWarnPercent = DEFAULT_BATT_WARNING_PERCENTAGE
         var battAlertPercent = DEFAULT_BATT_ALERT_PERCENTAGE
-        var ageValue = DEFAULT_AGE
-        val ageState = MutableLiveData<Int>(DEFAULT_AGE)
-        val ageSettingsState = MutableLiveData<Int>(DEFAULT_AGE)
+        var birthYearValue = DEFAULT_BIRTH_YEAR
+        val birthYearState = MutableLiveData<Int>(DEFAULT_BIRTH_YEAR)
+        val birthYearSettingsState = MutableLiveData<Int>(DEFAULT_BIRTH_YEAR)
         var heightFeetValue = DEFAULT_HEIGHT_FEET
         val heightFeetState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
         val heightFeetSettingsState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
@@ -870,7 +870,7 @@ class MainActivity : ComponentActivity() {
             dittoAuthToken = dataRepository.getDittoAuthToken.first()
 
             // --- Physiological profile / metrics ---
-            ageValue           = dataRepository.getPhysiologicalMetricAge.first()
+            birthYearValue           = dataRepository.getYearOfBirth.first()
             heightFeetValue    = dataRepository.getPhysiologicalMetricHeightFeet.first()
             heightInchesValue  = dataRepository.getPhysiologicalMetricHeightInches.first()
             weightValue        = dataRepository.getPhysiologicalMetricWeight.first()
@@ -1001,7 +1001,7 @@ class MainActivity : ComponentActivity() {
 
         logOutput += """
                     === === Physiological User Metrics === ===
-                    ${String.format("%-25s %-30s", "Age:", ageValue)}
+                    ${String.format("%-25s %-30s", "Birth Year:", birthYearValue)}
                     ${String.format("%-25s %-30s", "Height:", "$heightFeetValue ft $heightInchesValue inches")}
                     ${String.format("%-25s %-30s", "Weight:", weightValue)}
                     ${String.format("%-25s %-30s", "Sex:", sexValue)}
@@ -1216,8 +1216,8 @@ class MainActivity : ComponentActivity() {
         hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
         hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThreshold)
 
-        ageState.postValue(ageValue)
-        ageSettingsState.postValue(ageValue)
+        birthYearState.postValue(birthYearValue)
+        birthYearSettingsState.postValue(birthYearValue)
         heightFeetState.postValue(heightFeetValue)
         heightFeetSettingsState.postValue(heightFeetValue)
         heightInchesState.postValue(heightInchesValue)
@@ -1601,7 +1601,7 @@ class MainActivity : ComponentActivity() {
         val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
 
         val physiologicalMetricsRestingHeartRateConfigUpdate = appRestrictions.getInt("physiological_metrics_resting_heart_rate", restingHeartRate)
-        val physiologicalMetricsAgeServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_age", ageValue)
+        val physiologicalMetricsBirthYearServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_birth_year", birthYearValue)
         val physiologicalMetricsHeightFeetServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_feet", heightFeetValue)
         val physiologicalMetricsHeightInchesServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_inches", heightInchesValue)
         val physiologicalMetricsWeightServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_weight", weightValue)
@@ -1916,7 +1916,7 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeBatteryAlertPercentage(battAlertPercentConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
             dataRepository.storeRestingHeartRate(physiologicalMetricsRestingHeartRateConfigUpdate)
-            dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
+            dataRepository.storeYearOfBirth(physiologicalMetricsBirthYearServiceConfigUpdate)
             dataRepository.storePhysiologicalMetricHeightFeet(
                 physiologicalMetricsHeightFeetServiceConfigUpdate
             )
@@ -2069,12 +2069,12 @@ class MainActivity : ComponentActivity() {
                 )
                 restingHeartRate = physiologicalMetricsRestingHeartRateConfigUpdate
             }
-            if (ageValue != physiologicalMetricsAgeServiceConfigUpdate) {
+            if (birthYearValue != physiologicalMetricsBirthYearServiceConfigUpdate) {
                 Log.d(
                     TAG,
-                    "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)"
+                    "Change detected birthYearValue(prev=$birthYearValue, curr=$physiologicalMetricsBirthYearServiceConfigUpdate)"
                 )
-                ageValue = physiologicalMetricsAgeServiceConfigUpdate
+                birthYearValue = physiologicalMetricsBirthYearServiceConfigUpdate
             }
             if (heightFeetValue != physiologicalMetricsHeightFeetServiceConfigUpdate) {
                 Log.d(

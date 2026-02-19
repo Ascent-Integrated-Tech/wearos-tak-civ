@@ -138,6 +138,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
@@ -153,9 +154,9 @@ import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageValue
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.birthYearSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.birthYearState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.birthYearValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyListSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyListState
@@ -350,6 +351,8 @@ class SettingsActivity : ComponentActivity() {
         lateinit var settingsActivity: SettingsActivity
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
+        val years = (1999..2025).toList()
+        var year = MutableLiveData<Int>(1999)
         val sexOptionsList : List<String> = listOf("N/A", "Male", "Female")
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
@@ -437,7 +440,7 @@ fun loadSettingsValues(){
 
     hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
     hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
-    ageState.postValue(ageValue)
+    birthYearState.postValue(birthYearValue)
     heightFeetState.postValue(heightFeetValue)
     heightInchesState.postValue(heightInchesValue)
     weightState.postValue(weightValue)
@@ -555,23 +558,23 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "constant_reporting_interval_screen") {
-            NumericEntryPage(navController, constantReportingIntervalSettingsState, 1000000, "Constant Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, constantReportingIntervalSettingsState, 1000000, 1, "Constant Reporting Interval", context, "reporting_settings_screen")
         }
         composable(
             "stationary_reporting_interval_screen") {
-            NumericEntryPage(navController, stationaryReportingIntervalSettingsState, 1000000, "Stationary Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, stationaryReportingIntervalSettingsState, 1000000,1,  "Stationary Reporting Interval", context, "reporting_settings_screen")
         }
         composable(
             "on_foot_reporting_interval_screen") {
-            NumericEntryPage(navController, onFootReportingIntervalSettingsState, 1000000, "On Foot Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, onFootReportingIntervalSettingsState, 1000000, 1, "On Foot Reporting Interval", context, "reporting_settings_screen")
         }
         composable(
             "vehicle_reporting_interval_screen") {
-            NumericEntryPage(navController, vehicleReportingIntervalSettingsState, 1000000, "Vehicle Reporting Interval", context,"reporting_settings_screen" )
+            NumericEntryPage(navController, vehicleReportingIntervalSettingsState, 1000000, 1, "Vehicle Reporting Interval", context,"reporting_settings_screen" )
         }
         composable(
             "while_alerting_reporting_interval_screen") {
-            NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, "While Alerting Reporting Interval", context, "reporting_settings_screen")
+            NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, 1, "While Alerting Reporting Interval", context, "reporting_settings_screen")
         }
 
         composable(
@@ -605,6 +608,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 navController,
                 multicastPortSettingsState,
                 99999,
+                0,
                 stringResource(R.string.server_port),
                 context,
                 "tak_sa_multicast_screen")
@@ -668,15 +672,15 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "high_resting_hr_bpm_threshold_screen") {
-            NumericEntryPage(navController, restingHrHighAlertBpmThresholdSettingsState, 300,"High Resting Heart Rate - Alert", context,"physiological_heart_rate_alerts_setting_screen")
+            NumericEntryPage(navController, restingHrHighAlertBpmThresholdSettingsState, 300, 0,"High Resting Heart Rate - Alert", context,"physiological_heart_rate_alerts_setting_screen")
         }
         composable(
             "low_resting_hr_bpm_threshold_screen") {
-            NumericEntryPage(navController, restingHrLowAlertBpmThresholdSettingsState, 300,"Low Resting Heart Rate - Alert", context,"physiological_heart_rate_alerts_setting_screen")
+            NumericEntryPage(navController, restingHrLowAlertBpmThresholdSettingsState, 300,0, "Low Resting Heart Rate - Alert", context,"physiological_heart_rate_alerts_setting_screen")
         }
         composable(
             "resting_hr_threshold_length_screen") {
-            NumericEntryPage(navController, restingHrAlertBpmThresholdLengthSettingsState, 100000,"Resting Heart Rate Threshold Length - Alert", context,"physiological_heart_rate_alerts_setting_screen")
+            NumericEntryPage(navController, restingHrAlertBpmThresholdLengthSettingsState, 100000,0, "Resting Heart Rate Threshold Length - Alert", context,"physiological_heart_rate_alerts_setting_screen")
         }
         composable(
             "physiological_exertion_alerts_setting_screen") {
@@ -684,29 +688,29 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "exertion_threshold_warning_screen") {
-            NumericEntryPage(navController, exertionThresholdWarningSettingsState, 100,"Exertion Threshold - Warning", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionThresholdWarningSettingsState, 100,0, "Exertion Threshold - Warning", context,"physiological_exertion_alerts_setting_screen")
         }
         composable(
             "exertion_threshold_alert_screen") {
-            NumericEntryPage(navController, exertionThresholdAlertSettingsState, 100,"Exertion Threshold - Alert", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionThresholdAlertSettingsState, 100,0, "Exertion Threshold - Alert", context,"physiological_exertion_alerts_setting_screen")
         }
 
         composable(
             "exertion_threshold_length_screen") {
-            NumericEntryPage(navController, exertionThresholdLengthSettingsState, 100000,"Exertion Threshold Length", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionThresholdLengthSettingsState, 100000,0, "Exertion Threshold Length", context,"physiological_exertion_alerts_setting_screen")
         }
 
             //TODO: WEAR-313: Change to High Resting Heart Rate - Alert
         composable(
             "physiological_alerts_bpm_screen") {
 //            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertBpmThresholdSettingsState, stringResource(R.string.threshold_high_heart_rate), "140")
-            NumericEntryPage(navController, hrHighAlertBpmThresholdSettingsState, 300,stringResource(R.string.threshold_high_heart_rate), context,"physiological_alerts_setting_screen")
+            NumericEntryPage(navController, hrHighAlertBpmThresholdSettingsState, 300,1, stringResource(R.string.threshold_high_heart_rate), context,"physiological_alerts_setting_screen")
         }
         //TODO: WEAR-313: Change to Low Resting Heart Rate - Alert
         composable(
             "physiological_alerts_bpm_length_screen") {
 //            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertNumSecsThresholdSettingsState, (stringResource(R.string.threshold_high_heart_rate_length)), "60" + "seconds")
-            NumericEntryPage(navController, hrHighAlertNumSecsThresholdSettingsState, 1000000, (stringResource(R.string.threshold_high_heart_rate_length)), context, "physiological_alerts_setting_screen")
+            NumericEntryPage(navController, hrHighAlertNumSecsThresholdSettingsState, 1000000, 1, (stringResource(R.string.threshold_high_heart_rate_length)), context, "physiological_alerts_setting_screen")
         }
         //Physio Metrics
         composable(
@@ -717,9 +721,9 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             PhysioMetricsMedicalProfileSetting(navController)
         }
         composable(
-            "physiological_metrics_age_screen") {
-//            AgeWeightSetting(navController, ageSettingsState, 150, stringResource(R.string.age), context)
-            NumericEntryPage(navController, ageSettingsState, 150, stringResource(R.string.age), context, "physiological_metrics_medical_profile_batdok")
+            "physiological_metrics_birth_year_screen") {
+//            AgeWeightSetting(navController, birthYearSettingsState, 150, stringResource(R.string.age), context)
+            NumericEntryPage(navController, birthYearSettingsState, 2025, 1900, stringResource(R.string.birth_year), context, "physiological_metrics_medical_profile_batdok")
         }
         composable(
             "physiological_metrics_height_screen") {
@@ -728,7 +732,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_weight_screen") {
 //            AgeWeightSetting(navController, weightSettingsState, 1000, stringResource(R.string.weight), context)
-            NumericEntryPage(navController, weightSettingsState, 1000, stringResource(R.string.weight), context, "physiological_metrics_medical_profile_batdok")
+            NumericEntryPage(navController, weightSettingsState, 1000, 0,stringResource(R.string.weight), context, "physiological_metrics_medical_profile_batdok")
         }
         composable(
             "physiological_metrics_sex_screen") {
@@ -749,26 +753,26 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_resting_hr_screen") {
 //            AgeWeightSetting(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context)
-            NumericEntryPage(navController, restingHeartRateSettingsState, 150, stringResource(R.string.resting_heart_rate), context, "physiological_metrics_medical_profile_batdok")
+            NumericEntryPage(navController, restingHeartRateSettingsState, 150, 0,stringResource(R.string.resting_heart_rate), context, "physiological_metrics_medical_profile_batdok")
         }
         composable("physiological_metrics_gait_tracking") {
             PhysioMetricsGaitTrackingSettings(navController)
         }
         composable(
             "physiological_metrics_uniform_waist_size") {
-            NumericEntryPage(navController, uniformWaistSizeSettingsState, 100, stringResource(R.string.uniform_waist_size_text), context, "physiological_metrics_gait_tracking")
+            NumericEntryPage(navController, uniformWaistSizeSettingsState, 100, 0,stringResource(R.string.uniform_waist_size_text), context, "physiological_metrics_gait_tracking")
         }
         composable(
             "physiological_metrics_stride_length") {
-            NumericEntryPage(navController, strideLengthSettingsState, 300, stringResource(R.string.stride_length_text), context, "physiological_metrics_gait_tracking")
+            NumericEntryPage(navController, strideLengthSettingsState, 300, 0,stringResource(R.string.stride_length_text), context, "physiological_metrics_gait_tracking")
         }
         composable(
             "physiological_metrics_uniform_pants_length") {
-            NumericEntryPage(navController, uniformPantsLengthSettingsState, 100, stringResource(R.string.uniform_pants_length_text), context, "physiological_metrics_gait_tracking")
+            NumericEntryPage(navController, uniformPantsLengthSettingsState, 100, 0,stringResource(R.string.uniform_pants_length_text), context, "physiological_metrics_gait_tracking")
         }
         composable(
             "physiological_metrics_loadout_weight") {
-            NumericEntryPage(navController, loadoutWeightSettingsState, 1000, stringResource(R.string.loadout_weight_text), context, "physiological_metrics_gait_tracking")
+            NumericEntryPage(navController, loadoutWeightSettingsState, 1000, 0,stringResource(R.string.loadout_weight_text), context, "physiological_metrics_gait_tracking")
         }
 
         composable(
@@ -2439,6 +2443,7 @@ fun NumericEntryPage(
     navController: NavController,
     metricSettingState: MutableLiveData<Int>,
     maximum: Int,
+    minimum: Int,
     label: String,
     context: Context,
     route: String
@@ -2479,10 +2484,12 @@ fun NumericEntryPage(
                     } else if (metricTextFieldValue.text.toInt() > maximum) {
                         Toast.makeText(
                             mainActivity,
-                            context.getString(R.string.value_exceeds_maximum_please_re_enter),
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } else {
+                            context.getString(R.string.value_exceeds_maximum_please_re_enter), Toast.LENGTH_LONG).show()
+                    } else if (metricTextFieldValue.text.toInt() < minimum){
+                        Toast.makeText(
+                            mainActivity,
+                            //TODO: WEAR-272 this doesnt recognize the new string resource for it?
+                           " Value is less than minimum, please re-enter", Toast.LENGTH_LONG).show()                    } else {
                         focusManager.clearFocus()
                     }
                 }
@@ -3091,39 +3098,39 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
             stringResource(R.string.on_off)
         )
 
-        DataMetricsChip("physiological_alerts_bpm_screen", stringResource(R.string.threshold_high_heart_rate), hrHighAlertBpmThresholdSettingsState.value.toString(), navController)
-        DataMetricsChip("physiological_alerts_bpm_length_screen", stringResource(R.string.threshold_high_heart_rate_length), hrHighAlertNumSecsThresholdSettingsState.value.toString() + " seconds", navController)
-//        Chip(
-//            onClick = { navController.navigate("physiological_heart_rate_alerts_setting_screen") {
-//                popUpTo("physiological_heart_rate_alerts_setting_screen") { inclusive = true }
-//            } },
-//            enabled = true,
-//            label = { Text(text = "Resting Heart Rate Alerts") },
-//            colors = ChipDefaults.chipColors(
-//                backgroundColor = Color.DarkGray,
-//                contentColor = Color.White,
-//                secondaryContentColor = Color.LightGray
-//            ),
-//            modifier = Modifier
-//                .fillMaxWidth()
-//                .padding(bottom = 3.dp)
-//        )
-//
-//        Chip(
-//            onClick = { navController.navigate("physiological_exertion_alerts_setting_screen") {
-//                popUpTo("physiological_exertion_alerts_setting_screen") { inclusive = true }
-//            } },
-//            enabled = true,
-//            label = { Text(text = "Exertion Alerts") },
-//            colors = ChipDefaults.chipColors(
-//                backgroundColor = Color.DarkGray,
-//                contentColor = Color.White,
-//                secondaryContentColor = Color.LightGray
-//            ),
-//            modifier = Modifier
-//                .fillMaxWidth()
-//                .padding(bottom = 3.dp)
-//        )
+//        DataMetricsChip("physiological_alerts_bpm_screen", stringResource(R.string.threshold_high_heart_rate), hrHighAlertBpmThresholdSettingsState.value.toString(), navController)
+//        DataMetricsChip("physiological_alerts_bpm_length_screen", stringResource(R.string.threshold_high_heart_rate_length), hrHighAlertNumSecsThresholdSettingsState.value.toString() + " seconds", navController)
+        Chip(
+            onClick = { navController.navigate("physiological_heart_rate_alerts_setting_screen") {
+                popUpTo("physiological_heart_rate_alerts_setting_screen") { inclusive = true }
+            } },
+            enabled = true,
+            label = { Text(text = "Resting Heart Rate Alerts") },
+            colors = ChipDefaults.chipColors(
+                backgroundColor = Color.DarkGray,
+                contentColor = Color.White,
+                secondaryContentColor = Color.LightGray
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 3.dp)
+        )
+
+        Chip(
+            onClick = { navController.navigate("physiological_exertion_alerts_setting_screen") {
+                popUpTo("physiological_exertion_alerts_setting_screen") { inclusive = true }
+            } },
+            enabled = true,
+            label = { Text(text = "Exertion Alerts") },
+            colors = ChipDefaults.chipColors(
+                backgroundColor = Color.DarkGray,
+                contentColor = Color.White,
+                secondaryContentColor = Color.LightGray
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 3.dp)
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
     },
@@ -3132,9 +3139,14 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
             onClickCancel = {
                 Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
                 enablePhysiologicalAlertsSettingState.setValue(enablePhysiologicalAlerts)
-                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThreshold)
-                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThreshold)
-
+//                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThreshold)
+//                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThreshold)
+                restingHrHighAlertBpmThresholdSettingsState.setValue(restingHrHighAlertBpmThreshold)
+                restingHrLowAlertBpmThresholdSettingsState.setValue(restingHrLowAlertBpmThreshold)
+                restingHrAlertBpmThresholdLengthSettingsState.setValue(restingHrAlertBpmThresholdLength)
+                exertionThresholdWarningSettingsState.setValue(exertionThresholdWarning)
+                exertionThresholdAlertSettingsState.setValue(exertionThresholdAlert)
+                exertionThresholdLengthSettingsState.setValue(exertionThresholdLength)
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -3142,8 +3154,8 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
                 }
             },
             onClickConfirm = {
-                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThresholdSettingsState.value)
-                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThresholdSettingsState.value)
+//                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThresholdSettingsState.value)
+//                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThresholdSettingsState.value)
 
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
@@ -3644,7 +3656,7 @@ fun PhysioMetricsMedicalProfileSetting(navController: NavController) {
 
     WearTakCivScreenDimensions(
         columnContent = {
-            DataMetricsChip("physiological_metrics_age_screen", stringResource(R.string.age), ageSettingsState.value.toString(), navController)
+            DataMetricsChip("physiological_metrics_birth_year_screen", stringResource(R.string.birth_year), birthYearSettingsState.value.toString(), navController)
             DataMetricsChip("physiological_metrics_height_screen", stringResource(R.string.height), heightFeetSettingsState.value.toString() + "' " + heightInchesSettingsState.value.toString() + "''", navController)
             DataMetricsChip("physiological_metrics_weight_screen", stringResource(R.string.weight), weightSettingsState.value.toString() + " lbs", navController)
             DataMetricsChip("physiological_metrics_sex_screen", stringResource(R.string.sex), sexSettingsState.value.toString(), navController)
@@ -3659,7 +3671,7 @@ fun PhysioMetricsMedicalProfileSetting(navController: NavController) {
             ConfirmCancelButtons(
                 onClickCancel = {
                     Log.d(TAG, "Physio Metrics Med Profile Settings NOT saved")
-                    ageSettingsState.setValue(ageValue)
+                    birthYearState.setValue(birthYearValue)
                     heightFeetSettingsState.setValue(heightFeetValue)
                     heightInchesSettingsState.setValue(heightInchesValue)
                     weightSettingsState.setValue(weightValue)
@@ -3677,7 +3689,7 @@ fun PhysioMetricsMedicalProfileSetting(navController: NavController) {
                     }
                 },
                 onClickConfirm = {
-                    ageState.setValue(ageSettingsState.value)
+                    birthYearState.setValue(birthYearSettingsState.value)
                     heightFeetState.setValue(heightFeetSettingsState.value)
                     heightInchesState.setValue(heightInchesSettingsState.value)
                     weightState.setValue(weightSettingsState.value)
@@ -4405,7 +4417,7 @@ fun SettingsScreen(
 
             Chip(
                     onClick = {
-                        ageSettingsState.postValue(ageState.value)
+                        birthYearSettingsState.postValue(birthYearState.value)
                         heightFeetSettingsState.postValue(heightFeetState.value)
                         heightInchesSettingsState.postValue(heightInchesState.value)
                         weightSettingsState.postValue(weightState.value)
@@ -4500,6 +4512,7 @@ fun SettingsScreen(
                     var physiologicalAlertsBpmThresholdTimeCheckedChanged: Boolean = false
                     var saveBattOnWifiChanged = false
                     var takServerListChanged = false
+                    var birthYearChanged: Boolean = false
                     var enableMulticastChanged = false
                     var multicastAddressChanged = false
                     var multicastOutputProtocolChanged = false
@@ -4509,7 +4522,6 @@ fun SettingsScreen(
                     var tabletCommandAPIKeyChanged = false
                     var enableEsriChanged = false
                     var esriEndpointChanged = false
-                    var ageChanged: Boolean = false
                     var heightFeetChanged: Boolean = false
                     var heightInchesChanged: Boolean = false
                     var weightChanged: Boolean = false
@@ -4553,15 +4565,15 @@ fun SettingsScreen(
                     if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
                         hrHighAlertBpmThreshold = hrHighAlertBpmThresholdState.value ?: hrHighAlertBpmThreshold
-                    }    
+                    }
                     if (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdSettingsState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdTimeCheckedChanged = true
                         hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdState.value ?: hrHighAlertNumSecsThreshold
                     }
 
-                    if (ageValue != ageState.value) {
-                        settingsChanged = true; ageChanged = true
-                        ageValue = ageState.value ?: ageValue
+                    if (birthYearValue != birthYearState.value) {
+                        settingsChanged = true; birthYearChanged = true
+                        birthYearValue = birthYearState.value ?: birthYearValue
                     }
                     if (heightFeetValue != heightFeetState.value) {
                         settingsChanged = true; heightFeetChanged = true
@@ -4594,6 +4606,9 @@ fun SettingsScreen(
                     if (restingHeartRate != restingHeartRateState.value) {
                         settingsChanged = true; restingHeartRateChanged = true
                         restingHeartRate = restingHeartRateState.value ?: restingHeartRate
+
+                        //Updating HR Profile in CEP
+                        CepProvider.getOrCreateEngine(context).updateHrProfile()
                     }
                     if (uniformWaistSize != uniformWaistSizeState.value) {
                         settingsChanged = true; uniformWaistSizeChanged = true
@@ -4904,9 +4919,9 @@ fun SettingsScreen(
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
-                             if (ageChanged) {
-                                 Log.d(TAG, "Storing Age ($ageValue)")
-                                 dataRepository.storePhysiologicalMetricAge(ageValue)
+                             if (birthYearChanged) {
+                                 Log.d(TAG, "Storing Birth Year ($birthYearValue)")
+                                 dataRepository.storeYearOfBirth(birthYearValue)
                              }
                              if (heightFeetChanged) {
                                  Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
@@ -5115,6 +5130,9 @@ fun SettingsScreen(
                              if (physiologicalAlertsBpmThresholdCheckedChanged) {
                                  Log.d(TAG, "Storing hrHighAlertBpmThreshold $hrHighAlertBpmThreshold")
                                  dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold)
+
+                                 //Updating the hrProfile in the CEP
+                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
                              }
                              if (physiologicalAlertsBpmThresholdTimeCheckedChanged) {
                                  Log.d(TAG, "Storing hrHighAlertNumSecsThreshold $hrHighAlertNumSecsThreshold")

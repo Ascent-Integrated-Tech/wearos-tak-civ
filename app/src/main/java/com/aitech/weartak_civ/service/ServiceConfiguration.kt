@@ -42,6 +42,7 @@ class ServiceConfiguration(
     private val TAG = "WearTAK-ServiceConfig"
 
     fun getServiceEnabledFlow(type: ServiceType): Flow<Boolean> = when (type) {
+        ServiceType.WEATHER -> flowOf(true).distinctUntilChanged()
         ServiceType.LOCATION ->
             dataRepository.getEnableLocationService.distinctUntilChanged()
 
@@ -97,6 +98,7 @@ class ServiceConfiguration(
     }
 
     private fun requiredPerms(type: ServiceType): List<String> = when (type) {
+        ServiceType.WEATHER -> emptyList()
         ServiceType.LOCATION -> listOf(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
             android.Manifest.permission.ACCESS_COARSE_LOCATION

@@ -764,6 +764,7 @@ class ReactiveServiceManager : Service() {
 
     private fun snapshotRunningServices(): EnumMap<ServiceType, Boolean> =
         EnumMap<ServiceType, Boolean>(ServiceType::class.java).apply {
+            put(ServiceType.WEATHER,               WeatherService.isRunning.get())
             put(ServiceType.TAK_CONNECT,           TAKConnectService.isRunning.get())
             put(ServiceType.COT_DISPATCH,          CotDispatchService.isRunning.get())
             put(ServiceType.LOCATION,              LocationService.isRunning.get())
@@ -914,6 +915,7 @@ class ReactiveServiceManager : Service() {
         BLOOD_HOUND(true, isKnoxMgdService = false),
 //        BATTERY_ALERTS(true, isKnoxMgdService = false),
         MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND)),
+        WEATHER(true, dependencies = listOf(LOCATION), isKnoxMgdService = false),
         COMPANION_APP(isForegroundService = true, isKnoxMgdService = false);
 
         val conflictsWith: List<ServiceType>

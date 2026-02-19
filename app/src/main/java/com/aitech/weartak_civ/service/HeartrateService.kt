@@ -26,6 +26,10 @@ import androidx.lifecycle.MutableLiveData
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.CAT_PHYSIOLOGICAL_ALERT
 import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
@@ -292,9 +296,26 @@ class HeartrateService: Service() {
                     //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
                     return
                 }
+
+                // --- NEW: feed real HR into CEP ---
+                scope.launch {
+                    try {
+                        CepBus.emit(
+                            CepEvent(
+                                topic = Topics.HEART_RATE,
+                                payload = HeartRatePayload(bpm = localHr.toDouble())
+                            )
+                        )
+
+                        //Log.d("CEP-HR", "Emitted HR=${localHr} bpm to CEP")
+                    } catch (ex: Exception) {
+                        Log.e("CEP-HR", "Failed to emit HR sample to CEP", ex)
+                    }
+                }
+
                 hr = localHr
                 //Log.d(TAG, "Obtained heartrate: $hr")
-                generateAlerts()
+                //generateAlerts()
 
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.actualReportingIntervalSecs * 1000L)) {

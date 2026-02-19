@@ -20,6 +20,7 @@ import android.app.Application
 import android.content.Context
 import android.provider.Settings.Secure
 import android.util.Log
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -51,10 +52,12 @@ class WearTakApplication : Application() {
         capRepo = CompanionAppRepository(applicationContext)
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
-        // Wipe debug mode to false on every boot! 
+        // Wipe debug mode to false on every boot!
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.storeEnableWearTakDevMode(false)
         }
+        CepProvider.init(this)
+        CepProvider.getOrCreateEngine(this).start()
     }
 
     object AppCtx {

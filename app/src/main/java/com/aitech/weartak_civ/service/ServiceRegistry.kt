@@ -23,6 +23,7 @@ class ServiceRegistry() {
      * service representing Heartrate, SkinTemp (Samsung), ActivityRec (Google).
      */
     private val runnableServiceClassMap = mapOf(
+        ServiceType.WEATHER to WeatherService::class.java,
         ServiceType.TAK_CONNECT to TAKConnectService::class.java,
         ServiceType.COT_DISPATCH to CotDispatchService::class.java,
         ServiceType.REPORTING_INTERVAL to ReportingIntervalStrategyService::class.java,
@@ -43,6 +44,7 @@ class ServiceRegistry() {
     )
 
     private val serviceRunningStateMap = mapOf(
+        ServiceType.WEATHER to WeatherService.isRunning,
         ServiceType.TAK_CONNECT to TAKConnectService.isRunning,
         ServiceType.COT_DISPATCH to CotDispatchService.isRunning,
         ServiceType.REPORTING_INTERVAL to ReportingIntervalStrategyService.isRunning,
