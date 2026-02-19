@@ -27,7 +27,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
@@ -101,6 +101,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import java.util.Calendar
 import java.util.EnumMap
 import java.util.UUID
 import kotlin.collections.component1
@@ -2185,8 +2186,9 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    //TODO: WEAR-272: Do we still need this?? vvv
     val getPhysiologicalMetricAge: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[AGE] ?: DEFAULT_AGE
+        prefs[AGE] ?: DEFAULT_BIRTH_YEAR
     }
 
     suspend fun storePhysiologicalMetricAge(age: Int) {
@@ -2198,7 +2200,7 @@ class DataRepository(private val context: Context) {
     val physiologicalMetricAge: StateFlow<Int> = getPhysiologicalMetricAge.stateIn(
         scope = repoScope,
         started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-        initialValue = DEFAULT_AGE
+        initialValue = DEFAULT_BIRTH_YEAR
     )
 
     val latestExertion: StateFlow<Double> = combine(
@@ -2213,6 +2215,7 @@ class DataRepository(private val context: Context) {
             started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
             initialValue = -1.0
         )
+    //TODO: WEAR-272: Do we still need this?? ^^^
 
 
     val getPhysiologicalMetricHeightFeet: Flow<Int> = context.dataStore.data.map { prefs ->
@@ -2295,6 +2298,16 @@ class DataRepository(private val context: Context) {
     suspend fun storePhysiologicalMetricUserType(usertype: String) {
         context.dataStore.edit { prefs ->
             prefs[USER_TYPE] = usertype
+        }
+    }
+
+    val getYearOfBirth: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[YEAR_OF_BIRTH] ?: DEFAULT_BIRTH_YEAR
+    }
+
+    suspend fun storeYearOfBirth(year: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[YEAR_OF_BIRTH] = year
         }
     }
 
@@ -2419,5 +2432,6 @@ class DataRepository(private val context: Context) {
         private val TABLET_COMMAND_ENDPOINT = stringPreferencesKey("tablet_command_endpoint")
         private val TABLET_COMMAND_APIKEY = stringPreferencesKey("tablet_command_apikey")
         private val TABLET_COMMAND_REPORTING_UPDATE_INTERVAL = intPreferencesKey("tablet_command_reporting_update_interval")
+        private val YEAR_OF_BIRTH = intPreferencesKey("year_of_birth")
     }
 }
