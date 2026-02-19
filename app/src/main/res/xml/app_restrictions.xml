@@ -100,14 +100,14 @@
         android:restrictionType="bool"
         android:title="@string/enable_companion_plugin"
         android:description="@string/enable_companion_plugin_desc"
-        android:defaultValue="@string/ditto_service_enabled_default" />
+        android:defaultValue="@string/enable_companion_plugin_default" />
 
     <restriction
         android:key="enable_bloodhound_compass"
         android:restrictionType="bool"
         android:title="@string/enable_bloodhound_compass"
         android:description="@string/enable_bloodhound_compass_desc"
-        android:defaultValue="@string/ditto_service_enabled_default" />
+        android:defaultValue="@string/enable_bloodhound_compass_default" />
 
     <restriction
         android:key="chat_service_enabled"
