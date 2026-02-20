@@ -215,11 +215,17 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
@@ -458,24 +464,24 @@ class MainActivity : ComponentActivity() {
         var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
         var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
 
-        var restingHrHighAlertBpmThreshold: Int = 120
-        var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(120)
-        var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(120)
-        var restingHrLowAlertBpmThreshold: Int = 40
-        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(40)
-        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(40)
-        var restingHrAlertBpmThresholdLength: Int = 10
-        var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(10)
-        var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(10)
-        var exertionThresholdWarning: Int = 75
-        var exertionThresholdWarningState = MutableLiveData<Int>(75)
-        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(75)
-        var exertionThresholdAlert: Int = 85
-        var exertionThresholdAlertState = MutableLiveData<Int>(85)
-        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(85)
-        var exertionThresholdLength: Int = 30
-        var exertionThresholdLengthState = MutableLiveData<Int>(30)
-        var exertionThresholdLengthSettingsState = MutableLiveData<Int>(30)
+        var restingHrHighAlertBpmThreshold: Int = DEFAULT_HIGH_RESTING_HR_THRESHOLD
+        var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_THRESHOLD)
+        var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_THRESHOLD)
+        var restingHrLowAlertBpmThreshold: Int = DEFAULT_LOW_RESTING_HR_THRESHOLD
+        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
+        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
+        var restingHrAlertBpmThresholdLength: Int = DEFAULT_HEART_HR_THRESHOLD_LENGTH
+        var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(DEFAULT_HEART_HR_THRESHOLD_LENGTH)
+        var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HEART_HR_THRESHOLD_LENGTH)
+        var exertionThresholdWarning: Int = DEFAULT_EXERTION_WARNING_THRESHOLD
+        var exertionThresholdWarningState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD)
+        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD)
+        var exertionThresholdAlert: Int = DEFAULT_EXERTION_ALERT_THRESHOLD
+        var exertionThresholdAlertState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD)
+        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD)
+        var exertionThresholdLength: Int = DEFAULT_EXERTION_THRESHOLD_LENGTH
+        var exertionThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_THRESHOLD_LENGTH)
+        var exertionThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_THRESHOLD_LENGTH)
 
         //TODO WEAR-313: Comment out these
         var hrHighAlertBpmThreshold : Int = 140

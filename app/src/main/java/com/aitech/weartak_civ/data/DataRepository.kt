@@ -60,11 +60,17 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.DEFAULT_SEX
@@ -2104,7 +2110,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getRestingHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_HIGH_ALERT_BPM_THRESHOLD] ?: 120
+        prefs[RESTING_HR_HIGH_ALERT_BPM_THRESHOLD] ?: DEFAULT_HIGH_RESTING_HR_THRESHOLD
     }
 
     suspend fun storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold: Int) {
@@ -2113,7 +2119,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getRestingHrLowAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_LOW_ALERT_BPM_THRESHOLD] ?: 40
+        prefs[RESTING_HR_LOW_ALERT_BPM_THRESHOLD] ?: DEFAULT_LOW_RESTING_HR_THRESHOLD
     }
 
     suspend fun storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold: Int) {
@@ -2122,7 +2128,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getRestingHrAlertBpmThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] ?: 140
+        prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] ?: DEFAULT_HEART_HR_THRESHOLD_LENGTH
     }
 
     suspend fun storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLength: Int) {
@@ -2131,7 +2137,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getExertionThresholdWarning: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_WARNING] ?: 140
+        prefs[EXERTION_THRESHOLD_WARNING] ?: DEFAULT_EXERTION_WARNING_THRESHOLD
     }
 
     suspend fun storeExertionThresholdWarning(exertionThresholdWarning: Int) {
@@ -2140,7 +2146,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getExertionThresholdAlert: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_ALERT] ?: 140
+        prefs[EXERTION_THRESHOLD_ALERT] ?: DEFAULT_EXERTION_ALERT_THRESHOLD
     }
 
     suspend fun storeExertionThresholdAlert(exertionThresholdAlert: Int) {
@@ -2150,7 +2156,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getExertionThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_LENGTH] ?: 30
+        prefs[EXERTION_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_THRESHOLD_LENGTH
     }
 
     suspend fun storeExertionThresholdLength(exertionThresholdLength: Int) {
