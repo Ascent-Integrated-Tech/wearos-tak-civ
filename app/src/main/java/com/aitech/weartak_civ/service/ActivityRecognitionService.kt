@@ -37,6 +37,11 @@ import androidx.health.services.client.data.HealthEvent
 import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.health.services.client.getCapabilities
+import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.ActivityPayload
+import com.aitech.weartak_civ.cep.model.payloads.SleepPayload
 import com.aitech.weartak_civ.CAT_FALL_DETECTED
 import com.aitech.weartak_civ.DESC_GOOGLE_SDK_FALL_DETECTED
 import kotlinx.coroutines.SupervisorJob
@@ -163,6 +168,37 @@ class ActivityRecognitionService : Service() {
 
             // TODO: Need to look at confidence and do sthg if confidence is less than 50? Maybe store in a data class
             if ((act?.confidence ?: 0) >= 50) {
+                val cepState = when (detectedActivity) {
+                    ActivityRecognized.RUNNING          -> "RUNNING"
+                    ActivityRecognized.WALKING,
+                    ActivityRecognized.ON_FOOT          -> "WALKING"
+                    ActivityRecognized.STILL            -> "STILL"
+                    ActivityRecognized.BICYCLING        -> "CYCLING"
+                    ActivityRecognized.IN_VEHICLE       -> "DRIVING"
+                    ActivityRecognized.TILTING,
+                    ActivityRecognized.UNKNOWN          -> "UNKNOWN"
+                }
+
+                // Emit to CEP inside coroutine scope
+                ioScope.launch {
+                    CepBus.emit(
+                        CepEvent(
+                            topic = Topics.ACTIVITY,
+                            payload = ActivityPayload(state = cepState)
+                        )
+                    )
+                }
+
+                // Emit to CEP inside coroutine scope
+                ioScope.launch {
+                    CepBus.emit(
+                        CepEvent(
+                            topic = Topics.SLEEP,
+                            payload = SleepPayload(is_sleeping = false)
+                        )
+                    )
+                }
+
                 // Persist in repo (backend-only)
                 ioScope.launch {
                     //RestingHrManager.onActivityRecognized(detectedActivity.name)

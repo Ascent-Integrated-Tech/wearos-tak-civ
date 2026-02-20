@@ -119,7 +119,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
@@ -215,11 +215,17 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
@@ -351,9 +357,9 @@ class MainActivity : ComponentActivity() {
 
         var battWarnPercent = DEFAULT_BATT_WARNING_PERCENTAGE
         var battAlertPercent = DEFAULT_BATT_ALERT_PERCENTAGE
-        var ageValue = DEFAULT_AGE
-        val ageState = MutableLiveData<Int>(DEFAULT_AGE)
-        val ageSettingsState = MutableLiveData<Int>(DEFAULT_AGE)
+        var birthYearValue = DEFAULT_BIRTH_YEAR
+        val birthYearState = MutableLiveData<Int>(DEFAULT_BIRTH_YEAR)
+        val birthYearSettingsState = MutableLiveData<Int>(DEFAULT_BIRTH_YEAR)
         var heightFeetValue = DEFAULT_HEIGHT_FEET
         val heightFeetState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
         val heightFeetSettingsState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
@@ -458,24 +464,24 @@ class MainActivity : ComponentActivity() {
         var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
         var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
 
-        var restingHrHighAlertBpmThreshold: Int = 120
-        var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(120)
-        var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(120)
-        var restingHrLowAlertBpmThreshold: Int = 40
-        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(40)
-        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(40)
-        var restingHrAlertBpmThresholdLength: Int = 10
-        var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(10)
-        var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(10)
-        var exertionThresholdWarning: Int = 75
-        var exertionThresholdWarningState = MutableLiveData<Int>(75)
-        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(75)
-        var exertionThresholdAlert: Int = 85
-        var exertionThresholdAlertState = MutableLiveData<Int>(85)
-        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(85)
-        var exertionThresholdLength: Int = 30
-        var exertionThresholdLengthState = MutableLiveData<Int>(30)
-        var exertionThresholdLengthSettingsState = MutableLiveData<Int>(30)
+        var restingHrHighAlertBpmThreshold: Int = DEFAULT_HIGH_RESTING_HR_THRESHOLD
+        var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_THRESHOLD)
+        var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_THRESHOLD)
+        var restingHrLowAlertBpmThreshold: Int = DEFAULT_LOW_RESTING_HR_THRESHOLD
+        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
+        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
+        var restingHrAlertBpmThresholdLength: Int = DEFAULT_HEART_HR_THRESHOLD_LENGTH
+        var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(DEFAULT_HEART_HR_THRESHOLD_LENGTH)
+        var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HEART_HR_THRESHOLD_LENGTH)
+        var exertionThresholdWarning: Int = DEFAULT_EXERTION_WARNING_THRESHOLD
+        var exertionThresholdWarningState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD)
+        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD)
+        var exertionThresholdAlert: Int = DEFAULT_EXERTION_ALERT_THRESHOLD
+        var exertionThresholdAlertState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD)
+        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD)
+        var exertionThresholdLength: Int = DEFAULT_EXERTION_THRESHOLD_LENGTH
+        var exertionThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_THRESHOLD_LENGTH)
+        var exertionThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_THRESHOLD_LENGTH)
 
         //TODO WEAR-313: Comment out these
         var hrHighAlertBpmThreshold : Int = 140
@@ -870,7 +876,7 @@ class MainActivity : ComponentActivity() {
             dittoAuthToken = dataRepository.getDittoAuthToken.first()
 
             // --- Physiological profile / metrics ---
-            ageValue           = dataRepository.getPhysiologicalMetricAge.first()
+            birthYearValue           = dataRepository.getYearOfBirth.first()
             heightFeetValue    = dataRepository.getPhysiologicalMetricHeightFeet.first()
             heightInchesValue  = dataRepository.getPhysiologicalMetricHeightInches.first()
             weightValue        = dataRepository.getPhysiologicalMetricWeight.first()
@@ -1001,7 +1007,7 @@ class MainActivity : ComponentActivity() {
 
         logOutput += """
                     === === Physiological User Metrics === ===
-                    ${String.format("%-25s %-30s", "Age:", ageValue)}
+                    ${String.format("%-25s %-30s", "Birth Year:", birthYearValue)}
                     ${String.format("%-25s %-30s", "Height:", "$heightFeetValue ft $heightInchesValue inches")}
                     ${String.format("%-25s %-30s", "Weight:", weightValue)}
                     ${String.format("%-25s %-30s", "Sex:", sexValue)}
@@ -1216,8 +1222,8 @@ class MainActivity : ComponentActivity() {
         hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
         hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThreshold)
 
-        ageState.postValue(ageValue)
-        ageSettingsState.postValue(ageValue)
+        birthYearState.postValue(birthYearValue)
+        birthYearSettingsState.postValue(birthYearValue)
         heightFeetState.postValue(heightFeetValue)
         heightFeetSettingsState.postValue(heightFeetValue)
         heightInchesState.postValue(heightInchesValue)
@@ -1601,7 +1607,7 @@ class MainActivity : ComponentActivity() {
         val enablePhysiologicalAlertsConfigUpdate = appRestrictions.getBoolean("enable_physiological_alerts", enablePhysiologicalAlerts)
 
         val physiologicalMetricsRestingHeartRateConfigUpdate = appRestrictions.getInt("physiological_metrics_resting_heart_rate", restingHeartRate)
-        val physiologicalMetricsAgeServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_age", ageValue)
+        val physiologicalMetricsBirthYearServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_birth_year", birthYearValue)
         val physiologicalMetricsHeightFeetServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_feet", heightFeetValue)
         val physiologicalMetricsHeightInchesServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_height_inches", heightInchesValue)
         val physiologicalMetricsWeightServiceConfigUpdate = appRestrictions.getInt("physiological_metrics_weight", weightValue)
@@ -1916,7 +1922,7 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeBatteryAlertPercentage(battAlertPercentConfigUpdate)
             dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlertsConfigUpdate)
             dataRepository.storeRestingHeartRate(physiologicalMetricsRestingHeartRateConfigUpdate)
-            dataRepository.storePhysiologicalMetricAge(physiologicalMetricsAgeServiceConfigUpdate)
+            dataRepository.storeYearOfBirth(physiologicalMetricsBirthYearServiceConfigUpdate)
             dataRepository.storePhysiologicalMetricHeightFeet(
                 physiologicalMetricsHeightFeetServiceConfigUpdate
             )
@@ -2069,12 +2075,12 @@ class MainActivity : ComponentActivity() {
                 )
                 restingHeartRate = physiologicalMetricsRestingHeartRateConfigUpdate
             }
-            if (ageValue != physiologicalMetricsAgeServiceConfigUpdate) {
+            if (birthYearValue != physiologicalMetricsBirthYearServiceConfigUpdate) {
                 Log.d(
                     TAG,
-                    "Change detected ageValue(prev=$ageValue, curr=$physiologicalMetricsAgeServiceConfigUpdate)"
+                    "Change detected birthYearValue(prev=$birthYearValue, curr=$physiologicalMetricsBirthYearServiceConfigUpdate)"
                 )
-                ageValue = physiologicalMetricsAgeServiceConfigUpdate
+                birthYearValue = physiologicalMetricsBirthYearServiceConfigUpdate
             }
             if (heightFeetValue != physiologicalMetricsHeightFeetServiceConfigUpdate) {
                 Log.d(
@@ -2650,13 +2656,15 @@ fun HeartRate(context: Context) {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val physioAlertsCheckedLive by enablePhysiologicalAlertsSettingState.observeAsState()
-    val alerts by dataRepository.physioAlertsFlow.collectAsState() // or collectAsStateWithLifecycle()
+    val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState() // or collectAsStateWithLifecycle()
     val metricKey by selectedPhysioMetricSettingsState.observeAsState()
 
     // Derive the chip state from the latest list
     val chipState by remember(alerts) {
         derivedStateOf { alerts.alertChipState(physioAlertsCheckedLive) }
     }
+    val containsAlert = alerts.any { it.alertState == DataRepository.AlertState.ALERT }
+
     Column(
         modifier = Modifier
             .fillMaxWidth(),
@@ -2676,7 +2684,7 @@ fun HeartRate(context: Context) {
             icon = {
                 Icon(
                     painter = if (physioAlertsCheckedLive == true) {
-                        if (alerts.isNotEmpty()) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
+                        if (alerts.isNotEmpty() && containsAlert) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
                     } else painterResource(selectedMetricIconFromKey(metricKey)),
                     contentDescription = "Favorite icon",
                     tint = alertChipColors(chipState),

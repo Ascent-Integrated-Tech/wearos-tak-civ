@@ -27,7 +27,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.DEFAULT_AGE
+import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
@@ -60,11 +60,17 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.DEFAULT_SEX
@@ -103,6 +109,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import java.util.Calendar
 import java.util.EnumMap
 import java.util.UUID
 import kotlin.collections.component1
@@ -2103,7 +2110,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getRestingHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_HIGH_ALERT_BPM_THRESHOLD] ?: 120
+        prefs[RESTING_HR_HIGH_ALERT_BPM_THRESHOLD] ?: DEFAULT_HIGH_RESTING_HR_THRESHOLD
     }
 
     suspend fun storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold: Int) {
@@ -2112,7 +2119,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getRestingHrLowAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_LOW_ALERT_BPM_THRESHOLD] ?: 40
+        prefs[RESTING_HR_LOW_ALERT_BPM_THRESHOLD] ?: DEFAULT_LOW_RESTING_HR_THRESHOLD
     }
 
     suspend fun storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold: Int) {
@@ -2121,7 +2128,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getRestingHrAlertBpmThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] ?: 140
+        prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] ?: DEFAULT_HEART_HR_THRESHOLD_LENGTH
     }
 
     suspend fun storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLength: Int) {
@@ -2130,7 +2137,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getExertionThresholdWarning: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_WARNING] ?: 140
+        prefs[EXERTION_THRESHOLD_WARNING] ?: DEFAULT_EXERTION_WARNING_THRESHOLD
     }
 
     suspend fun storeExertionThresholdWarning(exertionThresholdWarning: Int) {
@@ -2139,7 +2146,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getExertionThresholdAlert: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_ALERT] ?: 140
+        prefs[EXERTION_THRESHOLD_ALERT] ?: DEFAULT_EXERTION_ALERT_THRESHOLD
     }
 
     suspend fun storeExertionThresholdAlert(exertionThresholdAlert: Int) {
@@ -2149,7 +2156,7 @@ class DataRepository(private val context: Context) {
     }
 
     val getExertionThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_LENGTH] ?: 30
+        prefs[EXERTION_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_THRESHOLD_LENGTH
     }
 
     suspend fun storeExertionThresholdLength(exertionThresholdLength: Int) {
@@ -2198,8 +2205,9 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    //TODO: WEAR-272: Do we still need this?? vvv
     val getPhysiologicalMetricAge: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[AGE] ?: DEFAULT_AGE
+        prefs[AGE] ?: DEFAULT_BIRTH_YEAR
     }
 
     suspend fun storePhysiologicalMetricAge(age: Int) {
@@ -2211,7 +2219,7 @@ class DataRepository(private val context: Context) {
     val physiologicalMetricAge: StateFlow<Int> = getPhysiologicalMetricAge.stateIn(
         scope = repoScope,
         started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-        initialValue = DEFAULT_AGE
+        initialValue = DEFAULT_BIRTH_YEAR
     )
 
     val latestExertion: StateFlow<Double> = combine(
@@ -2226,6 +2234,7 @@ class DataRepository(private val context: Context) {
             started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
             initialValue = -1.0
         )
+    //TODO: WEAR-272: Do we still need this?? ^^^
 
 
     val getPhysiologicalMetricHeightFeet: Flow<Int> = context.dataStore.data.map { prefs ->
@@ -2308,6 +2317,16 @@ class DataRepository(private val context: Context) {
     suspend fun storePhysiologicalMetricUserType(usertype: String) {
         context.dataStore.edit { prefs ->
             prefs[USER_TYPE] = usertype
+        }
+    }
+
+    val getYearOfBirth: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[YEAR_OF_BIRTH] ?: DEFAULT_BIRTH_YEAR
+    }
+
+    suspend fun storeYearOfBirth(year: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[YEAR_OF_BIRTH] = year
         }
     }
 
@@ -2433,5 +2452,6 @@ class DataRepository(private val context: Context) {
         private val TABLET_COMMAND_ENDPOINT = stringPreferencesKey("tablet_command_endpoint")
         private val TABLET_COMMAND_APIKEY = stringPreferencesKey("tablet_command_apikey")
         private val TABLET_COMMAND_REPORTING_UPDATE_INTERVAL = intPreferencesKey("tablet_command_reporting_update_interval")
+        private val YEAR_OF_BIRTH = intPreferencesKey("year_of_birth")
     }
 }
