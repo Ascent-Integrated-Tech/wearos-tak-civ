@@ -212,10 +212,12 @@ class EnvSensorService : Service(), SensorEventListener {
     private suspend fun emitHumidityAndLight() {
         try {
             lastLux?.let { lux ->
+                // Rule-aligned proxy; treat very low lux as garment coverage (covered=true when lux < 5)
+                val covered = lux < 5.0f
                 CepBus.emit(
                     CepEvent(
                         topic = Topics.LIGHT,
-                        payload = LightPayload(lux = lux, covered = null)
+                        payload = LightPayload(lux = lux, covered = covered)
                     )
                 )
             }

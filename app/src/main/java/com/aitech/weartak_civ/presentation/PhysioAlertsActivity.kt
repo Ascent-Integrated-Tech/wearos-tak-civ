@@ -80,12 +80,15 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.DESC_HIGH_EXERTION_ALERT
 import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
 import com.aitech.weartak_civ.DESC_LOW_HEART_RATE_ALERT
+import com.aitech.weartak_civ.MARKER_FRIENDLY
+import com.aitech.weartak_civ.MARKER_HOSTILE
+import com.aitech.weartak_civ.MARKER_NEUTRAL
+import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.complication.PhysioStatusAndAlertingComplicationService
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.ageValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodTypeValue
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
@@ -122,9 +125,9 @@ class PhysioAlertsActivity : ComponentActivity() {
         val TAG = "WearTAK-" + PhysioAlertsActivity::class.java.simpleName
         lateinit var dataRepository: DataRepository
         val alertListPreview = listOf(
-            Utils.PhysioAlert("HIGH Heart Rate", Utils.AlertChipState.Emergency, 1756324232, ""),
-            Utils.PhysioAlert("LOW Heart Rate", Utils.AlertChipState.Emergency, 1756325084, ""),
-            Utils.PhysioAlert("HIGH Exertion", Utils.AlertChipState.Warning, 1756325076, ""))
+            DataRepository.CustomEmergencyAlert(uuid="1c6c1dc9-3b6c-466c-b11a-551aa4b142aa", alertState= DataRepository.AlertState.ALERT, category="CAT_HR_ALERT", description="HR ZONE 1 — between 50% and 60% HRR", priority=2, sendSms=false, timeMillis=1771434132637, enqueuedToBeSent=true),
+            DataRepository.CustomEmergencyAlert(uuid="e5203b07-b64e-4e2d-acf1-6a8033c2008c", alertState=DataRepository.AlertState.ALERT, category="CAT_HR_REST_BRADY", description="LOW HR — below 40 bpm", priority=1, sendSms=false, timeMillis=1771440940184, enqueuedToBeSent=true)
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -156,7 +159,8 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
     val enablePhysioAlerts by enablePhysiologicalAlertsSettingState.observeAsState()
 
     //TOOD: Use when alerts are added to this
-    val alerts by dataRepository.physioAlertsFlow.collectAsState(initial = emptyList())
+//    val alerts by dataRepository.physioAlertsFlow.collectAsState(initial = emptyList())
+    val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState(initial = emptyList())
 
 
     LaunchedEffect(licenseKey) {
@@ -213,11 +217,54 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
     }
 }
 
-fun List<Utils.PhysioAlert>.alertChipState(isEnabled: Boolean?): Utils.AlertChipState = when {
+fun List<DataRepository.CustomEmergencyAlert>.alertChipState(isEnabled: Boolean?): Utils.AlertChipState = when {
     isEmpty() || isEnabled == false -> Utils.AlertChipState.None
-    any { it.level == Utils.AlertChipState.Emergency && isEnabled == true } -> Utils.AlertChipState.Emergency
-    all { it.level == Utils.AlertChipState.Warning && isEnabled == true} -> Utils.AlertChipState.Warning
+    any { it.alertState == DataRepository.AlertState.ALERT && it.priority == 1 && isEnabled == true } -> Utils.AlertChipState.Emergency
+    all { (it.alertState == DataRepository.AlertState.ALERT && it.priority == 2 || it.priority == 3) && isEnabled == true} -> Utils.AlertChipState.Warning
     else -> Utils.AlertChipState.None // e.g., a mix of None + Warning is NOT “only Warning”
+}
+
+@Composable
+fun alertIconFromString(category: String): Painter {
+    val painter: Painter = when (category) {
+        "CAT_COLD_FROSTBITE_OVERRIDE" -> painterResource(R.drawable.heart_rate)
+        "CAT_COLD_TACTILE_OVERRIDE" -> painterResource(R.drawable.heart_rate)
+        "CAT_COLD_SKIN20_OVERRIDE" -> painterResource(R.drawable.heart_rate)
+        "CAT_COLD_DEXTERITY" -> painterResource(R.drawable.heart_rate)
+        "CAT_COLD_WARN" -> painterResource(R.drawable.heart_rate)
+        "CAT_COLD_ALERT" -> painterResource(R.drawable.heart_rate)
+        "CAT_COLD_EMERGENCY" -> painterResource(R.drawable.heart_rate)
+        "CAT_HR_HIGH" -> painterResource(R.drawable.high_heart_rate_alert)
+        "CAT_HR_EMERGENCY" -> painterResource(R.drawable.high_exertion_alert)
+        "CAT_HR_LOW" -> painterResource(R.drawable.low_hr_alert)
+        "CAT_HR_REST_BRADY" -> painterResource(R.drawable.low_hr_alert)
+        "CAT_HR_ALERT" -> painterResource(R.drawable.high_exertion_alert)
+
+        else ->  //TODO: Change to error icon
+            painterResource(R.drawable.heart_rate)
+    }
+    return painter
+}
+
+@Composable
+fun alertCategoryFromString(category: String): String {
+    val categoryString: String = when (category) {
+        "CAT_COLD_FROSTBITE_OVERRIDE" -> "Cold Override: Frostbite Risk"
+        "CAT_COLD_TACTILE_OVERRIDE" -> "Cold Override: Tactile Failure"
+        "CAT_COLD_SKIN20_OVERRIDE" -> "Cold Override: Severe Peripheral Vasoconstriction"
+        "CAT_COLD_DEXTERITY" -> "Cold Stress: Dexterity Impairment"
+        "CAT_COLD_WARN" -> "Cold Stress"
+        "CAT_COLD_ALERT" -> "Cold Stress"
+        "CAT_COLD_EMERGENCY" -> "Cold Stress"
+        "CAT_HR_HIGH" -> "High Resting HR"
+        "CAT_HR_EMERGENCY" -> "High Exertion"
+        "CAT_HR_LOW" -> "Low Resting HR"
+        "CAT_HR_REST_BRADY" -> "Low Resting HR"
+        "CAT_HR_ALERT" -> "High Exertion"
+        else ->
+            "ERROR"
+    }
+    return categoryString
 }
 
 @SuppressLint("CoroutineCreationDuringComposition", "UnrememberedMutableState")
@@ -225,9 +272,10 @@ fun List<Utils.PhysioAlert>.alertChipState(isEnabled: Boolean?): Utils.AlertChip
 fun AlertsScreen(
     navController: NavController,
     exitActivity: () -> Unit,
-    alerts: List<Utils.PhysioAlert> // <-- Use Utils.ChatRoom here
+    alerts: List<DataRepository.CustomEmergencyAlert> // <-- Use Utils.ChatRoom here
 ) {
-    Log.d(TAG, "TakServerSetting called")
+    Log.d(TAG, "AlertsScreen called")
+    Log.d(TAG, "$alerts")
     val context = LocalContext.current
     WearTakCivScreenDimensions(
         columnContent = {
@@ -237,45 +285,59 @@ fun AlertsScreen(
                }
                 itemsIndexed(alerts) { index, alert ->
                     // room.messageList is the List<ChatMessage>
-
-                    Chip(
-                        onClick = { /* no-op */ },
-                        enabled = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ChipDefaults.outlinedChipColors(),
-                        icon = {
-                            Icon(
-                                painter = if (alert.alert == DESC_HIGH_HEART_RATE_ALERT) painterResource(R.drawable.high_hr_icon)
-                                else if (alert.alert == DESC_LOW_HEART_RATE_ALERT) painterResource(R.drawable.low_hr_icon)
-                                else if (alert.alert == DESC_HIGH_EXERTION_ALERT) painterResource(R.drawable.high_exertion_icon)
-                                else painterResource(R.drawable.heart_rate),
-                                contentDescription = "Favorite icon",
-                                tint = if (alert.level == Utils.AlertChipState.Emergency)Color.Red
-                                else if (alert.level == Utils.AlertChipState.Warning) Color.Yellow
-                                else Color.Unspecified,
-                                modifier = Modifier.size(30.dp),
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = alert.alert,
-                                fontSize = 15.sp,
-                                textAlign = TextAlign.Start,
-                                fontWeight = FontWeight.Medium,
-                                color = if (alert.level == Utils.AlertChipState.Emergency)Color.Red
-                                else if (alert.level == Utils.AlertChipState.Warning) Color.Yellow
-                                else Color.Unspecified,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        },
-                        secondaryLabel = {
-                            Text(
-                                text = "${utcToHoursMinutes(alert.time)} ${utcToDate(alert.time)}",
-                                fontSize = 13.sp,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        },
-                    )
+                    if (alert.alertState == DataRepository.AlertState.ALERT) {
+                        Chip(
+                            onClick = { /* no-op */ },
+                            enabled = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ChipDefaults.outlinedChipColors(),
+                            icon = {
+                                Icon(
+                                    painter = alertIconFromString(alert.category),
+                                    contentDescription = "Favorite icon",
+                                    tint = when (alert.priority) {
+                                        1 -> Color.Red
+                                        2 -> Color.Yellow
+                                        else -> Color.Unspecified
+                                    },
+                                    modifier = Modifier.size(30.dp),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = alertCategoryFromString(alert.category) /* + "${alert.alertState}" */,
+                                    fontSize = 15.sp,
+                                    textAlign = TextAlign.Start,
+                                    fontWeight = FontWeight.Medium,
+                                    color = when (alert.priority) {
+                                        1 -> Color.Red
+                                        2 -> Color.Yellow
+                                        else -> Color.Unspecified
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            },
+                            secondaryLabel = {
+                                Column {
+                                    Text(
+                                        text = alert.description,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = "${utcToHoursMinutes(alert.timeMillis)} ${
+                                            utcToDate(
+                                                alert.timeMillis
+                                            )
+                                        }",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
@@ -323,7 +385,7 @@ fun ExpandableCard() {
                     """.trimIndent()
     Log.d(TAG, logOutput)
     val activePhysioMetrics = listOf(
-        Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"),
+        Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" /* + stringResource(R.string.bpm) */ else "---"),
         Utils.SelectedPhysioMetric("key_steps",painterResource(id = R.drawable.steps), stringResource(R.string.steps), if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"),
         Utils.SelectedPhysioMetric("key_skin_temp",painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"),
         Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"),
@@ -366,6 +428,8 @@ fun ExpandableCard() {
                 }
             }
         } else {
+            val indices = listOf(0, 3)
+            val hrExertion = activePhysioMetrics.slice(indices)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -380,24 +444,39 @@ fun ExpandableCard() {
                     contentDescription = "",
                 )
             }
-            Row(modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                MetricItem(
-                    painterResource(id = R.drawable.heart_rate),
-                    stringResource(R.string.heart_rate),
-                    if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---",
-                    "key_heart_rate"
-                )
-                Spacer(modifier = Modifier.width(7.dp))
-                MetricItem(
-                        painterResource(id = R.drawable.exertion),
-                        stringResource(R.string.exertion),
-                    if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---",
-                    "key_exertion"
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.height(50.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                items(hrExertion) { physioMetric ->
+                    MetricItem(
+                        physioMetric.icon,
+                        physioMetric.metric,
+                        physioMetric.value,
+                        physioMetric.key
                     )
+                }
             }
+//            Row(modifier = Modifier.fillMaxWidth(),
+//                verticalAlignment = Alignment.CenterVertically,
+//                horizontalArrangement = Arrangement.SpaceBetween,
+//                ) {
+//                MetricItem(
+//                    painterResource(id = R.drawable.heart_rate),
+//                    stringResource(R.string.heart_rate),
+//                    if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---",
+//                    "key_heart_rate"
+//                )
+//                Spacer(modifier = Modifier.width(7.dp))
+//                MetricItem(
+//                        painterResource(id = R.drawable.exertion),
+//                        stringResource(R.string.exertion),
+//                    if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---",
+//                    "key_exertion"
+//                    )
+//            }
         }
     }
 }

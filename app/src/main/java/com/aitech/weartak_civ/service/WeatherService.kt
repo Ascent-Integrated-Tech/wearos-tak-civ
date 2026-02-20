@@ -22,6 +22,7 @@ import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
 import com.aitech.weartak_civ.cep.model.payloads.WaterPayload
 import com.aitech.weartak_civ.cep.model.payloads.WindPayload
+import com.aitech.weartak_civ.cep.di.CepProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -251,6 +252,16 @@ class WeatherService : Service() {
 								payload = WaterPayload(wet = completed.wet, temperatureC = null)
 							)
 						)
+
+						// Ingest ambient temperature directly to avoid clobbering wind/humidity via AmbientPayload
+						completed.tempC?.let { tempC ->
+							try {
+								CepProvider.getOrCreateEngine(applicationContext).ingest("ambient.temp_c", tempC)
+								Log.d(TAG, "WeatherService: ingested ambient.temp_c=$tempC")
+							} catch (t: Throwable) {
+								Log.e(TAG, "Failed CEP ingest (ambient.temp_c)", t)
+							}
+						}
 					} catch (t: Throwable) {
 						Log.e(TAG, "Failed CEP emit (wind/wet)", t)
 					}

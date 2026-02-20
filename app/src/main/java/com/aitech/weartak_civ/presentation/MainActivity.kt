@@ -2650,13 +2650,15 @@ fun HeartRate(context: Context) {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
     val physioAlertsCheckedLive by enablePhysiologicalAlertsSettingState.observeAsState()
-    val alerts by dataRepository.physioAlertsFlow.collectAsState() // or collectAsStateWithLifecycle()
+    val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState() // or collectAsStateWithLifecycle()
     val metricKey by selectedPhysioMetricSettingsState.observeAsState()
 
     // Derive the chip state from the latest list
     val chipState by remember(alerts) {
         derivedStateOf { alerts.alertChipState(physioAlertsCheckedLive) }
     }
+    val containsAlert = alerts.any { it.alertState == DataRepository.AlertState.ALERT }
+
     Column(
         modifier = Modifier
             .fillMaxWidth(),
@@ -2676,7 +2678,7 @@ fun HeartRate(context: Context) {
             icon = {
                 Icon(
                     painter = if (physioAlertsCheckedLive == true) {
-                        if (alerts.isNotEmpty()) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
+                        if (alerts.isNotEmpty() && containsAlert) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
                     } else painterResource(selectedMetricIconFromKey(metricKey)),
                     contentDescription = "Favorite icon",
                     tint = alertChipColors(chipState),

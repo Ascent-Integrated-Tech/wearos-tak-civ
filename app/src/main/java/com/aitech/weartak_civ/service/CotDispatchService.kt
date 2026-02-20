@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.service
 
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.location.Location
 import android.os.Handler
@@ -39,9 +40,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCot
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.requestPhysioStatusAndAlertingComplicationUpdate
 import com.aitech.weartak_civ.service.HailService.checkLicense
 import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -120,6 +123,8 @@ class CotDispatchService : Service() {
         Log.v(TAG, "CotDispatchService onStartCommand()")
         return START_NOT_STICKY
     }
+    val context: Context = mainActivity.applicationContext
+
 
     override fun onCreate() {
         super.onCreate()
@@ -481,7 +486,7 @@ class CotDispatchService : Service() {
             if (sendEmergencyAlert(alertWithAddedState)) {
                 pendingPhysioAndAutoGenAlertQueue.removeFirst()
                 if (alertWithAddedState.alert.alertState == DataRepository.AlertState.ALERT) {
-                    dataRepository.changePhysioAndAutoGenAlertToClearAndEnqueueStatusUid(alertWithAddedState.alert.uuid, false)
+                    dataRepository.changePhysioAndAutoGenAlertEnqueueStatusUid(alertWithAddedState.alert.uuid, false)
                 } else {
                     dataRepository.removePhysioAndAutoGenAlertByUid(alertWithAddedState.alert.uuid)
                 }
@@ -544,6 +549,7 @@ class CotDispatchService : Service() {
                     }
                     DataRepository.ClearRequest.All -> handleClearPhysioAndAutoGenAlertAll()
                 }
+                requestPhysioStatusAndAlertingComplicationUpdate(context)
             }
         }
     }

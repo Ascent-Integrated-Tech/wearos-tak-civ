@@ -55,7 +55,7 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
         }
         return when (isLicenseValid()) {
             true -> return when (enablePhysiologicalAlerts) {
-                true -> return when (dataRepository.physioAlertsFlow.value.alertChipState(true)) {
+                true -> return when (dataRepository.physioAndAutoGenAlertList.value.alertChipState(true)) {
                     Utils.AlertChipState.None -> createComplicationData(
                         physioMetricStringComplication,
                         getString(R.string.heart_rate),

@@ -148,7 +148,7 @@ class CepEngine(
         }
     }
 
-    private suspend fun checkAndClearAlerts() {
+    /*private suspend fun checkAndClearAlerts1() {
         val now = System.currentTimeMillis()
 
         for (alert in AlertRegistry.allActive()) {
@@ -183,18 +183,6 @@ class CepEngine(
                 } else {
                     val elapsedSec = (now - since) / 1000L
                     if (elapsedSec >= alert.exitSustainSec) {
-                        // Safe long enough: send CANCEL with same UID
-                        /*EventBus.getDefault().post(
-                            CustomEmergencyEvent(
-                                uid = alert.uid,
-                                category = CustomEmergencyEvent.CAT_SOS_ALERT_CANCELLED,
-                                description = "Auto-clear ${alert.ruleId}",
-                                priority = 0,
-                                sendSms = false,
-                                isCancel = true
-                            )
-                        )*/
-
                         dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
 
                         AlertRegistry.clear(alert.ruleId)
@@ -202,6 +190,49 @@ class CepEngine(
                 }
             } else {
                 // back in danger zone → reset timer
+                alert.exitSatisfiedSinceMs = null
+            }
+        }
+    }*/
+
+    //Fix for cep feature key alert cancellation
+    private suspend fun checkAndClearAlerts() {
+        val now = System.currentTimeMillis()
+
+        for (alert in AlertRegistry.allActive()) {
+            val conditions = alert.exitConditions
+            if (conditions.isEmpty()) continue
+
+            val satisfiedFlags = conditions.map { cond ->
+                val value = featureStore.latestAsDouble(cond.feature) ?: return@map false
+
+                // Resolve thresholds: prefer literal, else feature-key
+                val below = cond.exitBelow ?: cond.exitBelowKey?.let { key -> featureStore.latestAsDouble(key) }
+                val above = cond.exitAbove ?: cond.exitAboveKey?.let { key -> featureStore.latestAsDouble(key) }
+
+                val belowOk = below?.let { value < it - cond.hysteresis } ?: false
+                val aboveOk = above?.let { value > it + cond.hysteresis } ?: false
+
+                belowOk || aboveOk
+            }
+
+            val allOrAnySatisfied = when (alert.exitLogic) {
+                "OR" -> satisfiedFlags.any { it }
+                else -> satisfiedFlags.all { it }  // default AND
+            }
+
+            if (allOrAnySatisfied) {
+                val since = alert.exitSatisfiedSinceMs
+                if (since == null) {
+                    alert.exitSatisfiedSinceMs = now
+                } else {
+                    val elapsedSec = (now - since) / 1000L
+                    if (elapsedSec >= alert.exitSustainSec) {
+                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+                        AlertRegistry.clear(alert.ruleId)
+                    }
+                }
+            } else {
                 alert.exitSatisfiedSinceMs = null
             }
         }
