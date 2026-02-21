@@ -35,7 +35,7 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     // Base URL is allowed plaintext
-    val baseUrl: Flow<String> = store.plaintextString(SitxSecretsKeys.BASE_URL, default = "ascent.parteamconnect.com")
+    val baseUrl: Flow<String> = store.plaintextString(SitxSecretsKeys.BASE_URL, default = "")
 
     // Encrypted
     val clientId: Flow<String?> = store.encryptedString(SitxSecretsKeys.CLIENT_ID)
@@ -44,6 +44,10 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
     val userCode: Flow<String?> = store.encryptedString(SitxSecretsKeys.USER_CODE)
     val verificationUriComplete: Flow<String?> = store.encryptedString(SitxSecretsKeys.VERIFICATION_URI_COMPLETE)
 
+    val refreshTokenBaseUrl: Flow<String> = store.plaintextString(SitxSecretsKeys.REFRESH_TOKEN_BASE_URL, default = "")
+
+    // Encrypted
+    val refreshTokenClientId: Flow<String?> = store.encryptedString(SitxSecretsKeys.REFRESH_TOKEN_CLIENT_ID)
     val refreshToken: Flow<String?> = store.encryptedString(SitxSecretsKeys.REFRESH_TOKEN)
     val refreshTokenExpiresAtEpochSec: Flow<Long> =
         store.plaintextLong(SitxSecretsKeys.REFRESH_TOKEN_EXPIRES_AT_EPOCH_SEC, default = 0L)
@@ -102,6 +106,12 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
         store.setPlaintextLong(SitxSecretsKeys.DEVICE_CODE_EXPIRES_AT_EPOCH_SEC, 0L)
         store.setPlaintextLong(SitxSecretsKeys.DEVICE_POLL_INTERVAL_SEC, 5L)
     }
+
+    suspend fun setRefreshTokenBaseUrl(url: String) =
+        store.setPlaintextString(SitxSecretsKeys.REFRESH_TOKEN_BASE_URL, url)
+
+    suspend fun setRefreshTokenClientId(clientId: String?) =
+        store.setEncryptedString(SitxSecretsKeys.REFRESH_TOKEN_CLIENT_ID, clientId)
 
     suspend fun setRefreshToken(token: String?) =
         store.setEncryptedString(SitxSecretsKeys.REFRESH_TOKEN, token)

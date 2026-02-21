@@ -120,9 +120,10 @@ class SitxTakService : Service() {
     private fun startSitxCommandBusCollector() {
         serviceScope.launch {
             SitxServiceCommandBus.commands.collectLatest { cmd ->
-                Log.i(TAG, "SitxServiceCommandBus command: $cmd")
                 when (cmd) {
                     is SitxServiceCommand.BeginAuth -> {
+                        Log.i(TAG, "Received SitxServiceCommand.BeginAuth")
+                        sitxRepo.setRefreshToken(null)
                         beginDeviceAuthorization(
                             baseUrlInput = cmd.baseUrl,
                             clientId = cmd.clientId,
@@ -133,18 +134,22 @@ class SitxTakService : Service() {
                     }
 
                     SitxServiceCommand.PollDeviceToken -> {
+                        Log.i(TAG, "Received SitxServiceCommand.PollDeviceToken")
                         pollDeviceTokenUntilAuthorized()
                     }
 
                     SitxServiceCommand.ConnectSockets -> {
+                        Log.i(TAG, "Received SitxServiceCommand.ConnectSockets")
                         ensureSessionsAndConnectSockets()
                     }
 
                     is SitxServiceCommand.SendCot -> {
+                        Log.i(TAG, "Received SitxServiceCommand.SendCot: ${cmd.xml}")
                         sendCotToAll(cmd.xml)
                     }
 
                     SitxServiceCommand.Stop -> {
+                        Log.i(TAG, "Received SitxServiceCommand.Stop")
                         stopSelf()
                     }
                 }
@@ -166,12 +171,12 @@ class SitxTakService : Service() {
                 .debounce(300) // helps when baseUrl + clientId are written back-to-back
                 .distinctUntilChanged()
                 .collectLatest { (baseUrl, clientId) ->
-                    Log.i(TAG, "startReAuthorizationCollector: baseUrl=$baseUrl, clientId=$clientId")
+                    Log.i(TAG, "startReAuthorizationCollector: baseUrl=$baseUrl, clientId=${clientId.take(3)}...(${clientId.length})}")
                     if (baseUrl.isNotBlank() && clientId.isNotBlank()) {
                         // If these values change, restart device auth flow (or refresh path if token valid)
                         // Currently we don't store baseUrl and clientId locally but that is ok
                         closeWebsockets()
-                        Log.d(TAG, "Launching device authorization")
+                        Log.i(TAG, "Launching device authorization")
                         beginDeviceAuthorization(
                             baseUrlInput = baseUrl,
                             clientId = clientId,
@@ -236,22 +241,27 @@ class SitxTakService : Service() {
         val baseUrl = normalizeBaseUrl(baseUrlInput)
         if (baseUrl.isBlank() || clientId.isBlank()) {
             SitxServiceEventBus.tryEmit(SitxServiceEvent.Error("Missing baseUrl or clientId"))
-            Log.w(TAG, "Missing baseUrl($baseUrl) or clientId($clientId): empty")
+            Log.e(TAG, "Missing baseUrl($baseUrl) or clientId(empty=${clientId.isBlank()}): empty")
             return
         }
 
         // If refresh token still valid -> skip Step 1/2/3A and go to 3B->4->5->connect
         val refreshExp = sitxRepo.refreshTokenExpiresAtEpochSec.first()
         val refreshTok = sitxRepo.refreshToken.first()
+        val refreshTokBaseUrl = sitxRepo.refreshTokenBaseUrl.first()
+        val refreshTokClientId = sitxRepo.refreshTokenClientId.first()
 
-        if (!refreshTok.isNullOrBlank() && isEpochValid(refreshExp)) {
+        if (!refreshTok.isNullOrBlank() && isEpochValid(refreshExp) && (baseUrl == refreshTokBaseUrl) && (clientId == refreshTokClientId)) {
             SitxServiceEventBus.tryEmit(SitxServiceEvent.Info("Refresh token valid; skipping device grant"))
-            Log.i(TAG, "Refresh token valid ($refreshExp (>${nowEpochSec()}: $refreshTok); skipping device grant... Going to connect")
+            Log.i(TAG, "Refresh token valid ($refreshExp (>now(${nowEpochSec()})): ${refreshTok.take(12)}...(${refreshTok.length}); skipping device grant... Going to connect")
             ensureSessionsAndConnectSockets()
             return
         }
 
         // STEP 1: POST JSON device authorization code
+        sitxRepo.setRefreshToken(null)
+        sitxRepo.setRefreshTokenClientId(clientId)
+        sitxRepo.setRefreshTokenBaseUrl(baseUrl)
         val scope = "role:org_user callsign:$callsign device_name:$deviceName device_id:$deviceId"
         val reqBody = json.encodeToString(DeviceAuthCodeRequest.serializer(), DeviceAuthCodeRequest(scope, clientId))
 
@@ -271,7 +281,7 @@ class SitxTakService : Service() {
                     Log.e(TAG, "$url failed (${result.code}): $bodyStr ")
                     return
                 }
-                Log.i(TAG, "$url success: $bodyStr")
+                Log.i(TAG, "$url success")
 
                 val codeResp = runCatching { json.decodeFromString(DeviceAuthCodeResponse.serializer(), bodyStr) }
                     .getOrElse {
@@ -305,8 +315,8 @@ class SitxTakService : Service() {
     }
 
     private suspend fun pollDeviceTokenUntilAuthorized() {
-        val baseUrl = normalizeBaseUrl(sitxRepo.baseUrl.first())
-        val clientId = sitxRepo.clientId.first().orEmpty()
+        val baseUrl = normalizeBaseUrl(sitxRepo.refreshTokenBaseUrl.first())
+        val clientId = sitxRepo.refreshTokenClientId.first().orEmpty()
         val deviceCode = sitxRepo.deviceCode.first().orEmpty()
 
         val expiresAt = sitxRepo.deviceCodeExpiresAtEpochSec.first()
@@ -439,7 +449,7 @@ class SitxTakService : Service() {
     }
 
     private suspend fun ensureSessionsAndConnectSockets() {
-        val baseUrl = normalizeBaseUrl(sitxRepo.baseUrl.first())
+        val baseUrl = normalizeBaseUrl(sitxRepo.refreshTokenBaseUrl.first())
         val refreshToken = sitxRepo.refreshToken.first()
 
         if (baseUrl.isBlank()) {
@@ -623,7 +633,6 @@ class SitxTakService : Service() {
     }
 
     private fun sendCotToAll(xml: String) {
-        //Log.d(TAG, "sendCotToAll: $xml")
         sockets.values.forEach { it.send(xml) }
     }
 

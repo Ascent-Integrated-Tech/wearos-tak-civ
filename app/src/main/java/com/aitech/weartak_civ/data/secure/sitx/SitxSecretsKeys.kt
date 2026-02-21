@@ -38,7 +38,9 @@ object SitxSecretsKeys {
     val DEVICE_CODE_EXPIRES_AT_EPOCH_SEC = longPreferencesKey("sitx.device_code_expires_at_epoch_sec")
     val DEVICE_POLL_INTERVAL_SEC = longPreferencesKey("sitx.device_poll_interval_sec")
 
-    // Refresh token (encrypted) + expiry epoch seconds (plaintext)
+    // Refresh token (encrypted) + associated URL (plaintext) + associated Client Id (encrypted) + expiry epoch seconds (plaintext)
+    val REFRESH_TOKEN_BASE_URL = stringPreferencesKey("sitx.refresh_token_base_url")
+    val REFRESH_TOKEN_CLIENT_ID = stringPreferencesKey("sitx.refresh_token_client_id.enc")
     val REFRESH_TOKEN = stringPreferencesKey("sitx.refresh_token.enc")
     val REFRESH_TOKEN_EXPIRES_AT_EPOCH_SEC = longPreferencesKey("sitx.refresh_token_expires_at_epoch_sec")
 
