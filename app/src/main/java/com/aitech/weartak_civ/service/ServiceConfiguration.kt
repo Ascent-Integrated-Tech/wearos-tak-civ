@@ -109,7 +109,7 @@ class ServiceConfiguration(
 
         ServiceType.PHYSIO -> listOf(
             android.Manifest.permission.BODY_SENSORS,
-//            android.Manifest.permission.BODY_SENSORS_BACKGROUND,
+            //android.Manifest.permission.BODY_SENSORS_BACKGROUND,
             android.Manifest.permission.ACTIVITY_RECOGNITION
         )
 
@@ -132,15 +132,13 @@ class ServiceConfiguration(
 
         ServiceType.OFF_BODY_DETECT -> listOf(
             android.Manifest.permission.BODY_SENSORS,
-//            android.Manifest.permission.BODY_SENSORS_BACKGROUND
+            //android.Manifest.permission.BODY_SENSORS_BACKGROUND
         )
 
         ServiceType.CHAT -> emptyList()
         ServiceType.BLOOD_HOUND -> listOf(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            android.Manifest.permission.BODY_SENSORS,
-//            android.Manifest.permission.BODY_SENSORS_BACKGROUND
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
         )
 
         ServiceType.SITX_SERVICE -> emptyList()
