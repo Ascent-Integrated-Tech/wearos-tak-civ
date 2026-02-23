@@ -753,6 +753,7 @@ class SitxTakService : Service() {
                     timeCompleted = null
                 )
                 serviceScope.launch {
+                    Log.i(TAG, "updateBloodhoundEvent called=$bhEvent")
                     bhRepo.updateBloodhoundEvent(bhEvent)
                 }
             }
