@@ -838,18 +838,28 @@
       }
     },
     {
-      "id": "hr_high_threshold_3s_alert",
+      "id": "hr_high_threshold_resting_alert",
       "when": {
-        "gte_keys": [
-          "features.heart_rate",
-          "features.hr.high_threshold_bpm"
+        "all": [
+          {
+            "eq_key": [
+              "activity.state",
+              "STILL"
+            ]
+          },
+          {
+            "gte_keys": [
+              "features.heart_rate",
+              "features.hr.high_threshold_bpm"
+            ]
+          }
         ]
       },
-      "sustained_for_sec": 3,
+      "sustained_for_sec": 600,
       "action": {
         "type": "log",
         "severity": "ALERT",
-        "message": "HIGH HR \u2014 above {features.hr.high_threshold_bpm} bpm",
+        "message": "RESTING HIGH HR ALERT \u2014 above {features.hr.high_threshold_bpm} bpm",
         "tags": [
           "hr",
           "high"
@@ -1024,7 +1034,7 @@
           }
         ]
       },
-      "sustained_for_sec": 10,
+      "sustained_for_sec": 600,
       "action": {
         "type": "log",
         "severity": "EMERGENCY",
@@ -1080,7 +1090,7 @@
       },
       "sustained_for_sec": 10,
       "action": {
-        "type": "log",
+        "type": "none",
         "severity": "ALERT",
         "message": "HR ZONE 1 \u2014 between 50% and 60% HRR",
         "tags": [
@@ -1188,7 +1198,7 @@
       },
       "sustained_for_sec": 10,
       "action": {
-        "type": "log",
+        "type": "none",
         "severity": "EMERGENCY",
         "message": "HR ZONE 3 \u2014 between 70% and 80% HRR",
         "tags": [
@@ -1298,7 +1308,7 @@
       "action": {
         "type": "log",
         "severity": "EMERGENCY",
-        "message": "HR ZONE 4 \u2014 between 80% and 90% HRR",
+        "message": "Exertion Warning: Above 80%",
         "tags": [
           "hr",
           "zone4",
@@ -1406,7 +1416,7 @@
       "action": {
         "type": "log",
         "severity": "EMERGENCY",
-        "message": "HR ZONE 5 \u2014 between 90% and 100% HRR",
+        "message": "Exertion Alert: Above 90%",
         "tags": [
           "hr",
           "zone5",

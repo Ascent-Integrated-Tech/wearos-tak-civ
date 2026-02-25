@@ -5433,10 +5433,16 @@ fun SettingsScreen(
                              if (restingHeartRateHighThresholdChanged) {
                                  Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
                                  dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
+
+                                 //Updating the hrProfile in the CEP
+                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
                              }
                              if (restingHeartRateLowThresholdChanged) {
                                  Log.d(TAG, "Storing hrHighAlertBpmThreshold $restingHrLowAlertBpmThreshold")
                                  dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold)
+
+                                 //Updating the hrProfile in the CEP
+                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
                              }
                              if (restingHeartRateThresholdLengthChanged) {
                                  Log.d(TAG, "Storing restingHrAlertBpmThresholdLength $restingHrAlertBpmThresholdLength")
