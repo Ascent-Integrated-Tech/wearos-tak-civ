@@ -804,11 +804,12 @@ object Utils {
         }
 
         fun calculateExertion(currentHr: Int, ageYears: Int, restingHr: Int): Double {
+            //Log.i(TAG, "calculateExertion(hr=$currentHr, age=$ageYears, restHr=$restingHr)")
             if (currentHr < 0.0) return -1.0
             val mhr = calculateMaxHeartRate(ageYears)
             val hrr = mhr - restingHr
-            if (hrr <= 0) return -1.0 // Cannot calculate and hence return invalid value
-            //Log.d(TAG, "exertion ($currentHr, $ageYears, $restingHr): ($currentHr-$restingHr)/($mhr-$restingHr)")
+            if (hrr <= 0) return 1.0 // mhr >= resting heart rate, hence 100% exertion
+            //Log.i(TAG, "exertion ($currentHr, $ageYears, $restingHr, $mhr): ($currentHr-$restingHr)/($mhr-$restingHr)")
             return ((currentHr - restingHr).coerceAtLeast(0)) / hrr // If currentHr <= restingHr, then the user is not at all exerting them selfs, hence exertion = 0
         }
 

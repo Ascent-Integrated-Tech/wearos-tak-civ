@@ -349,6 +349,7 @@ import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.time.Year
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -363,8 +364,6 @@ class SettingsActivity : ComponentActivity() {
         lateinit var settingsActivity: SettingsActivity
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
-        val years = (1999..2025).toList()
-        var year = MutableLiveData<Int>(1999)
         val sexOptionsList : List<String> = listOf("N/A", "Male", "Female")
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
@@ -762,7 +761,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "physiological_metrics_birth_year_screen") {
 //            AgeWeightSetting(navController, birthYearSettingsState, 150, stringResource(R.string.age), context)
-            NumericEntryPage(navController, birthYearSettingsState, 2025, 1900, stringResource(R.string.birth_year), context, "physiological_metrics_medical_profile_batdok")
+            NumericEntryPage(navController, birthYearSettingsState, Year.now().value, 1900, stringResource(R.string.birth_year), context, "physiological_metrics_medical_profile_batdok")
         }
         composable(
             "physiological_metrics_height_screen") {

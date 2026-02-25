@@ -355,7 +355,7 @@ fun AlertsScreen(
                     ${String.format("%-25s %-30s", "Icon:", physioMetricIconComplication)}
                     ${String.format("%-25s %-30s", "Metric:", physioMetricStringComplication)}
                     """.trimIndent()
-                        Log.d(PhysioAlertsActivity.Companion.TAG, logOutput)
+                        Log.i(TAG, logOutput)
                     }
                 }
             })
@@ -382,12 +382,12 @@ fun ExpandableCard() {
                     ${String.format("%-25s %-30s", "calories:", dailyMetricsFlow.value?.calories?.toInt())}
 
                     """.trimIndent()
-    Log.d(TAG, logOutput)
+    Log.i(TAG, logOutput)
     val activePhysioMetrics = listOf(
         Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" /* + stringResource(R.string.bpm) */ else "---"),
         Utils.SelectedPhysioMetric("key_steps",painterResource(id = R.drawable.steps), stringResource(R.string.steps), if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"),
         Utils.SelectedPhysioMetric("key_skin_temp",painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"),
-        Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"),
+        Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"),
         Utils.SelectedPhysioMetric("key_floors",painterResource(id = R.drawable.floors), stringResource(R.string.floors), if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"),
         Utils.SelectedPhysioMetric("key_calories",painterResource(id = R.drawable.calories), stringResource(R.string.calories), if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}")
     )

@@ -112,7 +112,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import java.util.Calendar
+import java.time.Year
 import java.util.EnumMap
 import java.util.UUID
 import kotlin.collections.component1
@@ -2279,9 +2279,8 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    //TODO: WEAR-272: Do we still need this?? vvv
     val getPhysiologicalMetricAge: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[AGE] ?: DEFAULT_BIRTH_YEAR
+        prefs[AGE] ?: (Year.now().value - DEFAULT_BIRTH_YEAR).coerceAtLeast(0)
     }
 
     suspend fun storePhysiologicalMetricAge(age: Int) {
@@ -2293,7 +2292,7 @@ class DataRepository(private val context: Context) {
     val physiologicalMetricAge: StateFlow<Int> = getPhysiologicalMetricAge.stateIn(
         scope = repoScope,
         started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-        initialValue = DEFAULT_BIRTH_YEAR
+        initialValue = (Year.now().value - DEFAULT_BIRTH_YEAR).coerceAtLeast(0)
     )
 
     val latestExertion: StateFlow<Double> = combine(
@@ -2308,7 +2307,6 @@ class DataRepository(private val context: Context) {
             started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
             initialValue = -1.0
         )
-    //TODO: WEAR-272: Do we still need this?? ^^^
 
 
     val getPhysiologicalMetricHeightFeet: Flow<Int> = context.dataStore.data.map { prefs ->
@@ -2402,6 +2400,7 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[YEAR_OF_BIRTH] = year
         }
+        storePhysiologicalMetricAge((Year.now().value - year).coerceAtLeast(0))
     }
 
     val getPhysiologicalMetricUniformWaistSize: Flow<Int> = context.dataStore.data.map { prefs ->

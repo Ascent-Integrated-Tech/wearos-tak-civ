@@ -375,11 +375,11 @@ class SkinTempService : Service() {
             val effectiveHr = if (batchMostRecentHr > 0 && batchMostRecentHrStatus == 1) batchMostRecentHr else lastNonZeroHr
             val effectiveIbi = if (batchMostRecentIbi > 0) batchMostRecentIbi else lastNonZeroIbi
             val reason = if (isInteractiveNow) "interactive" else "flush/off"
-            Log.i(
+            /*Log.i(
                 TAG,
                 "HRIBI-SNAPSHOT: HR=$effectiveHr (raw=$batchMostRecentHr status=$batchMostRecentHrStatus lastNonZero=$lastNonZeroHr) " +
                         "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
-            )
+            )*/
 			// Update NN buffer with newly received (valid) intervals and compute RMSSD (mirror WEAR-383)
 			addValidNnIntervals(firstIbiList, firstIbiStatusList)
 			val rmssd = computeRmssdMs()
@@ -535,7 +535,7 @@ class SkinTempService : Service() {
                             return@post
                         } else {
                             if (lastSpo2Status != status) {
-                                Log.d(TAG, "[SPO2] Interim status=$status …")
+                                //Log.i(TAG, "[SPO2] Interim status=$status …")
                                 lastSpo2Status = status
                             }
                         }
