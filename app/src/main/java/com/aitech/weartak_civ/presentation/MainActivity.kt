@@ -179,12 +179,10 @@ import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -2919,7 +2917,7 @@ fun selectedMetricValueFromKey(key: String?): String {
         "key_heart_rate" -> if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
         "key_steps" -> if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"
         "key_skin_temp" -> if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"
-        "key_exertion" -> if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---"
+        "key_exertion" -> if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"
         "key_floors" -> if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
         "key_calories" -> if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
         else -> "ERROR"

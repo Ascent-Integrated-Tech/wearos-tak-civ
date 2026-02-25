@@ -103,7 +103,7 @@ class CepEngine(
 
                 val currentYear =
                     java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-                val age = (currentYear - newYearOfBirth).coerceIn(16, 80)
+                val age = (currentYear - newYearOfBirth).coerceIn(0, 200)
 
                 val hrMax = ZoneHelper.tanakaHrMax(age)
 

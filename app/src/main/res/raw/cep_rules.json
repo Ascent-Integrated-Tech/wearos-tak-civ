@@ -958,7 +958,7 @@
           }
         ]
       },
-      "sustained_for_sec": 10,
+      "sustained_for_sec": 180,
       "action": {
         "type": "log",
         "severity": "EMERGENCY",
@@ -994,7 +994,7 @@
           "features.heart_rate"
         ]
       },
-      "sustained_for_sec": 3,
+      "sustained_for_sec": 300,
       "action": {
         "type": "none",
         "severity": "ALERT",
@@ -1304,7 +1304,7 @@
           }
         ]
       },
-      "sustained_for_sec": 10,
+      "sustained_for_sec": 180,
       "action": {
         "type": "log",
         "severity": "EMERGENCY",
@@ -1404,15 +1404,14 @@
             ]
           },
           {
-            "between": [
+            "gte_key": [
               "features.hrr_percent",
-              90.0,
-              100.0
+              90.0
             ]
           }
         ]
       },
-      "sustained_for_sec": 10,
+      "sustained_for_sec": 180,
       "action": {
         "type": "log",
         "severity": "EMERGENCY",
