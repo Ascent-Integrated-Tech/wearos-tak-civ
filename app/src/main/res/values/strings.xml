@@ -550,7 +550,7 @@
     <string name="enable_companion_plugin_default" translatable="false">false</string>
     <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound/Compass</string>
     <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
-    <string name="enable_bloodhound_compass_default" translatable="false">false</string>
+    <string name="enable_bloodhound_compass_default" translatable="false">true</string>
     <string name="enable_battery_alerts" translatable="false">Enable Battery Alerts</string>
     <string name="enable_battery_alerts_desc" translatable="false">Enables wearTAK to send battery alerts via chat</string>
     <string name="enable_battery_alerts_default" translatable="false">false</string>

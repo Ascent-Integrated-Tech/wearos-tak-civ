@@ -110,6 +110,7 @@ class CepEngine(
                 // Load values from DataRepository
                 val hrRest = dataRepository.getRestingHeartRate.first() ?: 60.0
                 val hrHigh = dataRepository.getHrHighAlertBpmThreshold.first() ?: 140
+                val hrRestingHigh = dataRepository.getRestingHrHighAlertBpmThreshold.first() ?: 120
                 val hrLow  = 40.0 //dataRepository.getRestingHeartRate
 
                 // Core HR profile
@@ -117,13 +118,13 @@ class CepEngine(
                 featureStore.put("profile.hr_max_bpm", hrMax)
 
                 // HR thresholds
-                featureStore.put("thresholds.hr.high_bpm", hrHigh)
+                featureStore.put("thresholds.hr.high_bpm", hrRestingHigh)
                 featureStore.put("thresholds.hr.low_bpm",  hrLow)
 
                 Log.d(
                     "CEP",
                     "Updated HR profile: YOB=$newYearOfBirth age=$age " +
-                            "hrRest=$hrRest hrMax=$hrMax hrHigh=$hrHigh hrLow=$hrLow"
+                            "hrRest=$hrRest hrMax=$hrMax hrHighResting=$hrRestingHigh hrLow=$hrLow"
                 )
             } catch (t: Throwable) {
                 Log.e("CEP", "Failed to update HR profile from DataRepository", t)

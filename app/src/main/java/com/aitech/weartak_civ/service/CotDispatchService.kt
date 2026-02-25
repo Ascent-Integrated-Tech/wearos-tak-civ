@@ -1464,8 +1464,8 @@ class CotDispatchService : Service() {
         	<point lat='$latActual' lon='$lonActual' hae='$haeActual' ce='$ceActual' le='$leActual' />
         	<detail>
         		<link uid='$linkUid' type='a-f-G-U-C' relation='p-p'/>
-        		<contact callsign='$emergencyCallsign&#10;${snapshot.category}: ${snapshot.description}'/>
-        		<emergency type='${snapshot.category}: ${snapshot.description}'>$callsign</emergency>
+        		<contact callsign='$emergencyCallsign&#10;${snapshot.description}'/>
+        		<emergency type='${snapshot.description}'>$callsign</emergency>
                 <usericon iconsetpath='911 Alert'/>
                 <color argb='-1'/>
         	</detail>
