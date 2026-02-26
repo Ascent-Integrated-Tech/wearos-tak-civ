@@ -108,10 +108,14 @@ import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.Calendar
 import java.time.Year
 import java.util.EnumMap
 import java.util.UUID
@@ -125,10 +129,14 @@ private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 class DataRepository(private val context: Context) {
     private val TAG = "WearTAK-" + DataRepository::class.java.simpleName
+    private val takServerSecretsRepository: TakServerSecretsRepository
+        get() = (context.applicationContext as WearTakApplication).takServerRepo
 
     val passiveDataEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PASSIVE_DATA_ENABLED] ?: false
     }
+
+    fun legacyDataStore(): DataStore<Preferences> = context.dataStore
 
     suspend fun setPassiveDataEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
@@ -1842,12 +1850,13 @@ class DataRepository(private val context: Context) {
         val p12Cert: String,
         val p12CertPassword: String
     )
-    val getTakServerList: Flow<List<TakServerItem>> = context.dataStore.data
-        .map { preferences ->
-            val jsonString = preferences[TAK_SERVER_LIST_KEY]
+    val getTakServerList: Flow<List<TakServerItem>> = takServerSecretsRepository.takServerListJson
+        .map { jsonString ->
             if (jsonString.isNullOrEmpty()) {
+                Log.i(TAG, "getTakServerList: empty secure store")
                 emptyList()
             } else {
+                Log.i(TAG, "getTakServerList: decrypt OK (len=${jsonString.length})")
                 // Split into typeToken and type for minifyEnabled true. Do not combine into one line
                 val typeToken = object : TypeToken<List<TakServerItem>>() {}
                 val type = typeToken.type
@@ -1856,85 +1865,155 @@ class DataRepository(private val context: Context) {
         }
 
     suspend fun storeTakServerList(newList: List<TakServerItem>) {
-        context.dataStore.edit { preferences ->
-            // Convert list to JSON
-            val jsonString = gson.toJson(newList)
-            // Store in DataStore
-            preferences[TAK_SERVER_LIST_KEY] = jsonString
-        }
+        // Convert list to JSON
+        val jsonString = gson.toJson(newList)
+        Log.i(TAG, "storeTakServerList: writing list size=${newList.size}, len=${jsonString.length}")
+        takServerSecretsRepository.setTakServerListJson(jsonString)
+
+//        context.dataStore.edit { preferences ->
+//            // Convert list to JSON
+//            val jsonString = gson.toJson(newList)
+//            // Store in DataStore
+//            preferences[TAK_SERVER_LIST_KEY] = jsonString
+//        }
     }
 
     suspend fun addTakServerItem(item: TakServerItem) {
-        context.dataStore.edit { preferences ->
-            val currentJson = preferences[TAK_SERVER_LIST_KEY]
-            Log.d(TAG, "addTakServerItem: $item, currJsonList: ${currentJson.toString()}")
-            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-                val typeToken = object : TypeToken<List<TakServerItem>>() {}
-                val type = typeToken.type
-                gson.fromJson(currentJson, type)
-            } else {
-                mutableListOf()
-            }
-            currentList.add(item)
-
-            val newJson = gson.toJson(currentList)
-            preferences[TAK_SERVER_LIST_KEY] = newJson
-            Log.d(TAG, "addTakServerItem newJson: $newJson")
+        val currentJson = takServerSecretsRepository.takServerListJson.first()
+        Log.i(TAG, "addTakServerItem: read current len=${currentJson?.length ?: 0}")
+        Log.i(TAG, "addTakServerItem: $item, currJsonList: ${currentJson.toString()}")
+        val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+            // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+            val typeToken = object : TypeToken<List<TakServerItem>>() {}
+            val type = typeToken.type
+            gson.fromJson(currentJson, type)
+        } else {
+            mutableListOf()
         }
+        currentList.add(item)
+
+        val newJson = gson.toJson(currentList)
+        Log.i(TAG, "addTakServerItem: writing new len=${newJson.length}")
+        takServerSecretsRepository.setTakServerListJson(newJson)
+        Log.i(TAG, "addTakServerItem newJson: $newJson")
+
+//        context.dataStore.edit { preferences ->
+//            val currentJson = preferences[TAK_SERVER_LIST_KEY]
+//            Log.d(TAG, "addTakServerItem: $item, currJsonList: ${currentJson.toString()}")
+//            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+//                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+//                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+//                val type = typeToken.type
+//                gson.fromJson(currentJson, type)
+//            } else {
+//                mutableListOf()
+//            }
+//            currentList.add(item)
+//
+//            val newJson = gson.toJson(currentList)
+//            preferences[TAK_SERVER_LIST_KEY] = newJson
+//            Log.d(TAG, "addTakServerItem newJson: $newJson")
+//        }
     }
 
     suspend fun removeTakServerItem(item: TakServerItem) {
-        context.dataStore.edit { preferences ->
-            val currentJson = preferences[TAK_SERVER_LIST_KEY]
-            Log.d(TAG, "removeTakServerItem: $item, currJsonList: ${currentJson.toString()}")
-            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-                val typeToken = object : TypeToken<List<TakServerItem>>() {}
-                val type = typeToken.type
-                gson.fromJson(currentJson, type)
-            } else {
-                mutableListOf()
-            }
-
-            currentList.remove(item)
-
-            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
-            Log.d(TAG, "removeTakServerItem newJson: ${gson.toJson(currentList)}")
+        val currentJson = takServerSecretsRepository.takServerListJson.first()
+        Log.i(TAG, "removeTakServerItem: read current len=${currentJson?.length ?: 0}")
+        Log.i(TAG, "removeTakServerItem: $item, currJsonList: ${currentJson.toString()}")
+        val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+            // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+            val typeToken = object : TypeToken<List<TakServerItem>>() {}
+            val type = typeToken.type
+            gson.fromJson(currentJson, type)
+        } else {
+            mutableListOf()
         }
+
+        currentList.remove(item)
+
+        Log.i(TAG, "removeTakServerItem: writing new size=${currentList.size}")
+        takServerSecretsRepository.setTakServerListJson(gson.toJson(currentList))
+        Log.i(TAG, "removeTakServerItem newJson: ${gson.toJson(currentList)}")
+
+//        context.dataStore.edit { preferences ->
+//            val currentJson = preferences[TAK_SERVER_LIST_KEY]
+//            Log.d(TAG, "removeTakServerItem: $item, currJsonList: ${currentJson.toString()}")
+//            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+//                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+//                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+//                val type = typeToken.type
+//                gson.fromJson(currentJson, type)
+//            } else {
+//                mutableListOf()
+//            }
+//
+//            currentList.remove(item)
+//
+//            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
+//            Log.d(TAG, "removeTakServerItem newJson: ${gson.toJson(currentList)}")
+//        }
     }
 
     // updateTakServerItem will act as addTakServerItem if oldItemIndex is greater than or equal to size of already stored list
     suspend fun updateTakServerItem(oldItemIndex: Int, newItem: TakServerItem) {
-        context.dataStore.edit { preferences ->
-            val currentJson = preferences[TAK_SERVER_LIST_KEY]
-            Log.d(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")
-            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-                val typeToken = object : TypeToken<List<TakServerItem>>() {}
-                val type = typeToken.type
-                gson.fromJson(currentJson, type)
-            } else {
-                mutableListOf()
-            }
+        val currentJson = takServerSecretsRepository.takServerListJson.first()
+        Log.i(TAG, "updateTakServerItem: read current len=${currentJson?.length ?: 0}")
+        Log.i(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")
+        val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+            // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+            val typeToken = object : TypeToken<List<TakServerItem>>() {}
+            val type = typeToken.type
+            gson.fromJson(currentJson, type)
+        } else {
+            mutableListOf()
+        }
 
-            val currentListSize = currentList.size
-            if (oldItemIndex != -1) {
-                if (oldItemIndex < currentListSize) {
-                    currentList[oldItemIndex] = newItem
-                } else {
-                    currentList.add(newItem)
-                    if (oldItemIndex != currentListSize) {
-                        Log.w(TAG, "updateTakServerItem: WARNING index($oldItemIndex) passed is greater than stored list size($currentListSize)")
-                    }
+        val currentListSize = currentList.size
+        if (oldItemIndex != -1) {
+            if (oldItemIndex < currentListSize) {
+                currentList[oldItemIndex] = newItem
+            } else {
+                currentList.add(newItem)
+                if (oldItemIndex != currentListSize) {
+                    Log.w(TAG, "updateTakServerItem: WARNING index($oldItemIndex) passed is greater than stored list size($currentListSize)")
                 }
             }
-
-            val newJson = gson.toJson(currentList)
-            preferences[TAK_SERVER_LIST_KEY] = newJson
-            Log.d(TAG, "updateTakServerItem newJson: $newJson")
-            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
         }
+
+        val newJson = gson.toJson(currentList)
+        Log.i(TAG, "updateTakServerItem: writing new len=${newJson.length}")
+        takServerSecretsRepository.setTakServerListJson(newJson)
+        Log.i(TAG, "updateTakServerItem newJson: $newJson")
+
+//        context.dataStore.edit { preferences ->
+//            val currentJson = preferences[TAK_SERVER_LIST_KEY]
+//            Log.d(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")
+//            val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
+//                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+//                val typeToken = object : TypeToken<List<TakServerItem>>() {}
+//                val type = typeToken.type
+//                gson.fromJson(currentJson, type)
+//            } else {
+//                mutableListOf()
+//            }
+//
+//            val currentListSize = currentList.size
+//            if (oldItemIndex != -1) {
+//                if (oldItemIndex < currentListSize) {
+//                    currentList[oldItemIndex] = newItem
+//                } else {
+//                    currentList.add(newItem)
+//                    if (oldItemIndex != currentListSize) {
+//                        Log.w(TAG, "updateTakServerItem: WARNING index($oldItemIndex) passed is greater than stored list size($currentListSize)")
+//                    }
+//                }
+//            }
+//
+//            val newJson = gson.toJson(currentList)
+//            preferences[TAK_SERVER_LIST_KEY] = newJson
+//            Log.d(TAG, "updateTakServerItem newJson: $newJson")
+//            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
+//        }
     }
 
     val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
