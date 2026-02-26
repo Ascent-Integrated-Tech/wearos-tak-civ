@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
+import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.TAG
@@ -63,6 +65,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.rememberCameraState
+import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.location.LocationPuck
 import org.maplibre.compose.location.LocationPuckColors
 import org.maplibre.compose.location.rememberUserLocationState
@@ -72,11 +75,37 @@ import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.map.OrnamentOptions
 import org.maplibre.compose.material3.ScaleBar
 import org.maplibre.compose.style.BaseStyle
-import org.maplibre.spatialk.geojson.Position
+
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import org.maplibre.spatialk.geojson.Point
+import org.maplibre.spatialk.geojson.Position
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import org.maplibre.compose.sources.GeoJsonData
+import org.maplibre.compose.sources.rememberGeoJsonSource
+import org.maplibre.spatialk.geojson.Feature
+import org.maplibre.spatialk.geojson.FeatureCollection
+import androidx.compose.runtime.*
+import androidx.compose.ui.unit.em
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
+import org.maplibre.compose.camera.CameraState
+import org.maplibre.compose.expressions.dsl.Feature.get
+import org.maplibre.compose.expressions.dsl.const
+import org.maplibre.compose.expressions.dsl.eq
+import org.maplibre.compose.expressions.dsl.feature
+import org.maplibre.compose.expressions.dsl.image
+import org.maplibre.compose.expressions.dsl.asString
+import org.maplibre.compose.util.ClickResult
+import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
+import org.maplibre.compose.expressions.dsl.collator
+import org.maplibre.compose.expressions.dsl.offset
+import org.maplibre.compose.expressions.value.SymbolAnchor
+import org.maplibre.compose.expressions.value.TextUnitOffsetValue
 
 class MapActivity : ComponentActivity() {
 
@@ -90,7 +119,16 @@ class MapActivity : ComponentActivity() {
         val teal = Color(0xFF007F7F)
         val dark_green = Color(0xFF007F00)
         val brown = Color(0xFF964B00)
-
+        /*
+        val tempMarkers = listOf(
+            DataRepository.DroppedMarker(
+                uid ="1",
+                markerType = "a-h-G",
+                title = "I'm a Marker",
+                timeDropped = 0L,
+                location = null
+            )
+        ) */
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,19 +144,80 @@ class MapActivity : ComponentActivity() {
         }
     }
 }
+@Composable
+fun rememberMarkerFeatures(markers: List<DataRepository.DroppedMarker>) =
+    remember(markers) {
+        FeatureCollection(
+            features = markers.map { m ->
+                Feature(
+                    geometry = Point(coordinates = Position(m.location?.lon ?: 0.0, m.location?.lat ?: 0.0)),
+                    properties = JsonObject(
+                        mapOf(
+                            "id" to JsonPrimitive(m.uid),
+                            "title" to JsonPrimitive(m.title),
+                            "iconKey" to JsonPrimitive(m.markerType),
+                            "markerType" to JsonPrimitive(m.markerType)
+                        )
+                    )
+                )
+            }
+        )
+    }
+@Composable
+fun MarkersOnMap(
+    markers: List<DataRepository.DroppedMarker>,
+    onMarkerClick: (id: String, title: String) -> Unit,
+    camera: CameraState
+) {
+    if (markers.isEmpty()) return
+    val fc = rememberMarkerFeatures(markers)
+    val typeGroups = remember(markers) { markers.groupBy { it.markerType } }
 
+    val source = rememberGeoJsonSource(
+        data = GeoJsonData.Features(fc)
+    )
+    val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
+
+    typeGroups.forEach { (markerType, group) ->
+        val iconRes = markerIconFromString(markerType)
+        SymbolLayer(
+            id = "markers-$markerType",
+            source = source,
+            filter = eq(get("markerType").asString(),const(markerType), c),
+            iconImage = image(iconRes),
+            iconAllowOverlap = const(true),
+            iconIgnorePlacement = const(true),
+            textAllowOverlap = const(true),
+            textIgnorePlacement = const(true),
+            onClick = { features ->
+                val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
+                onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
+                ClickResult.Consume
+            },
+            iconSize = const(1),
+            textField = if (camera.position.zoom > 10.0) const(group.first().title) else const(""),
+            textSize = const(0.6.em),
+            textAnchor = const(SymbolAnchor.Bottom),
+            textColor = const(Color.White),
+            textHaloColor = const(Color.Black),
+            textHaloWidth =const(2.dp),
+            textOffset = offset(0f.em, (-1f).em),
+
+        )
+    }
+}
 @Composable
 fun MapApp(exitActivity: () -> Unit) {
         val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
     val lat = locationFlow?.latitude ?: 0.0
     val lon = locationFlow?.longitude ?: 0.0
-    Log.d(TAG, "latitude = $lat | longitude = $lon")
-    Log.d(TAG, "${locationFlow?.latitude ?: 0.0}")
+    //Log.i(TAG, "latitude = $lat | longitude = $lon")
+    //Log.i(TAG, "${locationFlow?.latitude ?: 0.0}")
     val cameraState = rememberCameraState(
         firstPosition = CameraPosition(
-            target = Position(lon, lat), // lng, lat
-            zoom = 15.0,
+            target = Position(lon, lat),
+            zoom = 12.0,
         )
     )
     val scope = rememberCoroutineScope()
@@ -126,7 +225,9 @@ fun MapApp(exitActivity: () -> Unit) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
     val userLocationState = rememberUserLocationState(locationProvider)
-
+    val droppedMarkerListSetting by dataRepository
+        .droppedMarkerList
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     Box(Modifier.fillMaxSize()) {
         MaplibreMap(
@@ -165,9 +266,14 @@ fun MapApp(exitActivity: () -> Unit) {
                     )
                 )
             }
+            MarkersOnMap(
+                markers = droppedMarkerListSetting,
+                onMarkerClick = { id, title -> /* show dialog/toast */ },
+                cameraState
+            )
         }
         Image(
-            painter = painterResource(com.aitech.weartak_civ.R.drawable.north_arrow),
+            painter = painterResource(R.drawable.north_arrow),
             contentDescription = "North Arrow",
             modifier = Modifier.align(Alignment.TopCenter).size(40.dp),
             alignment = Alignment.TopCenter

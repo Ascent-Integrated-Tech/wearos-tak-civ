@@ -213,6 +213,8 @@ dependencies {
     implementation libs.onnxruntime.android
 
     implementation("org.maplibre.compose:maplibre-compose-material3:0.12.1")
+    //implementation("org.maplibre.gl:android-plugin-annotation-v9:3.0.2")
+
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
