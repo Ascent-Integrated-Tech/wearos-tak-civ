@@ -1101,7 +1101,8 @@ class DataRepository(private val context: Context) {
         val uid: String,
         val markerType: String,
         val title: String,
-        val timeDropped: Long
+        val timeDropped: Long,
+        val location: LocationSnapshot?
     )
 
     private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())

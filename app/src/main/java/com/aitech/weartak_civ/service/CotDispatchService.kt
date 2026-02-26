@@ -1518,6 +1518,7 @@ class CotDispatchService : Service() {
             escapeXmlText(markerTitle)
         }
 
+
         val lat   = loc?.lat
         val lon   = loc?.lon
         val hae   = loc?.hae
@@ -2038,8 +2039,19 @@ class CotDispatchService : Service() {
 
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
+        val calendar: Calendar = Calendar.getInstance()
+        calendar.setTime(Date()) // Set the current time
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
+        markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
+        val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
+        val markerTitleCallsignOrCustom = if (snapshot.title.isEmpty()) {
+            "${callsign}_$markerCallsignAppendTime"
+        } else {
+            escapeXmlText(snapshot.title)
+        }
+
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = snapshot.title, timeDropped = req.timeMillis)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = markerTitleCallsignOrCustom, timeDropped = req.timeMillis, location = snapshot.loc)
         )
     }
 
