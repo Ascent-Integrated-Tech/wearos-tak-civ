@@ -53,14 +53,28 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 latest[skin_temp] = p.c_peripheral
             }
             is AmbientPayload -> {
-                latest[ambient_temp_c] = p.temp_c
+                /*latest[ambient_temp_c] = p.temp_c
                 latest[ambientWind] = p.wind_mps
                 latest[ambient_humidity_pct] = p.humidity_pct
                 fs.putAll(mapOf(
                     ambient_temp_c to p.temp_c,
                     ambientWind to p.wind_mps,
                     ambient_humidity_pct to p.humidity_pct
-                ))
+                ))*/
+                p.temp_c?.let { t ->
+                    fs.put(ambient_temp_c, t, tsMs)
+                    latest[ambient_temp_c] = t
+                }
+
+                p.wind_mps?.let { w ->
+                    fs.put(ambientWind, w, tsMs)
+                    latest[ambientWind] = w
+                }
+
+                p.humidity_pct?.let { h ->
+                    fs.put(ambient_humidity_pct, h, tsMs)
+                    latest[ambient_humidity_pct] = h
+                }
             }
             is AccelPayload -> {
                 num.getOrPut(accelMag) { DoubleRing(numCap()) }.add(p.magnitude_g)
@@ -76,6 +90,7 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 fs.put(activity_state, p.state, tsMs)
             }
             is Spo2Payload -> {
+                num.getOrPut("spo2", { DoubleRing(numCap()) }).add(p.pct)
                 latest["spo2"] = p.pct; fs.put("spo2", p.pct, tsMs)
             }
             is HrvPayload -> {

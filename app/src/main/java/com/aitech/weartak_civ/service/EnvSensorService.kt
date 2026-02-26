@@ -219,15 +219,16 @@ class EnvSensorService : Service(), SensorEventListener {
                     )
                 )
             }
-            lastHumidity?.let { rh ->
-                CepBus.emit(
-                    CepEvent(
-                        topic = Topics.HUMIDITY,
-                        payload = HumidityPayload(relativePercent = rh)
-                    )
-                )
-            }
-            Log.d(TAG, "CEP emit light=${lastLux} lux, humidity=${lastHumidity} %")
+            // Humidity is emitted from WeatherService (API); do not emit from device sensor here.
+            // lastHumidity?.let { rh ->
+            //     CepBus.emit(
+            //         CepEvent(
+            //             topic = Topics.HUMIDITY,
+            //             payload = HumidityPayload(relativePercent = rh)
+            //         )
+            //     )
+            // }
+            Log.d(TAG, "CEP emit light=${lastLux} lux, humidity=${lastHumidity} % (sensor only, not emitted)")
         } catch (t: Throwable) {
             Log.e(TAG, "Failed CEP emit (light/humidity)", t)
         }

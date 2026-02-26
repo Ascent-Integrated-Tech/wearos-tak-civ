@@ -29,10 +29,11 @@ import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.AmbientPayload
+import com.aitech.weartak_civ.cep.model.payloads.HrvPayload
 import com.aitech.weartak_civ.cep.model.payloads.PpgPayload
 import com.aitech.weartak_civ.cep.model.payloads.SkinTempPayload
 import com.aitech.weartak_civ.cep.model.payloads.Spo2Payload
-//import com.aitech.weartak_civ.cep.CepProvider
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -188,6 +189,17 @@ class SkinTempService : Service() {
     @Volatile private var lastCallbackElapsed = 0L
     @Volatile private var lastValidHrElapsed = 0L
 
+    // HRV / RMSSD buffer + params (mirrored from WEAR-383)
+    private val nnBuffer = ArrayDeque<Int>(128)
+    private val MIN_NN_FOR_RMSSD = 10
+    private val MAX_NN_BUFFER = 60
+    private val NN_MIN_MS = 300
+    private val NN_MAX_MS = 2000
+    @Volatile private var lastNonZeroRmssdMs: Double = 0.0
+
+    // Latest ambient temp from skin temp callback (for CEP ambient.temp_c)
+    @Volatile private var lastAmbientTempC: Double? = null
+
     // ---- Strict measurement state machine for SpO2 → PPG ----
     private enum class MeasurementState { IDLE, SPO2_RUNNING, PPG_RUNNING }
     private val measureState = AtomicReference(MeasurementState.IDLE)
@@ -268,6 +280,7 @@ class SkinTempService : Service() {
                     val objectTemp = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE)
                     val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
                     lastSkinTempC = objectTemp
+                    lastAmbientTempC = ambientTemp.toDouble()
                     tempF = objectTemp.toFahrenheit()
                     Log.i(TAG, "SkinTempService skinTemp: object=${"%.1f".format(tempF)}°F (${objectTemp}°C) ambient=${ambientTemp}°C")
 
@@ -313,6 +326,9 @@ class SkinTempService : Service() {
             var batchMostRecentHrStatus = Int.MIN_VALUE
             var batchMostRecentIbi = 0
 
+            var firstIbiList: List<Int>? = null
+            var firstIbiStatusList: List<Int>? = null
+
             for (i in dataPoints.indices) {
                 val dp = dataPoints[i]
                 try {
@@ -327,6 +343,8 @@ class SkinTempService : Service() {
                     if (i == 0) {
                         val ibiList = dp.getValue(ValueKey.HeartRateSet.IBI_LIST)
                         val ibiStatusList = dp.getValue(ValueKey.HeartRateSet.IBI_STATUS_LIST)
+                        firstIbiList = ibiList
+                        firstIbiStatusList = ibiStatusList
                         if (ibiList != null && ibiList.isNotEmpty()) {
                             val lastIbi = ibiList.last()
                             batchMostRecentIbi = lastIbi
@@ -347,6 +365,15 @@ class SkinTempService : Service() {
                 "HRIBI-SNAPSHOT: HR=$effectiveHr (raw=$batchMostRecentHr status=$batchMostRecentHrStatus lastNonZero=$lastNonZeroHr) " +
                         "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
             )
+
+            // Update NN buffer with newly received (valid) intervals and compute RMSSD (mirrored from WEAR-383)
+            addValidNnIntervals(firstIbiList, firstIbiStatusList)
+            val rmssd = computeRmssdMs()
+            if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) {
+                lastNonZeroRmssdMs = rmssd
+            }
+            val effectiveRmssd = if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) rmssd else lastNonZeroRmssdMs
+            Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
         }
 
         override fun onFlushCompleted() {
@@ -782,6 +809,36 @@ class SkinTempService : Service() {
         try { hrTracker.flush() } catch (t: Throwable) { Log.e(TAG, "flushHr failed reason=$reason", t) }
     }
 
+    // NN interval validation + RMSSD (mirrored from WEAR-383, unchanged)
+    private fun addValidNnIntervals(ibiList: List<Int>?, ibiStatusList: List<Int>?) {
+        if (ibiList.isNullOrEmpty()) return
+        val hasStatus = !ibiStatusList.isNullOrEmpty() && ibiStatusList.size == ibiList.size
+        for (i in ibiList.indices) {
+            val ibi = ibiList[i]
+            val statusOk = if (hasStatus) (ibiStatusList!![i] == 0) else true
+            if (!statusOk) continue
+            if (ibi < NN_MIN_MS || ibi > NN_MAX_MS) continue
+            nnBuffer.addLast(ibi)
+            while (nnBuffer.size > MAX_NN_BUFFER) nnBuffer.removeFirst()
+        }
+    }
+
+    private fun computeRmssdMs(): Double? {
+        if (nnBuffer.size < MIN_NN_FOR_RMSSD) return null
+        var sumSq = 0.0
+        var n = 0
+        var prev = nnBuffer.first()
+        for (i in 1 until nnBuffer.size) {
+            val cur = nnBuffer.elementAt(i)
+            val diff = (cur - prev).toDouble()
+            sumSq += diff * diff
+            n++
+            prev = cur
+        }
+        if (n <= 0) return null
+        return kotlin.math.sqrt(sumSq / n)
+    }
+
     private fun ppgTimeoutCleanup() {
         ppgTimeoutRunnable?.let { backgroundHandler.removeCallbacks(it) }
         ppgTimeoutRunnable = null
@@ -1088,6 +1145,14 @@ class SkinTempService : Service() {
                          )
                      )
                  )
+            }
+            // HRV RMSSD → hrv.rmssd_ms (mirrored from WEAR-383 pipeline)
+            if (lastNonZeroRmssdMs > 0.0 && !lastNonZeroRmssdMs.isNaN()) {
+                CepBus.emit(CepEvent(topic = Topics.HRV, payload = HrvPayload(rmssd_ms = lastNonZeroRmssdMs)))
+            }
+            // Ambient temp from skin temp callback → ambient.temp_c
+            lastAmbientTempC?.let { tempC ->
+                CepBus.emit(CepEvent(topic = Topics.AMBIENT, payload = AmbientPayload(temp_c = tempC)))
             }
         } catch (t: Throwable) {
             Log.e(TAG, "CEP emit loop error", t)

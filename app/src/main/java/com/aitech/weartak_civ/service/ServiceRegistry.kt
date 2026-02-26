@@ -40,7 +40,8 @@ class ServiceRegistry() {
         ServiceType.GEOFENCE to GeofenceService::class.java,
         ServiceType.POWER_MGR to PowerManagerService::class.java,
         ServiceType.BLOOD_HOUND to BloodhoundService::class.java,
-        ServiceType.COMPANION_APP to CompanionAppService::class.java
+        ServiceType.COMPANION_APP to CompanionAppService::class.java,
+        ServiceType.ENV_SENSOR to EnvSensorService::class.java
     )
 
     private val serviceRunningStateMap = mapOf(
@@ -62,7 +63,8 @@ class ServiceRegistry() {
         ServiceType.GEOFENCE to GeofenceService.isRunning,
         ServiceType.POWER_MGR to PowerManagerService.isRunning,
         ServiceType.BLOOD_HOUND to BloodhoundService.isRunning,
-        ServiceType.COMPANION_APP to CompanionAppService.isRunning
+        ServiceType.COMPANION_APP to CompanionAppService.isRunning,
+        ServiceType.ENV_SENSOR to EnvSensorService.isRunning
     )
 
     /**

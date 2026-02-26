@@ -148,7 +148,7 @@ class CepEngine(
         }
     }
 
-    private suspend fun checkAndClearAlerts() {
+    /*private suspend fun checkAndClearAlerts() {
         val now = System.currentTimeMillis()
 
         for (alert in AlertRegistry.allActive()) {
@@ -205,6 +205,49 @@ class CepEngine(
                 alert.exitSatisfiedSinceMs = null
             }
         }
+    }*/
+
+    //Fix for cep feature key alert cancellation
+    private suspend fun checkAndClearAlerts() {
+        val now = System.currentTimeMillis()
+
+        for (alert in AlertRegistry.allActive()) {
+            val conditions = alert.exitConditions
+            if (conditions.isEmpty()) continue
+
+            val satisfiedFlags = conditions.map { cond ->
+                val value = featureStore.latestAsDouble(cond.feature) ?: return@map false
+
+                // Resolve thresholds: prefer literal, else feature-key
+                val below = cond.exitBelow ?: cond.exitBelowKey?.let { key -> featureStore.latestAsDouble(key) }
+                val above = cond.exitAbove ?: cond.exitAboveKey?.let { key -> featureStore.latestAsDouble(key) }
+
+                val belowOk = below?.let { value < it - cond.hysteresis } ?: false
+                val aboveOk = above?.let { value > it + cond.hysteresis } ?: false
+
+                belowOk || aboveOk
+            }
+
+            val allOrAnySatisfied = when (alert.exitLogic) {
+                "OR" -> satisfiedFlags.any { it }
+                else -> satisfiedFlags.all { it }  // default AND
+            }
+
+            if (allOrAnySatisfied) {
+                val since = alert.exitSatisfiedSinceMs
+                if (since == null) {
+                    alert.exitSatisfiedSinceMs = now
+                } else {
+                    val elapsedSec = (now - since) / 1000L
+                    if (elapsedSec >= alert.exitSustainSec) {
+                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+                        AlertRegistry.clear(alert.ruleId)
+                    }
+                }
+            } else {
+                alert.exitSatisfiedSinceMs = null
+            }
+        }
     }
 
     fun ingest(path: String, value: Double, tsMs: Long = System.currentTimeMillis()) {
@@ -235,5 +278,3 @@ class CepEngine(
     }
 
 }
-
-

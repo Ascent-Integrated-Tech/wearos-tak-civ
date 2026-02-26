@@ -20,6 +20,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.HumidityPayload
 import com.aitech.weartak_civ.cep.model.payloads.WaterPayload
 import com.aitech.weartak_civ.cep.model.payloads.WindPayload
 import kotlinx.coroutines.CoroutineScope
@@ -251,8 +252,17 @@ class WeatherService : Service() {
 								payload = WaterPayload(wet = completed.wet, temperatureC = null)
 							)
 						)
+						// HUMIDITY (from API; CEP uses for features.env.wet_flag)
+						completed.humidityPct?.let { pct ->
+							CepBus.emit(
+								CepEvent(
+									topic = Topics.HUMIDITY,
+									payload = HumidityPayload(relativePercent = pct.toFloat())
+								)
+							)
+						}
 					} catch (t: Throwable) {
-						Log.e(TAG, "Failed CEP emit (wind/wet)", t)
+						Log.e(TAG, "Failed CEP emit (wind/wet/humidity)", t)
 					}
 				} catch (je: JSONException) {
 					Log.d(TAG, "JSON parse error: ${je.message}")

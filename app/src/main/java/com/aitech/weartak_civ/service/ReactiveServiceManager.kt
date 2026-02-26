@@ -782,6 +782,7 @@ class ReactiveServiceManager : Service() {
             put(ServiceType.BATTERY,               BatteryService.isRunning.get())
             put(ServiceType.POWER_MGR,             PowerManagerService.isRunning.get())
             put(ServiceType.GEOFENCE,              GeofenceService.isRunning.get())
+            put(ServiceType.ENV_SENSOR,            EnvSensorService.isRunning.get())
         }
 
     private suspend fun publishDesiredSnapshot(repo: DataRepository) {
@@ -914,9 +915,10 @@ class ReactiveServiceManager : Service() {
         POWER_MGR(true, isKnoxMgdService = false),
         BLOOD_HOUND(true, isKnoxMgdService = false),
 //        BATTERY_ALERTS(true, isKnoxMgdService = false),
-        MOVEMENT_DETECTION(true, isKnoxMgdService = false, dependencies = listOf(BLOOD_HOUND)),
+        MOVEMENT_DETECTION(true, isKnoxMgdService = false),
         WEATHER(true, dependencies = listOf(LOCATION), isKnoxMgdService = false),
-        COMPANION_APP(isForegroundService = true, isKnoxMgdService = false);
+        COMPANION_APP(isForegroundService = true, isKnoxMgdService = false),
+        ENV_SENSOR(true, isKnoxMgdService = false);
 
         val conflictsWith: List<ServiceType>
             get() = when (this) {
