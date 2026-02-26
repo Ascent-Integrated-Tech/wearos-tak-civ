@@ -241,7 +241,7 @@ class BleBeaconService: Service() {
 
     fun getSettingsForForegroundServiceScanning(): Settings {
         val builder = Notification.Builder(this, "AltBeacon")
-        builder.setSmallIcon(R.drawable.splash_icon)
+        builder.setSmallIcon(R.drawable.weartak_logo)
         builder.setContentTitle("Scanning for Beacons")
         val intent = Intent(mainActivity, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -371,7 +371,7 @@ class BleBeaconService: Service() {
 
         val notificationBuilder = Notification.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
+            .setSmallIcon(R.drawable.weartak_logo)
             .setContentText("WearTAK-CIV BLE beacon service running")
             .setPriority(PRIORITY_MAX)
             .setCategory(Notification.CATEGORY_SERVICE)

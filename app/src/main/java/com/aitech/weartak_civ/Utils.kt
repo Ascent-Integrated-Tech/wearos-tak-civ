@@ -313,7 +313,7 @@ object Utils {
      * named after the service class. Defaults can be overridden.
      *
      * @param notificationId  the ID for startForeground(...)
-     * @param iconRes         small icon resource (default = R.drawable.splash_icon)
+     * @param iconRes         small icon resource (default = R.drawable.weartak_logo)
      * @param contentText     text shown under the icon (default = "<ServiceName> running")
      * @param channelId       ID for the channel (default = "<ServiceName>_channel")
      * @param channelName     human-readable channel name (default = "<ServiceName> Background Channel")
@@ -322,7 +322,7 @@ object Utils {
     @SuppressLint("ObsoleteSdkInt", "ServiceCast")
     fun Service.startForegroundServiceCompat(
         notificationId: Int,
-        @DrawableRes iconRes: Int = R.drawable.splash_icon,
+        @DrawableRes iconRes: Int = R.drawable.weartak_logo,
         contentText: String = "${this.javaClass.simpleName} running",
         channelId: String = "${this.javaClass.simpleName}_channel",
         channelName: String = "${this.javaClass.simpleName} Background Channel",

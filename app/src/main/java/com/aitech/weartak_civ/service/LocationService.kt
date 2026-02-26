@@ -174,7 +174,7 @@ class LocationService : Service() {
 
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
         val notification = notificationBuilder.setOngoing(true)
-            .setSmallIcon(R.drawable.splash_icon)
+            .setSmallIcon(R.drawable.weartak_logo)
             .setContentText("WearTAK-CIV location service running")
             .setPriority(PRIORITY_MAX)
             .setCategory(Notification.CATEGORY_SERVICE)
