@@ -45,4 +45,7 @@ google-services.json
 .externalNativeBuild
 .cxx
 
-
+# Agentic Code
+agent-rules
+/agent-rules
+AGENTS.md

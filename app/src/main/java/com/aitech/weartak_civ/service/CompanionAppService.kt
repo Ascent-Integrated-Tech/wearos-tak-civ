@@ -923,6 +923,7 @@ class CompanionAppService : Service() {
 
     suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
         // 1) Store servers
+        Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
         repo.storeTakServerList(payload.takServerList)
         // reflect the settings ui.
         takServerList = payload.takServerList

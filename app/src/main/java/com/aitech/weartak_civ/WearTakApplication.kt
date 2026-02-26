@@ -26,8 +26,11 @@ import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.OnnxRepository
+import com.aitech.weartak_civ.data.secure.migration.TakServerMigration
 import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
+import com.aitech.weartak_civ.data.secure.takserver.TakServerEncryptedDataStore
+import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +47,7 @@ class WearTakApplication : Application() {
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
     lateinit var sitxRepo: SitxSecretsRepository; private set
+    lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
 
     lateinit var onnxRepo: OnnxRepository; private set
@@ -55,6 +59,7 @@ class WearTakApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
         capRepo = CompanionAppRepository(applicationContext)
@@ -71,6 +76,9 @@ class WearTakApplication : Application() {
         // Wipe debug mode to false on every boot!
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.storeEnableWearTakDevMode(false)
+        }
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
         }
         CepProvider.init(this)
         CepProvider.getOrCreateEngine(this).start()
