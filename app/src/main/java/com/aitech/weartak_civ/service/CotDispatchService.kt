@@ -1496,6 +1496,21 @@ class CotDispatchService : Service() {
         }
         return out.toString()
     }
+
+    private fun finalMarkerTitle(markerTitle: String?): String {
+        // Marker with Time no Date.
+        val calendar: Calendar = Calendar.getInstance()
+        calendar.setTime(Date()) // Set the current time
+        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
+        markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
+        val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
+        return if (markerTitle.isNullOrEmpty()) {
+            "${callsign}_$markerCallsignAppendTime"
+        } else {
+            escapeXmlText(markerTitle)
+        }
+    }
+
     private fun buildMarkerCotMessage(ms: DataRepository.MarkerSnapshot?): String {
         val uid         = ms?.uid
         val markerType  = ms?.markerType?.type
@@ -1506,17 +1521,7 @@ class CotDispatchService : Service() {
         val staleTime   = ms?.time?.staleCot
         val loc         = ms?.loc
 
-        // Marker with Time no Date.
-        val calendar: Calendar = Calendar.getInstance()
-        calendar.setTime(Date()) // Set the current time
-        val markerCallsignTimeFormatter = SimpleDateFormat("HHmmss'Z'")
-        markerCallsignTimeFormatter.timeZone = TimeZone.getTimeZone("UTC")
-        val markerCallsignAppendTime = markerCallsignTimeFormatter.format(calendar.time)
-        val markerTitleCallsignOrCustom = if (markerTitle.isNullOrEmpty()) {
-            "${callsign}_$markerCallsignAppendTime"
-        } else {
-            escapeXmlText(markerTitle)
-        }
+        val markerTitleCallsignOrCustom = finalMarkerTitle(markerTitle)
 
         val lat   = loc?.lat
         val lon   = loc?.lon
@@ -2038,8 +2043,10 @@ class CotDispatchService : Service() {
 
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
+        val markerTitleCallsignOrCustom = finalMarkerTitle(snapshot.title)
+
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = snapshot.title, timeDropped = req.timeMillis)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = markerTitleCallsignOrCustom, timeDropped = req.timeMillis, location = snapshot.loc)
         )
     }
 
