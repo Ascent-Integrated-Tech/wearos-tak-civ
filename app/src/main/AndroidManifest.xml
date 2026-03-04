@@ -513,6 +513,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".presentation.UserWarnActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:taskAffinity="com.aitech.weartak_civ"
+            android:theme="@style/MainActivityTheme.Starting" />
     </application>
 
 </manifest>

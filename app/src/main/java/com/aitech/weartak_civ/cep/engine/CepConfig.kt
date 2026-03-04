@@ -44,9 +44,11 @@ data class RuleDef(
     val description: String?,
     val condition: org.json.JSONObject,
     val sustainedForSec: Long,
+    val sustainedForSecWarn: Long? = null,
     val holdDownSec: Long,
     val action: RuleAction,
-    val snapshotKeys: List<String> = emptyList()
+    val snapshotKeys: List<String> = emptyList(),
+    val allowSustainOverride: Boolean = false
 )
 
 data class RuleAction(

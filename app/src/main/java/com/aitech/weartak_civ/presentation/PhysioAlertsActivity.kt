@@ -98,7 +98,7 @@ class PhysioAlertsActivity : ComponentActivity() {
         lateinit var dataRepository: DataRepository
         val alertListPreview = listOf(
             DataRepository.CustomEmergencyAlert(uuid="1c6c1dc9-3b6c-466c-b11a-551aa4b142aa", alertState= DataRepository.AlertState.ALERT, category="CAT_HR_ALERT", description="HR ZONE 1 — between 50% and 60% HRR", priority=2, sendSms=false, timeMillis=1771434132637, enqueuedToBeSent=true),
-            DataRepository.CustomEmergencyAlert(uuid="e5203b07-b64e-4e2d-acf1-6a8033c2008c", alertState=DataRepository.AlertState.ALERT, category="CAT_HR_REST_BRADY", description="LOW HR — below 40 bpm", priority=1, sendSms=false, timeMillis=1771440940184, enqueuedToBeSent=true)
+            DataRepository.CustomEmergencyAlert(uuid="e5203b07-b64e-4e2d-acf1-6a8033c2008c", alertState=DataRepository.AlertState.ALERT, category="CAT_HR_REST_LOW", description="LOW HR — below 40 bpm", priority=1, sendSms=false, timeMillis=1771440940184, enqueuedToBeSent=true)
         )
     }
 
@@ -207,7 +207,7 @@ fun alertIconFromString(category: String): Painter {
         "CAT_HR_HIGH" -> painterResource(R.drawable.high_heart_rate_alert)
         "CAT_HR_EMERGENCY" -> painterResource(R.drawable.high_exertion_alert)
         "CAT_HR_LOW" -> painterResource(R.drawable.low_hr_alert)
-        "CAT_HR_REST_BRADY" -> painterResource(R.drawable.low_hr_alert)
+        "CAT_HR_REST_LOW" -> painterResource(R.drawable.low_hr_alert)
         "CAT_HR_ALERT" -> painterResource(R.drawable.high_exertion_alert)
 
         else ->  //TODO: Change to error icon
@@ -229,7 +229,7 @@ fun alertCategoryFromString(category: String): String {
         "CAT_HR_HIGH" -> "High Resting HR"
         "CAT_HR_EMERGENCY" -> "High Exertion"
         "CAT_HR_LOW" -> "Low Resting HR"
-        "CAT_HR_REST_BRADY" -> "Low Resting HR"
+        "CAT_HR_REST_LOW" -> "Low Resting HR"
         "CAT_HR_ALERT" -> "High Exertion"
         else ->
             "ERROR"

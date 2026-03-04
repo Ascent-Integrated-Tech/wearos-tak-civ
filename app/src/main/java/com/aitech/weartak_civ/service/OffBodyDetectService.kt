@@ -20,6 +20,10 @@ import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.OffBodyPayload
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.IsDeviceWornEvent.Companion.IS_NOT_WORN
@@ -48,6 +52,8 @@ class OffBodyDetectService: Service() {
 
         runBlocking {
             dataRepository.storeLatestIsDeviceWorn(false)
+            // Device is not worn at service start
+            CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
         }
         startOffBodySensor()
     }
@@ -108,14 +114,16 @@ class OffBodyDetectService: Service() {
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(false)
-                        Log.i(TAG, "OffBodyDetectService Device is not worn");
+                        Log.i(TAG, "OffBodyDetectService Device is not worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
+                        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
                     }
                 } else {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(true)
-                        Log.i(TAG, "OffBodyDetectService Device is worn");
+                        Log.i(TAG, "OffBodyDetectService Device is worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))
+                        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 1)))
                     }
                 }
             }

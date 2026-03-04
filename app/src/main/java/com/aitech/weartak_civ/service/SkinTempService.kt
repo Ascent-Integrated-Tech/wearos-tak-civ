@@ -297,7 +297,7 @@ class SkinTempService : Service() {
                     val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
                     lastSkinTempC = objectTemp
                     tempF = objectTemp.toFahrenheit()
-                    Log.i(TAG, "SkinTempService skinTemp: object=${"%.1f".format(tempF)}°F (${objectTemp}°C) ambient=${ambientTemp}°C")
+                    //Log.i(TAG, "SkinTempService skinTemp: object=${"%.1f".format(tempF)}°F (${objectTemp}°C) ambient=${ambientTemp}°C")
 
                     val logLine =
                         "SkinTempService status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +

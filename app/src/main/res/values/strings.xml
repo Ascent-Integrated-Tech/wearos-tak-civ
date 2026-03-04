@@ -446,13 +446,39 @@
     <string name="physiological_metrics_user_type_description" translatable="false">Enter User Type</string>
 
 
-    <string name="hr_high_alert_bpm_threshold_title" translatable="false">High Heartrate Alert BPM Threshold</string>
-    <string name="hr_high_alert_bpm_threshold_description" translatable="false">Threshold in beats per minute beyond which high heartrate alert is sent if the heart rate says high for some number of seconds.</string>
-    <string name="hr_high_alert_bpm_threshold_default" translatable="false">163</string>
+    <string name="resting_hr_high_alert_bpm_threshold_title" translatable="false">High Resting Heart Rate Threshold (bpm)</string>
+    <string name="resting_hr_high_alert_bpm_threshold_description" translatable="false">Threshold in BPM for when high resting heart rate alert should trigger</string>
+    <string name="resting_hr_high_alert_bpm_threshold_default" translatable="false">120</string>
+    <string name="high_resting_hr_warning_threshold_length_title" translatable="false">High Resting Heart Rate Warning Time (minutes)</string>
+    <string name="high_resting_hr_warning_threshold_length_description" translatable="false">Minimum time in minutes during which heart rate has to be above threshold for warning to fire</string>
+    <string name="high_resting_hr_warning_threshold_length_default" translatable="false">5</string>
+    <string name="high_resting_hr_alert_threshold_length_title" translatable="false">High Resting Heart Rate Alert Time (minutes)</string>
+    <string name="high_resting_hr_alert_threshold_length_description" translatable="false">Minimum time in minutes during which heart rate has to be above threshold for alert to fire</string>
+    <string name="high_resting_hr_alert_threshold_length_default" translatable="false">10</string>
 
-    <string name="hr_high_alert_number_secs_threshold_title" translatable="false">High Heartrate Alert Number of Seconds Threshold</string>
-    <string name="hr_high_alert_number_secs_threshold_description" translatable="false">Number of seconds that hearrate has to be above \'High Heartrate Alert BPM Threshold\' for alert to be sent.</string>
-    <string name="hr_high_alert_number_secs_threshold_default" translatable="false">30</string>
+    <string name="resting_hr_low_alert_bpm_threshold_title" translatable="false">Low Resting Heart Rate Threshold (bpm))</string>
+    <string name="resting_hr_low_alert_bpm_threshold_description" translatable="false">Threshold in BPM for when low resting heart rate alert should trigger</string>
+    <string name="resting_hr_low_alert_bpm_threshold_default" translatable="false">40</string>
+    <string name="low_resting_hr_warning_threshold_length_title" translatable="false">Low Resting Heart Rate Warning Time (minutes)</string>
+    <string name="low_resting_hr_warning_threshold_length_description" translatable="false">Minimum time in minutes during which heart rate has to be below threshold for warning to fire</string>
+    <string name="low_resting_hr_warning_threshold_length_default" translatable="false">5</string>
+    <string name="low_resting_hr_alert_threshold_length_title" translatable="false">Low Resting Heart Rate Alert Time (minutes)</string>
+    <string name="low_resting_hr_alert_threshold_length_description" translatable="false">Minimum time in minutes during which heart rate has to be below threshold for alert to fire</string>
+    <string name="low_resting_hr_alert_threshold_length_default" translatable="false">10</string>
+
+    <string name="exertion_threshold_warning_title" translatable="false">Exertion Warning Threshold (%)</string>
+    <string name="exertion_threshold_warning_description" translatable="false">Percentage threshold for when the exertion warning should trigger</string>
+    <string name="exertion_threshold_warning_default" translatable="false">80</string>
+    <string name="exertion_warning_threshold_length_title" translatable="false">Exertion Warning Time (seconds)</string>
+    <string name="exertion_warning_threshold_length_description" translatable="false">Length in seconds for when the exertion warning should trigger</string>
+    <string name="exertion_warning_threshold_length_default" translatable="false">120</string>
+
+    <string name="exertion_threshold_alert_title" translatable="false">Exertion Alert Threshold (%)</string>
+    <string name="exertion_threshold_alert_description" translatable="false">Percentage threshold for when the exertion alert should trigger</string>
+    <string name="exertion_threshold_alert_default" translatable="false">90</string>
+    <string name="exertion_alert_threshold_length_title" translatable="false">Exertion Alert Time (seconds)</string>
+    <string name="exertion_alert_threshold_length_description" translatable="false">Length in seconds for when the exertion alert should trigger</string>
+    <string name="exertion_alert_threshold_length_default" translatable="false">120</string>
 
     <!-- Developer Json -->
     <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
@@ -533,18 +559,6 @@
     <string name="skin_temp">Skin Temp</string>
     <string name="current_metrics">Current Metrics</string>
     <string name="bluetooth">Bluetooth</string>
-    <string name="high_resting_heart_rate_alert_threshold_bpm" translatable="false">High Resting Heart Rate Alert Threshold Bpm</string>
-    <string name="resting_high_hr_alert_threshold_description" translatable="false">Threshold in BPM for when high resting heart rate alert should trigger</string>
-    <string name="low_resting_heart_rate_alert_threshold_bpm" translatable="false">Low Resting Heart Rate Alert Threshold Bpm</string>
-    <string name="resting_low_hr_alert_threshold_description" translatable="false">Threshold in BPM for when low resting heart rate alert should trigger</string>
-    <string name="resting_heart_rate_alert_threshold_length" translatable="false">Resting Heart Rate Alert Threshold Length</string>
-    <string name="resting_hr_alert_threshold_length_description" translatable="false">Threshold Length in seconds for when low and high resting heart rate alerts should trigger</string>
-    <string name="exertion_threshold_alert" translatable="false">Exertion Threshold Alert</string>
-    <string name="exertion_threshold_warning" translatable="false">Exertion Threshold Warning</string>
-    <string name="exertion_threshold_warning_description" translatable="false">Percentage threshold for when the exertion warning should trigger</string>
-    <string name="exertion_threshold_alert_description" translatable="false">Percentage threshold for when the exertion alert should trigger</string>
-    <string name="exertion_threshold_length" translatable="false">Exertion Threshold Length</string>
-    <string name="exertion_threshold_length_description" translatable="false">Length in seconds for when the exertion alert or warning should trigger</string>
     <string name="enable_companion_plugin" translatable="false">Enable Companion Plugin</string>
     <string name="enable_companion_plugin_desc" translatable="false">Enable the service for the companion WearTAK ATAK app</string>
     <string name="enable_companion_plugin_default" translatable="false">false</string>
@@ -567,15 +581,15 @@
     <string name="neutral">Neutral</string>
     <string name="error_sending_no_endpoints_or_location">Error: No outbound endpoints connected OR location not available</string>
     <string name="error_sending_no_endpoints">Error: No outbound endpoints connected</string>
-    <string name="uniform_waist_size" translatable="false">Uniform Waist Size</string>
+    <string name="uniform_waist_size" translatable="false">Uniform Waist Size (inches)</string>
     <string name="uniform_waist_size_desc" translatable="false">Enter Uniform Waist Size in Inches</string>
-    <string name="stride_length" translatable="false">Stride Length</string>
-    <string name="stride_length_desc" translatable="false">Enter Stride Length in Meters</string>
-    <string name="uniform_pants_length" translatable="false">Uniform Pants Length</string>
+    <string name="stride_length" translatable="false">Stride Length (inches)</string>
+    <string name="stride_length_desc" translatable="false">Enter Stride Length in Inches</string>
+    <string name="uniform_pants_length" translatable="false">Uniform Pants Length (inches)</string>
     <string name="uniform_pants_length_desc" translatable="false">Enter uniform pants length in inches</string>
     <string name="steps_per_100m" translatable="false">Steps Per 100m</string>
     <string name="steps_per_hundred_meters_desc" translatable="false">Enter the number of steps per 100m user takes</string>
-    <string name="loadout_weight" translatable="false">Loadout Weight</string>
+    <string name="loadout_weight" translatable="false">Loadout Weight (lbs)</string>
     <string name="loadout_weight_desc" translatable="false">Enter loadout weight in lbs</string>
     <string name="uniform_waist_size_text">Uniform Waist Size</string>
     <string name="stride_length_text">Stride Length</string>

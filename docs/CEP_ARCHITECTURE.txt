@@ -36,10 +36,10 @@ Top-level keys:
     - "ppg.amplitude"           ← PpgPayload.amplitude
     - "humidity.relative_percent" ← HumidityPayload.relativePercent
     - "light.lux"               ← LightPayload.lux
+    - "offbody.on_wrist"        ← OffBodyPayload.on_wrist (Int)
   - Boolean/categorical streams:
     - "activity.state"          ← ActivityPayload.state (string label)
     - "sleep.is_sleeping"       ← SleepPayload.is_sleeping (boolean)
-    - "offbody.on_wrist"        ← OffBodyPayload.on_wrist (boolean)
     - "immersion.wet_flag"      ← ImmersionPayload.wet_flag (boolean)
     - "immersion.immersion_flag"← ImmersionPayload.immersion_flag (boolean)
     - "als.covered"             ← LightPayload.covered (boolean, if provided)
@@ -281,7 +281,7 @@ JsonLogic condition operators (as implemented in JsonLogic.kt):
 - LogActionHandler is the main handler for "log" actions.
   - Derives priority from severity unless priority is explicitly provided.
   - Chooses/stores the alert UID (explicit uid or a new UUID).
-  - Calls AlertRegistry.tryActivate(ruleId, uid, monitor, exitLogic, exitSustainSec). If an alert for the rule is already active, the handler returns early, suppressing duplicates.
+  - Calls AlertRegistry.tryActivate(ruleId, priority, uid, monitor, exitLogic, exitSustainSec). If an alert for the rule is already active, the handler returns early, suppressing duplicates.
   - Posts CustomEmergencyEvent (isCancel=false) with uid/category/description/priority/sendSms to EventBus for downstream transport (e.g., TAK server, Ditto mesh, multicast, optional SMS in CotDispatchService).
   - Note: A commented timeout-based auto-cancel exists, but the primary cancellation path is exit-condition–based.
 
