@@ -13,6 +13,7 @@ object AlertRegistry {
 
     data class ActiveAlert(
         val ruleId: String,
+        val priority: Int,
         val uid: String,
         val startedAtMs: Long,
         val exitConditions: List<ExitCondition>,
@@ -37,6 +38,7 @@ object AlertRegistry {
      */
     fun tryActivate(
         ruleId: String,
+        priority: Int,
         uid: String,
         exitConditions: List<ExitCondition>,
         exitLogic: String,
@@ -47,6 +49,7 @@ object AlertRegistry {
 
         active[ruleId] = ActiveAlert(
             ruleId = ruleId,
+            priority = priority,
             uid = uid,
             startedAtMs = now,
             exitConditions = exitConditions,
@@ -60,6 +63,13 @@ object AlertRegistry {
     /** Mark the rule's alert as cleared. */
     fun clear(ruleId: String) {
         active.remove(ruleId)
+    }
+
+    /** Clear the active alert with this uid (e.g. when user acknowledges). Returns true if found and removed. */
+    fun clearByUid(uid: String): Boolean {
+        val entry = active.entries.find { it.value.uid == uid } ?: return false
+        active.remove(entry.key)
+        return true
     }
 
     fun get(ruleId: String): ActiveAlert? = active[ruleId]

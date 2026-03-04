@@ -207,7 +207,7 @@ class CEPSimulationService : Service() {
         val ticks: Int,
         val tickMs: Long,
         val activity: String,
-        val onWrist: Boolean = true,
+        val onWrist: Int = 1,
         val sleeping: Boolean = false,
         val covered: Boolean = false,
         val ambientC: Double,

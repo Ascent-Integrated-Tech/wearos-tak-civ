@@ -26,7 +26,8 @@ data class TriggerContext(
     val ruleId: String,
     val action: ActionDef,
     val snapshot: Map<String, Any?>,
-    val ts: Long = System.currentTimeMillis()
+    val ts: Long = System.currentTimeMillis(),
+    val isPreWarn: Boolean = false
 )
 
 

@@ -341,13 +341,13 @@
     {
       "type": "derived",
       "id": "features.hr.high_threshold_bpm",
-      "expr": { "key": "thresholds.hr.high_bpm" },
+      "expr": { "key": "thresholds.hr.rest_high_bpm" },
       "units": "bpm"
     },
     {
       "type": "derived",
       "id": "features.hr.low_threshold_bpm",
-      "expr": { "key": "thresholds.hr.low_bpm" },
+      "expr": { "key": "thresholds.hr.rest_low_bpm" },
       "units": "bpm"
     }
   ],
@@ -485,7 +485,7 @@
       }
     },
     {
-      "id": "hr_rest_brady_10min_emergency",
+      "id": "hr_low_threshold_resting_alert",
       "when": {
         "all": [
           { "eq_key": ["activity.state", "STILL"] },
@@ -499,7 +499,7 @@
         "severity": "EMERGENCY",
         "message": "LOW HR — below 40 bpm",
         "tags": ["hr", "rest", "brady"],
-        "category": "CAT_HR_REST_BRADY",
+        "category": "CAT_HR_REST_LOW",
         "isTak": true,
         "isLocal": true,
         "priority_from": "severity",
@@ -684,7 +684,7 @@
       }
     },
     {
-      "id": "hr_zone4_exercise_10min_emergency",
+      "id": "exertion_warning_hr_zone4_exercise",
       "when": {
         "all": [
           { "not": { "eq_key": ["activity.state", "STILL"] } },
@@ -750,7 +750,7 @@
       }
     },
     {
-      "id": "hr_zone5_exercise_5min_emergency",
+      "id": "exertion_alert_hr_zone5_exercise",
       "when": {
         "all": [
           { "not": { "eq_key": ["activity.state", "STILL"] } },

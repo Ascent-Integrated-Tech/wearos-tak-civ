@@ -235,25 +235,25 @@
         android:restrictionType="integer"
         android:title="@string/uniform_waist_size"
         android:description="@string/uniform_waist_size_desc"
-        android:defaultValue="0"/>
+        android:defaultValue="33"/>
     <restriction
         android:key="physiological_metrics_stride_length"
         android:restrictionType="integer"
         android:title="@string/stride_length"
         android:description="@string/stride_length_desc"
-        android:defaultValue="0"/>
+        android:defaultValue="30"/>
     <restriction
         android:key="physiological_metrics_uniform_pants_length"
         android:restrictionType="integer"
         android:title="@string/uniform_pants_length"
         android:description="@string/uniform_pants_length_desc"
-        android:defaultValue="0"/>
+        android:defaultValue="31"/>
     <restriction
         android:key="physiological_metrics_loadout_weight"
         android:restrictionType="integer"
         android:title="@string/loadout_weight"
         android:description="@string/loadout_weight_desc"
-        android:defaultValue="0"/>
+        android:defaultValue="72"/>
 
     <restriction
         android:key="physiological_metrics_resting_heart_rate"
@@ -270,57 +270,69 @@
         android:entryValues="@array/user_type_entry_values"
         android:defaultValue="@string/physiological_metrics_user_type_default" />
 
-
     <restriction
         android:key="resting_hr_high_alert_bpm_threshold"
         android:restrictionType="integer"
-        android:title= "@string/high_resting_heart_rate_alert_threshold_bpm"
-        android:description="@string/resting_high_hr_alert_threshold_description"
-        android:defaultValue="@string/hr_high_alert_bpm_threshold_default"/>
+        android:title= "@string/resting_hr_high_alert_bpm_threshold_title"
+        android:description="@string/resting_hr_high_alert_bpm_threshold_description"
+        android:defaultValue="@string/resting_hr_high_alert_bpm_threshold_default"/>
+    <restriction
+        android:key="high_resting_hr_warning_threshold_length"
+        android:restrictionType="integer"
+        android:title= "@string/high_resting_hr_warning_threshold_length_title"
+        android:description="@string/high_resting_hr_warning_threshold_length_description"
+        android:defaultValue="@string/high_resting_hr_warning_threshold_length_default"/>
+    <restriction
+        android:key="high_resting_hr_alert_threshold_length"
+        android:restrictionType="integer"
+        android:title= "@string/high_resting_hr_alert_threshold_length_title"
+        android:description="@string/high_resting_hr_alert_threshold_length_description"
+        android:defaultValue="@string/high_resting_hr_alert_threshold_length_default"/>
+
     <restriction
         android:key="resting_hr_low_alert_bpm_threshold"
         android:restrictionType="integer"
-        android:title= "@string/low_resting_heart_rate_alert_threshold_bpm"
-        android:description="@string/resting_low_hr_alert_threshold_description"
-        android:defaultValue="30"/>
+        android:title= "@string/resting_hr_low_alert_bpm_threshold_title"
+        android:description="@string/resting_hr_low_alert_bpm_threshold_description"
+        android:defaultValue="@string/resting_hr_low_alert_bpm_threshold_default"/>
     <restriction
-        android:key="resting_hr_alert_bpm_threshold_length"
+        android:key="low_resting_hr_warning_threshold_length"
         android:restrictionType="integer"
-        android:title= "@string/resting_heart_rate_alert_threshold_length"
-        android:description="@string/resting_hr_alert_threshold_length_description"
-        android:defaultValue="60"/>
+        android:title= "@string/low_resting_hr_warning_threshold_length_title"
+        android:description="@string/low_resting_hr_warning_threshold_length_description"
+        android:defaultValue="@string/low_resting_hr_warning_threshold_length_default"/>
+    <restriction
+        android:key="low_resting_hr_alert_threshold_length"
+        android:restrictionType="integer"
+        android:title= "@string/low_resting_hr_alert_threshold_length_title"
+        android:description="@string/low_resting_hr_alert_threshold_length_description"
+        android:defaultValue="@string/low_resting_hr_alert_threshold_length_default"/>
+
     <restriction
         android:key="exertion_threshold_warning"
         android:restrictionType="integer"
-        android:title= "@string/exertion_threshold_warning"
+        android:title= "@string/exertion_threshold_warning_title"
         android:description="@string/exertion_threshold_warning_description"
-        android:defaultValue="80"/>
+        android:defaultValue="@string/exertion_threshold_warning_default"/>
+    <restriction
+        android:key="exertion_warning_threshold_length"
+        android:restrictionType="integer"
+        android:title= "@string/exertion_warning_threshold_length_title"
+        android:description="@string/exertion_warning_threshold_length_description"
+        android:defaultValue="@string/exertion_warning_threshold_length_default"/>
     <restriction
         android:key="exertion_threshold_alert"
         android:restrictionType="integer"
-        android:title= "@string/exertion_threshold_alert"
-        android:description="@string/exertion_threshold_alert_description"
-        android:defaultValue="90"/>
+        android:title= "@string/exertion_threshold_alert_title"
+        android:description= "@string/exertion_threshold_alert_description"
+        android:defaultValue="@string/exertion_threshold_alert_default"/>
     <restriction
-        android:key="exertion_threshold_length"
+        android:key="exertion_alert_threshold_length"
         android:restrictionType="integer"
-        android:title= "@string/exertion_threshold_length"
-        android:description= "@string/exertion_threshold_length_description"
-        android:defaultValue="90"/>
+        android:title= "@string/exertion_alert_threshold_length_title"
+        android:description="@string/exertion_alert_threshold_length_description"
+        android:defaultValue="@string/exertion_alert_threshold_length_default"/>
 
-    <restriction
-        android:key="hr_high_alert_bpm_threshold"
-        android:restrictionType="integer"
-        android:title="@string/hr_high_alert_bpm_threshold_title"
-        android:description="@string/hr_high_alert_bpm_threshold_description"
-        android:defaultValue="@string/hr_high_alert_bpm_threshold_default"/>
-
-    <restriction
-        android:key="hr_high_alert_number_secs_threshold"
-        android:restrictionType="integer"
-        android:title="@string/hr_high_alert_number_secs_threshold_title"
-        android:description="@string/hr_high_alert_number_secs_threshold_description"
-        android:defaultValue="@string/hr_high_alert_number_secs_threshold_default"/>
 
     <restriction
         android:key="wifiOptimization_service_enabled"

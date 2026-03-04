@@ -56,6 +56,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_USER_WARNING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
@@ -63,17 +64,21 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_SMS_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
-import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
-import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH_SECS
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH_SECS
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES
 import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.DEFAULT_SEX
@@ -114,8 +119,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import java.util.Calendar
 import java.time.Year
 import java.util.EnumMap
 import java.util.UUID
@@ -2425,6 +2428,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableUserWarning: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_USER_WARNING] ?: DEFAULT_ENABLE_USER_WARNING
+    }
+
+    suspend fun storeEnableUserWarning(enableUserWarning: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_USER_WARNING] = enableUserWarning
+        }
+    }
+
     val getRestingHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[RESTING_HR_HIGH_ALERT_BPM_THRESHOLD] ?: DEFAULT_HIGH_RESTING_HR_THRESHOLD
     }
@@ -2443,17 +2456,45 @@ class DataRepository(private val context: Context) {
             prefs[RESTING_HR_LOW_ALERT_BPM_THRESHOLD] = restingHrLowAlertBpmThreshold
         }
     }
-    val getRestingHrAlertBpmThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] ?: DEFAULT_HEART_HR_THRESHOLD_LENGTH
+    val getHighRestingHrWarningThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH] ?: DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES
     }
 
-    suspend fun storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLength: Int) {
+    suspend fun storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLength: Int) {
         context.dataStore.edit { prefs ->
-            prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] = restingHrAlertBpmThresholdLength
+            prefs[HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH] = highRestingHrWarningThresholdLength
         }
     }
+    val getLowRestingHrWarningThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH] ?: DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES
+    }
+
+    suspend fun storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH] = lowRestingHrWarningThresholdLength
+        }
+    }
+    val getHighRestingHrAlertThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH] ?: DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES
+    }
+
+    suspend fun storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH] = highRestingHrAlertThresholdLength
+        }
+    }
+    val getLowRestingHrAlertThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH] ?: DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES
+    }
+
+    suspend fun storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH] = lowRestingHrAlertThresholdLength
+        }
+    }
+
     val getExertionThresholdWarning: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_WARNING] ?: DEFAULT_EXERTION_WARNING_THRESHOLD
+        prefs[EXERTION_THRESHOLD_WARNING] ?: DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
     }
 
     suspend fun storeExertionThresholdWarning(exertionThresholdWarning: Int) {
@@ -2462,7 +2503,7 @@ class DataRepository(private val context: Context) {
         }
     }
     val getExertionThresholdAlert: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_ALERT] ?: DEFAULT_EXERTION_ALERT_THRESHOLD
+        prefs[EXERTION_THRESHOLD_ALERT] ?: DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE
     }
 
     suspend fun storeExertionThresholdAlert(exertionThresholdAlert: Int) {
@@ -2471,13 +2512,22 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getExertionThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_THRESHOLD_LENGTH
+    val getExertionWarningThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[EXERTION_WARNING_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH_SECS
     }
 
-    suspend fun storeExertionThresholdLength(exertionThresholdLength: Int) {
+    suspend fun storeExertionWarningThresholdLength(exertionWarningThresholdLength: Int) {
         context.dataStore.edit { prefs ->
-            prefs[EXERTION_THRESHOLD_LENGTH] = exertionThresholdLength
+            prefs[EXERTION_WARNING_THRESHOLD_LENGTH] = exertionWarningThresholdLength
+        }
+    }
+    val getExertionAlertThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[EXERTION_ALERT_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH_SECS
+    }
+
+    suspend fun storeExertionAlertThresholdLength(exertionAlertThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[EXERTION_ALERT_THRESHOLD_LENGTH] = exertionAlertThresholdLength
         }
     }
     //TODO WEAR-313: Comment out these two
@@ -2682,6 +2732,78 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Posted when an alert is cleared (e.g. exit condition met or user cancelled).
+     * UI (e.g. UserWarnActivity) can finish when it was showing this alert.
+     */
+    data class AlertClearedEvent(val uid: String)
+
+    private val _alertClearedEventCep = MutableSharedFlow<AlertClearedEvent>(extraBufferCapacity = 64)
+    val alertClearedEventCep: SharedFlow<AlertClearedEvent> = _alertClearedEventCep
+
+    suspend fun addAlertClearedEventCep(uid: String) {
+        _alertClearedEventCep.emit(AlertClearedEvent(uid))
+    }
+
+    /**
+     * Dual sustain overrides: main (sustained_for_sec) and warn (sustained_for_sec_warn) per rule id.
+     * Legacy stored JSON that is a flat Map<String, Long> is treated as main-only with empty warn.
+     */
+    data class CepSustainOverrides(
+        val main: Map<String, Long>,
+        val warn: Map<String, Long>
+    )
+
+    private val cepSustainOverridesType = object : TypeToken<Map<String, Long>>() {}.type
+
+    private fun parseCepSustainOverrides(json: String?): CepSustainOverrides {
+        if (json.isNullOrBlank()) return CepSustainOverrides(emptyMap(), emptyMap())
+        return try {
+            val el = gson.fromJson(json, com.google.gson.JsonElement::class.java) ?: return CepSustainOverrides(emptyMap(), emptyMap())
+            if (el.isJsonObject && el.asJsonObject.has("main")) {
+                val obj = el.asJsonObject
+                val main = gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("main"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap()
+                val warn = if (obj.has("warn")) gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("warn"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap() else emptyMap()
+                CepSustainOverrides(main, warn)
+            } else {
+                val flat = gson.fromJson<Map<String, Long>>(json, cepSustainOverridesType) ?: emptyMap()
+                CepSustainOverrides(flat.mapValues { (_, v) -> v.coerceAtLeast(0L) }, emptyMap())
+            }
+        } catch (e: Exception) {
+            Log.w("DataRepository", "Invalid CEP sustain overrides JSON", e)
+            CepSustainOverrides(emptyMap(), emptyMap())
+        }
+    }
+
+    val getCepSustainOverrides: Flow<CepSustainOverrides> = context.dataStore.data.map { prefs ->
+        parseCepSustainOverrides(prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON])
+    }
+
+    /** One-shot read of current sustain overrides; use when a single snapshot is needed (e.g. CEP engine load). */
+    suspend fun getCepSustainOverridesOnce(): CepSustainOverrides = getCepSustainOverrides.first()
+
+    /** Legacy: store a single map as main-only overrides (writes flat JSON). */
+    suspend fun storeCepSustainOverrides(map: Map<String, Long>) {
+        context.dataStore.edit { prefs ->
+            val sanitized = map.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(sanitized)
+        }
+    }
+
+    /** Store separate main and warn sustain overrides. Writes warn-aware JSON for dual override support. */
+    suspend fun storeCepSustainOverridesDual(main: Map<String, Long>, warn: Map<String, Long>) {
+        context.dataStore.edit { prefs ->
+            val mainSanitized = main.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            val warnSanitized = warn.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            val root = com.google.gson.JsonObject().apply {
+                add("main", gson.toJsonTree(mainSanitized))
+                add("warn", gson.toJsonTree(warnSanitized))
+            }
+            prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(root)
+        }
+    }
+
+
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
 //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
@@ -2731,6 +2853,7 @@ class DataRepository(private val context: Context) {
         private val WHILE_ALERTING_REPORTING_INTERVAL = intPreferencesKey("while_alerting_reporting_interval")
         private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
+        private val ENABLE_USER_WARNING = booleanPreferencesKey("enable_user_warning")
         private val SELECTED_PHYSIO_METRIC = stringPreferencesKey("selected_physio_metric")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
@@ -2738,10 +2861,16 @@ class DataRepository(private val context: Context) {
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val RESTING_HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_high_alert_bpm_threshold")
         private val RESTING_HR_LOW_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_low_alert_bpm_threshold")
+        private val HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH = intPreferencesKey("high_resting_hr_warning_threshold_length")
+        private val LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_warning_threshold_length")
+        private val HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("high_resting_hr_alert_threshold_length")
+        private val LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_alert_threshold_length")
         private val RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD = intPreferencesKey("resting_hr_alert_bpm_length_threshold")
+        private val CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON = stringPreferencesKey("cep_sustain_overrides_json")
         private val EXERTION_THRESHOLD_WARNING = intPreferencesKey("exertion_threshold_warning")
         private val EXERTION_THRESHOLD_ALERT = intPreferencesKey("exertion_threshold_alert")
-        private val EXERTION_THRESHOLD_LENGTH = intPreferencesKey("exertion_threshold_length")
+        private val EXERTION_WARNING_THRESHOLD_LENGTH = intPreferencesKey("exertion_warning_threshold_length")
+        private val EXERTION_ALERT_THRESHOLD_LENGTH = intPreferencesKey("exertion_alert_threshold_length")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
         private val BATT_WARN_PERCENT = intPreferencesKey("batt_warn_percent")
