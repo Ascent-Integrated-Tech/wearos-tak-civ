@@ -37,21 +37,21 @@ import com.aitech.weartak_civ.peat.CotPeatTranslator
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import android.util.Base64
-import uniffi.hive_lite_android.CannedMessageAckEventData
-import uniffi.hive_lite_android.CannedMessageEventData
-import uniffi.hive_lite_android.CannedMessageType
-import uniffi.hive_lite_android.cannedMessageAckEventAddAck
-import uniffi.hive_lite_android.cannedMessageAckEventAckCount
-import uniffi.hive_lite_android.cannedMessageAckEventHasAcked
-import uniffi.hive_lite_android.cannedMessageAckEventMerge
-import uniffi.hive_lite_android.cannedMessageMarker
-import uniffi.hive_lite_android.cannedMessageShortName
-import uniffi.hive_lite_android.createCannedMessageAckEvent
-import uniffi.hive_lite_android.createCannedMessageEvent
-import uniffi.hive_lite_android.decodeCannedMessageAckEvent
-import uniffi.hive_lite_android.decodeCannedMessageEvent
-import uniffi.hive_lite_android.encodeCannedMessageAckEvent
-import uniffi.hive_lite_android.encodeCannedMessageEvent
+import uniffi.peat_lite_android.CannedMessageAckEventData
+import uniffi.peat_lite_android.CannedMessageEventData
+import uniffi.peat_lite_android.CannedMessageType
+import uniffi.peat_lite_android.cannedMessageAckEventAddAck
+import uniffi.peat_lite_android.cannedMessageAckEventAckCount
+import uniffi.peat_lite_android.cannedMessageAckEventHasAcked
+import uniffi.peat_lite_android.cannedMessageAckEventMerge
+import uniffi.peat_lite_android.cannedMessageMarker
+import uniffi.peat_lite_android.cannedMessageShortName
+import uniffi.peat_lite_android.createCannedMessageAckEvent
+import uniffi.peat_lite_android.createCannedMessageEvent
+import uniffi.peat_lite_android.decodeCannedMessageAckEvent
+import uniffi.peat_lite_android.decodeCannedMessageEvent
+import uniffi.peat_lite_android.encodeCannedMessageAckEvent
+import uniffi.peat_lite_android.encodeCannedMessageEvent
 import com.defenseunicorns.peat.HighPriorityConfig
 import com.defenseunicorns.peat.PeatBtle
 import com.defenseunicorns.peat.PeatChat
@@ -61,11 +61,11 @@ import com.defenseunicorns.peat.PeatLocation
 import com.defenseunicorns.peat.PeatMarker
 import com.defenseunicorns.peat.PeatMeshListener
 import com.defenseunicorns.peat.PeatPeer
-import uniffi.hive_btle.CannedMessageInfo
-import uniffi.hive_btle.DeviceIdentity
-import uniffi.hive_btle.MeshGenesis
-import uniffi.hive_btle.restoreDeviceIdentity
-import uniffi.hive_btle.decodeMeshGenesis
+import uniffi.peat_btle.CannedMessageInfo
+import uniffi.peat_btle.DeviceIdentity
+import uniffi.peat_btle.MeshGenesis
+import uniffi.peat_btle.restoreDeviceIdentity
+import uniffi.peat_btle.decodeMeshGenesis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -698,7 +698,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
         val btle = peatBtle ?: return
 
         try {
-            val cannedMessages = btle.getAllCannedMessages()
+            val cannedMessages = btle.mesh?.getAllCannedMessages() ?: emptyList()
             Log.d(TAG, "[DELTA-POLL] Polling: found ${cannedMessages.size} canned messages in Rust")
             if (cannedMessages.isEmpty()) return
 
@@ -1048,7 +1048,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
         ioScope.launch {
             try {
                 // Convert message code to CannedMessageType
-                val messageType = uniffi.hive_lite_android.cannedMessageFromCode(evt.messageCode.toUByte())
+                val messageType = uniffi.peat_lite_android.cannedMessageFromCode(evt.messageCode.toUByte())
                     ?: run {
                         Log.w(TAG, "[CANNED-TX] Unknown message code: ${evt.messageCode}")
                         return@launch
@@ -1077,12 +1077,12 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
                         Log.i(TAG, "[CANNED-TX] Adding ACK to message from ${String.format("%08X", evt.targetNode)} (timestamp=${docKey.second})")
 
                         // Update the Rust-side document for delta sync propagation
-                        val rustUpdated = btle.ackCannedMessage(
+                        val rustUpdated = btle.mesh?.ackCannedMessage(
                             docKey.first.toUInt(),
                             docKey.second.toULong(),
                             myNodeId.toUInt(),
                             timestamp.toULong()
-                        )
+                        ) ?: false
                         if (rustUpdated) {
                             Log.i(TAG, "[CANNED-TX] ACK added to Rust document (will propagate via delta sync)")
                         } else {
@@ -1131,7 +1131,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
 
                 // Store in Rust for delta sync propagation
                 val encoded = encodeCannedMessageAckEvent(event)
-                val stored = btle.storeCannedMessageDocument(encoded)
+                val stored = btle.mesh?.storeCannedMessageDocument(encoded) ?: false
                 if (stored) {
                     Log.i(TAG, "[CANNED-TX] $label stored in Rust (will propagate via delta sync)")
                 } else {
@@ -1160,7 +1160,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
      */
     private fun findLatestMessageFromRust(nodeId: Long): Pair<Long, Long>? {
         val btle = peatBtle ?: return null
-        return btle.getAllCannedMessages()
+        return (btle.mesh?.getAllCannedMessages() ?: emptyList())
             .filter { it.sourceNode.toLong() == nodeId }
             .maxByOrNull { it.timestamp.toLong() }
             ?.let { Pair(it.sourceNode.toLong(), it.timestamp.toLong()) }
@@ -1324,7 +1324,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
             )
 
             // Send via mesh
-            btle.sendChat(chat)
+            btle.broadcastBytes(PeatChat.encode(chat))
             peatBtleRepository.recordDocumentSent(message.length + 42)  // +12 bytes for replyTo fields
 
             if (replyToNode != 0L) {

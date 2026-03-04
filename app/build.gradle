@@ -114,7 +114,7 @@ dependencies {
     // Use Maven dependency so composite build substitution works
     implementation 'com.defenseunicorns:peat:0.0.10'
     // PEAT Lite - CannedMessage primitives (UniFFI bindings)
-    implementation files('../../hive-lite/android/build/outputs/aar/hive-lite-android-release.aar')
+    implementation files('../../hive-lite/android/build/outputs/aar/peat-lite-android-release.aar')
     implementation "net.java.dev.jna:jna:5.14.0@aar"  // Required by UniFFI
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
