@@ -112,6 +112,7 @@ class OffBodyDetectService: Service() {
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT) {
                 offBodyDataFloat = event.values[0]
+                addToSensorLogFileLocation(SensorLogType.DEVICE_WORN, accuracyVal, "$offBodyDataFloat")
                 Log.i(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
