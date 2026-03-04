@@ -186,7 +186,8 @@ object RuleCompiler {
                 ),
                 snapshotKeys = o.optJSONArray("snapshot_keys")?.let { ja ->
                     List(ja.length()) { idx -> ja.getString(idx) }
-                } ?: emptyList()
+                } ?: emptyList(),
+                allowSustainOverride = o.optBoolean("allow_sustain_override", false)
             )
         }
         return out
