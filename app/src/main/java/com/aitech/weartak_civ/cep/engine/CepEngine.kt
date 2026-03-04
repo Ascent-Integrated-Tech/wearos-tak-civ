@@ -23,7 +23,16 @@ class CepEngine(
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(config.tickHz, RingConfig.default())
-    private val ruleEngine = RuleEngine(scope, config, featureStore)
+
+    @Volatile
+    private var sustainOverrides: Map<String, Long> = emptyMap()
+
+    private val ruleEngine = RuleEngine(
+        scope,
+        config,
+        featureStore,
+        sustainOverrideProvider = { sustainOverrides }
+    )
 
     @Volatile
     private var currentYearOfBirth: Int = yearOfBirth
@@ -33,6 +42,8 @@ class CepEngine(
 
         //Call this fn whenever the yob is changed
         updateHrProfile()
+        updateHrrProfile()
+        scope.launch { updateSustainOverrides() }
 
         /*scope.launch {
             try {
@@ -132,6 +143,49 @@ class CepEngine(
         }
     }
 
+    fun updateHrrProfile() {
+        scope.launch {
+            try {
+
+                // Load exertion thresholds (percent values from settings)
+                val exertWarn = dataRepository.getExertionThresholdWarning.first() ?: 80
+                val exertAlert = dataRepository.getExertionThresholdAlert.first() ?: 90
+
+                // Store as thresholds (keep naming consistent with existing thresholds.hr.* style)
+                featureStore.put("thresholds.hrr.exert_warn_percent", exertWarn.toDouble())
+                featureStore.put("thresholds.hrr.exert_alert_percent", exertAlert.toDouble())
+
+                Log.d("CEP", "Loaded exertion thresholds: warn=$exertWarn% alert=$exertAlert%")
+
+            } catch (t: Throwable) {
+                Log.e("CEP", "Failed to update HR profile from DataRepository", t)
+            }
+        }
+    }
+
+    /**
+     * Load sustain overrides from DataRepository and apply only for rules with allowSustainOverride.
+     * Call after engine start and whenever UI/settings save overrides (mirror updateHrProfile pattern).
+     */
+    suspend fun updateSustainOverrides() {
+        Log.d("CEP", "updateSustainOverrides: loading threshold length values from DataRepository")
+        try {
+            val loaded = dataRepository.getCepSustainOverridesOnce()
+            Log.d("CEP", "updateSustainOverrides: raw from storage (${loaded.size} entries) ${loaded.entries.joinToString { "${it.key}=${it.value}s" }}")
+            val overrideableIds: Set<String> = config.rules.filter { it.allowSustainOverride }.map { it.id }.toSet()
+            sustainOverrides = loaded
+                .filterKeys { it in overrideableIds }
+                .mapValues { (_: String, v: Long) -> v.coerceAtLeast(0L) }
+            if (sustainOverrides.isNotEmpty()) {
+                Log.d("CEP", "updateSustainOverrides: applied threshold length (sustain_sec) per rule: ${sustainOverrides.entries.joinToString { "${it.key}=${it.value}s" }}")
+            } else if (overrideableIds.isNotEmpty()) {
+                Log.d("CEP", "updateSustainOverrides: no overrides in storage; overrideable rule ids=$overrideableIds")
+            }
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to load CEP sustain overrides from DataRepository", t)
+            sustainOverrides = emptyMap()
+        }
+    }
 
     private fun computeFeaturesSafely() {
         for (def in config.features) {

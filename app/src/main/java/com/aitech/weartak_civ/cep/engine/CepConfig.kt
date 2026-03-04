@@ -46,7 +46,8 @@ data class RuleDef(
     val sustainedForSec: Long,
     val holdDownSec: Long,
     val action: RuleAction,
-    val snapshotKeys: List<String> = emptyList()
+    val snapshotKeys: List<String> = emptyList(),
+    val allowSustainOverride: Boolean = false
 )
 
 data class RuleAction(

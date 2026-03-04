@@ -5546,6 +5546,7 @@ fun SettingsScreen(
                              if (exertionWarningThresholdChanged) {
                                  Log.d(TAG, "Storing exertionThresholdWarning $exertionThresholdWarning")
                                  dataRepository.storeExertionThresholdWarning(exertionThresholdWarning)
+                                 CepProvider.getOrCreateEngine(context).updateHrrProfile()
                              }
                              if (exertionWarningThresholdLengthChanged) {
                                  Log.d(TAG, "Storing exertionWarningThresholdLength $exertionWarningThresholdLength")
@@ -5554,11 +5555,41 @@ fun SettingsScreen(
                              if (exertionAlertThresholdChanged) {
                                  Log.d(TAG, "Storing exertionThresholdAlert $exertionThresholdAlert")
                                  dataRepository.storeExertionThresholdAlert(exertionThresholdAlert)
+                                 CepProvider.getOrCreateEngine(context).updateHrrProfile()
                              }
+                             if (exertionThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing exertionThresholdLength $exertionThresholdLength")
+                                 dataRepository.storeExertionThresholdLength(exertionThresholdLength)
+                             }
+                             if (restingHeartRateThresholdLengthChanged || exertionThresholdLengthChanged) {
+                                 val restingSec = (restingHrAlertBpmThresholdLength * 60L).coerceAtLeast(0L)
+                                 val exertionSec = exertionThresholdLength.toLong().coerceAtLeast(0L)
+                                 val sustainOverrides = mapOf(
+                                     "hr_high_threshold_resting_alert" to restingSec,
+                                     "hr_rest_brady_10min_emergency" to restingSec,
+                                     "hr_zone4_exercise_10min_emergency" to exertionSec,
+                                     "hr_zone5_exercise_5min_emergency" to exertionSec
+                                 )
+                                 dataRepository.storeCepSustainOverrides(sustainOverrides)
+                                 CepProvider.getOrCreateEngine(context).updateSustainOverrides()
+                             }
+                             if (physiologicalAlertsBpmThresholdCheckedChanged) {
+                                 Log.d(TAG, "Storing hrHighAlertBpmThreshold $hrHighAlertBpmThreshold")
+                                 dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold)
+
+                                 //Updating the hrProfile in the CEP
+                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
                              if (exertionAlertThresholdLengthChanged) {
                                  Log.d(TAG, "Storing exertionAlertThresholdLength $exertionAlertThresholdLength")
                                  dataRepository.storeExertionAlertThresholdLength(exertionAlertThresholdLength)
                              }
+                             if (physiologicalAlertsBpmThresholdTimeCheckedChanged) {
+                                 Log.d(TAG, "Storing hrHighAlertNumSecsThreshold $hrHighAlertNumSecsThreshold")
+                                 dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold)
+                             }
+                            if (physiologicalAlertsBpmThresholdCheckedChanged || physiologicalAlertsBpmThresholdTimeCheckedChanged || restingHeartRateHighThresholdChanged || restingHeartRateLowThresholdChanged || restingHeartRateThresholdLengthChanged || exertionWarningThresholdChanged || exertionAlertThresholdChanged) {
+                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                            }
 //                             if (exertionThresholdLengthChanged) {
 //                                 Log.d(TAG, "Storing exertionThresholdLength $exertionThresholdLength")
 //                                 dataRepository.storeExertionThresholdLength(exertionThresholdLength)

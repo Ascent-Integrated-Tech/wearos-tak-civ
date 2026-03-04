@@ -2484,6 +2484,33 @@ class DataRepository(private val context: Context) {
         }
     }
 
+
+    private fun parseCepSustainOverrides(json: String?): Map<String, Long> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, Long>>() {}.type
+            val raw = gson.fromJson<Map<String, Long>>(json, type) ?: return emptyMap()
+            raw.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+        } catch (e: Exception) {
+            Log.w("DataRepository", "Invalid CEP sustain overrides JSON", e)
+            emptyMap()
+        }
+    }
+
+    val getCepSustainOverrides: Flow<Map<String, Long>> = context.dataStore.data.map { prefs ->
+        parseCepSustainOverrides(prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON])
+    }
+
+    /** One-shot read of current sustain overrides; use when a single snapshot is needed (e.g. CEP engine load). */
+    suspend fun getCepSustainOverridesOnce(): Map<String, Long> = getCepSustainOverrides.first()
+
+    suspend fun storeCepSustainOverrides(map: Map<String, Long>) {
+        context.dataStore.edit { prefs ->
+            val sanitized = map.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(sanitized)
+        }
+    }
+
     val getExertionThresholdWarning: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[EXERTION_THRESHOLD_WARNING] ?: DEFAULT_EXERTION_WARNING_THRESHOLD
     }
@@ -2783,6 +2810,8 @@ class DataRepository(private val context: Context) {
         private val LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_warning_threshold_length")
         private val HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("high_resting_hr_alert_threshold_length")
         private val LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_alert_threshold_length")
+        private val RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD = intPreferencesKey("resting_hr_alert_bpm_length_threshold")
+        private val CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON = stringPreferencesKey("cep_sustain_overrides_json")
         private val EXERTION_THRESHOLD_WARNING = intPreferencesKey("exertion_threshold_warning")
         private val EXERTION_THRESHOLD_ALERT = intPreferencesKey("exertion_threshold_alert")
         private val EXERTION_WARNING_THRESHOLD_LENGTH = intPreferencesKey("exertion_warning_threshold_length")

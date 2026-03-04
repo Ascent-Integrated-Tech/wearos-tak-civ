@@ -10,17 +10,23 @@ import kotlinx.coroutines.launch
 class RuleEngine(
     private val scope: CoroutineScope,
     private val config: CepConfig,
-    private val fs: FeatureStore
+    private val fs: FeatureStore,
+    private val sustainOverrideProvider: () -> Map<String, Long> = { emptyMap() }
 ) {
     private val dispatcher = CepProvider.getActionDispatcher()
-    private val compiledTimers = config.rules.associate { it.id to TriggerTimer(it.sustainedForSec, it.holdDownSec) }
+    private val compiledTimers = config.rules.associate { it.id to TriggerTimer(it.holdDownSec) }
 
     suspend fun processTick(now: Long = System.currentTimeMillis()) {
+        val overrides = sustainOverrideProvider()
         config.rules.forEach { r ->
             val cond = JsonLogic.eval(r.condition, fs)
-            //val fired = compiledTimers[r.id]!!.tick(cond, now)
-
-            val fired = compiledTimers[r.id]?.tick(cond, now) ?: false
+            val base = r.sustainedForSec
+            val eff = if (r.allowSustainOverride) {
+                overrides[r.id]?.coerceAtLeast(0L) ?: base
+            } else {
+                base
+            }
+            val fired = compiledTimers[r.id]?.tick(cond, now, eff) ?: false
 
             if (fired) {
                 val snapshot = fs.snapshot(r.snapshotKeys)
