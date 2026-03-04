@@ -61,7 +61,6 @@ import com.defenseunicorns.peat.PeatLocation
 import com.defenseunicorns.peat.PeatMarker
 import com.defenseunicorns.peat.PeatMeshListener
 import com.defenseunicorns.peat.PeatPeer
-import uniffi.peat_btle.CannedMessageInfo
 import uniffi.peat_btle.DeviceIdentity
 import uniffi.peat_btle.MeshGenesis
 import uniffi.peat_btle.restoreDeviceIdentity
@@ -695,178 +694,9 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
      * don't come through onDecryptedData callback.
      */
     private fun pollCannedMessagesFromDeltaSync() {
-        val btle = peatBtle ?: return
-
-        try {
-            val cannedMessages = btle.mesh?.getAllCannedMessages() ?: emptyList()
-            Log.d(TAG, "[DELTA-POLL] Polling: found ${cannedMessages.size} canned messages in Rust")
-            if (cannedMessages.isEmpty()) return
-
-            val myNodeId = btle.nodeId
-
-            for (msgInfo in cannedMessages) {
-                val docKey = Pair(msgInfo.sourceNode.toLong(), msgInfo.timestamp.toLong())
-
-                // Decode the CannedMessageAckEvent from bytes
-                val event = decodeCannedMessageAckEvent(msgInfo.encodedBytes)
-                if (event == null) {
-                    Log.w(TAG, "[DELTA-POLL] Failed to decode CannedMessageAckEvent")
-                    continue
-                }
-
-                val messageType = event.message
-                val sourceNode = event.sourceNode.toLong()
-                val targetNode = event.targetNode.toLong()
-                val timestamp = event.timestamp.toLong()
-                val label = cannedMessageShortName(messageType)
-
-                // Filter: ignore messages targeted to other nodes
-                if (targetNode != 0L && targetNode != myNodeId) {
-                    Log.v(TAG, "[DELTA-POLL] Ignoring $label for another node")
-                    processedCannedMessages.add(docKey)  // Mark processed to avoid re-checking
-                    continue
-                }
-
-                // Store/merge the document and check if ACK count changed
-                val storedEvent = cannedMessageDocs[docKey]
-                val previousAckCount = storedEvent?.let { cannedMessageAckEventAckCount(it) } ?: 0u
-                val mergedEvent = if (storedEvent != null) {
-                    cannedMessageAckEventMerge(storedEvent, event)
-                } else {
-                    event
-                }
-                cannedMessageDocs[docKey] = mergedEvent
-                cannedMessageStoredAt[docKey] = System.currentTimeMillis()
-
-                val newAckCount = cannedMessageAckEventAckCount(mergedEvent)
-                val isNewMessage = !processedCannedMessages.contains(docKey)
-                val ackCountChanged = newAckCount != previousAckCount
-
-                // Update UI if ACK count changed (even for already-processed messages)
-                if (ackCountChanged && !isNewMessage) {
-                    Log.i(TAG, "[DELTA-POLL] ACK count updated for ${String.format("%08X", sourceNode)}:$timestamp: $previousAckCount -> $newAckCount")
-                    ChatService.updatePeatAckCountStatic(sourceNode, timestamp, newAckCount.toInt())
-                    continue  // Skip new message handling since already processed
-                }
-
-                // Skip if already processed and ACK count didn't change
-                if (!isNewMessage) {
-                    continue
-                }
-
-                Log.i(TAG, "[DELTA-POLL] NEW $label from ${String.format("%08X", sourceNode)}" +
-                        if (targetNode != 0L) " to ${String.format("%08X", targetNode)}" else " (broadcast)" +
-                        ", ACKs: $newAckCount")
-
-                // Look up callsign
-                val senderCallsign = peatBtleRepository.peers.value
-                    .find { it.nodeId == sourceNode }?.callsign
-                    ?: btle.getPeer(sourceNode)?.let { blePeer ->
-                        blePeer.name.takeIf { it.isNotEmpty() }
-                    }
-
-                // Check if this message type requires ChatService
-                val requiresChatService = when (messageType) {
-                    CannedMessageType.CHECK_IN,
-                    CannedMessageType.MOVING,
-                    CannedMessageType.HOLDING,
-                    CannedMessageType.ON_STATION,
-                    CannedMessageType.RETURNING,
-                    CannedMessageType.COMPLETE,
-                    CannedMessageType.ALERT,
-                    CannedMessageType.CONTACT,
-                    CannedMessageType.NEED_EXTRACT,
-                    CannedMessageType.NEED_SUPPORT,
-                    CannedMessageType.NEED_RESUPPLY -> true
-                    else -> false
-                }
-
-                // If ChatService is required but not running, skip this message for now
-                // It will be retried on the next poll when ChatService is available
-                if (requiresChatService && !ChatService.isRunning.get()) {
-                    Log.d(TAG, "[DELTA-POLL] Deferring $label - ChatService not running yet")
-                    continue
-                }
-
-                // Mark as processed now that we're going to handle it
-                processedCannedMessages.add(docKey)
-
-                // Handle based on message type
-                when (messageType) {
-                    CannedMessageType.EMERGENCY,
-                    CannedMessageType.NEED_MEDIC,
-                    CannedMessageType.UNDER_FIRE -> {
-                        Log.w(TAG, "[DELTA-POLL] EMERGENCY from ${String.format("%08X", sourceNode)}")
-                        peatBtleRepository.setEmergencyState(
-                            PeatBtleRepository.EmergencyState(
-                                isActive = true,
-                                sourceNodeId = sourceNode,
-                                timestamp = timestamp
-                            )
-                        )
-                    }
-
-                    CannedMessageType.ALL_CLEAR -> {
-                        Log.i(TAG, "[DELTA-POLL] ALL_CLEAR from ${String.format("%08X", sourceNode)}")
-                        val current = peatBtleRepository.emergencyState.value
-                        if (current.sourceNodeId == sourceNode) {
-                            peatBtleRepository.setEmergencyState(PeatBtleRepository.EmergencyState())
-                        }
-                    }
-
-                    // Status updates - add to chat
-                    CannedMessageType.CHECK_IN,
-                    CannedMessageType.MOVING,
-                    CannedMessageType.HOLDING,
-                    CannedMessageType.ON_STATION,
-                    CannedMessageType.RETURNING,
-                    CannedMessageType.COMPLETE -> {
-                        Log.i(TAG, "[DELTA-POLL] Status: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
-                        ChatService.addPeatCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
-                    }
-
-                    // Alerts - add to chat
-                    CannedMessageType.ALERT,
-                    CannedMessageType.CONTACT -> {
-                        Log.w(TAG, "[DELTA-POLL] Alert: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
-                        ChatService.addPeatCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
-                    }
-
-                    // Requests - add to chat
-                    CannedMessageType.NEED_EXTRACT,
-                    CannedMessageType.NEED_SUPPORT,
-                    CannedMessageType.NEED_RESUPPLY -> {
-                        Log.w(TAG, "[DELTA-POLL] Request: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
-                        ChatService.addPeatCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
-                    }
-
-                    // ACK types
-                    CannedMessageType.ACK,
-                    CannedMessageType.ACK_WILCO,
-                    CannedMessageType.ACK_NEGATIVE,
-                    CannedMessageType.ACK_SAY_AGAIN -> {
-                        Log.i(TAG, "[DELTA-POLL] ACK from ${String.format("%08X", sourceNode)}")
-                        val current = peatBtleRepository.emergencyState.value
-                        if (current.isActive) {
-                            peatBtleRepository.setEmergencyState(
-                                current.copy(ackedByNodes = current.ackedByNodes + sourceNode)
-                            )
-                        }
-                    }
-
-                    else -> {
-                        Log.d(TAG, "[DELTA-POLL] Other message: $label ($messageType)")
-                    }
-                }
-
-                // Update ACK count in ChatService (only if ChatService is running)
-                if (ChatService.isRunning.get()) {
-                    ChatService.updatePeatAckCountStatic(sourceNode, timestamp, newAckCount.toInt())
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "[DELTA-POLL] Error polling canned messages: ${e.message}", e)
-        }
+        // CannedMessage Rust-side storage was removed in peat-btle API update.
+        // CannedMessages are now handled entirely via Kotlin-side cache and
+        // broadcastBytes/onDecryptedData for BLE propagation.
     }
 
     override fun onDecryptedData(peer: PeatPeer?, data: ByteArray) {
@@ -1076,20 +906,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
                     if (docKey != null) {
                         Log.i(TAG, "[CANNED-TX] Adding ACK to message from ${String.format("%08X", evt.targetNode)} (timestamp=${docKey.second})")
 
-                        // Update the Rust-side document for delta sync propagation
-                        val rustUpdated = btle.mesh?.ackCannedMessage(
-                            docKey.first.toUInt(),
-                            docKey.second.toULong(),
-                            myNodeId.toUInt(),
-                            timestamp.toULong()
-                        ) ?: false
-                        if (rustUpdated) {
-                            Log.i(TAG, "[CANNED-TX] ACK added to Rust document (will propagate via delta sync)")
-                        } else {
-                            Log.w(TAG, "[CANNED-TX] Failed to add ACK to Rust document")
-                        }
-
-                        // Also update Kotlin-side cache if present
+                        // Update Kotlin-side cache if present
                         val existingDoc = cannedMessageDocs[docKey]
                         if (existingDoc != null) {
                             val updatedDoc = cannedMessageAckEventAddAck(
@@ -1129,14 +946,10 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
                 cannedMessageStoredAt[docKey] = System.currentTimeMillis()
                 processedCannedMessages.add(docKey)
 
-                // Store in Rust for delta sync propagation
+                // Broadcast via BLE for propagation
                 val encoded = encodeCannedMessageAckEvent(event)
-                val stored = btle.mesh?.storeCannedMessageDocument(encoded) ?: false
-                if (stored) {
-                    Log.i(TAG, "[CANNED-TX] $label stored in Rust (will propagate via delta sync)")
-                } else {
-                    Log.w(TAG, "[CANNED-TX] Failed to store $label in Rust")
-                }
+                btle.broadcastBytes(encoded)
+                Log.i(TAG, "[CANNED-TX] $label broadcast via BLE")
 
             } catch (e: Exception) {
                 Log.e(TAG, "[CANNED-TX] Failed to send canned message: ${e.message}", e)
@@ -1156,14 +969,10 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
 
     /**
      * Find the most recent message from a specific node in Rust storage.
-     * Used when the message came via delta sync and isn't in Kotlin cache.
+     * Rust-side CannedMessage storage was removed; returns null (Kotlin cache only).
      */
     private fun findLatestMessageFromRust(nodeId: Long): Pair<Long, Long>? {
-        val btle = peatBtle ?: return null
-        return (btle.mesh?.getAllCannedMessages() ?: emptyList())
-            .filter { it.sourceNode.toLong() == nodeId }
-            .maxByOrNull { it.timestamp.toLong() }
-            ?.let { Pair(it.sourceNode.toLong(), it.timestamp.toLong()) }
+        return null
     }
 
     /**
