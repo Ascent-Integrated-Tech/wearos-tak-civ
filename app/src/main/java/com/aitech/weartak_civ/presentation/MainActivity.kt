@@ -219,14 +219,20 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
+import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_SEX
 import com.aitech.weartak_civ.DEFAULT_STRIDE_LENGTH
 import com.aitech.weartak_civ.DEFAULT_UNIFORM_PANTS_LENGTH
@@ -490,18 +496,35 @@ class MainActivity : ComponentActivity() {
         var restingHrLowAlertBpmThreshold: Int = DEFAULT_LOW_RESTING_HR_THRESHOLD
         var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
         var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
-        var restingHrAlertBpmThresholdLength: Int = DEFAULT_HEART_HR_THRESHOLD_LENGTH
-        var restingHrAlertBpmThresholdLengthState = MutableLiveData<Int>(DEFAULT_HEART_HR_THRESHOLD_LENGTH)
-        var restingHrAlertBpmThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HEART_HR_THRESHOLD_LENGTH)
+
+        var highRestingHrWarningThresholdLength: Int = DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH
+        var highRestingHrWarningThresholdLengthState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH)
+        var highRestingHrWarningThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH)
+
+        var lowRestingHrWarningThresholdLength: Int = DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH
+        var lowRestingHrWarningThresholdLengthState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH)
+        var lowRestingHrWarningThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH)
+
+        var highRestingHrAlertThresholdLength: Int = DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH
+        var highRestingHrAlertThresholdLengthState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH)
+        var highRestingHrAlertThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH)
+
+        var lowRestingHrAlertThresholdLength: Int = DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH
+        var lowRestingHrAlertThresholdLengthState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH)
+        var lowRestingHrAlertThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH)
+
         var exertionThresholdWarning: Int = DEFAULT_EXERTION_WARNING_THRESHOLD
         var exertionThresholdWarningState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD)
         var exertionThresholdWarningSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD)
         var exertionThresholdAlert: Int = DEFAULT_EXERTION_ALERT_THRESHOLD
         var exertionThresholdAlertState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD)
         var exertionThresholdAlertSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD)
-        var exertionThresholdLength: Int = DEFAULT_EXERTION_THRESHOLD_LENGTH
-        var exertionThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_THRESHOLD_LENGTH)
-        var exertionThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_THRESHOLD_LENGTH)
+        var exertionWarningThresholdLength: Int = DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH
+        var exertionWarningThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH)
+        var exertionWarningThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH)
+        var exertionAlertThresholdLength: Int = DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH
+        var exertionAlertThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH)
+        var exertionAlertThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH)
 
         //TODO WEAR-313: Comment out these
         var hrHighAlertBpmThreshold : Int = 140
@@ -919,11 +942,14 @@ class MainActivity : ComponentActivity() {
             enablePhysiologicalAlerts = dataRepository.getEnablePhysiologicalAlerts.first()
             restingHrHighAlertBpmThreshold = dataRepository.getRestingHrHighAlertBpmThreshold.first()
             restingHrLowAlertBpmThreshold = dataRepository.getRestingHrLowAlertBpmThreshold.first()
-            restingHrAlertBpmThresholdLength = dataRepository.getRestingHrAlertBpmThresholdLength.first()
+            highRestingHrWarningThresholdLength = dataRepository.getHighRestingHrWarningThresholdLength.first()
+            lowRestingHrWarningThresholdLength = dataRepository.getLowRestingHrWarningThresholdLength.first()
+            highRestingHrAlertThresholdLength = dataRepository.getHighRestingHrAlertThresholdLength.first()
+            lowRestingHrAlertThresholdLength = dataRepository.getLowRestingHrAlertThresholdLength.first()
             exertionThresholdWarning = dataRepository.getExertionThresholdWarning.first()
             exertionThresholdAlert = dataRepository.getExertionThresholdAlert.first()
-            exertionThresholdLength = dataRepository.getExertionThresholdLength.first()
-
+            exertionWarningThresholdLength = dataRepository.getExertionWarningThresholdLength.first()
+            exertionAlertThresholdLength = dataRepository.getExertionAlertThresholdLength.first()
             hrHighAlertBpmThreshold = dataRepository.getHrHighAlertBpmThreshold.first()
             hrHighAlertNumSecsThreshold = dataRepository.getHrHighAlertNumSecsThreshold.first()
 
@@ -1042,10 +1068,14 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable Physiological Alerts:", enablePhysiologicalAlerts.toString())}
                     ${String.format("%-25s %-30s", "High Resting Heart Rate Alert Threshold:", restingHrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "Low Resting Heart Rate Alert Threshold:", restingHrLowAlertBpmThreshold.toString())}
-                    ${String.format("%-25s %-30s", "Resting Heart Rate Threshold Length:", restingHrAlertBpmThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "High Resting Heart Rate Warning Threshold Length:", highRestingHrWarningThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "Low Resting Heart Rate Warning Threshold Length:", lowRestingHrWarningThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "High Resting Heart Rate Alert Threshold Length:", highRestingHrAlertThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "Low Resting Heart Rate Alert Threshold Length:", lowRestingHrAlertThresholdLength.toString())}
                     ${String.format("%-25s %-30s", "Exertion Warning Threshold:", exertionThresholdWarning.toString())}
                     ${String.format("%-25s %-30s", "Exertion Alert Threshold", exertionThresholdAlert.toString())}
-                    ${String.format("%-25s %-30s", "Exertion Threshold Length", exertionThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "Exertion Warning Threshold Length", exertionWarningThresholdLength.toString())}
+                    ${String.format("%-25s %-30s", "Exertion Alert Threshold Length", exertionAlertThresholdLength.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_bpm_threshold_title)}:", hrHighAlertBpmThreshold.toString())}
                     ${String.format("%-25s %-30s", "${getString(R.string.hr_high_alert_number_secs_threshold_title)}:", hrHighAlertNumSecsThreshold.toString())}
                     ${String.format("%-25s %-30s", "Battery Warn Percentage:", battWarnPercent.toString())}
@@ -1278,14 +1308,22 @@ class MainActivity : ComponentActivity() {
         restingHrHighAlertBpmThresholdSettingsState.postValue(restingHrHighAlertBpmThreshold)
         restingHrLowAlertBpmThresholdState.postValue(restingHrLowAlertBpmThreshold)
         restingHrLowAlertBpmThresholdSettingsState.postValue(restingHrLowAlertBpmThreshold)
-        restingHrAlertBpmThresholdLengthState.postValue(restingHrAlertBpmThresholdLength)
-        restingHrAlertBpmThresholdLengthSettingsState.postValue(restingHrAlertBpmThresholdLength)
+        highRestingHrWarningThresholdLengthState.postValue(highRestingHrWarningThresholdLength)
+        highRestingHrWarningThresholdLengthSettingsState.postValue(highRestingHrWarningThresholdLength)
+        lowRestingHrWarningThresholdLengthState.postValue(lowRestingHrWarningThresholdLength)
+        lowRestingHrWarningThresholdLengthSettingsState.postValue(lowRestingHrWarningThresholdLength)
+        highRestingHrAlertThresholdLengthState.postValue(highRestingHrAlertThresholdLength)
+        highRestingHrAlertThresholdLengthSettingsState.postValue(highRestingHrAlertThresholdLength)
+        lowRestingHrAlertThresholdLengthState.postValue(lowRestingHrAlertThresholdLength)
+        lowRestingHrAlertThresholdLengthSettingsState.postValue(lowRestingHrAlertThresholdLength)
         exertionThresholdWarningState.postValue(exertionThresholdWarning)
         exertionThresholdWarningSettingsState.postValue(exertionThresholdWarning)
         exertionThresholdAlertState.postValue(exertionThresholdAlert)
         exertionThresholdAlertSettingsState.postValue(exertionThresholdAlert)
-        exertionThresholdLengthState.postValue(exertionThresholdLength)
-        exertionThresholdLengthSettingsState.postValue(exertionThresholdLength)
+        exertionWarningThresholdLengthState.postValue(exertionWarningThresholdLength)
+        exertionWarningThresholdLengthSettingsState.postValue(exertionWarningThresholdLength)
+        exertionAlertThresholdLengthState.postValue(exertionAlertThresholdLength)
+        exertionAlertThresholdLengthSettingsState.postValue(exertionAlertThresholdLength)
 
         hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
         hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
@@ -1700,10 +1738,16 @@ class MainActivity : ComponentActivity() {
         val physiologicalMetricsLoadoutWeightConfigUpdate = appRestrictions.getInt("physiological_metrics_loadout_weight", loadoutWeight)
         val restingHrHighAlertBpmThresholdServiceConfigUpdate = appRestrictions.getInt("resting_hr_high_alert_bpm_threshold", restingHrHighAlertBpmThreshold)
         val restingHrLowAlertBpmThresholdServiceConfigUpdate = appRestrictions.getInt("resting_hr_low_alert_bpm_threshold", restingHrLowAlertBpmThreshold)
-        val restingHrAlertBpmThresholdLengthServiceConfigUpdate = appRestrictions.getInt("resting_hr_alert_bpm_threshold_length", restingHrAlertBpmThresholdLength)
+        val highRestingHrWarningThresholdLengthServiceConfigUpdate = appRestrictions.getInt("high_resting_hr_warning_threshold_length", highRestingHrWarningThresholdLength)
+        val lowRestingHrWarningThresholdLengthServiceConfigUpdate = appRestrictions.getInt("low_resting_hr_warning_threshold_length", lowRestingHrWarningThresholdLength)
+        val highRestingHrAlertThresholdLengthServiceConfigUpdate = appRestrictions.getInt("high_resting_hr_alert_threshold_length", highRestingHrAlertThresholdLength)
+        val lowRestingHrAlertThresholdLengthServiceConfigUpdate = appRestrictions.getInt("low_resting_hr_alert_threshold_length", lowRestingHrAlertThresholdLength)
+
         val exertionThresholdWarningServiceConfigUpdate = appRestrictions.getInt("exertion_threshold_warning", exertionThresholdWarning)
         val exertionThresholdAlertServiceConfigUpdate = appRestrictions.getInt("exertion_threshold_alert", exertionThresholdAlert)
-        val exertionThresholdLengthServiceConfigUpdate = appRestrictions.getInt("exertion_threshold_length", exertionThresholdLength)
+        val exertionWarningThresholdLengthServiceConfigUpdate = appRestrictions.getInt("exertion_warning_threshold_length", exertionWarningThresholdLength)
+        val exertionAlertThresholdLengthServiceConfigUpdate = appRestrictions.getInt("exertion_alert_threshold_length", exertionAlertThresholdLength)
+
         val hrHighAlertBpmThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_bpm_threshold", hrHighAlertBpmThreshold)
         val hrHighAlertNumSecsThresholdConfigUpdate = appRestrictions.getInt("hr_high_alert_number_secs_threshold", hrHighAlertNumSecsThreshold)
 
@@ -2036,10 +2080,14 @@ class MainActivity : ComponentActivity() {
             )
             dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThresholdServiceConfigUpdate)
             dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThresholdServiceConfigUpdate)
-            dataRepository.storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLengthServiceConfigUpdate)
+            dataRepository.storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLengthServiceConfigUpdate)
+            dataRepository.storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLengthServiceConfigUpdate)
+            dataRepository.storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLengthServiceConfigUpdate)
+            dataRepository.storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLengthServiceConfigUpdate)
             dataRepository.storeExertionThresholdWarning(exertionThresholdWarningServiceConfigUpdate)
             dataRepository.storeExertionThresholdAlert(exertionThresholdAlertServiceConfigUpdate)
-            dataRepository.storeExertionThresholdLength(exertionThresholdLengthServiceConfigUpdate)
+            dataRepository.storeExertionWarningThresholdLength(exertionWarningThresholdLengthServiceConfigUpdate)
+            dataRepository.storeExertionAlertThresholdLength(exertionAlertThresholdLengthServiceConfigUpdate)
             dataRepository.storePhysiologicalMetricUniformWaistSize(physiologicalMetricsUniformWaistSizeConfigUpdate)
             dataRepository.storePhysiologicalMetricStrideLength(physiologicalMetricsStrideLengthConfigUpdate)
             dataRepository.storePhysiologicalMetricUniformPantsLength(physiologicalMetricsUniformPantsLengthConfigUpdate)
@@ -2235,20 +2283,28 @@ class MainActivity : ComponentActivity() {
 
             if ((restingHrHighAlertBpmThreshold != restingHrHighAlertBpmThresholdServiceConfigUpdate) ||
                 (restingHrLowAlertBpmThreshold != restingHrLowAlertBpmThresholdServiceConfigUpdate) ||
-                (restingHrAlertBpmThresholdLength != restingHrAlertBpmThresholdLengthServiceConfigUpdate) ||
+                (highRestingHrWarningThresholdLength != highRestingHrWarningThresholdLengthServiceConfigUpdate) ||
+                (lowRestingHrWarningThresholdLength != lowRestingHrWarningThresholdLengthServiceConfigUpdate) ||
+                (highRestingHrAlertThresholdLength != highRestingHrAlertThresholdLengthServiceConfigUpdate) ||
+                (lowRestingHrAlertThresholdLength != lowRestingHrAlertThresholdLengthServiceConfigUpdate) ||
                 (exertionThresholdAlert != exertionThresholdAlertServiceConfigUpdate) ||
                 (exertionThresholdWarning != exertionThresholdWarningServiceConfigUpdate) ||
-                (exertionThresholdLength != exertionThresholdLengthServiceConfigUpdate)) {
+                (exertionWarningThresholdLength != exertionWarningThresholdLengthServiceConfigUpdate) ||
+                (exertionAlertThresholdLength != exertionAlertThresholdLengthServiceConfigUpdate)) {
                 Log.d(
                     TAG,
                     "Change detected hrHighAlertBpmThreshold(prev=$hrHighAlertBpmThreshold, curr=$hrHighAlertBpmThresholdConfigUpdate) OR hrHighAlertNumSecsThreshold(prev=$hrHighAlertNumSecsThreshold, curr=$hrHighAlertNumSecsThresholdConfigUpdate)"
                 )
                 restingHrHighAlertBpmThreshold = restingHrHighAlertBpmThresholdServiceConfigUpdate
                 restingHrLowAlertBpmThreshold = restingHrLowAlertBpmThresholdServiceConfigUpdate
-                restingHrAlertBpmThresholdLength = restingHrAlertBpmThresholdLengthServiceConfigUpdate
+                highRestingHrWarningThresholdLength = highRestingHrWarningThresholdLengthServiceConfigUpdate
+                lowRestingHrWarningThresholdLength = lowRestingHrWarningThresholdLengthServiceConfigUpdate
+                highRestingHrAlertThresholdLength = highRestingHrAlertThresholdLengthServiceConfigUpdate
+                lowRestingHrAlertThresholdLength = lowRestingHrAlertThresholdLengthServiceConfigUpdate
                 exertionThresholdAlert = exertionThresholdAlertServiceConfigUpdate
                 exertionThresholdWarning = exertionThresholdWarningServiceConfigUpdate
-                exertionThresholdLength = exertionThresholdLengthServiceConfigUpdate
+                exertionWarningThresholdLength = exertionWarningThresholdLengthServiceConfigUpdate
+                exertionAlertThresholdLength = exertionAlertThresholdLengthServiceConfigUpdate
                 Handler(Looper.getMainLooper()).postDelayed({
                     EventBus.getDefault().post(
                         MessageEvent(

@@ -64,16 +64,20 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_TAK_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_EXERTION_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
+import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.DEFAULT_SEX
@@ -2443,15 +2447,43 @@ class DataRepository(private val context: Context) {
             prefs[RESTING_HR_LOW_ALERT_BPM_THRESHOLD] = restingHrLowAlertBpmThreshold
         }
     }
-    val getRestingHrAlertBpmThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] ?: DEFAULT_HEART_HR_THRESHOLD_LENGTH
+    val getHighRestingHrWarningThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH] ?: DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH
     }
 
-    suspend fun storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLength: Int) {
+    suspend fun storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLength: Int) {
         context.dataStore.edit { prefs ->
-            prefs[RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD] = restingHrAlertBpmThresholdLength
+            prefs[HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH] = highRestingHrWarningThresholdLength
         }
     }
+    val getLowRestingHrWarningThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH] ?: DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH
+    }
+
+    suspend fun storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH] = lowRestingHrWarningThresholdLength
+        }
+    }
+    val getHighRestingHrAlertThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH] ?: DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH
+    }
+
+    suspend fun storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH] = highRestingHrAlertThresholdLength
+        }
+    }
+    val getLowRestingHrAlertThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH] ?: DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH
+    }
+
+    suspend fun storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH] = lowRestingHrAlertThresholdLength
+        }
+    }
+
     val getExertionThresholdWarning: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[EXERTION_THRESHOLD_WARNING] ?: DEFAULT_EXERTION_WARNING_THRESHOLD
     }
@@ -2471,13 +2503,22 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    val getExertionThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[EXERTION_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_THRESHOLD_LENGTH
+    val getExertionWarningThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[EXERTION_WARNING_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH
     }
 
-    suspend fun storeExertionThresholdLength(exertionThresholdLength: Int) {
+    suspend fun storeExertionWarningThresholdLength(exertionWarningThresholdLength: Int) {
         context.dataStore.edit { prefs ->
-            prefs[EXERTION_THRESHOLD_LENGTH] = exertionThresholdLength
+            prefs[EXERTION_WARNING_THRESHOLD_LENGTH] = exertionWarningThresholdLength
+        }
+    }
+    val getExertionAlertThresholdLength: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[EXERTION_ALERT_THRESHOLD_LENGTH] ?: DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH
+    }
+
+    suspend fun storeExertionAlertThresholdLength(exertionAlertThresholdLength: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[EXERTION_ALERT_THRESHOLD_LENGTH] = exertionAlertThresholdLength
         }
     }
     //TODO WEAR-313: Comment out these two
@@ -2738,10 +2779,14 @@ class DataRepository(private val context: Context) {
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val RESTING_HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_high_alert_bpm_threshold")
         private val RESTING_HR_LOW_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_low_alert_bpm_threshold")
-        private val RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD = intPreferencesKey("resting_hr_alert_bpm_length_threshold")
+        private val HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH = intPreferencesKey("high_resting_hr_warning_threshold_length")
+        private val LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_warning_threshold_length")
+        private val HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("high_resting_hr_alert_threshold_length")
+        private val LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_alert_threshold_length")
         private val EXERTION_THRESHOLD_WARNING = intPreferencesKey("exertion_threshold_warning")
         private val EXERTION_THRESHOLD_ALERT = intPreferencesKey("exertion_threshold_alert")
-        private val EXERTION_THRESHOLD_LENGTH = intPreferencesKey("exertion_threshold_length")
+        private val EXERTION_WARNING_THRESHOLD_LENGTH = intPreferencesKey("exertion_warning_threshold_length")
+        private val EXERTION_ALERT_THRESHOLD_LENGTH = intPreferencesKey("exertion_alert_threshold_length")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
         private val BATT_WARN_PERCENT = intPreferencesKey("batt_warn_percent")
