@@ -3545,7 +3545,7 @@ fun SettingsScreen(
                     enablePeatBtleServiceSettingsState.postValue(enabled)
                 },
                 {},
-                "HIVE BLE Mesh",
+                "Peat BLE Mesh",
                 stringResource(R.string.service_on_off)
             )
 

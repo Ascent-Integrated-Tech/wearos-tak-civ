@@ -888,7 +888,7 @@ class PeatBtleService : Service(), PeatMeshListener, PeatBtle.HighPriorityModeLi
         val timeStr = dateFormat.format(java.util.Date(now))
 
         val uid = java.util.UUID.randomUUID().toString()
-        val senderUid = "PEAT-${chat.originNode.toString(16).uppercase()}"
+        val senderUid = "Peat-${chat.originNode.toString(16).uppercase()}"
         val dstUid = "All Chat Rooms"
         val dstChatroom = "All Chat Rooms"
 

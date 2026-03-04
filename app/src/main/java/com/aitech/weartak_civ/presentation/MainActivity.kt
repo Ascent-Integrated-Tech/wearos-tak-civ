@@ -2776,7 +2776,7 @@ fun PeatButtonSimple(modifier: Modifier = Modifier) {
         }
         Icon(
             painter = painterResource(R.drawable.bluetooth),
-            contentDescription = "HIVE Mesh",
+            contentDescription = "Peat Mesh",
             tint = Color.White,
             modifier = Modifier.size(15.dp)
         )
@@ -2881,7 +2881,7 @@ fun PeatMeshIconButton(context: Context, modifier: Modifier = Modifier) {
     ) {
         Icon(
             painter = painterResource(R.drawable.bluetooth),
-            contentDescription = "HIVE Mesh ($peerCount peers)",
+            contentDescription = "Peat Mesh ($peerCount peers)",
             tint = Color.White,
             modifier = Modifier.size(18.dp)
         )
