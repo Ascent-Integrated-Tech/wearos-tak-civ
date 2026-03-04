@@ -646,7 +646,7 @@
       "expr": { "key": "thresholds.hrr.exert_alert_percent" },
       "units": "percent"
     },
-    
+
     {
       "type": "derived",
       "id": "features.hr.exertion_warning_active",
@@ -1549,6 +1549,33 @@
       }
     },
     {
+      "id": "hr_zone4_exercise_10min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "ref": "features.hr.exertion_warning_active", "is": true }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
+        "monitor": [
+          {
+            "feature": "features.hrr_percent",
+            "exit_below": "features.hr.exertion_warning_threshold_hrr_percent",
+            "hysteresis": 2.0
+          }
+        ],
+        "exit_below_hrr_percent": "features.hr.exertion_warning_threshold_hrr_percent",
+        "exit_hysteresis_hrr_percent": 2.0,
+        "exit_sustain_sec": 10
+      }
+    },
+    {
       "id": "hr_zone4_rest_immediate_emergency",
       "when": {
         "all": [
@@ -1614,7 +1641,7 @@
       "sustained_for_sec": 120,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "none",
         "severity": "EMERGENCY",
         "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
         "category": "CAT_HR_EMERGENCY",
@@ -1634,6 +1661,33 @@
           }
         ],
         "exit_logic": "OR",
+        "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
+        "exit_hysteresis_hrr_percent": 2.0,
+        "exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone5_exercise_5min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "gte_keys": ["features.hrr_percent", "features.hr.exertion_alert_threshold_hrr_percent"] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
+        "monitor": [
+          {
+            "feature": "features.hrr_percent",
+            "exit_below": "features.hr.exertion_alert_threshold_hrr_percent",
+            "hysteresis": 2.0
+          }
+        ],
         "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
         "exit_sustain_sec": 10

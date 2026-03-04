@@ -53,8 +53,8 @@
 | Step | Location | Detail |
 |------|----------|--------|
 | **On engine start** | `CepEngine.start()` | Calls `updateHrProfile()`. |
-| **Load and push** | `CepEngine.updateHrProfile()` | `scope.launch { ... dataRepository.getRestingHrHighAlertBpmThreshold.first() ... featureStore.put("thresholds.hr.rest_high_bpm", hrRestingHigh) ... }`. So thresholds are read once (per call) and written into **FeatureStore**. |
-| **Rule evaluation** | Rules in JSON | Conditions reference derived/feature keys (e.g. `features.hr.high_threshold_bpm`), which are computed from FeatureStore; `features.hr.high_threshold_bpm` is fed from `thresholds.hr.rest_high_bpm`. So CEP sees new thresholds on the **next tick** after `updateHrProfile()` runs. |
+| **Load and push** | `CepEngine.updateHrProfile()` | `scope.launch { ... dataRepository.getRestingHrHighAlertBpmThreshold.first() ... featureStore.put("thresholds.hr.high_bpm", hrRestingHigh) ... }`. So thresholds are read once (per call) and written into **FeatureStore**. |
+| **Rule evaluation** | Rules in JSON | Conditions reference derived/feature keys (e.g. `features.hr.high_threshold_bpm`), which are computed from FeatureStore; `features.hr.high_threshold_bpm` is fed from `thresholds.hr.high_bpm`. So CEP sees new thresholds on the **next tick** after `updateHrProfile()` runs. |
 | **When settings save** | `SettingsActivity` (e.g. 5432–5446) | After `dataRepository.storeRestingHrHighAlertBpmThreshold(...)`, it calls `CepProvider.getOrCreateEngine(context).updateHrProfile()`. So saving triggers an explicit refresh; no Flow subscription in the engine. |
 
 **Exact functions/classes**

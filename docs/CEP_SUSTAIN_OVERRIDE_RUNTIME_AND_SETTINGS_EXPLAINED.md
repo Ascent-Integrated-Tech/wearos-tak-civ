@@ -10,7 +10,7 @@ This document explains how dynamic `sustained_for_sec` overrides work for the fo
 
 - **Location:** `DataRepository` (same process as the rest of app preferences).
 - **Backing store:** DataStore, single string preference key `cep_sustain_overrides_json` (constant `CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON`).
-- **Format:** JSON object: keys = rule IDs (strings), values = sustain duration in **seconds** (numbers). Example: `{"hr_high_threshold_resting_alert": 30, "exertion_warning_hr_zone4_exercise": 120}`. Only entries that are actual overrides need to be present (sparse map).
+- **Format:** JSON object: keys = rule IDs (strings), values = sustain duration in **seconds** (numbers). Example: `{"hr_high_threshold_resting_alert": 30, "hr_zone4_exercise_10min_emergency": 120}`. Only entries that are actual overrides need to be present (sparse map).
 - **Read API:** `getCepSustainOverrides: Flow<Map<String, Long>>` — maps the raw preference through `parseCepSustainOverrides(json)`, which returns `emptyMap()` when the key is missing or JSON is invalid, and clamps each value to `coerceAtLeast(0L)`.
 - **Write API:** `suspend fun storeCepSustainOverrides(map: Map<String, Long>)` — replaces the stored JSON with the serialized map (values sanitized to ≥ 0 before write). DataRepository does **not** filter by overrideable rule IDs; it stores whatever map the caller provides.
 
@@ -23,7 +23,7 @@ So at runtime, “the overrides” are whatever map is currently in that DataSto
 - **Who calls it:** (1) `CepEngine.start()` via `scope.launch { updateSustainOverrides() }`, and (2) after a Settings save, the UI/call-site must call `CepProvider.getOrCreateEngine(context).updateSustainOverrides()` (e.g. from a coroutine).
 - **What it does (conceptually):**
   1. `loaded = dataRepository.getCepSustainOverrides().first()` — one-shot read of the current map from DataRepository (so from DataStore).
-  2. `overrideableIds = config.rules.filter { it.allowSustainOverride }.map { it.id }.toSet()` — the **gate** is applied here at load time: only rule IDs that have `allowSustainOverride == true` in the compiled config are considered. With your current JSON, that set is exactly the four IDs: `hr_high_threshold_resting_alert`, `hr_low_threshold_resting_alert`, `exertion_warning_hr_zone4_exercise`, `exertion_alert_hr_zone5_exercise`.
+  2. `overrideableIds = config.rules.filter { it.allowSustainOverride }.map { it.id }.toSet()` — the **gate** is applied here at load time: only rule IDs that have `allowSustainOverride == true` in the compiled config are considered. With your current JSON, that set is exactly the four IDs: `hr_high_threshold_resting_alert`, `hr_rest_brady_10min_emergency`, `hr_zone4_exercise_10min_emergency`, `hr_zone5_exercise_5min_emergency`.
   3. `sustainOverrides = loaded.filterKeys { it in overrideableIds }.mapValues { (_, v) -> v.coerceAtLeast(0L) }` — keep only entries whose key is in that set; clamp values to ≥ 0. Any key in storage that is **not** in `overrideableIds` (e.g. a typo or an old rule id) is dropped and never used.
   4. Assign result to `@Volatile private var sustainOverrides` so the next tick sees it.
 
@@ -73,24 +73,24 @@ The four overrideable rules split by semantics:
 
 - **Resting-HR–related:**  
   - `hr_high_threshold_resting_alert` — high resting HR.  
-  - `hr_low_threshold_resting_alert` — low resting HR / brady (resting context).  
+  - `hr_rest_brady_10min_emergency` — low resting HR / brady (resting context).  
   Both are about **resting** heart rate, so their **sustain** (time-to-trigger) should be driven by the same “how long” setting that already affects resting-HR behavior: **resting heart rate threshold length** (e.g. `restingHrAlertBpmThresholdLength`). That value is currently in minutes in the UI; for CEP sustain we need seconds, so convert (e.g. `minutes * 60L`) when building the override map.
 
 - **Exertion-related:**  
-  - `exertion_warning_hr_zone4_exercise` — zone 4 during exercise.  
-  - `exertion_alert_hr_zone5_exercise` — zone 5 during exercise.  
+  - `hr_zone4_exercise_10min_emergency` — zone 4 during exercise.  
+  - `hr_zone5_exercise_5min_emergency` — zone 5 during exercise.  
   Both are about **exercise / exertion** zones, so their **sustain** should be driven by the exertion time setting: **exertion threshold length** (e.g. `exertionThresholdLength`), which is already in seconds. Use it directly (or the same value for both zone-4 and zone-5, or split if you later add separate logic).
 
 **Recommended mapping (engineering approach):**
 
 - **restingHeartrateThreshold (length)** → sustain for:
   - `hr_high_threshold_resting_alert`
-  - `hr_low_threshold_resting_alert`  
+  - `hr_rest_brady_10min_emergency`  
   Use the same sustain value for both (e.g. `restingHrAlertBpmThresholdLength` converted to seconds). So one setting value → two rule IDs in the map.
 
 - **exertionThreshold (length)** → sustain for:
-  - `exertion_warning_hr_zone4_exercise`
-  - `exertion_alert_hr_zone5_exercise`  
+  - `hr_zone4_exercise_10min_emergency`
+  - `hr_zone5_exercise_5min_emergency`  
   Use the same sustain value for both (e.g. `exertionThresholdLength` in seconds). So one setting value → two rule IDs in the map.
 
 **Producing Map&lt;ruleId, sustainSec&gt;:**
@@ -101,9 +101,9 @@ The four overrideable rules split by semantics:
   - `exertionSec = exertionThresholdLength.toLong()`       // already seconds.
   - `map = mapOf(
       "hr_high_threshold_resting_alert" to restingSec,
-      "hr_low_threshold_resting_alert" to restingSec,
-      "exertion_warning_hr_zone4_exercise" to exertionSec,
-      "exertion_alert_hr_zone5_exercise" to exertionSec
+      "hr_rest_brady_10min_emergency" to restingSec,
+      "hr_zone4_exercise_10min_emergency" to exertionSec,
+      "hr_zone5_exercise_5min_emergency" to exertionSec
     )`
   - Then `dataRepository.storeCepSustainOverrides(map)` and `getOrCreateEngine(context).updateSustainOverrides()`.
 
