@@ -106,11 +106,11 @@ class ReactiveServiceManager : Service() {
     }
 
     // Higher number = higher priority within an exclusive group
-    // HIVE_BTLE has highest priority as it's explicitly user-enabled for mesh networking
+    // PEAT_BTLE has highest priority as it's explicitly user-enabled for mesh networking
     private val servicePriority: Map<ServiceType, Int> = mapOf(
         ServiceType.DITTO          to 10,
         ServiceType.COMPANION_APP  to 20,
-        ServiceType.HIVE_BTLE      to 25
+        ServiceType.PEAT_BTLE      to 25
     )
 
     private fun priorityOf(type: ServiceType): Int =
@@ -760,7 +760,7 @@ class ReactiveServiceManager : Service() {
             put(ServiceType.SKIN_TEMP,             SkinTempService.isRunning.get())
             put(ServiceType.PHYSIO,                desiredServicesStateMap.get(ServiceType.PHYSIO))
             put(ServiceType.DITTO,                 DittoService.isRunning.get())
-            put(ServiceType.HIVE_BTLE,             HiveBtleService.isRunning.get())
+            put(ServiceType.PEAT_BTLE,             PeatBtleService.isRunning.get())
             put(ServiceType.CHAT,                  ChatService.isRunning.get())
             put(ServiceType.BLE_BEACON,            BleBeaconService.isRunning.get())
             put(ServiceType.MOVEMENT_DETECTION,    MovementDetectionService.isRunning.get())
@@ -893,7 +893,7 @@ class ReactiveServiceManager : Service() {
         ACTIVITY_RECOGNITION(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         HAIL(isKnoxMgdService = true, isNotRunnable = true),
         DITTO(true, isKnoxMgdService = true),
-        HIVE_BTLE(true, isKnoxMgdService = true),
+        PEAT_BTLE(true, isKnoxMgdService = true),
         BLE_BEACON(true, isKnoxMgdService = true),
         OFF_BODY_DETECT(true, isKnoxMgdService = false),
         BATTERY(true, isKnoxMgdService = false),
@@ -904,9 +904,9 @@ class ReactiveServiceManager : Service() {
 
         val conflictsWith: List<ServiceType>
             get() = when (this) {
-                DITTO         -> listOf(COMPANION_APP, HIVE_BTLE)
-                HIVE_BTLE     -> listOf(DITTO, COMPANION_APP)
-                COMPANION_APP -> listOf(DITTO, HIVE_BTLE)
+                DITTO         -> listOf(COMPANION_APP, PEAT_BTLE)
+                PEAT_BTLE     -> listOf(DITTO, COMPANION_APP)
+                COMPANION_APP -> listOf(DITTO, PEAT_BTLE)
                 else          -> emptyList()
             }
     }

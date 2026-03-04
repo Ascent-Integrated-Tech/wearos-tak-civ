@@ -34,7 +34,7 @@ import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_HIGH_HEA
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.CAT_SOS_ALERT_CANCELLED
 import com.aitech.weartak_civ.events.CustomEmergencyEvent.Companion.DESC_SOS_ALERT
 import com.aitech.weartak_civ.events.DittoDocumentEvent
-import com.aitech.weartak_civ.events.HiveDocumentEvent
+import com.aitech.weartak_civ.events.PeatDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
@@ -1408,8 +1408,8 @@ class CotDispatchService : Service() {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", clearXml))
             sent = true
         }
-        if (HiveBtleService.isRunning.get()) {
-            EventBus.getDefault().post(HiveDocumentEvent("mapitem", clearXml))
+        if (PeatBtleService.isRunning.get()) {
+            EventBus.getDefault().post(PeatDocumentEvent("mapitem", clearXml))
             sent = true
         }
         if (TAKConnectService.isAnyTakConnected) {
@@ -1587,8 +1587,8 @@ class CotDispatchService : Service() {
                 EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
                 sent = true
             }
-            if (HiveBtleService.isRunning.get()) {
-                EventBus.getDefault().post(HiveDocumentEvent("alert", xml))
+            if (PeatBtleService.isRunning.get()) {
+                EventBus.getDefault().post(PeatDocumentEvent("alert", xml))
                 sent = true
             }
             if (TAKConnectService.isAnyTakConnected) {
@@ -1732,8 +1732,8 @@ class CotDispatchService : Service() {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
             sent = true
         }
-        if (HiveBtleService.isRunning.get()) {
-            EventBus.getDefault().post(HiveDocumentEvent("mapitem", xml))
+        if (PeatBtleService.isRunning.get()) {
+            EventBus.getDefault().post(PeatDocumentEvent("mapitem", xml))
             sent = true
         }
         if (TAKConnectService.isAnyTakConnected) {

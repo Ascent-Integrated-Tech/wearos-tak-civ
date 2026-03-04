@@ -7,7 +7,7 @@
  * in the license agreement and/or contract under which the software has been supplied.
  */
 
-package com.aitech.weartak_civ.hive
+package com.aitech.weartak_civ.peat
 
 import android.util.Log
 import org.xmlpull.v1.XmlPullParser
@@ -21,13 +21,13 @@ import java.time.Instant
  * HIVE uses compact binary payloads optimized for BLE transmission.
  *
  * Mapping:
- * - track → HiveDocument.peripheral (GPS, battery, vitals)
- * - mapitem → HiveDocument.extended (compact marker payload)
- * - alert → HiveDocument.emergency (SOS with ACK tracking)
+ * - track → PeatDocument.peripheral (GPS, battery, vitals)
+ * - mapitem → PeatDocument.extended (compact marker payload)
+ * - alert → PeatDocument.emergency (SOS with ACK tracking)
  */
-object CotHiveTranslator {
+object CotPeatTranslator {
 
-    private const val TAG = "WearTAK-CotHiveTranslator"
+    private const val TAG = "WearTAK-CotPeatTranslator"
 
     /**
      * Parsed CoT event data.

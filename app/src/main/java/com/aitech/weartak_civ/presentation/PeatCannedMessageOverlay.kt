@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
-import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.data.PeatBtleRepository
 
 /**
  * Full-screen overlay that displays incoming HIVE mesh CannedMessages.
@@ -41,8 +41,8 @@ import com.aitech.weartak_civ.data.HiveBtleRepository
  * @param onDismiss Called when user taps outside the message area
  */
 @Composable
-fun HiveCannedMessageOverlay(
-    message: HiveBtleRepository.InboundCannedMessage?,
+fun PeatCannedMessageOverlay(
+    message: PeatBtleRepository.InboundCannedMessage?,
     onAck: () -> Unit,
     onDismiss: () -> Unit
 ) {

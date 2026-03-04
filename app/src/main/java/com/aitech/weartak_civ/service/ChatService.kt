@@ -45,24 +45,24 @@ class ChatService : Service() {
         fun markRoomReadStatic(id: String) { _instance?.markRoomRead(id) }
 
         /**
-         * Static helper to add HIVE CannedMessage from anywhere.
+         * Static helper to add PEAT CannedMessage from anywhere.
          */
-        fun addHiveCannedMessageStatic(
+        fun addPeatCannedMessageStatic(
             senderNodeId: Long,
             label: String,
             messageCode: Int,
             timestamp: Long,
             senderCallsign: String? = null
         ) {
-            _instance?.addHiveCannedMessage(senderNodeId, label, messageCode, timestamp, senderCallsign)
-                ?: Log.w(TAG, "[HIVE] ChatService not running, cannot add CannedMessage")
+            _instance?.addPeatCannedMessage(senderNodeId, label, messageCode, timestamp, senderCallsign)
+                ?: Log.w(TAG, "[PEAT] ChatService not running, cannot add CannedMessage")
         }
 
         /**
-         * Static helper to update ACK count for a HIVE message.
+         * Static helper to update ACK count for a PEAT message.
          */
-        fun updateHiveAckCountStatic(senderNodeId: Long, timestamp: Long, ackCount: Int) {
-            _instance?.updateHiveAckCount(senderNodeId, timestamp, ackCount)
+        fun updatePeatAckCountStatic(senderNodeId: Long, timestamp: Long, ackCount: Int) {
+            _instance?.updatePeatAckCount(senderNodeId, timestamp, ackCount)
         }
     }
 
@@ -259,10 +259,10 @@ class ChatService : Service() {
     fun sendMessage(roomId: String, text: String): Boolean { return false}
 
     /**
-     * Add a HIVE mesh CannedMessage to the chat inbox.
+     * Add a PEAT mesh CannedMessage to the chat inbox.
      * Creates a room per sender using their callsign (or node ID if unknown).
      */
-    fun addHiveCannedMessage(
+    fun addPeatCannedMessage(
         senderNodeId: Long,
         label: String,
         messageCode: Int,
@@ -271,12 +271,12 @@ class ChatService : Service() {
     ) = synchronized(chatRoomMap) {
         val senderHex = String.format("%08X", senderNodeId)
         val displayName = senderCallsign ?: senderHex
-        val roomId = "hive-$senderHex"
+        val roomId = "peat-$senderHex"
         val roomTitle = displayName  // Room title is callsign or node ID
 
         val newMessage = Utils.ChatMessage(
             message = label,
-            uid = "hive-$senderHex-$timestamp",
+            uid = "peat-$senderHex-$timestamp",
             callsign = displayName,
             timeReceived = timestamp
         )
@@ -301,18 +301,18 @@ class ChatService : Service() {
             )
         }
 
-        Log.i(TAG, "[HIVE] Added CannedMessage to chat: $label from $senderHex")
+        Log.i(TAG, "[PEAT] Added CannedMessage to chat: $label from $senderHex")
         publishInboxToRepo()
     }
 
     /**
-     * Update the ACK count for a specific HIVE message.
+     * Update the ACK count for a specific PEAT message.
      * Called when ACKs are received/propagated through the mesh.
      */
-    fun updateHiveAckCount(senderNodeId: Long, timestamp: Long, ackCount: Int) = synchronized(chatRoomMap) {
+    fun updatePeatAckCount(senderNodeId: Long, timestamp: Long, ackCount: Int) = synchronized(chatRoomMap) {
         val senderHex = String.format("%08X", senderNodeId)
-        val roomId = "hive-$senderHex"
-        val messageUid = "hive-$senderHex-$timestamp"
+        val roomId = "peat-$senderHex"
+        val messageUid = "peat-$senderHex-$timestamp"
 
         val room = chatRoomMap[roomId] ?: return@synchronized
         val updatedMessages = room.messageList.map { msg ->
@@ -326,7 +326,7 @@ class ChatService : Service() {
         // Only update if something changed
         if (updatedMessages != room.messageList) {
             chatRoomMap[roomId] = room.copy(messageList = updatedMessages)
-            Log.d(TAG, "[HIVE] Updated ACK count for $messageUid: $ackCount")
+            Log.d(TAG, "[PEAT] Updated ACK count for $messageUid: $ackCount")
             publishInboxToRepo()
         }
     }

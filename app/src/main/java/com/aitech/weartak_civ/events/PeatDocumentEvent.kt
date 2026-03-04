@@ -12,10 +12,10 @@ package com.aitech.weartak_civ.events
 /**
  * Carries a fully built CoT XML string plus the collection name for HIVE BLE sync.
  *
- * This mirrors DittoDocumentEvent but targets the HiveBtleService for
+ * This mirrors DittoDocumentEvent but targets the PeatBtleService for
  * power-efficient BLE mesh synchronization.
  */
-data class HiveDocumentEvent(
+data class PeatDocumentEvent(
     val collection: String,    // "track", "mapitem", "alert", or "chat"
     val cotXml: String,
     val replyToNode: Long = 0,      // For chat replies: originNode of message being replied to

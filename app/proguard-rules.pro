@@ -52,7 +52,7 @@
 # Useful if you use reflection-based Gson adapters
 -keep class com.aitech.weartak_civ.** { *; }
 
-# JNA (Java Native Access) - required for uniffi/hive-btle
+# JNA (Java Native Access) - required for uniffi/peat-btle
 -keep class com.sun.jna.** { *; }
 -keep class * implements com.sun.jna.** { *; }
 -keepclassmembers class * extends com.sun.jna.** { public *; }

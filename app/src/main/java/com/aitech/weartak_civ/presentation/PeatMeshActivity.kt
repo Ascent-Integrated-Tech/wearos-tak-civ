@@ -21,6 +21,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,18 +38,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.wear.compose.material.Button
+import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Card
 import androidx.wear.compose.material.CardDefaults
 import androidx.wear.compose.material.MaterialTheme.colors
@@ -58,13 +68,13 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.data.PeatBtleRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 
-class HiveMeshActivity : ComponentActivity() {
+class PeatMeshActivity : ComponentActivity() {
     companion object {
-        val TAG = "WearTAK-HiveMeshActivity"
+        val TAG = "WearTAK-PeatMeshActivity"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,11 +85,11 @@ class HiveMeshActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    val hiveBtleRepo = (applicationContext as WearTakApplication).hiveBtleRepo
-                    HiveMeshApp(
+                    val peatBtleRepo = (applicationContext as WearTakApplication).peatBtleRepo
+                    PeatMeshApp(
                         exitActivity = { finishAndRemoveTask() },
                         context = context,
-                        hiveBtleRepo = hiveBtleRepo
+                        peatBtleRepo = peatBtleRepo
                     )
                 }
             }
@@ -88,56 +98,91 @@ class HiveMeshActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "HiveMeshActivity onDestroy()")
+        Log.d(TAG, "PeatMeshActivity onDestroy()")
     }
 }
 
 @Composable
-fun HiveMeshApp(
+fun PeatMeshApp(
     exitActivity: () -> Unit,
     context: Context,
-    hiveBtleRepo: HiveBtleRepository
+    peatBtleRepo: PeatBtleRepository
 ) {
     val navController = rememberSwipeDismissableNavController()
-    val peers by hiveBtleRepo.peers.collectAsState()
-    val meshState by hiveBtleRepo.meshState.collectAsState()
-    val localLocation by dataRepository.latestLocation.collectAsState()
+    val peers by peatBtleRepo.connectedPeers.collectAsState()
+    val meshState by peatBtleRepo.meshState.collectAsState()
+    val highPriorityMode by peatBtleRepo.highPriorityMode.collectAsState()
 
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = "peer_list_screen"
     ) {
         composable("peer_list_screen") {
-            HiveMeshScreen(
+            PeatMeshScreen(
                 exitActivity = exitActivity,
                 context = context,
                 peers = peers,
                 meshState = meshState,
-                localLat = localLocation?.latitude,
-                localLon = localLocation?.longitude
+                highPriorityMode = highPriorityMode,
+                onHighPriorityToggle = { enabled ->
+                    peatBtleRepo.setHighPriorityMode(enabled, if (enabled) "user" else null)
+                }
             )
         }
     }
 }
 
 @Composable
-fun HiveMeshScreen(
+fun PeatMeshScreen(
     exitActivity: () -> Unit,
     context: Context,
-    peers: List<HiveBtleRepository.HivePeerInfo>,
-    meshState: HiveBtleRepository.HiveMeshState,
-    localLat: Double?,
-    localLon: Double?
+    peers: List<PeatBtleRepository.PeatPeerInfo>,
+    meshState: PeatBtleRepository.PeatMeshState,
+    highPriorityMode: Boolean,
+    onHighPriorityToggle: (Boolean) -> Unit
 ) {
+    // Only show peers that are connected or in reconnect grace period
+    val visiblePeers = peers.filter { it.isConnected || it.isReconnecting }
+
+    var showConfirmDialog by remember { mutableStateOf(false) }
+
+    // Confirmation dialog for enabling high-priority mode
+    if (showConfirmDialog) {
+        HighPriorityConfirmDialog(
+            onConfirm = {
+                onHighPriorityToggle(true)
+                showConfirmDialog = false
+            },
+            onDismiss = {
+                showConfirmDialog = false
+            }
+        )
+    }
+
     WearTakCivScreenDimensions(
         columnContent = {
+            // High-priority sync toggle button
+            HighPrioritySyncButton(
+                enabled = highPriorityMode,
+                onClick = {
+                    if (highPriorityMode) {
+                        // Disable immediately without confirmation
+                        onHighPriorityToggle(false)
+                    } else {
+                        // Show confirmation dialog before enabling
+                        showConfirmDialog = true
+                    }
+                }
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
             // Show mesh state
             val stateText = when (meshState) {
-                HiveBtleRepository.HiveMeshState.ACTIVE -> "Active"
-                HiveBtleRepository.HiveMeshState.SCANNING -> "Scanning"
-                HiveBtleRepository.HiveMeshState.ADVERTISING -> "Advertising"
-                HiveBtleRepository.HiveMeshState.SYNCING -> "Syncing"
-                HiveBtleRepository.HiveMeshState.ERROR -> "Error"
+                PeatBtleRepository.PeatMeshState.ACTIVE -> "Active"
+                PeatBtleRepository.PeatMeshState.SCANNING -> "Scanning"
+                PeatBtleRepository.PeatMeshState.ADVERTISING -> "Advertising"
+                PeatBtleRepository.PeatMeshState.SYNCING -> "Syncing"
+                PeatBtleRepository.PeatMeshState.ERROR -> "Error"
                 else -> "Idle"
             }
             Text(
@@ -145,9 +190,9 @@ fun HiveMeshScreen(
                 fontSize = 12.sp,
                 color = colors.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            if (peers.isEmpty()) {
+            if (visiblePeers.isEmpty()) {
                 Text(
                     text = "No peers discovered",
                     fontSize = 14.sp,
@@ -156,14 +201,10 @@ fun HiveMeshScreen(
             } else {
                 LazyColumn(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.height(220.dp)
+                    modifier = Modifier.height(180.dp)  // Reduced to make room for button
                 ) {
-                    itemsIndexed(peers) { index, peer ->
-                        PeerCard(
-                            peer = peer,
-                            localLat = localLat,
-                            localLon = localLon
-                        )
+                    itemsIndexed(visiblePeers) { index, peer ->
+                        PeerCard(peer = peer)
                         Spacer(modifier = Modifier.height(6.dp))
                     }
                 }
@@ -175,27 +216,84 @@ fun HiveMeshScreen(
                 context.startActivity(Intent(context, MainActivity::class.java))
             })
         },
-        text = "Mesh Peers (${peers.size})"
+        text = "Mesh Peers (${visiblePeers.size})"
+    )
+}
+
+/**
+ * High-priority sync mode toggle button.
+ * Orange/yellow when enabled, gray when disabled.
+ */
+@Composable
+fun HighPrioritySyncButton(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val buttonColor = if (enabled) Color(0xFFFF9800) else colors.surface
+    val textColor = if (enabled) Color.Black else colors.onSurface
+    val borderColor = if (enabled) Color(0xFFFF9800) else colors.onSurfaceVariant
+
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .padding(horizontal = 16.dp),
+        colors = ButtonDefaults.buttonColors(
+            backgroundColor = buttonColor
+        )
+    ) {
+        Text(
+            text = if (enabled) "PRIORITY SYNC: ON" else "PRIORITY SYNC: OFF",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+    }
+}
+
+/**
+ * Confirmation dialog for enabling high-priority mode.
+ * Warns about battery impact.
+ */
+@Composable
+fun HighPriorityConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Enable Priority Sync?",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = "Priority sync improves peer communication but uses more battery (~40-50% faster drain).\n\nAuto-disables after 1 hour.",
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("ENABLE", color = Color(0xFFFF9800))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL")
+            }
+        },
+        containerColor = Color(0xFF1E1E1E)
     )
 }
 
 @Composable
-fun PeerCard(
-    peer: HiveBtleRepository.HivePeerInfo,
-    localLat: Double?,
-    localLon: Double?
-) {
+fun PeerCard(peer: PeatBtleRepository.PeatPeerInfo) {
     val displayName = peer.callsign ?: peer.name ?: "Node-${peer.nodeId.toString(16).uppercase().takeLast(4)}"
-
-    // Calculate distance if we have both locations
-    val peerLat = peer.latitude
-    val peerLon = peer.longitude
-    val distanceText = if (localLat != null && localLon != null && peerLat != null && peerLon != null) {
-        val distance = Utils.calculateDistanceMeters(localLat, localLon, peerLat, peerLon)
-        Utils.formatDistance(distance)
-    } else {
-        "--"
-    }
 
     // Format RSSI (only show for direct peers)
     val rssiText = if (peer.hopCount == 0) "${peer.rssi}dBm" else "--"
@@ -222,7 +320,8 @@ fun PeerCard(
     val statusColor = when {
         peer.isInEmergency -> Color.Red.copy(alpha = sosFlashAlpha)  // Red flashing for SOS
         peer.isConnected -> Color(0xFF4CAF50)  // Green for connected
-        else -> Color(0xFF9E9E9E)  // Gray for disconnected
+        peer.isReconnecting -> Color(0xFF9E9E9E)  // Grey during reconnect grace period
+        else -> Color(0xFF9E9E9E)  // Gray fallback
     }
 
     Card(
@@ -270,12 +369,6 @@ fun PeerCard(
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row {
-                    Text(
-                        text = distanceText,
-                        fontSize = 12.sp,
-                        color = colors.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = rssiText,
                         fontSize = 12.sp,

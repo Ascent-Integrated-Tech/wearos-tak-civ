@@ -42,10 +42,10 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
-import com.aitech.weartak_civ.DEFAULT_ENABLE_HIVE_BTLE_SERVICE
-import com.aitech.weartak_civ.DEFAULT_HIVE_MESH_ID
-import com.aitech.weartak_civ.DEFAULT_HIVE_POWER_PROFILE
-import com.aitech.weartak_civ.DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_PEAT_BTLE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_PEAT_MESH_ID
+import com.aitech.weartak_civ.DEFAULT_PEAT_POWER_PROFILE
+import com.aitech.weartak_civ.DEFAULT_PEAT_CANNED_MESSAGE_TTL_SECONDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
@@ -1113,92 +1113,92 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    // --- HIVE BLE Mesh Settings ---
+    // --- PEAT BLE Mesh Settings ---
 
-    val getEnableHiveBtleService: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[ENABLE_HIVE_BTLE_SERVICE] ?: DEFAULT_ENABLE_HIVE_BTLE_SERVICE
+    val getEnablePeatBtleService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_PEAT_BTLE_SERVICE] ?: DEFAULT_ENABLE_PEAT_BTLE_SERVICE
     }
 
-    suspend fun storeEnableHiveBtleService(enable: Boolean) {
+    suspend fun storeEnablePeatBtleService(enable: Boolean) {
         context.dataStore.edit { prefs ->
-            prefs[ENABLE_HIVE_BTLE_SERVICE] = enable
+            prefs[ENABLE_PEAT_BTLE_SERVICE] = enable
         }
     }
 
-    val getHiveMeshId: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[HIVE_MESH_ID] ?: DEFAULT_HIVE_MESH_ID
+    val getPeatMeshId: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PEAT_MESH_ID] ?: DEFAULT_PEAT_MESH_ID
     }
 
-    suspend fun storeHiveMeshId(meshId: String) {
+    suspend fun storePeatMeshId(meshId: String) {
         context.dataStore.edit { prefs ->
-            prefs[HIVE_MESH_ID] = meshId
+            prefs[PEAT_MESH_ID] = meshId
         }
     }
 
-    val getHivePowerProfile: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[HIVE_POWER_PROFILE] ?: DEFAULT_HIVE_POWER_PROFILE
+    val getPeatPowerProfile: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[PEAT_POWER_PROFILE] ?: DEFAULT_PEAT_POWER_PROFILE
     }
 
-    suspend fun storeHivePowerProfile(profile: Int) {
+    suspend fun storePeatPowerProfile(profile: Int) {
         context.dataStore.edit { prefs ->
-            prefs[HIVE_POWER_PROFILE] = profile
+            prefs[PEAT_POWER_PROFILE] = profile
         }
     }
 
-    val getHiveEncryptionKey: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[HIVE_ENCRYPTION_KEY]
+    val getPeatEncryptionKey: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[PEAT_ENCRYPTION_KEY]
     }
 
-    suspend fun storeHiveEncryptionKey(key: String?) {
+    suspend fun storePeatEncryptionKey(key: String?) {
         context.dataStore.edit { prefs ->
             if (key != null) {
-                prefs[HIVE_ENCRYPTION_KEY] = key
+                prefs[PEAT_ENCRYPTION_KEY] = key
             } else {
-                prefs.remove(HIVE_ENCRYPTION_KEY)
+                prefs.remove(PEAT_ENCRYPTION_KEY)
             }
         }
     }
 
     /**
-     * Get the persisted HIVE DeviceIdentity bytes (Base64 encoded).
+     * Get the persisted PEAT DeviceIdentity bytes (Base64 encoded).
      * Returns null if no identity has been generated yet.
      */
-    val getHiveDeviceIdentity: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[HIVE_DEVICE_IDENTITY]
+    val getPeatDeviceIdentity: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[PEAT_DEVICE_IDENTITY]
     }
 
     /**
-     * Store the HIVE DeviceIdentity bytes (Base64 encoded).
+     * Store the PEAT DeviceIdentity bytes (Base64 encoded).
      * This should be generated once and persisted across app restarts.
      */
-    suspend fun storeHiveDeviceIdentity(identityBase64: String?) {
+    suspend fun storePeatDeviceIdentity(identityBase64: String?) {
         context.dataStore.edit { prefs ->
             if (identityBase64 != null) {
-                prefs[HIVE_DEVICE_IDENTITY] = identityBase64
+                prefs[PEAT_DEVICE_IDENTITY] = identityBase64
             } else {
-                prefs.remove(HIVE_DEVICE_IDENTITY)
+                prefs.remove(PEAT_DEVICE_IDENTITY)
             }
         }
     }
 
     /**
-     * Get the persisted HIVE MeshGenesis bytes (Base64 encoded).
+     * Get the persisted PEAT MeshGenesis bytes (Base64 encoded).
      * Returns null if no genesis has been created/joined yet.
      */
-    val getHiveMeshGenesis: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[HIVE_MESH_GENESIS]
+    val getPeatMeshGenesis: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[PEAT_MESH_GENESIS]
     }
 
     /**
-     * Store the HIVE MeshGenesis bytes (Base64 encoded).
+     * Store the PEAT MeshGenesis bytes (Base64 encoded).
      * All nodes in the same mesh must share the same genesis.
      */
-    suspend fun storeHiveMeshGenesis(genesisBase64: String?) {
+    suspend fun storePeatMeshGenesis(genesisBase64: String?) {
         context.dataStore.edit { prefs ->
             if (genesisBase64 != null) {
-                prefs[HIVE_MESH_GENESIS] = genesisBase64
+                prefs[PEAT_MESH_GENESIS] = genesisBase64
             } else {
-                prefs.remove(HIVE_MESH_GENESIS)
+                prefs.remove(PEAT_MESH_GENESIS)
             }
         }
     }
@@ -1208,20 +1208,20 @@ class DataRepository(private val context: Context) {
      * Controls how long ACK-tracked messages are kept in memory.
      * Default: 300 seconds (5 minutes)
      */
-    val getHiveCannedMessageTtlSeconds: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[HIVE_CANNED_MESSAGE_TTL_SECONDS] ?: DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
+    val getPeatCannedMessageTtlSeconds: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[PEAT_CANNED_MESSAGE_TTL_SECONDS] ?: DEFAULT_PEAT_CANNED_MESSAGE_TTL_SECONDS
     }
 
     /**
      * Store the canned message document TTL in seconds.
      */
-    suspend fun storeHiveCannedMessageTtlSeconds(ttlSeconds: Int) {
+    suspend fun storePeatCannedMessageTtlSeconds(ttlSeconds: Int) {
         context.dataStore.edit { prefs ->
-            prefs[HIVE_CANNED_MESSAGE_TTL_SECONDS] = ttlSeconds
+            prefs[PEAT_CANNED_MESSAGE_TTL_SECONDS] = ttlSeconds
         }
     }
 
-    // --- End HIVE Settings ---
+    // --- End PEAT Settings ---
 
     val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_CHAT_SERVICE] ?: DEFAULT_ENABLE_CHAT_SERVICE
@@ -1445,7 +1445,7 @@ class DataRepository(private val context: Context) {
         _hasUnread.emit(fresh.any  { it.newMessagesPresent })
     }
 
-    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, HIVE_BTLE }
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, PEAT_BTLE }
 
     private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
     val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
@@ -2090,13 +2090,13 @@ class DataRepository(private val context: Context) {
         private val ENABLE_HEART_RATE_SERVICE = booleanPreferencesKey("enable_heart_rate_service")
         private val ENABLE_ACTIVITY_RECOGNITION_SERVICE = booleanPreferencesKey("enable_skin_temp_service")
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
-        private val ENABLE_HIVE_BTLE_SERVICE = booleanPreferencesKey("enable_hive_btle_service")
-        private val HIVE_MESH_ID = stringPreferencesKey("hive_mesh_id")
-        private val HIVE_POWER_PROFILE = intPreferencesKey("hive_power_profile")
-        private val HIVE_ENCRYPTION_KEY = stringPreferencesKey("hive_encryption_key")
-        private val HIVE_DEVICE_IDENTITY = stringPreferencesKey("hive_device_identity")
-        private val HIVE_MESH_GENESIS = stringPreferencesKey("hive_mesh_genesis")
-        private val HIVE_CANNED_MESSAGE_TTL_SECONDS = intPreferencesKey("hive_canned_message_ttl_seconds")
+        private val ENABLE_PEAT_BTLE_SERVICE = booleanPreferencesKey("enable_peat_btle_service")
+        private val PEAT_MESH_ID = stringPreferencesKey("peat_mesh_id")
+        private val PEAT_POWER_PROFILE = intPreferencesKey("peat_power_profile")
+        private val PEAT_ENCRYPTION_KEY = stringPreferencesKey("peat_encryption_key")
+        private val PEAT_DEVICE_IDENTITY = stringPreferencesKey("peat_device_identity")
+        private val PEAT_MESH_GENESIS = stringPreferencesKey("peat_mesh_genesis")
+        private val PEAT_CANNED_MESSAGE_TTL_SECONDS = intPreferencesKey("peat_canned_message_ttl_seconds")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")

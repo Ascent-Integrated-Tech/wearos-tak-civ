@@ -70,8 +70,8 @@ class BatteryService: Service() {
                 status == BatteryManager.BATTERY_STATUS_CHARGING ||
                         status == BatteryManager.BATTERY_STATUS_FULL
 
+            isCharging.set(charging)
             CoroutineScope(Dispatchers.IO).launch {
-                // Implement this in dataRepository (see below)
                 dataRepository.updateChargingState(charging)
             }
             return (level / scale) * 100
@@ -85,10 +85,14 @@ class BatteryService: Service() {
         override fun run() {
             batteryPercentage = getBatteryPercentage(applicationContext).toInt()
             batteryPercentageLiveData.postValue(batteryPercentage)
-//            Log.d(LOG_TAG, "BatteryMonitorRunnable run called with batteryPercentage = ($batteryPercentage)")
-//            batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
+
+            // Field test logging: emit battery data for endurance analysis
+            // Format: BATTERY_TEST|timestamp|percentage|charging
+            val charging = isCharging.get()
+            Log.i(TAG, "BATTERY_TEST|${System.currentTimeMillis()}|$batteryPercentage|$charging")
+
             CoroutineScope(Dispatchers.IO).launch {
-                dataRepository.storeLatestBatteryPercentage(batteryPercentage) // TODO: can we remove coroutine scope
+                dataRepository.storeLatestBatteryPercentage(batteryPercentage)
             }
             batteryMonitorHandler?.postDelayed(this, DEFAULT_BATTERY_MONITOR_INTERVAL)
         }
@@ -121,5 +125,6 @@ class BatteryService: Service() {
         var batteryPercentage : Int = 100
         val batteryPercentageLiveData = MutableLiveData<Int>(100)
         val isRunning : AtomicBoolean = AtomicBoolean(false)
+        val isCharging : AtomicBoolean = AtomicBoolean(false)
     }
 }

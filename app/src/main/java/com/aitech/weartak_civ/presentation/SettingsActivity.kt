@@ -174,10 +174,10 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.hiveCannedMessageTtlSeconds
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.hiveCannedMessageTtlSecondsSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePeatBtleService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePeatBtleServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.peatCannedMessageTtlSeconds
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.peatCannedMessageTtlSecondsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
@@ -325,7 +325,7 @@ class SettingsActivity : ComponentActivity() {
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
-    enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
+    enablePeatBtleServiceSettingsState.postValue(enablePeatBtleService)
     enableChatServiceSettingsState.postValue(enableChatService)
     enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
     enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts)
@@ -488,8 +488,8 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             NumericEntryPage(navController, whileAlertingReportingIntervalSettingsState, 1000000, "While Alerting Reporting Interval", context, "reporting_settings_screen")
         }
         composable(
-            "hive_message_ttl_screen") {
-            NumericEntryPage(navController, hiveCannedMessageTtlSecondsSettingsState, 3600, "Message TTL (seconds)", context, "settings_screen")
+            "peat_message_ttl_screen") {
+            NumericEntryPage(navController, peatCannedMessageTtlSecondsSettingsState, 3600, "Message TTL (seconds)", context, "settings_screen")
         }
         composable(
             "license_setting_screen") {
@@ -3386,7 +3386,7 @@ fun SettingsScreen(
 ) {
     val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
-    val hiveBtleCheckedLive by enableHiveBtleServiceSettingsState.observeAsState()
+    val peatBtleCheckedLive by enablePeatBtleServiceSettingsState.observeAsState()
     val companionAppCheckedLive by enableCompanionAppServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
@@ -3540,9 +3540,9 @@ fun SettingsScreen(
             )
 
             SettingSwitchToggleLiveData(
-                hiveBtleCheckedLive,
+                peatBtleCheckedLive,
                 { enabled ->
-                    enableHiveBtleServiceSettingsState.postValue(enabled)
+                    enablePeatBtleServiceSettingsState.postValue(enabled)
                 },
                 {},
                 "HIVE BLE Mesh",
@@ -3550,16 +3550,16 @@ fun SettingsScreen(
             )
 
             // HIVE Message TTL setting (shown when HIVE is enabled)
-            if (hiveBtleCheckedLive == true) {
+            if (peatBtleCheckedLive == true) {
                 DataMetricsChip(
-                    "hive_message_ttl_screen",
+                    "peat_message_ttl_screen",
                     "Message TTL",
-                    "${hiveCannedMessageTtlSecondsSettingsState.value}s",
+                    "${peatCannedMessageTtlSecondsSettingsState.value}s",
                     navController
                 )
             }
 
-            // COMPANION_APP toggle removed - service is disabled in favor of HIVE_BTLE
+            // COMPANION_APP toggle removed - service is disabled in favor of PEAT_BTLE
 
             SettingSwitchToggleLiveData(
                 chatCheckedLive,
@@ -3762,8 +3762,8 @@ fun SettingsScreen(
                     var physioCheckedChanged: Boolean = false
                     var hailCheckedChanged: Boolean = false
                     var dittoCheckedChanged: Boolean = false
-                    var hiveBtleCheckedChanged: Boolean = false
-                    var hiveCannedMessageTtlChanged: Boolean = false
+                    var peatBtleCheckedChanged: Boolean = false
+                    var peatCannedMessageTtlChanged: Boolean = false
                     var chatCheckedChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
@@ -3974,17 +3974,17 @@ fun SettingsScreen(
                         }
                     }
 
-                    if (enableHiveBtleService != enableHiveBtleServiceSettingsState.value) {
-                        settingsChanged = true; hiveBtleCheckedChanged = true
-                        enableHiveBtleService = enableHiveBtleServiceSettingsState.value ?: enableHiveBtleService
+                    if (enablePeatBtleService != enablePeatBtleServiceSettingsState.value) {
+                        settingsChanged = true; peatBtleCheckedChanged = true
+                        enablePeatBtleService = enablePeatBtleServiceSettingsState.value ?: enablePeatBtleService
                         runBlocking {
-                            enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
+                            enablePeatBtleServiceSettingsState.postValue(enablePeatBtleService)
                         }
                     }
 
-                    if (hiveCannedMessageTtlSeconds != hiveCannedMessageTtlSecondsSettingsState.value) {
-                        settingsChanged = true; hiveCannedMessageTtlChanged = true
-                        hiveCannedMessageTtlSeconds = hiveCannedMessageTtlSecondsSettingsState.value ?: hiveCannedMessageTtlSeconds
+                    if (peatCannedMessageTtlSeconds != peatCannedMessageTtlSecondsSettingsState.value) {
+                        settingsChanged = true; peatCannedMessageTtlChanged = true
+                        peatCannedMessageTtlSeconds = peatCannedMessageTtlSecondsSettingsState.value ?: peatCannedMessageTtlSeconds
                     }
 
                     if (enableChatService != enableChatServiceSettingsState.value) {
@@ -4167,13 +4167,13 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing enableDittoService $enableDittoService")
                                  dataRepository.storeEnableDittoService(enableDittoService)
                              }
-                             if (hiveBtleCheckedChanged) {
-                                 Log.d(TAG, "Storing enableHiveBtleService $enableHiveBtleService")
-                                 dataRepository.storeEnableHiveBtleService(enableHiveBtleService)
+                             if (peatBtleCheckedChanged) {
+                                 Log.d(TAG, "Storing enablePeatBtleService $enablePeatBtleService")
+                                 dataRepository.storeEnablePeatBtleService(enablePeatBtleService)
                              }
-                             if (hiveCannedMessageTtlChanged) {
-                                 Log.d(TAG, "Storing hiveCannedMessageTtlSeconds $hiveCannedMessageTtlSeconds")
-                                 dataRepository.storeHiveCannedMessageTtlSeconds(hiveCannedMessageTtlSeconds)
+                             if (peatCannedMessageTtlChanged) {
+                                 Log.d(TAG, "Storing peatCannedMessageTtlSeconds $peatCannedMessageTtlSeconds")
+                                 dataRepository.storePeatCannedMessageTtlSeconds(peatCannedMessageTtlSeconds)
                              }
                              if (companionAppCheckedChanged) {
                                  Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")

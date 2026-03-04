@@ -13,7 +13,7 @@ package com.aitech.weartak_civ.events
  * Emitted when a chat message is received from the HIVE BLE mesh.
  * The UI should display this as an overlay with ACK button.
  */
-data class HiveChatReceivedEvent(
+data class PeatChatReceivedEvent(
     val sender: String,         // Sender's callsign
     val message: String,        // Message text
     val timestamp: Long,        // When message was sent (epoch ms)

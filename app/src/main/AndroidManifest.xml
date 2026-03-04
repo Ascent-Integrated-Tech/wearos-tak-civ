@@ -310,7 +310,7 @@
             android:foregroundServiceType="connectedDevice"
             android:stopWithTask="false" />
         <service
-            android:name=".service.HiveBtleService"
+            android:name=".service.PeatBtleService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="connectedDevice"
@@ -483,7 +483,7 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".presentation.HiveMeshActivity"
+            android:name=".presentation.PeatMeshActivity"
             android:exported="false"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"

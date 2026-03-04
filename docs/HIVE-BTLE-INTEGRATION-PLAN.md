@@ -85,7 +85,7 @@ Replace Ditto SDK with hive-btle to achieve:
 │  ├─ Exposes: Flow<List<HivePeer>>                                  │
 │  └─ Manages: Mesh configuration, encryption keys                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  com.revolveteam:hive (Published AAR dependency)             │
+│  com.defenseunicorns:peat (Published AAR dependency)             │
 │  ├─ HiveMesh: Peer discovery, document sync, encryption            │
 │  ├─ JNI Bridge: Kotlin ↔ Rust communication                        │
 │  └─ Native: libhive_btle.so (arm64-v8a, armeabi-v7a)              │
@@ -97,7 +97,7 @@ Replace Ditto SDK with hive-btle to achieve:
 ## Phase 1: hive-btle Android Library (in hive-btle repo) ✅ COMPLETE
 
 **Location**: `../hive-btle/android/`
-**Artifact**: `com.revolveteam:hive:0.0.9`
+**Artifact**: `com.defenseunicorns:peat:0.0.9`
 **Status**: ✅ AAR built and ready for integration
 
 ### Completed Tasks
@@ -682,13 +682,13 @@ No publishing required. Gradle builds hive-btle from source.
 // In wearos-tak-civ/settings.gradle.kts
 includeBuild("../hive-btle/android") {
     dependencySubstitution {
-        substitute(module("com.revolveteam:hive")).using(project(":"))
+        substitute(module("com.defenseunicorns:peat")).using(project(":"))
     }
 }
 
 // In wearos-tak-civ/app/build.gradle.kts
 dependencies {
-    implementation("com.revolveteam:hive")  // Version not needed
+    implementation("com.defenseunicorns:peat")  // Version not needed
 }
 ```
 
@@ -705,7 +705,7 @@ dependencyResolutionManagement {
 
 // In wearos-tak-civ/app/build.gradle.kts
 dependencies {
-    implementation("com.revolveteam:hive:0.0.9")
+    implementation("com.defenseunicorns:peat:0.0.9")
 }
 ```
 
@@ -727,7 +727,7 @@ dependencyResolutionManagement {
 
 // In wearos-tak-civ/app/build.gradle.kts
 dependencies {
-    implementation("com.revolveteam:hive:0.1.0")
+    implementation("com.defenseunicorns:peat:0.1.0")
 }
 ```
 
