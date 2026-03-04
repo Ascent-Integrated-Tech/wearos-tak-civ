@@ -33,6 +33,9 @@ import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.CAT_PHYSIOLOGICAL_ALERT
 import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
+import com.aitech.weartak_civ.Utils.PhysioUtils.calculateExertion
+import com.aitech.weartak_civ.Utils.SensorLogType
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
@@ -325,8 +328,13 @@ class HeartrateService: Service() {
             if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
                 localHr = event.values[0].toInt()
                 //Log.i(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
+                scope.launch {
+                    // TODO WEAR-380: Setup a flow collector
+                    addToSensorLogFileLocation(SensorLogType.HR_EXERTION, accuracyVal, "$localHr",
+                        addlData = "${calculateExertion(localHr, sharedRepository.getPhysiologicalMetricAge.first(), sharedRepository.getRestingHeartRate.first())}")
+                }
                 if ((accuracyVal != 3)) {
-                    //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
+                    //Log.i(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
                     return
                 }
 

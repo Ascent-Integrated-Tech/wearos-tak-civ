@@ -23,6 +23,8 @@ import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
+import com.aitech.weartak_civ.Utils.SensorLogType
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -488,6 +490,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.addPhysioAndAutoGenAlert.collect { req ->
                 Log.i(TAG, "Received req to add physio and auto generated alert: $req")
+                addToSensorLogFileLocation(SensorLogType.ALERT_CLEAR, -1, "AutoGenAlert: ${req.description}")
                 val physioAndAutoGenAlert = DataRepository.CustomEmergencyAlert(uuid = req.uuid, alertState = DataRepository.AlertState.ALERT, category = req.category, description = req.description, priority = req.priority, sendSms = req.sendSms, timeMillis = req.timeMillis, enqueuedToBeSent = false)
                 val physioAndAutoGenAlertAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert)
                 physioAndAutoGenAlertMap[physioAndAutoGenAlert.uuid] = physioAndAutoGenAlert
@@ -584,6 +587,7 @@ class CotDispatchService : Service() {
         val physioAndAutoGenAlert = physioAndAutoGenAlertMap[uid]
         if (null == physioAndAutoGenAlert) return
 
+        addToSensorLogFileLocation(SensorLogType.ALERT_CLEAR, -1, "AutoGenClear: ${physioAndAutoGenAlert.description}")
         val physioAndAutoGenAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert.copy(alertState = DataRepository.AlertState.CANCEL))
         // TODO Senni: Do we need latest location for clear event
         if (readyToSendAlertEvents()) {

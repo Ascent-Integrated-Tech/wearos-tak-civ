@@ -21,6 +21,8 @@ import android.os.PowerManager
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
@@ -303,6 +305,7 @@ class SkinTempService : Service() {
                         "SkinTempService status=$status objectF=${tempF}°F objectC=${objectTemp}°C " +
                                 "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
                     //writeToLogFileLocation(logFile, logLine)
+                    addToSensorLogFileLocation(Utils.SensorLogType.SKIN_AMBIENT_TEMP, status, "$tempF", addlData = "${ambientTemp.toFahrenheit()}")
                 } else {
                     tempF = -1f
                     skinTempLiveData.postValue("N/A")

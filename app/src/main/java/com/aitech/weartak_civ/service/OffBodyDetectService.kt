@@ -19,6 +19,8 @@ import android.hardware.SensorManager
 import android.os.IBinder
 import android.util.Log
 //import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.Utils.SensorLogType
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
@@ -110,9 +112,10 @@ class OffBodyDetectService: Service() {
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT) {
                 offBodyDataFloat = event.values[0]
-                Log.d(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
+                Log.i(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
+                        addToSensorLogFileLocation(SensorLogType.DEVICE_WORN, accuracyVal, "0")
                         dataRepository.storeLatestIsDeviceWorn(false)
                         Log.i(TAG, "OffBodyDetectService Device is not worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
@@ -120,6 +123,7 @@ class OffBodyDetectService: Service() {
                     }
                 } else {
                     runBlocking {
+                        addToSensorLogFileLocation(SensorLogType.DEVICE_WORN, accuracyVal, "1")
                         dataRepository.storeLatestIsDeviceWorn(true)
                         Log.i(TAG, "OffBodyDetectService Device is worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))

@@ -33,7 +33,6 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CON
 import com.aitech.weartak_civ.events.MessageEvent.Companion.LOCALIZATION_BEACONS_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.davidgyoungtech.beaconparsers.IBeaconParser
 import kotlinx.coroutines.CoroutineScope

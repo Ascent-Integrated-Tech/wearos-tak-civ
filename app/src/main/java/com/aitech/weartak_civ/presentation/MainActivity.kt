@@ -256,6 +256,8 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.Utils.getNullableBoolean
 import com.aitech.weartak_civ.Utils.setAirplaneMode
+import com.aitech.weartak_civ.Utils.startLoggingSensorData
+import com.aitech.weartak_civ.Utils.stopLoggingSensorData
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.AudioCaptureRepository
@@ -281,6 +283,7 @@ import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
@@ -549,7 +552,6 @@ class MainActivity : ComponentActivity() {
         //val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
-        var logFile: java.io.File? = null
 
 //        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
 
@@ -736,6 +738,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "MainActivity onDestroy()")
         stopReactiveServiceManager(applicationContext)
         networkManager?.deInit()
+        stopLoggingSensorData()
         try { unregisterReceiver(restrictionReceiver) } catch (_: Exception) {}
     }
 
@@ -1219,6 +1222,7 @@ class MainActivity : ComponentActivity() {
         registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED))
         // Handle the initial configuration when the app starts
         handleManagedConfigUpdate(true)
+        startLoggingSensorData()
 
         networkManager = NetworkManager.getInstance()
         networkManager?.init()

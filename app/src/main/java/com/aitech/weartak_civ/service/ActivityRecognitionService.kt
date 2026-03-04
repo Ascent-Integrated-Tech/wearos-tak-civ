@@ -44,12 +44,12 @@ import com.aitech.weartak_civ.cep.model.payloads.ActivityPayload
 import com.aitech.weartak_civ.cep.model.payloads.SleepPayload
 import com.aitech.weartak_civ.CAT_FALL_DETECTED
 import com.aitech.weartak_civ.DESC_GOOGLE_SDK_FALL_DETECTED
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.logFile
 import java.util.UUID
 
 
@@ -178,6 +178,7 @@ class ActivityRecognitionService : Service() {
                 DetectedActivity.UNKNOWN    -> ActivityRecognized.UNKNOWN
                 else                        -> ActivityRecognized.UNKNOWN
             }
+            addToSensorLogFileLocation(Utils.SensorLogType.ACTIVITY, act?.confidence ?: 0,"${detectedActivity.name}")
             //val line = "Detected ${detectedActivity.name}  confidence=${act?.confidence ?: 100}"
             //Log.i(TAG, line)
             //writeToLogFileLocation(logFile, line)
