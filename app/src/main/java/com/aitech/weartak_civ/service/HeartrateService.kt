@@ -43,8 +43,10 @@ import com.aitech.weartak_civ.presentation.requestPhysioStatusAndAlertingComplic
 import com.google.common.collect.EvictingQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -72,6 +74,7 @@ class HeartrateService: Service() {
     var highAlertSent : Boolean = false
     var highHrAlertUid : String = ""
     var lowAlertThreshold : Int = 40
+    private var offWristHrClearJob: Job? = null
 
     private var userAge: Int? = null
     private var restingHeartRate: Int? = null
@@ -139,6 +142,7 @@ class HeartrateService: Service() {
 
     override fun onDestroy() {
         //RestingHrManager.stop()
+        //cancelOffWristHrClearJob()
         scope.cancel()
         super.onDestroy()
         Log.d(TAG, "HeartrateService onDestroy()")
@@ -166,8 +170,10 @@ class HeartrateService: Service() {
         Log.d(TAG, "HeartrateService IsDeviceWornEvent(): isDeviceWorn=$currDeviceWorn & Previous isDeviceWorn=$deviceWorn")
         if (deviceWorn != currDeviceWorn) {
             if (currDeviceWorn) {
+                //cancelOffWristHrClearJob()
                 startSensors()
             } else {
+                //scheduleOffWristHrAlertClear()
                 stopSensors()
                 hr = -1
                 runBlocking {
@@ -177,6 +183,33 @@ class HeartrateService: Service() {
                 }
             }
             deviceWorn = currDeviceWorn
+        }
+    }
+
+    private fun cancelOffWristHrClearJob() {
+        offWristHrClearJob?.cancel()
+        offWristHrClearJob = null
+    }
+
+    private fun scheduleOffWristHrAlertClear() {
+        cancelOffWristHrClearJob()
+        offWristHrClearJob = scope.launch {
+            delay(OFF_WRIST_HR_ALERT_CLEAR_DELAY_MS)
+            if (sharedRepository.latestIsDeviceWorn.value) return@launch
+            clearActiveHrOriginAlerts()
+        }
+    }
+
+    private suspend fun clearActiveHrOriginAlerts() {
+        val activeHrAlerts = sharedRepository.physioAndAutoGenAlertList.value.filter {
+            it.alertState == DataRepository.AlertState.ALERT && HR_ALERT_CATEGORIES.contains(it.category)
+        }
+
+        if (activeHrAlerts.isEmpty()) return
+
+        Log.i(TAG, "Clearing ${activeHrAlerts.size} active HR alert(s) after sustained off-wrist")
+        activeHrAlerts.forEach { alert ->
+            sharedRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uuid)
         }
     }
 
@@ -291,9 +324,21 @@ class HeartrateService: Service() {
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
                 localHr = event.values[0].toInt()
-                //Log.d(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
+                Log.i(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
                 if ((accuracyVal != 3)) {
                     //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
+                    return
+                }
+
+                if (!deviceWorn || localHr <= 0) {
+                    if (hr != -1) {
+                        hr = -1
+                        runBlocking {
+                            hrStringLiveData.postValue("N/A")
+                            requestPhysioStatusAndAlertingComplicationUpdate(context)
+                            sharedRepository.storeLatestHeartRate(hr)
+                        }
+                    }
                     return
                 }
 
@@ -359,7 +404,15 @@ class HeartrateService: Service() {
     companion object {
         private val TAG = "WearTAK-" + HeartrateService::class.java.simpleName
         private const val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
+        private const val OFF_WRIST_HR_ALERT_CLEAR_DELAY_MS = 10_000L
         private const val SAMPLING_PERIOD_US = 2_000_000   // Every 2 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
+        private val HR_ALERT_CATEGORIES = setOf(
+            "CAT_HR_LOW",
+            "CAT_HR_REST_BRADY",
+            "CAT_HR_HIGH",
+            "CAT_HR_ALERT",
+            "CAT_HR_EMERGENCY"
+        )
         var hr: Int = -1
         val hrStringLiveData = MutableLiveData("N/A")
         val isRunning = AtomicBoolean(false)
