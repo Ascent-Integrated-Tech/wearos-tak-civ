@@ -70,9 +70,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
@@ -83,11 +86,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -98,14 +106,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.wear.compose.foundation.CurvedLayout
 import androidx.wear.compose.foundation.CurvedModifier
 import androidx.wear.compose.foundation.CurvedTextStyle
@@ -120,14 +134,27 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.SwipeToRevealChip
 import androidx.wear.compose.material.SwipeToRevealDefaults
 import androidx.wear.compose.material.SwipeToRevealPrimaryAction
+import androidx.wear.compose.material.SwipeToRevealSecondaryAction
 import com.aitech.weartak_civ.MARKER_FRIENDLY
 import com.aitech.weartak_civ.MARKER_HOSTILE
 import com.aitech.weartak_civ.MARKER_NEUTRAL
 import com.aitech.weartak_civ.MARKER_UNKNOWN
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.SOME_WIFI_NETWORKS
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableWifiBatteryOptimizationState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidListState
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerTitleSettingsState
+import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -155,7 +182,8 @@ class MarkerActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    NewMarkerCivApp(exitActivity = {finishAndRemoveTask(); }, context)
+                    val markerVm: MarkerViewModel = viewModel()
+                    NewMarkerCivApp(exitActivity = {finishAndRemoveTask(); }, context, markerVm)
                 }
             }
         }
@@ -189,10 +217,6 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         markerType = MARKER_FRIENDLY
                         shouldShowDialog.value = true
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
-//                        markerScope.launch {
-//                            dataRepository.requestMarkerDrop(markerType,
-//                                markerTitleSettingsState.value.toString(), time)
-//                        }
                     }
                 )
                 DonutArcButton(
@@ -206,9 +230,6 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         markerType = MARKER_UNKNOWN
                         shouldShowDialog.value = true
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
-//                        markerScope.launch {
-//                            dataRepository.requestMarkerDrop(markerType, "hello", time)
-//                        }
                     }
                 )
                 DonutArcButton(
@@ -222,10 +243,6 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         markerType = MARKER_NEUTRAL
                         shouldShowDialog.value = true
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
-
-//                        markerScope.launch {
-//                            dataRepository.requestMarkerDrop(markerType, "hello", time)
-//                        }
                     }
                 )
                 DonutArcButton(
@@ -239,10 +256,6 @@ fun MarkerSelectionScreen(exitActivity: () -> Unit, shouldShowDialog: MutableSta
                         markerType = MARKER_HOSTILE
                         shouldShowDialog.value = true
                         Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
-
-//                        markerScope.launch {
-//                            dataRepository.requestMarkerDrop(markerType, "hello", time)
-//                        }
                     }
                 )
                 LongPressProgressButtonWithInteraction(
@@ -383,11 +396,8 @@ fun LongPressProgressButtonWithInteraction(
 
 
 @Composable
-fun LongPressScreen(navController: NavController, shouldShowDialog: MutableState<Boolean>, shouldShowSuccess: MutableState<Boolean>, removeMarker: MutableState<Boolean>) {
+fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List<DataRepository.DroppedMarker>, shouldShowDialog: MutableState<Boolean>, shouldShowSuccess: MutableState<Boolean>, removeMarker: MutableState<Boolean>) {
     var visible by remember { mutableStateOf(true) }
-    val droppedMarkerListSetting by dataRepository
-        .droppedMarkerList
-        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     WearTAKCIVTheme {
         AnimatedVisibility(
@@ -480,10 +490,8 @@ fun LongPressScreen(navController: NavController, shouldShowDialog: MutableState
 
 @SuppressLint("CoroutineCreationDuringComposition")
 @Composable
-fun DroppedMarkerSetting(navController: NavController, shouldShowDialog: MutableState<Boolean>, shouldShowSuccess: MutableState<Boolean>) {
-    val droppedMarkerListSetting by dataRepository
-        .droppedMarkerList
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewModel, droppedMarkerListSetting: List<DataRepository.DroppedMarker>, shouldShowDialog: MutableState<Boolean>, shouldShowSuccess: MutableState<Boolean>) {
+
     Log.d(Constants.TAG, "DropMarkerSetting called")
     WearTakCivScreenDimensions(
         columnContent = {
@@ -504,8 +512,15 @@ fun DroppedMarkerSetting(navController: NavController, shouldShowDialog: Mutable
                         onPrimaryActionClick = {
                             Log.d(Constants.TAG, "Request clear for marker uid=${droppedMarker.uid}")
                             CoroutineScope(Dispatchers.Main).launch {
-                                dataRepository.requestClearSpecific(droppedMarker.uid)
+                                viewModel.requestClearSpecificMarker(droppedMarker.uid)
                             }
+                        },
+                        onSecondaryActionClick = {
+                            navController.navigate("edit_marker_screen/$index")
+//                            Log.d(Constants.TAG, "Request clear for marker uid=${droppedMarker.uid}")
+//                            CoroutineScope(Dispatchers.Main).launch {
+//                                viewModel.requestClearSpecificMarker(droppedMarker.uid)
+//                            }
                         },
                     )
                 }
@@ -558,6 +573,7 @@ fun SwipeableMarkerChip(
     markerTitle: String,
     timeStamp: Long,
     onPrimaryActionClick: () -> Unit,
+    onSecondaryActionClick: () -> Unit
 ) {
     val revealState = rememberRevealState()
     val scope = rememberCoroutineScope()
@@ -570,10 +586,14 @@ fun SwipeableMarkerChip(
                 .semantics {
                     // Use custom actions to make the primary and secondary actions accessible
                     customActions = listOf(
-                        CustomAccessibilityAction("Delete TAK Server") {
+                        CustomAccessibilityAction("Delete Marker") {
                             /* Add the primary action click handler here */
                             true
                         },
+                        CustomAccessibilityAction("Edit Marker") {
+                            /* Add the secondary click handler here */
+                            true
+                        }
                     )
                 },
         primaryAction = {
@@ -583,6 +603,14 @@ fun SwipeableMarkerChip(
                 label = { androidx.wear.compose.material.Text(stringResource(R.string.delete)) },
                 onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
             )
+        },
+        secondaryAction = {
+            SwipeToRevealSecondaryAction(
+                revealState = revealState,
+                onClick = { onSecondaryActionClick() }
+            ) {
+                Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
+            }
         },
         onFullSwipe = {onPrimaryActionClick() }
     ) {
@@ -604,7 +632,7 @@ fun SwipeableMarkerChip(
                 Column {
                 Text(
                     text =
-                        markerTextFromString(markerType),
+                        markerTitle,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
 //                    modifier = Modifier
@@ -614,8 +642,7 @@ fun SwipeableMarkerChip(
                 )
                 if (markerTitle.isNotEmpty()) {
                     Text(
-                        text =
-                            markerTitle,
+                        text = markerTextFromString(markerType),
                         maxLines = 2,
                         fontSize = 12.sp,
                         overflow = TextOverflow.Ellipsis,
@@ -794,6 +821,7 @@ fun MarkerSuccessDialog(
 
 @Composable
 fun DropMarkerConfirmationDialog(
+    viewModel: MarkerViewModel,
     shouldShowDialog: MutableState<Boolean>,
     isConfirmed: MutableState<Boolean>,
     confirmFunction: () -> Unit,
@@ -864,7 +892,7 @@ fun DropMarkerConfirmationDialog(
                                 markerTitleSettingsState.value = textField.text
                                 val time = System.currentTimeMillis()
                                 markerScope.launch {
-                                    dataRepository.requestMarkerDrop(markerType,
+                                    viewModel.requestMarkerDrop(markerType,
                                         textField.text, time)
                                 }
                                 Log.d(TAG, "${markerTitleSettingsState.value}")
@@ -968,35 +996,303 @@ fun SuccessfulCotSentCheck(
             delay(2000) // Delay for 5 seconds
             shouldShowConfirm.value = false // Dismiss the dialog
             exitActivity()
-            context.startActivity(Intent(context, MainActivity::class.java))
+//            context.startActivity(Intent(context, MainActivity::class.java))
         }
         dialog()
     }
 }
 
+@Composable
+fun EditSelectedMarker(
+    navController: NavController,
+    index: Int,
+    droppedMarkerListSetting: List<DataRepository.DroppedMarker>,
+    showLocationChangeDialog: MutableState<Boolean>
+) {
+    Log.d(Constants.TAG, "Edited marker list: $droppedMarkerListSetting")
+    var title by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.title.orEmpty()) }
+    var locationLat by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lat ?: 0.0) }
+    var locationLon by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lon ?: 0.0) }
+    val markerType = droppedMarkerListSetting.getOrNull(index)?.markerType.orEmpty()
+    val time = droppedMarkerListSetting.getOrNull(index)!!.timeDropped
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp)
+                    .verticalScroll(rememberScrollState()),
+
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    painter = markerIconFromString(markerType),
+                    contentDescription = "Favorite icon",
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(25.dp),
+                )
+                Text(
+                    text = title,
+                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp).padding(top = 10.dp, bottom = 5.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+                Text(
+                    text = "${markerTextFromString(markerType)} | ${utcToHoursMinutesSeconds(time)}",
+                    fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
+                    textAlign = TextAlign.Center,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 5.dp)
+                )
+                Text(
+                    text = "$locationLat, $locationLon",
+                    fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
+                    textAlign = TextAlign.Center,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 15.dp)
+                )
+                Chip(
+                    onClick = { navController.navigate("edit_marker_title/$index")},
+                    enabled = true,
+                    label = { androidx.wear.compose.material.Text(text = "Change Title") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                )
+                Chip(
+                    onClick = { showLocationChangeDialog.value = true },
+                    enabled = true,
+                    label = { androidx.wear.compose.material.Text(text = "Move to Current Location") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                )
+            }
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                BackButton(
+                    onClick = {
+                        navController.popBackStack()
+                    })
+            }
+        }
+    }
+}
+
+@Composable
+fun MarkerTitleSetting(
+    navController: NavController,
+    index: Int,
+    droppedMarkerListSetting: List<DataRepository.DroppedMarker>,
+    viewModel: MarkerViewModel) {
+
+    var title by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.title.orEmpty()) }
+    val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+
+    var newTitle by remember {mutableStateOf(title)}
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        GenericOutlinedTextField1(
+            value = title,
+            onValueChange = { newText ->
+                newTitle = newText},
+            label = "Title",
+            placeholder = "Enter a title"
+        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(Constants.TAG, "Callsign Settings NOT saved")
+                    navController.popBackStack()
+                },
+                onClickConfirm = {
+                    if (title != newTitle) {
+                        viewModel.requestChangeMarkerTitle(uid, newTitle)
+                    }
+                    Log.d(Constants.TAG, "Settings saved with marker title: $newTitle")
+                    navController.popBackStack()
+                })
+        }
+    }
+}
+
+@Composable
+fun GenericOutlinedTextField1(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String
+): TextFieldValue {
+    var textFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(value))
+    }
+
+    // Keep internal TextFieldValue in sync if 'value' changes externally
+    LaunchedEffect(value) {
+        if (value != textFieldValue.text) {
+            textFieldValue = TextFieldValue(value)
+        }
+    }
+
+    OutlinedTextField(
+        value = textFieldValue,
+        onValueChange = {
+            textFieldValue = it
+            onValueChange(it.text)   // <- push changes upward (to ViewModel)
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        label = { Text(text = label, color = colors.primary) },
+        placeholder = { Text(text = placeholder, color = colors.primary) },
+        textStyle = TextStyle(color = colors.primary)
+    )
+
+    return textFieldValue
+}
+
+@Composable
+fun ChangeMarkerLocationConfirmationDialog(
+    showLocationChangeDialog: MutableState<Boolean>,
+    index: Int,
+    viewModel: MarkerViewModel,
+    droppedMarkerListSetting: List<DataRepository.DroppedMarker>,
+    isConfirmed: MutableState<Boolean>,
+    confirmFunction: () -> Unit,
+) {
+//    val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+    var locationLat by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lat ?: 0.0) }
+    var locationLon by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lon ?: 0.0) }
+
+    if (showLocationChangeDialog.value) {
+        AlertDialog(
+            containerColor = colors.background,
+            modifier = Modifier.fillMaxSize(),
+            onDismissRequest = {
+                showLocationChangeDialog.value = false
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.LocationOn,
+                    contentDescription = ""
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "Move marker to current location?",
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        modifier = Modifier.fillMaxWidth(),
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+                    Text(
+                        "$locationLat, $locationLon",
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        modifier = Modifier.fillMaxWidth(),
+                        fontSize = 14.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocationChangeDialog.value = false
+                        isConfirmed.value = true
+                        confirmFunction()
+                    },
+                    modifier = Modifier.fillMaxWidth(0.45f),
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.confirm),
+                        color = Color.Black
+                    )
+                }
+            },
+
+            dismissButton = {
+                Button(
+                    onClick = {
+                        showLocationChangeDialog.value = false
+                        isConfirmed.value = false
+                    },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.fillMaxWidth(0.45f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.cancel),
+                    )
+                }
+            }
+        )
+    }
+}
+
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
+fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: MarkerViewModel) {
     val navController = rememberSwipeDismissableNavController()
-    val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-//    val shouldShowDialog = remember { mutableStateOf(false) }
+    val licenseKey by viewModel.licenseKey.collectAsStateWithLifecycle()
+    //    val shouldShowDialog = remember { mutableStateOf(false) }
     val shouldShowConfirm = remember { mutableStateOf(false) }
     val shouldShowDropMarkerConfirm = remember {mutableStateOf(false)}
     val shouldShowClearLastDialog = remember { mutableStateOf(false) }
     val shouldShowClearLastConfirm = remember { mutableStateOf(false) }
     val shouldShowClearAllDialog = remember { mutableStateOf(false) }
     val shouldShowClearAllConfirm = remember { mutableStateOf(false) }
+    val showLocationChangeDialog = remember {mutableStateOf(false)}
+    val showLocationChangeConfirm = remember {mutableStateOf(false)}
     val removeMarker = remember {mutableStateOf(false)}
 //    val connectedEndpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle(initialValue = emptySet())
 //
 //    val anyEndpointConnected = connectedEndpoints.isNotEmpty()
-    val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle()
+    val anyEndpointConnected by viewModel.anyEndpointConnected.collectAsStateWithLifecycle()
 
-    val droppedMarkerListSetting by dataRepository
-        .droppedMarkerList
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val droppedMarkerListSetting by viewModel
+        .droppedMarkerListSetting
+        .collectAsStateWithLifecycle()
 
-    val location = dataRepository.latestLocation.value
+    val location = viewModel.location
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val successBoolean = remember { mutableStateOf(false) }
 // react to changes in the license.
@@ -1026,6 +1322,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
             markerTitleSettingsState.value = ""
 
             DropMarkerConfirmationDialog(
+                viewModel = viewModel,
                 shouldShowDialog = shouldShowConfirm,
                 isConfirmed = shouldShowDropMarkerConfirm,
                 // TODO Senni: Should UI check for location?? We are anyway queuing it to be sent later
@@ -1039,7 +1336,10 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                 shouldShowDropMarkerConfirm,
                 anyEndpointConnected,
                 context,
-                {exitActivity()},
+                {
+                    exitActivity()
+                    context.startActivity(Intent(context, MainActivity::class.java))
+                },
                 successBoolean,
                 location,
                 locationEnabled,
@@ -1084,6 +1384,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
         ) {
             LongPressScreen(
                 navController,
+                droppedMarkerListSetting,
                 shouldShowClearLastDialog,
                 shouldShowClearLastConfirm,
                 removeMarker
@@ -1106,7 +1407,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                     {
                         // Trigger backend clear-last;
                         CoroutineScope(Dispatchers.Main).launch {
-                            dataRepository.requestClearLast()
+                            viewModel.requestClearLast()
                         }
                         // dialog UX logic
                         successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
@@ -1146,7 +1447,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
         }
         composable(
             "dropped_marker_screen") {
-            DroppedMarkerSetting(navController, shouldShowClearAllDialog, shouldShowClearAllConfirm)
+            DroppedMarkerSetting(navController, viewModel, droppedMarkerListSetting, shouldShowClearAllDialog, shouldShowClearAllConfirm)
 
             ClearMarkerConfirmationDialog(
                 shouldShowClearAllDialog,
@@ -1161,7 +1462,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                 {
                     // Trigger backend clear-last;
                     CoroutineScope(Dispatchers.Main).launch {
-                        dataRepository.requestClearAll()
+                        viewModel.requestClearAllMarkers()
                     }
                     // dialog UX logic
                     successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
@@ -1175,6 +1476,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
                 {
                     markerTitleSettingsState.value = ""
                     exitActivity()
+                    context.startActivity(Intent(context, MainActivity::class.java))
                 },
                 successBoolean,
                 location,
@@ -1196,12 +1498,67 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context) {
             )
         }
         composable(
+            "edit_marker_screen/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.d(Constants.TAG, "edit_marker_screen index: $index")
+            val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+
+            EditSelectedMarker(navController, index, droppedMarkerListSetting, showLocationChangeDialog)
+
+            ChangeMarkerLocationConfirmationDialog(
+                showLocationChangeDialog = showLocationChangeDialog,
+                index = index,
+                viewModel = viewModel,
+                droppedMarkerListSetting = droppedMarkerListSetting,
+                isConfirmed = showLocationChangeConfirm,
+                confirmFunction = {
+                    CoroutineScope(Dispatchers.Main).launch {
+                    viewModel.requestUpdateMarkerLocation(uid)
+                }
+                    successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
+                }
+            )
+
+            SuccessfulCotSentCheck(
+                showLocationChangeConfirm,
+                anyEndpointConnected,
+                context,
+                { },
+                successBoolean,
+                location,
+                locationEnabled,
+                {
+                    MarkerSuccessDialog(
+                        showLocationChangeConfirm,
+                        successBoolean,
+                        {Icon(
+                            Icons.Rounded.Check,
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Green
+                        )},
+                        {}
+                    )
+                },
+                {}
+            )
+        }
+        composable(
+            "edit_marker_title/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.d(Constants.TAG, "edit_marker_title index: $index")
+            MarkerTitleSetting(navController, index, droppedMarkerListSetting, viewModel)
+        }
+        composable(
             "invalid_license_screen") {
             context.startActivity(Intent(context, SettingsActivity::class.java))
         }
     }
 }
-
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
 @Composable
@@ -1211,14 +1568,14 @@ fun PreviewMarkerSelectionScreen() {
 
     MarkerSelectionScreen(exitActivity = {},shouldShowConfirm, navController)
 }
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
-@Composable
-fun PreviewLongPressScreen() {
-    val navController = rememberSwipeDismissableNavController()
-    val successBoolean = remember { mutableStateOf(true) }
-    val shouldShowConfirm = remember { mutableStateOf(true) }
-    LongPressScreen(navController, successBoolean, shouldShowConfirm, successBoolean)
-}
+//@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
+//@Composable
+//fun PreviewLongPressScreen() {
+//    val navController = rememberSwipeDismissableNavController()
+//    val successBoolean = remember { mutableStateOf(true) }
+//    val shouldShowConfirm = remember { mutableStateOf(true) }
+//    LongPressScreen(navController, successBoolean, shouldShowConfirm, successBoolean)
+//}
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
 @Composable
@@ -1227,17 +1584,18 @@ fun PreviewDroppedMarkerList() {
         "a-h-G",
         "I am a remarkable marker",
         1752686500,
-        onPrimaryActionClick = {}
+        onPrimaryActionClick = {},
+        onSecondaryActionClick = {}
     )
 }
 
-@Preview(widthDp = 192, heightDp = 500)
-@Composable
-fun DroppedMarkerPreview() {
-    val successBoolean = remember { mutableStateOf(true) }
-    val shouldShowConfirm = remember { mutableStateOf(true) }
-    DroppedMarkerSetting(rememberSwipeDismissableNavController(), successBoolean, shouldShowConfirm)
-}
+//@Preview(widthDp = 192, heightDp = 500)
+//@Composable
+//fun DroppedMarkerPreview() {
+//    val successBoolean = remember { mutableStateOf(true) }
+//    val shouldShowConfirm = remember { mutableStateOf(true) }
+//    DroppedMarkerSetting(rememberSwipeDismissableNavController(), successBoolean, shouldShowConfirm)
+//}
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
@@ -1257,15 +1615,15 @@ fun ClearMarkerConfirmationDialogPreview() {
         {}
     )
 }
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun DropMarkerConfirmationDialogPreview() {
-    val shouldShowDialog = remember { mutableStateOf(true) }
-    val isConfirmed = remember { mutableStateOf(true) }
-
-    DropMarkerConfirmationDialog(
-        shouldShowDialog = shouldShowDialog,
-        isConfirmed,
-        {}
-    )
-}
+//@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+//@Composable
+//fun DropMarkerConfirmationDialogPreview() {
+//    val shouldShowDialog = remember { mutableStateOf(true) }
+//    val isConfirmed = remember { mutableStateOf(true) }
+//
+//    DropMarkerConfirmationDialog(
+//        shouldShowDialog = shouldShowDialog,
+//        isConfirmed,
+//        {}
+//    )
+//}

@@ -852,9 +852,10 @@ class DataRepository(private val context: Context) {
 
         val physioSnapshot = snapshotPhysio()
         val systemSnapshot = snapshotSystem()
+        val uid = req.uid.ifEmpty { UUID.randomUUID().toString() }
 
         return MarkerSnapshot(
-            uid = UUID.randomUUID().toString(),
+            uid = uid,
             markerType = req.markerType,
             title = req.title,
             iconSetPath = req.markerType.icon,
@@ -1102,7 +1103,7 @@ class DataRepository(private val context: Context) {
         val markerType: String,
         val title: String,
         val timeDropped: Long,
-        val location: LocationSnapshot?
+        var location: LocationSnapshot?
     )
 
     private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())
@@ -1143,6 +1144,7 @@ class DataRepository(private val context: Context) {
 
     // --- request flows (UI -> backend) ---
     data class MarkerDropRequest(
+        var uid: String = "",
         val markerType: MarkerType,
         val title: String,
         val timeMillis: Long
@@ -1155,13 +1157,33 @@ class DataRepository(private val context: Context) {
     val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
 
     // UI-facing API
+    suspend fun requestUpdateMarkerLocation(uid: String){
+        val loc = snapshotLocation()
+        _droppedMarkerList.update { list ->
+            list.map {
+                if (it.uid == uid) it.copy(location = loc) else it
+            }
+        }
+    }
+
+    fun requestChangeMarkerTitle(uid: String, title: String, ){
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) marker.copy(title = title) else marker
+            }
+        }
+    }
+
     suspend fun requestMarkerDrop(markerType: MarkerType, remark: String, timeMillis: Long) =
-        _markerDropRequests.emit(MarkerDropRequest(markerType, remark, timeMillis))
+        _markerDropRequests.emit(MarkerDropRequest(markerType = markerType, title = remark, timeMillis = timeMillis))
 
     suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis))
+        _markerDropRequests.emit(MarkerDropRequest(markerType = parsed, title = title, timeMillis = timeMillis))
         return true
+    }
+    suspend fun requestUpdateMarker(){
+
     }
 
     suspend fun requestClearSpecific(uid: String) =
