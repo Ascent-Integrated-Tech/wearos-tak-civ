@@ -100,6 +100,7 @@ class CotDispatchService : Service() {
     // TODO Senni: should MarkerSnapshot be nullable below
     private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
     private val pendingMarkerDropQueue = ArrayDeque<DataRepository.MarkerDropRequest>()
+    private val pendingMarkerEditQueue = ArrayDeque<DataRepository.MarkerEditRequest>()
 
     private val pendingChatMsgQueue = ArrayDeque<Utils.ChatMessage>()
 
@@ -690,6 +691,7 @@ class CotDispatchService : Service() {
 
     private fun startMarkerPipelines() {
         startMarkerDropCollector()
+        startMarkerEditCollector()
         startMarkerClearCollector()
         startMarkerDropListCollector()
     }
@@ -706,6 +708,23 @@ class CotDispatchService : Service() {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueDrop(req)
+                }
+            }
+        }
+    }
+
+    private fun startMarkerEditCollector() {
+        serviceScope.launch {
+            dataRepository.markerEditRequests.collect { req ->
+                Log.i(TAG, "Received marker edit request for uid=${req.uid}")
+                if (readyToSendMarkerEvents()) {
+                    sendMarkerEditNow(req)
+                    sendPendingMarkerEdits()
+                } else {
+                    if (dataRepository.anyEndpointConnected.value) {
+                        EventBus.getDefault().post(LocationUpdateRequired())
+                    }
+                    enqueueEdit(req)
                 }
             }
         }
@@ -1988,12 +2007,23 @@ class CotDispatchService : Service() {
             }
         }
 
+        if (pendingMarkerEditQueue.isNotEmpty() && readyToSendMarkerEvents()) {
+            serviceScope.launch {
+                sendPendingMarkerEdits()
+            }
+        }
+
         buildAndSendPhysioLocationCotMsg()
     }
 
     private fun enqueueDrop(req: DataRepository.MarkerDropRequest) {
         Log.i(TAG, "===> adding to the marker drop queue ...")
         pendingMarkerDropQueue.addLast(req)
+    }
+
+    private fun enqueueEdit(req: DataRepository.MarkerEditRequest) {
+        Log.i(TAG, "===> adding marker edit for uid=${req.uid} to queue ...")
+        pendingMarkerEditQueue.addLast(req)
     }
 
     private fun sendPendingMarkerDrops() {
@@ -2006,16 +2036,21 @@ class CotDispatchService : Service() {
         }
     }
 
-    private suspend fun sendMarkerDropNow(req: DataRepository.MarkerDropRequest) {
+    private fun sendPendingMarkerEdits() {
+        serviceScope.launch {
+            while (pendingMarkerEditQueue.isNotEmpty()) {
+                val req = pendingMarkerEditQueue.removeFirst()
+                Log.i(TAG, "===> removing marker edit request for uid=${req.uid} from queue ...")
+                sendMarkerEditNow(req)
+            }
+        }
+    }
 
-        val snapshot = dataRepository.snapshotMarker(req)
-
-        Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot?.markerType?.type} ]")
-        val xml = buildMarkerCotMessage(snapshot)
-
+    private suspend fun dispatchMarkerSnapshot(snapshot: DataRepository.MarkerSnapshot?, xml: String): Boolean {
+        if (snapshot == null) return false
         var sent = false
+
         if (companionAppAvailable()) {
-            if (snapshot == null ) return
             Log.i(TAG, "Send Marker payload via BLE ...")
             capRepo.enqueueMarkerSnapshotForBle(snapshot)
             Log.i(TAG, "$xml")
@@ -2037,9 +2072,23 @@ class CotDispatchService : Service() {
             sent = true
         }
 
+        return sent
+    }
+
+    private suspend fun sendMarkerDropNow(req: DataRepository.MarkerDropRequest) {
+
+        val snapshot = dataRepository.snapshotMarker(req)
+        if (snapshot == null) {
+            Log.w(TAG, "Skipping marker drop send; no location snapshot available")
+            return
+        }
+
+        Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot.markerType.type} ]")
+        val xml = buildMarkerCotMessage(snapshot)
+        val sent = dispatchMarkerSnapshot(snapshot, xml)
         if (!sent) return  // don’t reflect in UI until actually sent/meshed
 
-        markerDropMap[snapshot?.uid as String] = snapshot
+        markerDropMap[snapshot.uid] = snapshot
 
         Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
 
@@ -2048,6 +2097,29 @@ class CotDispatchService : Service() {
         dataRepository.appendDroppedMarker(
             DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = markerTitleCallsignOrCustom, timeDropped = req.timeMillis, location = snapshot.loc)
         )
+    }
+
+    private suspend fun sendMarkerEditNow(req: DataRepository.MarkerEditRequest) {
+        val snapshot = dataRepository.snapshotMarker(
+            DataRepository.MarkerDropRequest(
+                markerType = req.markerType,
+                title = req.title,
+                timeMillis = req.timeMillis,
+                uid = req.uid
+            )
+        )
+
+        if (snapshot == null) {
+            Log.w(TAG, "Skipping marker edit send for uid=${req.uid}; no location snapshot available")
+            return
+        }
+
+        val xml = buildMarkerCotMessage(snapshot)
+        val sent = dispatchMarkerSnapshot(snapshot, xml)
+        if (!sent) return
+
+        markerDropMap[req.uid] = snapshot
+        Log.i(TAG, "=== ===> sent marker edit for uid=[${req.uid}] type=[${snapshot.markerType.type}]")
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)

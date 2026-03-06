@@ -862,7 +862,7 @@ class DataRepository(private val context: Context) {
         val systemSnapshot = snapshotSystem()
 
         return MarkerSnapshot(
-            uid = UUID.randomUUID().toString(),
+            uid = req.uid.ifEmpty { UUID.randomUUID().toString() },
             markerType = req.markerType,
             title = req.title,
             iconSetPath = req.markerType.icon,
@@ -1153,11 +1153,22 @@ class DataRepository(private val context: Context) {
     data class MarkerDropRequest(
         val markerType: MarkerType,
         val title: String,
+        val timeMillis: Long,
+        val uid: String = ""
+    )
+
+    data class MarkerEditRequest(
+        val uid: String,
+        val markerType: MarkerType,
+        val title: String,
         val timeMillis: Long
     )
 
     private val _markerDropRequests = MutableSharedFlow<MarkerDropRequest>(extraBufferCapacity = 64)
     val markerDropRequests: SharedFlow<MarkerDropRequest> = _markerDropRequests
+
+    private val _markerEditRequests = MutableSharedFlow<MarkerEditRequest>(extraBufferCapacity = 64)
+    val markerEditRequests: SharedFlow<MarkerEditRequest> = _markerEditRequests
 
     private val _clearMarkerRequests = MutableSharedFlow<ClearRequest>(extraBufferCapacity = 64)
     val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
@@ -1170,6 +1181,53 @@ class DataRepository(private val context: Context) {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
         _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis))
         return true
+    }
+
+    suspend fun requestUpdateMarkerLocation(uid: String) {
+        val loc = snapshotLocation()
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) {
+                    marker.copy(location = loc).also { updatedMarker = it }
+                } else {
+                    marker
+                }
+            }
+        }
+        emitMarkerEditRequest(updatedMarker)
+    }
+
+    fun requestChangeMarkerTitle(uid: String, title: String) {
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) {
+                    marker.copy(title = title).also { updatedMarker = it }
+                } else {
+                    marker
+                }
+            }
+        }
+        emitMarkerEditRequest(updatedMarker)
+    }
+
+    private fun emitMarkerEditRequest(marker: DroppedMarker?) {
+        if (marker == null) return
+        val markerType = MarkerType.parse(marker.markerType)
+        if (markerType == null) {
+            Log.w(TAG, "Skipping marker edit send request, unknown marker type: ${marker.markerType}")
+            return
+        }
+
+        _markerEditRequests.tryEmit(
+            MarkerEditRequest(
+                uid = marker.uid,
+                markerType = markerType,
+                title = marker.title,
+                timeMillis = System.currentTimeMillis()
+            )
+        )
     }
 
     suspend fun requestClearSpecific(uid: String) =
