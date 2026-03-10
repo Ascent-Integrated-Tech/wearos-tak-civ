@@ -47,8 +47,8 @@ import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
+import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-//import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 
@@ -73,10 +73,24 @@ class UserWarnActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
     }
 
     override fun onPause() {
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
         super.onPause()
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onAlertCleared(event: AlertClearedEvent) {
+        if (event.uid == currentUid) {
+            Log.w(TAG, "Alert cleared (threshold exited), dismissing uid=$currentUid")
+            finishAndRemoveTask()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,10 +110,15 @@ class UserWarnActivity : ComponentActivity() {
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    val context = LocalContext.current
                     UserWarnApp(
+                        context = context,
                         description = description,
                         onAcknowledge = {
                             Log.w(TAG, "User acknowledged alert uid=$uid")
+                            if (source == SOURCE_PHYSIO) {
+                                AlertRegistry.clearByUid(uid)
+                            }
                             finishAndRemoveTask()
                         }
                     )
@@ -126,6 +145,7 @@ class UserWarnActivity : ComponentActivity() {
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun UserWarnApp(
+    context: Context,
     description: String,
     onAcknowledge: () -> Unit
 ) {
