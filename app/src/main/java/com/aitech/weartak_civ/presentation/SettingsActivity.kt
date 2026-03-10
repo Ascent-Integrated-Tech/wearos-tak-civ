@@ -363,6 +363,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.time.LocalDate
 import java.time.Year
 import java.time.ZoneId
@@ -5662,6 +5663,7 @@ fun SettingsScreen(
                                  Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
                              }
 
+                             //TODO: WEAR-399 Add store data repo values for threshold lengths
                              if (restingHeartRateHighThresholdChanged) {
                                  Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
                                  dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
