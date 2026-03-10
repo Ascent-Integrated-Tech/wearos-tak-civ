@@ -315,12 +315,16 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrAlertThresholdLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrAlertThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrAlertThresholdLengthState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrWarningThresholdLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrWarningThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.highRestingHrWarningThresholdLengthState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrAlertThresholdLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrAlertThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrAlertThresholdLengthState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrWarningThresholdLength
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrWarningThresholdLengthSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.lowRestingHrWarningThresholdLengthState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastAddress
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastAddressSettingsState
@@ -356,6 +360,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.time.LocalDate
 import java.time.Year
 import java.time.ZoneId
@@ -722,46 +727,58 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "high_resting_hr_bpm_threshold_screen") {
-            NumericEntryPage(navController, restingHrHighAlertBpmThresholdSettingsState, 300, 0,"High Resting Heart Rate - Alert", context,"physiological_heart_rate_alerts_setting_screen")
+            NumericEntryPage(navController, restingHrHighAlertBpmThresholdSettingsState, 300, 0,"High Resting Heart Rate - Alert Threshold", context,"physiological_heart_rate_alerts_setting_screen")
+        }
+        composable(
+            "high_resting_hr_warning_threshold_length") {
+            NumericEntryPage(navController, highRestingHrWarningThresholdLengthSettingsState, 300,0, "High Resting Heart Rate - Warning Threshold Length", context,"physiological_heart_rate_alerts_setting_screen")
+        }
+        composable(
+            "high_resting_hr_alert_threshold_length") {
+            NumericEntryPage(navController, highRestingHrAlertThresholdLengthSettingsState, 300,0, "High Resting Heart Rate - Alert Threshold Length", context,"physiological_heart_rate_alerts_setting_screen")
         }
         composable(
             "low_resting_hr_bpm_threshold_screen") {
-            NumericEntryPage(navController, restingHrLowAlertBpmThresholdSettingsState, 300,0, "Low Resting Heart Rate - Alert", context,"physiological_heart_rate_alerts_setting_screen")
+            NumericEntryPage(navController, restingHrLowAlertBpmThresholdSettingsState, 300,0, "Low Resting Heart Rate - Alert Threshold", context,"physiological_heart_rate_alerts_setting_screen")
         }
-//        composable(
-//            "resting_hr_threshold_length_screen") {
-//            NumericEntryPage(navController, restingHrAlertBpmThresholdLengthSettingsState, 100000,0, "Resting Heart Rate Threshold Length - Alert", context,"physiological_heart_rate_alerts_setting_screen")
-//        }
+        composable(
+            "low_resting_hr_warning_threshold_length") {
+            NumericEntryPage(navController, lowRestingHrWarningThresholdLengthSettingsState, 300,0, "Low Resting Heart Rate - Warning Threshold Length", context,"physiological_heart_rate_alerts_setting_screen")
+        }
+        composable(
+            "low_resting_hr_alert_threshold_length") {
+            NumericEntryPage(navController, lowRestingHrAlertThresholdLengthSettingsState, 300,0, "Low Resting Heart Rate - Alert Threshold Length", context,"physiological_heart_rate_alerts_setting_screen")
+        }
         composable(
             "physiological_exertion_alerts_setting_screen") {
             ExertionAlertsSetting(navController)
         }
         composable(
             "exertion_threshold_warning_screen") {
-            NumericEntryPage(navController, exertionThresholdWarningSettingsState, 100,0, "Exertion Threshold - Warning", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionThresholdWarningSettingsState, 100,0, "Exertion - Warning Threshold", context,"physiological_exertion_alerts_setting_screen")
+        }
+        composable(
+            "exertion_warning_threshold_length") {
+            NumericEntryPage(navController, exertionWarningThresholdLengthSettingsState, 100,0, "Exertion - Warning Threshold Length", context,"physiological_exertion_alerts_setting_screen")
         }
         composable(
             "exertion_threshold_alert_screen") {
-            NumericEntryPage(navController, exertionThresholdAlertSettingsState, 100,0, "Exertion Threshold - Alert", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionThresholdAlertSettingsState, 100,0, "Exertion - Alert Threshold", context,"physiological_exertion_alerts_setting_screen")
         }
-
+        composable(
+            "exertion_alert_threshold_length") {
+            NumericEntryPage(navController, exertionAlertThresholdLengthSettingsState, 100,0, "Exertion - Alert Threshold", context,"physiological_exertion_alerts_setting_screen")
+        }
 //        composable(
-//            "exertion_threshold_length_screen") {
-//            NumericEntryPage(navController, exertionThresholdLengthSettingsState, 100000,0, "Exertion Threshold Length", context,"physiological_exertion_alerts_setting_screen")
+//            "physiological_alerts_bpm_screen") {
+////            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertBpmThresholdSettingsState, stringResource(R.string.threshold_high_heart_rate), "140")
+//            NumericEntryPage(navController, hrHighAlertBpmThresholdSettingsState, 300,1, stringResource(R.string.threshold_high_heart_rate), context,"physiological_alerts_setting_screen")
 //        }
-
-            //TODO: WEAR-313: Change to High Resting Heart Rate - Alert
-        composable(
-            "physiological_alerts_bpm_screen") {
-//            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertBpmThresholdSettingsState, stringResource(R.string.threshold_high_heart_rate), "140")
-            NumericEntryPage(navController, hrHighAlertBpmThresholdSettingsState, 300,1, stringResource(R.string.threshold_high_heart_rate), context,"physiological_alerts_setting_screen")
-        }
-        //TODO: WEAR-313: Change to Low Resting Heart Rate - Alert
-        composable(
-            "physiological_alerts_bpm_length_screen") {
-//            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertNumSecsThresholdSettingsState, (stringResource(R.string.threshold_high_heart_rate_length)), "60" + "seconds")
-            NumericEntryPage(navController, hrHighAlertNumSecsThresholdSettingsState, 1000000, 1, (stringResource(R.string.threshold_high_heart_rate_length)), context, "physiological_alerts_setting_screen")
-        }
+//        composable(
+//            "physiological_alerts_bpm_length_screen") {
+////            PhysioAlertsBpmThresholdSetting(navController, hrHighAlertNumSecsThresholdSettingsState, (stringResource(R.string.threshold_high_heart_rate_length)), "60" + "seconds")
+//            NumericEntryPage(navController, hrHighAlertNumSecsThresholdSettingsState, 1000000, 1, (stringResource(R.string.threshold_high_heart_rate_length)), context, "physiological_alerts_setting_screen")
+//        }
         //Physio Metrics
         composable(
             "physiological_metrics_setting_screen") {
@@ -3417,15 +3434,16 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
         ConfirmCancelButtons(
             onClickCancel = {
                 Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
-                enablePhysiologicalAlertsSettingState.setValue(enablePhysiologicalAlerts)
-//                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThreshold)
-//                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThreshold)
                 restingHrHighAlertBpmThresholdSettingsState.setValue(restingHrHighAlertBpmThreshold)
+                highRestingHrWarningThresholdLengthSettingsState.setValue(highRestingHrWarningThresholdLength)
+                highRestingHrAlertThresholdLengthSettingsState.setValue(highRestingHrAlertThresholdLength)
                 restingHrLowAlertBpmThresholdSettingsState.setValue(restingHrLowAlertBpmThreshold)
-//                restingHrAlertBpmThresholdLengthSettingsState.setValue(restingHrAlertBpmThresholdLength)
+                lowRestingHrWarningThresholdLengthSettingsState.setValue(lowRestingHrWarningThresholdLength)
+                lowRestingHrAlertThresholdLengthSettingsState.setValue(lowRestingHrAlertThresholdLength)
                 exertionThresholdWarningSettingsState.setValue(exertionThresholdWarning)
+                exertionWarningThresholdLengthSettingsState.setValue(exertionWarningThresholdLength)
                 exertionThresholdAlertSettingsState.setValue(exertionThresholdAlert)
-//                exertionThresholdLengthSettingsState.setValue(exertionThresholdLength)
+                exertionAlertThresholdLengthSettingsState.setValue(exertionAlertThresholdLength)
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -3433,9 +3451,6 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
                 }
             },
             onClickConfirm = {
-//                hrHighAlertBpmThresholdState.setValue(hrHighAlertBpmThresholdSettingsState.value)
-//                hrHighAlertNumSecsThresholdState.setValue(hrHighAlertNumSecsThresholdSettingsState.value)
-
                 navController.navigate("settings_screen") {
                     popUpTo(("settings_screen")) {
                         inclusive = true
@@ -3454,10 +3469,13 @@ fun HeartRateAlertsSetting(navController: NavController) {
     WearTakCivScreenDimensions(
         columnContent = {
 
-            DataMetricsChip("high_resting_hr_bpm_threshold_screen", "High Resting Heart Rate - Alert", restingHrHighAlertBpmThresholdSettingsState.value.toString(), navController)
-            DataMetricsChip("low_resting_hr_bpm_threshold_screen", "Low Resting Heart Rate - Alert", restingHrLowAlertBpmThresholdSettingsState.value.toString(), navController)
-//            DataMetricsChip("resting_hr_threshold_length_screen", "Resting Heart Rate Threshold Length - Alert", restingHrAlertBpmThresholdLengthSettingsState.value.toString() + " minutes", navController)
-
+            DataMetricsChip("high_resting_hr_bpm_threshold_screen", "High Resting HR -\nAlert Threshold", restingHrHighAlertBpmThresholdSettingsState.value.toString() + " bpm", navController)
+            DataMetricsChip("high_resting_hr_warning_threshold_length", "High Resting HR -\nWarning Threshold Length", highRestingHrWarningThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            DataMetricsChip("high_resting_hr_alert_threshold_length", "High Resting HR -\nAlert Threshold Length", highRestingHrAlertThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            Spacer(modifier = Modifier.height(15.dp))
+            DataMetricsChip("low_resting_hr_bpm_threshold_screen", "Low Resting HR -\nAlert Threshold", restingHrLowAlertBpmThresholdSettingsState.value.toString() + " bpm", navController)
+            DataMetricsChip("low_resting_hr_warning_threshold_length", "Low Resting HR -\nWarning Threshold Length", lowRestingHrWarningThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            DataMetricsChip("low_resting_hr_alert_threshold_length", "Low Resting HR -\nAlert Threshold Length", lowRestingHrAlertThresholdLengthSettingsState.value.toString() + " minutes", navController)
             Spacer(modifier = Modifier.height(16.dp))
         },
         rowContent = {
@@ -3465,8 +3483,11 @@ fun HeartRateAlertsSetting(navController: NavController) {
                 onClickCancel = {
                     Log.d(TAG, "Heart Rate Alert Settings NOT saved")
                     restingHrHighAlertBpmThresholdSettingsState.setValue(restingHrHighAlertBpmThreshold)
+                    highRestingHrWarningThresholdLengthSettingsState.setValue(highRestingHrWarningThresholdLength)
+                    highRestingHrAlertThresholdLengthSettingsState.setValue(highRestingHrAlertThresholdLength)
                     restingHrLowAlertBpmThresholdSettingsState.setValue(restingHrLowAlertBpmThreshold)
-//                    restingHrAlertBpmThresholdLengthSettingsState.setValue(restingHrAlertBpmThresholdLength)
+                    lowRestingHrWarningThresholdLengthSettingsState.setValue(lowRestingHrWarningThresholdLength)
+                    lowRestingHrAlertThresholdLengthSettingsState.setValue(lowRestingHrAlertThresholdLength)
 
                     navController.navigate("physiological_alerts_setting_screen") {
                         popUpTo(("physiological_alerts_setting_screen")) {
@@ -3475,9 +3496,12 @@ fun HeartRateAlertsSetting(navController: NavController) {
                     }
                 },
                 onClickConfirm = {
-                    restingHrHighAlertBpmThresholdState.setValue(restingHrHighAlertBpmThresholdSettingsState.value)
-                    restingHrLowAlertBpmThresholdState.setValue(restingHrLowAlertBpmThresholdSettingsState.value)
-//                    restingHrAlertBpmThresholdLengthState.setValue(restingHrAlertBpmThresholdLengthSettingsState.value)
+                    restingHrHighAlertBpmThresholdSettingsState.setValue(restingHrHighAlertBpmThresholdSettingsState.value)
+                    highRestingHrWarningThresholdLengthSettingsState.setValue(highRestingHrWarningThresholdLength)
+                    highRestingHrAlertThresholdLengthSettingsState.setValue(highRestingHrAlertThresholdLength)
+                    restingHrLowAlertBpmThresholdSettingsState.setValue(restingHrLowAlertBpmThresholdSettingsState.value)
+                    lowRestingHrWarningThresholdLengthSettingsState.setValue(lowRestingHrWarningThresholdLength)
+                    lowRestingHrAlertThresholdLengthSettingsState.setValue(lowRestingHrAlertThresholdLength)
 
                     navController.navigate("physiological_alerts_setting_screen") {
                         popUpTo(("physiological_alerts_setting_screen")) {
@@ -3497,9 +3521,11 @@ fun ExertionAlertsSetting(navController: NavController) {
     WearTakCivScreenDimensions(
         columnContent = {
 
-            DataMetricsChip("exertion_threshold_warning_screen", "Exertion Threshold - Warning", exertionThresholdWarningSettingsState.value.toString() + "%", navController)
-            DataMetricsChip("exertion_threshold_alert_screen", "Exertion Threshold - Alert", exertionThresholdAlertSettingsState.value.toString() + "%", navController)
-//            DataMetricsChip("exertion_threshold_length_screen", "Exertion Threshold Length", exertionThresholdLengthSettingsState.value.toString() + " seconds", navController)
+            DataMetricsChip("exertion_threshold_warning_screen", "Exertion -\nWarning Threshold", exertionThresholdWarningSettingsState.value.toString() + "%", navController)
+            DataMetricsChip("exertion_warning_threshold_length", "Exertion -\nWarning Threshold Length", exertionWarningThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            Spacer(modifier = Modifier.height(15.dp))
+            DataMetricsChip("exertion_threshold_alert_screen", "Exertion Threshold -\nAlert", exertionThresholdAlertSettingsState.value.toString() + "%", navController)
+            DataMetricsChip("exertion_alert_threshold_length", "Exertion -\nAlert Threshold Length", exertionAlertThresholdLengthSettingsState.value.toString() + "minutes", navController)
 
             Spacer(modifier = Modifier.height(16.dp))
         },
@@ -3508,8 +3534,9 @@ fun ExertionAlertsSetting(navController: NavController) {
                 onClickCancel = {
                     Log.d(TAG, "Exertion Alerts Settings NOT saved")
                     exertionThresholdWarningSettingsState.setValue(exertionThresholdWarning)
+                    exertionWarningThresholdLengthSettingsState.setValue(exertionWarningThresholdLength)
                     exertionThresholdAlertSettingsState.setValue(exertionThresholdAlert)
-//                    exertionThresholdLengthSettingsState.setValue(exertionThresholdLength)
+                    exertionAlertThresholdLengthSettingsState.setValue(exertionAlertThresholdLength)
 
                     navController.navigate("physiological_alerts_setting_screen") {
                         popUpTo(("physiological_alerts_setting_screen")) {
@@ -3519,8 +3546,9 @@ fun ExertionAlertsSetting(navController: NavController) {
                 },
                 onClickConfirm = {
                     exertionThresholdWarningState.setValue(exertionThresholdWarningSettingsState.value)
+                    exertionWarningThresholdLengthSettingsState.setValue(exertionWarningThresholdLengthSettingsState.value)
                     exertionThresholdAlertState.setValue(exertionThresholdAlertSettingsState.value)
-//                    exertionThresholdLengthState.setValue(exertionThresholdLengthSettingsState.value)
+                    exertionAlertThresholdLengthSettingsState.setValue(exertionAlertThresholdLengthSettingsState.value)
 
                     navController.navigate("physiological_alerts_setting_screen") {
                         popUpTo(("physiological_alerts_setting_screen")) {
@@ -4796,11 +4824,15 @@ fun SettingsScreen(
                     var smsAlertsCheckedChanged: Boolean = false
                     var smsNumbersChanged: Boolean = false
                     var restingHeartRateHighThresholdChanged: Boolean = false
+                    var highRestingHrWarningThresholdLengthChanged: Boolean = false
+                    var highRestingHrAlertThresholdLengthChanged: Boolean = false
                     var restingHeartRateLowThresholdChanged: Boolean = false
-                    var restingHeartRateThresholdLengthChanged: Boolean = false
+                    var lowRestingHrWarningThresholdLengthChanged: Boolean = false
+                    var lowRestingHrAlertThresholdLengthChanged: Boolean = false
                     var exertionWarningThresholdChanged: Boolean = false
+                    var exertionWarningThresholdLengthChanged: Boolean = false
                     var exertionAlertThresholdChanged: Boolean = false
-                    var exertionThresholdLengthChanged: Boolean = false
+                    var exertionAlertThresholdLengthChanged: Boolean = false
                     var physiologicalAlertsCheckedChanged: Boolean = false
                     var physiologicalAlertsBpmThresholdCheckedChanged: Boolean = false
                     var physiologicalAlertsBpmThresholdTimeCheckedChanged: Boolean = false
@@ -4837,28 +4869,42 @@ fun SettingsScreen(
                         settingsChanged = true; restingHeartRateHighThresholdChanged = true
                         restingHrHighAlertBpmThreshold = restingHrHighAlertBpmThresholdState.value ?: restingHrHighAlertBpmThreshold
                     }
+                    if (highRestingHrWarningThresholdLength != highRestingHrWarningThresholdLengthState.value) {
+                        settingsChanged = true; highRestingHrWarningThresholdLengthChanged = true
+                        highRestingHrWarningThresholdLength = highRestingHrWarningThresholdLengthState.value ?: highRestingHrWarningThresholdLength
+                    }
+                    if (highRestingHrAlertThresholdLength != highRestingHrAlertThresholdLengthState.value) {
+                        settingsChanged = true; highRestingHrAlertThresholdLengthChanged = true
+                        highRestingHrAlertThresholdLength = highRestingHrAlertThresholdLengthState.value ?: highRestingHrAlertThresholdLength
+                    }
                     if (restingHrLowAlertBpmThreshold != restingHrLowAlertBpmThresholdState.value) {
                         settingsChanged = true; restingHeartRateLowThresholdChanged = true
                         restingHrLowAlertBpmThreshold = restingHrLowAlertBpmThresholdState.value ?: restingHrLowAlertBpmThreshold
                     }
-//                    if (restingHrAlertBpmThresholdLength != restingHrAlertBpmThresholdLengthState.value) {
-//                        settingsChanged = true; restingHeartRateThresholdLengthChanged = true
-//                        restingHrAlertBpmThresholdLength = restingHrAlertBpmThresholdLengthState.value ?: restingHrAlertBpmThresholdLength
-//                    }
+                    if (lowRestingHrWarningThresholdLength != lowRestingHrWarningThresholdLengthState.value) {
+                        settingsChanged = true; lowRestingHrWarningThresholdLengthChanged = true
+                        lowRestingHrWarningThresholdLength = lowRestingHrWarningThresholdLengthState.value ?: lowRestingHrWarningThresholdLength
+                    }
+                    if (lowRestingHrAlertThresholdLength != lowRestingHrAlertThresholdLengthState.value) {
+                        settingsChanged = true; lowRestingHrAlertThresholdLengthChanged = true
+                        lowRestingHrAlertThresholdLength = lowRestingHrAlertThresholdLengthState.value ?: lowRestingHrAlertThresholdLength
+                    }
                     if (exertionThresholdWarning != exertionThresholdWarningState.value) {
                         settingsChanged = true; exertionWarningThresholdChanged = true
                         exertionThresholdWarning = exertionThresholdWarningState.value ?: exertionThresholdWarning
+                    }
+                    if (exertionWarningThresholdLength != exertionWarningThresholdLengthState.value) {
+                        settingsChanged = true; exertionWarningThresholdLengthChanged = true
+                        exertionWarningThresholdLength = exertionWarningThresholdLengthState.value ?: exertionWarningThresholdLength
                     }
                     if (exertionThresholdAlert != exertionThresholdAlertState.value) {
                         settingsChanged = true; exertionAlertThresholdChanged = true
                         exertionThresholdAlert = exertionThresholdAlertState.value ?: exertionThresholdAlert
                     }
-
-//                    if (exertionThresholdLength != exertionThresholdLengthState.value) {
-//                        settingsChanged = true; exertionThresholdLengthChanged = true
-//                        exertionThresholdLength = exertionThresholdLengthState.value ?: exertionThresholdLength
-//                    }
-
+                    if (exertionAlertThresholdLength != exertionAlertThresholdLengthState.value) {
+                        settingsChanged = true; exertionAlertThresholdLengthChanged = true
+                        exertionAlertThresholdLength = exertionAlertThresholdLengthState.value ?: exertionAlertThresholdLength
+                    }
                     if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
                         hrHighAlertBpmThreshold = hrHighAlertBpmThresholdState.value ?: hrHighAlertBpmThreshold
@@ -5441,6 +5487,7 @@ fun SettingsScreen(
                                  Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
                              }
 
+                             //TODO: WEAR-399 Add store data repo values for threshold lengths
                              if (restingHeartRateHighThresholdChanged) {
                                  Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
                                  dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
