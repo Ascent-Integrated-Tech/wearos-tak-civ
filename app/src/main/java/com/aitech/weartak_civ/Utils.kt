@@ -471,6 +471,7 @@ object Utils {
         HR,
         EXERTION,
         SKIN_AMBIENT_TEMP,
+        DAILY_STATS,
         ALERT_CLEAR
     }
 
@@ -481,7 +482,7 @@ object Utils {
         sensorLogFile = File(file, "/sdcard/Download/WearTAK_Sensor_logs.csv")
         try {
             val writer = FileWriter(sensorLogFile, true) // Append to existing file
-            writer.write("Time, Activity_Confidence, Activity, DeviceWorn_Accuracy, DeviceWorn, HR_Accuracy, HR (bpm), Exertion (%), SkinTemp_Status, SkinTemp (F), AmbientTemp (F), Alert/Clear\n")
+            writer.write("Time, Activity_Confidence, Activity, DeviceWorn_Accuracy, DeviceWorn, HR_Accuracy, HR (bpm), Exertion (%), SkinTemp_Status, SkinTemp (F), AmbientTemp (F), Steps (Daily), Floors(Daily), Elevation m (Daily), Total Calories (kcal), Alert/Clear\n")
             writer.close()
         } catch (e: IOException) {
             Log.e(TAG, "Failed to write log to file: ${e.message}", e)
@@ -496,29 +497,32 @@ object Utils {
         if (null == sensorLogFile) {
             return
         }
-        // Activity_Confidence, Activity, DeviceWorn_Accuracy, DeviceWorn, HR_Accuracy, HR (bpm), Exertion (%), SkinTemp_Status, SkinTemp (F), AmbientTemp (F), Alert/Clear
-        //        1,                2,       3,           4,         5,           6,               7,            8,               9, 10
+        // Activity_Confidence, Activity, DeviceWorn_Accuracy, DeviceWorn, HR_Accuracy, HR (bpm), Exertion (%), SkinTemp_Status, SkinTemp (F), AmbientTemp (F), Steps (Daily), Floors(Daily), Elevation m (Daily), Total Calories (kcal), Alert/Clear
+        //            1,           2,                3,           4,            5,         6,            7,            8,             9,             10,             11,            12,           13,                   14,
         val formattedData = when (type) {
             SensorLogType.ACTIVITY -> {
-                "$accuracyStatus, $data, , , , , , , , , "
+                "$accuracyStatus, $data, , , , , , , , , , , , , "
             }
             SensorLogType.DEVICE_WORN -> {
-                ", , $accuracyStatus, $data, , , , , , , "
+                ", , $accuracyStatus, $data, , , , , , , , , , , "
             }
             SensorLogType.HR_EXERTION -> {
-                ", , , , $accuracyStatus, $data, $addlData, , , , "
+                ", , , , $accuracyStatus, $data, $addlData, , , , , , , , "
             }
             SensorLogType.HR -> {
-                ", , , , $accuracyStatus, $data, , , , , "
+                ", , , , $accuracyStatus, $data, , , , , , , , , "
             }
             SensorLogType.EXERTION -> {
-                ", , , , , , $data, , , , "
+                ", , , , , , $data, , , , , , , , "
             }
             SensorLogType.SKIN_AMBIENT_TEMP -> {
-                ", , , , , , , $accuracyStatus, $data, $addlData, "
+                ", , , , , , , $accuracyStatus, $data, $addlData, , , , , "
+            }
+            SensorLogType.DAILY_STATS -> {
+                ", , , , , , , , , , $data, "
             }
             SensorLogType.ALERT_CLEAR -> {
-                ", , , , , , , , , , $data"
+                ", , , , , , , , , , , , , , $data"
             }
         }
         try {

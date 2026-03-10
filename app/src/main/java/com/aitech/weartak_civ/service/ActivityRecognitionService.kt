@@ -251,6 +251,7 @@ class ActivityRecognitionService : Service() {
             val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
             //Log.i(TAG, logStr)
             //writeToLogFileLocation(logFile, logStr)
+            addToSensorLogFileLocation(Utils.SensorLogType.DAILY_STATS, 100,"$cumulativeSteps, $cumulativeFloors, $cumulativeElevation, $cumulativeCalories")
 
             // Push snapshot to repository
             scope.launch {
