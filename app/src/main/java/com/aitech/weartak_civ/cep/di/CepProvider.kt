@@ -7,6 +7,7 @@ import com.aitech.weartak_civ.cep.engine.ProfileStore
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
 import com.aitech.weartak_civ.cep.engine.action.CepActionDispatcher
 import com.aitech.weartak_civ.cep.engine.action.LogActionHandler
+import com.aitech.weartak_civ.cep.engine.action.WarnActionHandler
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,10 @@ object CepProvider {
         return dispatcher ?: synchronized(this) {
             dispatcher ?: CepActionDispatcher(
                 scope = scope,
-                handlers = listOf(LogActionHandler(appScope = scope))
+                handlers = listOf(
+                LogActionHandler(appScope = scope),
+                WarnActionHandler(appScope = scope)
+            )
             ).also { dispatcher = it }
         }
     }

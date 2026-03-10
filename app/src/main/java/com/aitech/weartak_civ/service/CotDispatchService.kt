@@ -37,6 +37,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_C
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.UserWarnActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -408,6 +409,12 @@ class CotDispatchService : Service() {
         } else {
             dataRepository.changeManualAlertToClearAndEnqueueStatusUid(pendingManualAlert.uuid, true)
         }
+        showUserWarnActivity(
+            uid = pendingManualAlert.uuid,
+            category = pendingManualAlert.category,
+            description = pendingManualAlert.description,
+            source = UserWarnActivity.SOURCE_PHYSIO
+        )
     }
 
     private fun startClearManualAlertCollector() {
@@ -535,6 +542,27 @@ class CotDispatchService : Service() {
         } else {
             dataRepository.changePhysioAndAutoGenAlertToClearAndEnqueueStatusUid(pendingAlert.uuid, true)
         }
+        showUserWarnActivity(
+            uid = pendingAlert.uuid,
+            category = pendingAlert.category,
+            description = pendingAlert.description,
+            source = UserWarnActivity.SOURCE_PHYSIO
+        )
+    }
+
+    /**
+     * When an alert could not be sent to TAK, warn the user: haptic + UserWarnActivity (Acknowledge / Cancel).
+     */
+    private fun showUserWarnActivity(uid: String, category: String, description: String, source: String) {
+        Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 2, timeBtwnVibesMs = 120L)
+        val intent = Intent(context, UserWarnActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(UserWarnActivity.EXTRA_UID, uid)
+            putExtra(UserWarnActivity.EXTRA_CATEGORY, category)
+            putExtra(UserWarnActivity.EXTRA_DESCRIPTION, description)
+            putExtra(UserWarnActivity.EXTRA_SOURCE, source)
+        }
+        context.startActivity(intent)
     }
 
     private fun startClearPhysioAndAutoGenAlertCollector() {
