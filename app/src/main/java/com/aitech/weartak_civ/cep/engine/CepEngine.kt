@@ -6,6 +6,7 @@ import kotlinx.coroutines.*
 import android.util.Log
 import com.aitech.weartak_civ.CAT_MANUAL_ALERT
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
+import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
 import com.aitech.weartak_civ.data.DataRepository
@@ -285,6 +286,7 @@ class CepEngine(
                     if (elapsedSec >= alert.exitSustainSec) {
                         dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
                         AlertRegistry.clear(alert.ruleId)
+                        EventBus.getDefault().post(AlertClearedEvent(alert.uid))
                     }
                 }
             } else {

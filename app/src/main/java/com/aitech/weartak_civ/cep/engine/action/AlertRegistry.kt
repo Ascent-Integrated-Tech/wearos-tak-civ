@@ -62,6 +62,13 @@ object AlertRegistry {
         active.remove(ruleId)
     }
 
+    /** Clear the active alert with this uid (e.g. when user acknowledges). Returns true if found and removed. */
+    fun clearByUid(uid: String): Boolean {
+        val entry = active.entries.find { it.value.uid == uid } ?: return false
+        active.remove(entry.key)
+        return true
+    }
+
     fun get(ruleId: String): ActiveAlert? = active[ruleId]
 
     /** Snapshot of all active alerts for the engine to inspect each tick. */
