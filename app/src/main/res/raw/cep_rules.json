@@ -1560,10 +1560,10 @@
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
       "action": {
-        "type": "warn",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
-        "isTak": true,
+        "isTak": false,
         "monitor": [
           {
             "feature": "features.hrr_percent",

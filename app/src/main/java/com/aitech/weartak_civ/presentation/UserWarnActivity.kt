@@ -73,25 +73,25 @@ class UserWarnActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!EventBus.getDefault().isRegistered(this)) {
+        /*if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
-        }
+        }*/
     }
 
     override fun onPause() {
-        if (EventBus.getDefault().isRegistered(this)) {
+        /*if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
-        }
+        }*/
         super.onPause()
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
+    /*@Subscribe(threadMode = ThreadMode.MAIN)
     fun onAlertCleared(event: AlertClearedEvent) {
         if (event.uid == currentUid) {
             Log.w(TAG, "Alert cleared (threshold exited), dismissing uid=$currentUid")
             finishAndRemoveTask()
         }
-    }
+    }*/
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,9 +116,9 @@ class UserWarnActivity : ComponentActivity() {
                         description = description,
                         onAcknowledge = {
                             Log.w(TAG, "User acknowledged alert uid=$uid")
-                            if (source == SOURCE_PHYSIO) {
+                            /*if (source == SOURCE_PHYSIO) {
                                 AlertRegistry.clearByUid(uid)
-                            }
+                            }*/
                             finishAndRemoveTask()
                         }
                     )
