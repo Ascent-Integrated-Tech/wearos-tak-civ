@@ -56,6 +56,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_USER_WARNING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
@@ -2183,6 +2184,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableUserWarning: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_USER_WARNING] ?: DEFAULT_ENABLE_USER_WARNING
+    }
+
+    suspend fun storeEnableUserWarning(enableUserWarning: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_USER_WARNING] = enableUserWarning
+        }
+    }
+
     val getRestingHrHighAlertBpmThreshold: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[RESTING_HR_HIGH_ALERT_BPM_THRESHOLD] ?: DEFAULT_HIGH_RESTING_HR_THRESHOLD
     }
@@ -2516,6 +2527,7 @@ class DataRepository(private val context: Context) {
         private val WHILE_ALERTING_REPORTING_INTERVAL = intPreferencesKey("while_alerting_reporting_interval")
         private val RESTING_HEART_RATE = intPreferencesKey("resting_heart_rate")
         private val ENABLE_SMS_FOR_ALERTS = booleanPreferencesKey("enable_sms_for_alerts")
+        private val ENABLE_USER_WARNING = booleanPreferencesKey("enable_user_warning")
         private val SELECTED_PHYSIO_METRIC = stringPreferencesKey("selected_physio_metric")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
