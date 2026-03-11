@@ -726,7 +726,8 @@ object Utils {
         val timeReceived: Long,
         val distance: Double, // May not come directly from COT, changes consistently
         val orientation: Float, // May not come directly from COT, changes consistently
-        val bloodhounding: Boolean
+        val bloodhounding: Boolean,
+        val acknowledged: Boolean = false
     )
 
     fun normalize0to360(deg: Double): Double =

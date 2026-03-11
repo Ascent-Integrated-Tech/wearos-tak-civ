@@ -113,6 +113,7 @@ import kotlin.String
 class ChatActivity : ComponentActivity() {
     companion object {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
+        const val EXTRA_OPEN_ROOM_UID = "extra_open_room_uid"
         lateinit var dataRepository: DataRepository
         val sampleRooms = listOf(Utils.ChatRoom(
                 "0",
@@ -149,7 +150,11 @@ class ChatActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    ChatCivApp(exitActivity = { finishAndRemoveTask() }, context)
+                    ChatCivApp(
+                        exitActivity = { finishAndRemoveTask() },
+                        context = context,
+                        initialRoomUid = intent.getStringExtra(EXTRA_OPEN_ROOM_UID)
+                    )
                 }
             }
         }
@@ -158,10 +163,11 @@ class ChatActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
+fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
+    var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
     // Now using Utils.ChatRoom
     val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
@@ -188,6 +194,16 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context) {
                     popUpTo(0) { inclusive = true }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(chatRooms, pendingRoomUid) {
+        val roomUid = pendingRoomUid ?: return@LaunchedEffect
+        val roomIndex = chatRooms.indexOfFirst { it.uid == roomUid }
+        val currentDestination = navController.currentBackStackEntry?.destination?.route
+        if (roomIndex >= 0 && currentDestination == "chat_screen") {
+            navController.navigate("chat_screen_detailed/$roomIndex")
+            pendingRoomUid = null
         }
     }
 

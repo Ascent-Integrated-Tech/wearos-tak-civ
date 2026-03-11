@@ -1717,8 +1717,28 @@ class DataRepository(private val context: Context) {
     private val _chatRequestFromUI = MutableSharedFlow<SendChatRequest>(extraBufferCapacity = 64)
     val chatRequestFromUI: SharedFlow<SendChatRequest> = _chatRequestFromUI
 
+    private val _automatedChatRequest = MutableSharedFlow<SendChatRequest>(extraBufferCapacity = 64)
+    val automatedChatRequest: SharedFlow<SendChatRequest> = _automatedChatRequest
+
     suspend fun requestChatMessageSendFromUI(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
         _chatRequestFromUI.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
+    }
+
+    suspend fun requestAutomatedChatSend(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
+        _automatedChatRequest.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
+    }
+
+    // backend --> UI
+    sealed class BloodhoundUiCommand {
+        data class OpenChatRoom(val roomUid: String) : BloodhoundUiCommand()
+        data object CloseBloodhoundScreen : BloodhoundUiCommand()
+    }
+
+    private val _bloodhoundUiCommands = MutableSharedFlow<BloodhoundUiCommand>(extraBufferCapacity = 16)
+    val bloodhoundUiCommands: SharedFlow<BloodhoundUiCommand> = _bloodhoundUiCommands
+
+    suspend fun sendBloodhoundUiCommand(command: BloodhoundUiCommand) {
+        _bloodhoundUiCommands.emit(command)
     }
 
     // ChatService --> CotDispatchService

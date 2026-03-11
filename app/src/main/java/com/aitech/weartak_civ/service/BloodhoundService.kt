@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
+import com.aitech.weartak_civ.data.BloodhoundRepository.ActivationResult
 import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
 import com.aitech.weartak_civ.data.BloodhoundRepository.VectorToTarget
 import com.aitech.weartak_civ.data.DataRepository
@@ -150,7 +151,18 @@ class BloodhoundService: Service() {
         scope.launch {
             bhRepo.requestActivateBloodhound.collect { uid ->
                 if (bhRepo.isUidValid(uid)) {
-                    bhRepo.setActive(uid, true)
+                    val (result, item) = bhRepo.activate(uid)
+                    when (result) {
+                        ActivationResult.FIRST_ACK,
+                        ActivationResult.SWITCH_ONLY -> {
+                            sendBloodhoundReply(item, "Roger: Bloodhounding to")
+                            openIssuerChat(item)
+                        }
+                        //ActivationResult.SWITCH_ONLY -> {
+                        //    repo.sendBloodhoundUiCommand(DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen)
+                        //}
+                        ActivationResult.NO_CHANGE -> Unit
+                    }
                 }
             }
         }
@@ -160,10 +172,33 @@ class BloodhoundService: Service() {
         scope.launch {
             bhRepo.requestInPosition.collect { uid ->
                 if (uid.isNotBlank()) {
-                    bhRepo.setInPos(uid) // removes immediately
+                    val item = bhRepo.setInPos(uid)
+                    sendBloodhoundReply(item, "In Position at")
+                    openIssuerChat(item)
                 }
             }
         }
+    }
+
+    private suspend fun sendBloodhoundReply(item: BloodhoundItem?, messagePrefix: String) {
+        val issuerUid = item?.origin?.issuerUid
+        val chatTitle = item?.bhEvent?.issuer?.parentCallsign
+        val targetTitle = item?.target?.name
+        if (issuerUid.isNullOrBlank() || chatTitle.isNullOrBlank() || targetTitle.isNullOrBlank()) {
+            Log.w(TAG, "Skipping bloodhound auto-reply due to missing issuer metadata: uid=$issuerUid, title=$chatTitle")
+            return
+        }
+        val message = "$messagePrefix $targetTitle"
+        repo.requestAutomatedChatSend(issuerUid, chatTitle, message, System.currentTimeMillis())
+    }
+
+    private suspend fun openIssuerChat(item: BloodhoundItem?) {
+        val issuerUid = item?.origin?.issuerUid
+        if (issuerUid.isNullOrBlank()) {
+            Log.w(TAG, "Skipping bloodhound chat open due to missing issuer uid")
+            return
+        }
+        repo.sendBloodhoundUiCommand(DataRepository.BloodhoundUiCommand.OpenChatRoom(issuerUid))
     }
 
     private fun calculateCompassAngle(azimuthTrueDeg: Double, item: BloodhoundItem) {
