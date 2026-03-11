@@ -80,6 +80,8 @@ class ActivityRecognitionService : Service() {
 
     private var cumulativeSteps:     Long?   = null
     private var cumulativeCalories:  Double? = null
+    private var totalCalories:       Double? = null
+    private var calories:            Double? = null
     private var cumulativeFloors:    Double? = null
     private var cumulativeElevation: Double? = null
 
@@ -131,6 +133,10 @@ class ActivityRecognitionService : Service() {
                         add(DataType.STEPS_DAILY)
                     if (DataType.CALORIES_DAILY in caps.supportedDataTypesPassiveMonitoring)
                         add(DataType.CALORIES_DAILY)
+                    if (DataType.CALORIES_TOTAL in caps.supportedDataTypesPassiveMonitoring)
+                        add(DataType.CALORIES_TOTAL)
+                    if (DataType.CALORIES in caps.supportedDataTypesPassiveMonitoring)
+                        add(DataType.CALORIES)
                     if (DataType.FLOORS_DAILY  in caps.supportedDataTypesPassiveMonitoring)
                         add(DataType.FLOORS_DAILY)
                     if (DataType.ELEVATION_GAIN_DAILY in caps.supportedDataTypesPassiveMonitoring)
@@ -244,9 +250,12 @@ class ActivityRecognitionService : Service() {
             // Each call may contain 0-many data points for each requested type
             dataPoints.getData(DataType.STEPS_DAILY).firstOrNull()?.value?.toLong()?.let { cumulativeSteps = it }
             dataPoints.getData(DataType.CALORIES_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeCalories = it }
+            dataPoints.getData(DataType.CALORIES_TOTAL)?.total?.let { totalCalories = it }
+            dataPoints.getData(DataType.CALORIES).firstOrNull()?.let { calories = it.value }
+            Log.d(TAG, "CALORIES_DAILY $cumulativeCalories; CALORIES_TOTAL: $totalCalories; CALORIES: $calories")
             dataPoints.getData(DataType.FLOORS_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeFloors = it }
             dataPoints.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
-
+            
             // DEBUG LOG: shows the cached snapshot
             val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
             //Log.i(TAG, logStr)
