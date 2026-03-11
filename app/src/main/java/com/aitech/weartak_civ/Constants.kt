@@ -36,6 +36,7 @@ const val DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT: Boolean = false
 const val DEFAULT_ENABLE_DYNAMIC_REPORTING: Boolean = true
 const val DEFAULT_ENABLE_SMS_ALERTS: Boolean = false
 const val DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS: Boolean = false
+const val DEFAULT_ENABLE_USER_WARNING: Boolean = true
 const val DEFAULT_RESTING_HR : Int = 60
 const val DEFAULT_BIRTH_YEAR : Int = 1998
 const val DEFAULT_HEIGHT_FEET : Int = 6

@@ -30,6 +30,14 @@
       "units": "bool"
     },
     {
+      "type": "derived",
+      "id": "features.device.off_body",
+      "expr": {
+        "key": "device.off_body"
+      },
+      "units": "bool"
+    },
+    {
       "type": "slope_multi",
       "id": "features.skin_temp.slope_c_per_s_20s",
       "source": "skin_temp",
@@ -871,6 +879,7 @@
               "STILL"
             ]
           },
+          {"eq_key": ["offbody.on_wrist", true]},
           {
             "gte_keys": [
               "features.heart_rate",
@@ -1056,13 +1065,14 @@
               "features.heart_rate",
               40.0
             ]
-          }
+          },
+          {"eq_key": ["offbody.on_wrist", true]}
         ]
       },
       "sustained_for_sec": 600,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "warn",
         "severity": "EMERGENCY",
         "message": "LOW HR \u2014 below 40 bpm",
         "tags": [
@@ -1371,10 +1381,10 @@
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
       "action": {
-        "type": "warn",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
-        "isTak": true,
+        "isTak": false,
         "monitor": [
           {
             "feature": "features.hrr_percent",

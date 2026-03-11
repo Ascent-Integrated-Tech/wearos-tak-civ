@@ -11,6 +11,7 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.UserWarnActivity
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 
 /**
@@ -66,26 +67,29 @@ class WarnActionHandler(
         val uid = rawUid
         val category = ctx.action.category ?: "CAT_HEALTH_GENERIC"
 
-        dataRepository.addPhysioAndAutoGenAlertRequest(
+        /*dataRepository.addPhysioAndAutoGenAlertRequest(
             uid = uid,
             category = category,
             description = expandedMessage.ifEmpty { ctx.ruleId },
             priority = priority,
             sendSms = ctx.action.sendSms,
             timeMillis = System.currentTimeMillis()
-        )
+        )*/
 
-        // Show UserWarnActivity so user can Acknowledge or Cancel
-        val appContext = WearTakApplication.AppCtx.app.applicationContext
-        Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 2, timeBtwnVibesMs = 120L)
-        val intent = Intent(appContext, UserWarnActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(UserWarnActivity.EXTRA_UID, uid)
-            putExtra(UserWarnActivity.EXTRA_CATEGORY, category)
-            putExtra(UserWarnActivity.EXTRA_DESCRIPTION, expandedMessage.ifEmpty { ctx.ruleId })
-            putExtra(UserWarnActivity.EXTRA_SOURCE, UserWarnActivity.SOURCE_PHYSIO)
+        // Show UserWarnActivity only if user warning is enabled
+        val enableUserWarning = dataRepository.getEnableUserWarning.first()
+        if (enableUserWarning) {
+            val appContext = WearTakApplication.AppCtx.app.applicationContext
+            Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 5, timeBtwnVibesMs = 120L)
+            val intent = Intent(appContext, UserWarnActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(UserWarnActivity.EXTRA_UID, uid)
+                putExtra(UserWarnActivity.EXTRA_CATEGORY, category)
+                putExtra(UserWarnActivity.EXTRA_DESCRIPTION, expandedMessage.ifEmpty { ctx.ruleId })
+                putExtra(UserWarnActivity.EXTRA_SOURCE, UserWarnActivity.SOURCE_PHYSIO)
+            }
+            appContext.startActivity(intent)
         }
-        appContext.startActivity(intent)
     }
 
     private fun sevToPriority(sev: Severity): Int = when (sev) {
