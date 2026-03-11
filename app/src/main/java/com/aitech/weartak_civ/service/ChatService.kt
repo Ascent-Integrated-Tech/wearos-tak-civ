@@ -61,31 +61,63 @@ class ChatService : Service() {
         dataRepository = MainActivity.dataRepository
 
         startSendChatReplyCollector()
+        startAutomatedChatCollector()
     }
 
     private fun startSendChatReplyCollector() {
         serviceScope.launch {
             dataRepository.chatRequestFromUI.collect { req ->
                 Log.i(TAG, "Received chat request to be sent: $req")
-                val uid = req.dstUid
-                val title = req.dstChatroom
-                val message = req.message
-                val timeMillis = req.timeMillis
-                val existingChatRoom = chatRoomMap[uid]
-                if (null != existingChatRoom) {
-                    if (title.isNotEmpty() && message.isNotEmpty()) {
-                        val mergedMessages = existingChatRoom.messageList + Utils.ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
-                        val mergedRoom = existingChatRoom.copy(messageList = mergedMessages, newMessagesPresent = false, timeLastOpened = timeMillis, timeLastClosed = timeMillis)
-                        chatRoomMap[uid] = mergedRoom
-                        val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
-                        publishInboxToRepo()
-                        logChatRooms(sortedInbox)
-                        dataRepository.sendChatMessage(uid, title, message, timeMillis)
-                    }
-                }
-                // We will never come to else case as we are sending from an already received chat room (with proper uid and title)
+                handleOutgoingChatRequest(req, seedRoomIfMissing = false)
             }
         }
+    }
+
+    private fun startAutomatedChatCollector() {
+        serviceScope.launch {
+            dataRepository.automatedChatRequest.collect { req ->
+                Log.i(TAG, "Received automated chat request to be sent: $req")
+                handleOutgoingChatRequest(req, seedRoomIfMissing = true)
+            }
+        }
+    }
+
+    private suspend fun handleOutgoingChatRequest(
+        req: DataRepository.SendChatRequest,
+        seedRoomIfMissing: Boolean
+    ) {
+        val uid = req.dstUid
+        val title = req.dstChatroom
+        val message = req.message
+        val timeMillis = req.timeMillis
+        if (uid.isBlank() || title.isBlank() || message.isBlank()) return
+
+        val existingChatRoom = chatRoomMap[uid]
+        val room = when {
+            existingChatRoom != null -> existingChatRoom
+            seedRoomIfMissing -> Utils.ChatRoom(
+                uid = uid,
+                title = title,
+                messageList = emptyList(),
+                newMessagesPresent = false,
+                timeLastOpened = timeMillis,
+                timeLastClosed = timeMillis
+            )
+            else -> null
+        } ?: return
+
+        val mergedMessages = room.messageList + Utils.ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
+        val mergedRoom = room.copy(
+            title = title,
+            messageList = mergedMessages,
+            newMessagesPresent = false,
+            timeLastClosed = timeMillis
+        )
+        chatRoomMap[uid] = mergedRoom
+        val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+        publishInboxToRepo()
+        logChatRooms(sortedInbox)
+        dataRepository.sendChatMessage(uid, title, message, timeMillis)
     }
 
     override fun onDestroy() {

@@ -84,8 +84,11 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import kotlinx.coroutines.flow.collectLatest
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -163,6 +166,23 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
     val bloodhoundEnabledLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
 
+    LaunchedEffect(Unit) {
+        dataRepository.bloodhoundUiCommands.collectLatest { command ->
+            when (command) {
+                is DataRepository.BloodhoundUiCommand.OpenChatRoom -> {
+                    val intent = Intent(context, ChatActivity::class.java).apply {
+                        putExtra(EXTRA_OPEN_ROOM_UID, command.roomUid)
+                    }
+                    context.startActivity(intent)
+                    exitActivity()
+                }
+                DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen -> {
+                    exitActivity()
+                }
+            }
+        }
+    }
+
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
         val currentDestination = navController.currentBackStackEntry?.destination?.route
@@ -210,7 +230,6 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
             arguments = listOf(navArgument("index") { type = NavType.IntType })
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
-            val uidFromIndex = uiList[index].uid
             BloodhoundScreenDetailed(navController, index, uiList, context,{ exitActivity() })
         }
 
@@ -451,8 +470,6 @@ fun BloodhoundScreenDetailed(
                         bhRepo.requestInPosition(item.uid)
 //                        activeBhoundItem.value = null
                         requestBloodhoundComplicationUpdate(context)
-                        navController.popBackStack()
-                        exitActivity()
                     },
                     modifier = Modifier.padding(top = 10.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -502,8 +519,6 @@ fun BloodhoundScreenDetailed(
                         requestBloodhoundComplicationUpdate(context)
 //                        Log.d(TAG, bloodhoundDefaultList.toString())
                         Log.i(TAG, "Requesting Ack and Activation of bloodhound")
-                        navController.popBackStack()
-                        exitActivity()
                     },
                     modifier = Modifier.padding(top = 10.dp),
                     colors = ButtonDefaults.buttonColors(

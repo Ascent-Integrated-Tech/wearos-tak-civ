@@ -95,6 +95,12 @@ class BloodhoundRepository(private val context: Context) {
         }
     }
 
+    enum class ActivationResult {
+        FIRST_ACK,
+        SWITCH_ONLY,
+        NO_CHANGE
+    }
+
     /*
      *  Backend uses this to map devices back
      */
@@ -153,7 +159,8 @@ class BloodhoundRepository(private val context: Context) {
             timeReceived = eventMs,
             distance = distKmRounded,
             orientation = needle.round(1).toFloat(),
-            bloodhounding = isActive
+            bloodhounding = isActive,
+            acknowledged = this.state.acknowledged
         )
     }
 
@@ -222,22 +229,40 @@ class BloodhoundRepository(private val context: Context) {
         if (isUidValid(uid)) _requestActivateBloodhound.tryEmit(uid)
     }
 
-    fun setActive(uid: String, active: Boolean) {
-        if (!isUidValid(uid)) return
+    fun activate(uid: String): Pair<ActivationResult, BloodhoundItem?> {
+        val currentItem = _bloodhoundMap.value[uid] ?: return ActivationResult.NO_CHANGE to null
+        val currentActiveUid = _activeUid.value
+        val result = when {
+            currentItem.state.acknowledged -> ActivationResult.SWITCH_ONLY
+            else -> ActivationResult.FIRST_ACK
+        }
+
         _bloodhoundMap.update { prev ->
-            prev.mapValues { (k, v) ->
-                val makeActive = active && (k == uid)
-                v.copy(state = v.state.copy(active = makeActive))
+            prev.mapValues { (key, value) ->
+                if (key == uid) {
+                    value.copy(state = value.state.copy(active = true, acknowledged = true))
+                } else {
+                    value.copy(state = value.state.copy(active = false))
+                }
             }
         }
-        _activeUid.value = if (active) uid else null
+        _activeUid.value = uid
+
+        val updatedItem = _bloodhoundMap.value[uid] ?: currentItem
+        val normalizedResult = if (currentActiveUid == uid && currentItem.state.acknowledged) {
+            ActivationResult.NO_CHANGE
+        } else {
+            result
+        }
+        return normalizedResult to updatedItem
     }
 
-    fun setInPos(uid: String) {
-        // (emit any side-effects first, if needed)
+    fun setInPos(uid: String): BloodhoundItem? {
+        val item = _bloodhoundMap.value[uid] ?: return null
         val wasActive = (_activeUid.value == uid)
         _bloodhoundMap.update { prev -> prev - uid }
         if (wasActive) _activeUid.value = null
+        return item
     }
 
     fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)

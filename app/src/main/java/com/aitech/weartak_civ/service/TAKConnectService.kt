@@ -1412,6 +1412,10 @@ class TAKConnectService: Service() {
                                 val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
                                 if (markerCotEvent != null) {
+                                    if (dataRepository.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
+                                        Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
+                                        continue
+                                    }
                                     Log.i(TAG, "Received a marker message!: \n $markerCotEvent")
                                     val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                                     val bhEvent = BloodhoundRepository.BloodhoundEvent(

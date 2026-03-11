@@ -726,7 +726,7 @@ class SitxTakService : Service() {
     // WebSocket helpers
     // -------------------------
 
-    // TODO Sitx: Merge with TakConnectService and check WEAR-376 bloodhound chat reply
+    // TODO Sitx: Merge with startCotReader in TakConnectService
     private fun handleTextMessage(flowTag: String, rawXml: String) {
         if (CotUtils.isChatMessage(rawXml)
             && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
@@ -744,6 +744,10 @@ class SitxTakService : Service() {
             val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
             if (markerCotEvent != null) {
+                if (dataRepo.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
+                    Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
+                    return
+                }
                 Log.i(TAG, "Received a marker message!: \n $markerCotEvent")
                 val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                 val bhEvent = BloodhoundRepository.BloodhoundEvent(
