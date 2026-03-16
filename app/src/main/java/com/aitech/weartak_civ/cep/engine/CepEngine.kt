@@ -26,13 +26,17 @@ class CepEngine(
     private val windows = WindowStore(config.tickHz, RingConfig.default())
 
     @Volatile
-    private var sustainOverrides: Map<String, Long> = emptyMap()
+    private var sustainOverridesMain: Map<String, Long> = emptyMap()
+
+    @Volatile
+    private var sustainOverridesWarn: Map<String, Long> = emptyMap()
 
     private val ruleEngine = RuleEngine(
         scope,
         config,
         featureStore,
-        sustainOverrideProvider = { sustainOverrides }
+        sustainOverrideMainProvider = { sustainOverridesMain },
+        sustainOverrideWarnProvider = { sustainOverridesWarn }
     )
 
     @Volatile
@@ -84,28 +88,6 @@ class CepEngine(
         }
     }
 
-    /*fun updateHrProfile(newYearOfBirth: Int, hrRest: Double = 60.0) {
-        currentYearOfBirth = newYearOfBirth
-
-        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-        val age = (currentYear - newYearOfBirth).coerceIn(16, 80)
-
-        val hrMax = ZoneHelper.tanakaHrMax(age)
-
-        featureStore.put("profile.hr_rest_bpm", hrRest)
-        featureStore.put("profile.hr_max_bpm", hrMax)
-
-        // HR thresholds (loaded once alongside profile)
-        featureStore.put("thresholds.hr.high_bpm", hrHigh)
-        featureStore.put("thresholds.hr.low_bpm", hrLow)
-
-        Log.d(
-            "CEP",
-            "Updated HR profile: YOB=$newYearOfBirth age=$age hrRest=$hrRest hrMax=$hrMax " +
-                    "hrHigh=$hrHigh hrLow=$hrLow"
-        )
-    }*/
-
     fun updateHrProfile() {
         //currentYearOfBirth = newYearOfBirth
 
@@ -123,7 +105,7 @@ class CepEngine(
                 val hrRest = dataRepository.getRestingHeartRate.first() ?: 60.0
                 val hrHigh = dataRepository.getHrHighAlertBpmThreshold.first() ?: 140
                 val hrRestingHigh = dataRepository.getRestingHrHighAlertBpmThreshold.first() ?: 120
-                val hrLow  = 40.0 //dataRepository.getRestingHeartRate
+                val hrLow  = dataRepository.getRestingHrLowAlertBpmThreshold.first() ?: 40
 
                 // Core HR profile
                 featureStore.put("profile.hr_rest_bpm", hrRest)
@@ -172,19 +154,22 @@ class CepEngine(
         Log.d("CEP", "updateSustainOverrides: loading threshold length values from DataRepository")
         try {
             val loaded = dataRepository.getCepSustainOverridesOnce()
-            Log.d("CEP", "updateSustainOverrides: raw from storage (${loaded.size} entries) ${loaded.entries.joinToString { "${it.key}=${it.value}s" }}")
             val overrideableIds: Set<String> = config.rules.filter { it.allowSustainOverride }.map { it.id }.toSet()
-            sustainOverrides = loaded
+            sustainOverridesMain = loaded.main
                 .filterKeys { it in overrideableIds }
                 .mapValues { (_: String, v: Long) -> v.coerceAtLeast(0L) }
-            if (sustainOverrides.isNotEmpty()) {
-                Log.d("CEP", "updateSustainOverrides: applied threshold length (sustain_sec) per rule: ${sustainOverrides.entries.joinToString { "${it.key}=${it.value}s" }}")
+            sustainOverridesWarn = loaded.warn
+                .filterKeys { it in overrideableIds }
+                .mapValues { (_: String, v: Long) -> v.coerceAtLeast(0L) }
+            if (sustainOverridesMain.isNotEmpty() || sustainOverridesWarn.isNotEmpty()) {
+                Log.d("CEP", "updateSustainOverrides: main=${sustainOverridesMain.entries.joinToString { "${it.key}=${it.value}s" }} warn=${sustainOverridesWarn.entries.joinToString { "${it.key}=${it.value}s" }}")
             } else if (overrideableIds.isNotEmpty()) {
                 Log.d("CEP", "updateSustainOverrides: no overrides in storage; overrideable rule ids=$overrideableIds")
             }
         } catch (t: Throwable) {
             Log.e("CEP", "Failed to load CEP sustain overrides from DataRepository", t)
-            sustainOverrides = emptyMap()
+            sustainOverridesMain = emptyMap()
+            sustainOverridesWarn = emptyMap()
         }
     }
 
@@ -203,53 +188,6 @@ class CepEngine(
             }
         }
     }
-
-    /*private suspend fun checkAndClearAlerts1() {
-        val now = System.currentTimeMillis()
-
-        for (alert in AlertRegistry.allActive()) {
-            val conditions = alert.exitConditions
-            if (conditions.isEmpty()) continue
-
-            val satisfiedFlags = conditions.map { cond ->
-                val value = featureStore.latestAsDouble(cond.feature) ?: return@map false
-
-                // Resolve exit thresholds (constant or feature ref)
-                val belowThreshold: Double? =
-                    cond.exitBelow ?: cond.exitBelowKey?.let { key -> featureStore.latestAsDouble(key) }
-
-                val aboveThreshold: Double? =
-                    cond.exitAbove ?: cond.exitAboveKey?.let { key -> featureStore.latestAsDouble(key) }
-
-                val belowOk = cond.exitBelow?.let { value < it - cond.hysteresis } ?: false
-                val aboveOk = cond.exitAbove?.let { value > it + cond.hysteresis } ?: false
-
-                belowOk || aboveOk
-            }
-
-            val allOrAnySatisfied = when (alert.exitLogic) {
-                "OR" -> satisfiedFlags.any { it }
-                else -> satisfiedFlags.all { it }  // default AND
-            }
-
-            if (allOrAnySatisfied) {
-                val since = alert.exitSatisfiedSinceMs
-                if (since == null) {
-                    alert.exitSatisfiedSinceMs = now
-                } else {
-                    val elapsedSec = (now - since) / 1000L
-                    if (elapsedSec >= alert.exitSustainSec) {
-                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
-
-                        AlertRegistry.clear(alert.ruleId)
-                    }
-                }
-            } else {
-                // back in danger zone → reset timer
-                alert.exitSatisfiedSinceMs = null
-            }
-        }
-    }*/
 
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {

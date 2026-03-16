@@ -159,12 +159,17 @@ object RuleCompiler {
                 if (action.has("exit_logic") && !action.isNull("exit_logic"))
                     action.getString("exit_logic") else null
 
+            val sustainedForSec = o.optLong("sustained_for_sec", 0)
+            val rawWarn = if (o.has("sustained_for_sec_warn") && !o.isNull("sustained_for_sec_warn"))
+                o.optLong("sustained_for_sec_warn", -1) else -1L
+            val sustainedForSecWarn = if (rawWarn in 1 until sustainedForSec) rawWarn else null
 
             out += RuleDef(
                 id = o.getString("id"),
                 description = o.optString("description", null),
                 condition = o.getJSONObject("when"),
-                sustainedForSec = o.optLong("sustained_for_sec", 0),
+                sustainedForSec = sustainedForSec,
+                sustainedForSecWarn = sustainedForSecWarn,
                 holdDownSec = o.optLong("hold_down_sec", 0),
                 action = RuleAction(
                     type = action.getString("type"),

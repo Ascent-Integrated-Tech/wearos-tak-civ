@@ -2496,29 +2496,61 @@ class DataRepository(private val context: Context) {
     }
 
 
-    private fun parseCepSustainOverrides(json: String?): Map<String, Long> {
-        if (json.isNullOrBlank()) return emptyMap()
+    /**
+     * Dual sustain overrides: main (sustained_for_sec) and warn (sustained_for_sec_warn) per rule id.
+     * Legacy stored JSON that is a flat Map<String, Long> is treated as main-only with empty warn.
+     */
+    data class CepSustainOverrides(
+        val main: Map<String, Long>,
+        val warn: Map<String, Long>
+    )
+
+    private val cepSustainOverridesType = object : TypeToken<Map<String, Long>>() {}.type
+
+    private fun parseCepSustainOverrides(json: String?): CepSustainOverrides {
+        if (json.isNullOrBlank()) return CepSustainOverrides(emptyMap(), emptyMap())
         return try {
-            val type = object : TypeToken<Map<String, Long>>() {}.type
-            val raw = gson.fromJson<Map<String, Long>>(json, type) ?: return emptyMap()
-            raw.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            val el = gson.fromJson(json, com.google.gson.JsonElement::class.java) ?: return CepSustainOverrides(emptyMap(), emptyMap())
+            if (el.isJsonObject && el.asJsonObject.has("main")) {
+                val obj = el.asJsonObject
+                val main = gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("main"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap()
+                val warn = if (obj.has("warn")) gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("warn"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap() else emptyMap()
+                CepSustainOverrides(main, warn)
+            } else {
+                val flat = gson.fromJson<Map<String, Long>>(json, cepSustainOverridesType) ?: emptyMap()
+                CepSustainOverrides(flat.mapValues { (_, v) -> v.coerceAtLeast(0L) }, emptyMap())
+            }
         } catch (e: Exception) {
             Log.w("DataRepository", "Invalid CEP sustain overrides JSON", e)
-            emptyMap()
+            CepSustainOverrides(emptyMap(), emptyMap())
         }
     }
 
-    val getCepSustainOverrides: Flow<Map<String, Long>> = context.dataStore.data.map { prefs ->
+    val getCepSustainOverrides: Flow<CepSustainOverrides> = context.dataStore.data.map { prefs ->
         parseCepSustainOverrides(prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON])
     }
 
     /** One-shot read of current sustain overrides; use when a single snapshot is needed (e.g. CEP engine load). */
-    suspend fun getCepSustainOverridesOnce(): Map<String, Long> = getCepSustainOverrides.first()
+    suspend fun getCepSustainOverridesOnce(): CepSustainOverrides = getCepSustainOverrides.first()
 
+    /** Legacy: store a single map as main-only overrides (writes flat JSON). */
     suspend fun storeCepSustainOverrides(map: Map<String, Long>) {
         context.dataStore.edit { prefs ->
             val sanitized = map.mapValues { (_, v) -> v.coerceAtLeast(0L) }
             prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(sanitized)
+        }
+    }
+
+    /** Store separate main and warn sustain overrides. Writes warn-aware JSON for dual override support. */
+    suspend fun storeCepSustainOverridesDual(main: Map<String, Long>, warn: Map<String, Long>) {
+        context.dataStore.edit { prefs ->
+            val mainSanitized = main.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            val warnSanitized = warn.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+            val root = com.google.gson.JsonObject().apply {
+                add("main", gson.toJsonTree(mainSanitized))
+                add("warn", gson.toJsonTree(warnSanitized))
+            }
+            prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(root)
         }
     }
 

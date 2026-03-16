@@ -52,16 +52,18 @@ class WarnActionHandler(
         val exitLogic = (ctx.action.exitLogic ?: "AND").uppercase()
         val sustainSec = ctx.action.exitSustainSec ?: 0L
 
-        val isFirstActivation = AlertRegistry.tryActivate(
-            ruleId = ctx.ruleId,
-            uid = rawUid,
-            exitConditions = exitConditions,
-            exitLogic = exitLogic,
-            exitSustainSec = sustainSec
-        )
-        if (!isFirstActivation) {
-            Log.d("CEP", "[AlertRegistry] Suppressing duplicate warn for rule=${ctx.ruleId}")
-            return
+        if (!ctx.isPreWarn) {
+            val isFirstActivation = AlertRegistry.tryActivate(
+                ruleId = ctx.ruleId,
+                uid = rawUid,
+                exitConditions = exitConditions,
+                exitLogic = exitLogic,
+                exitSustainSec = sustainSec
+            )
+            if (!isFirstActivation) {
+                Log.d("CEP", "[AlertRegistry] Suppressing duplicate warn for rule=${ctx.ruleId}")
+                return
+            }
         }
 
         val uid = rawUid

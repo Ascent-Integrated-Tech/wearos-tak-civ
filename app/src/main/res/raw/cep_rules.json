@@ -889,9 +889,10 @@
         ]
       },
       "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "warn_log",
         "severity": "ALERT",
         "message": "RESTING HIGH HR ALERT \u2014 above {features.hr.high_threshold_bpm} bpm",
         "tags": [
@@ -1061,6 +1062,65 @@
             ]
           },
           {
+            "lte_keys": [
+              "features.heart_rate",
+              "thresholds.hr.low_bpm"
+            ]
+          },
+          {
+            "eq_key": [
+              "offbody.on_wrist",
+              true
+            ]
+          }
+        ]
+      },
+      "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "warn_log",
+        "severity": "EMERGENCY",
+        "message": "LOW HR — below {thresholds.hr.low_bpm} bpm",
+        "tags": [
+          "hr",
+          "rest",
+          "brady"
+        ],
+        "category": "CAT_HR_REST_BRADY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "monitor": [
+          {
+            "feature": "features.heart_rate",
+            "exit_below": null,
+            "exit_above": "thresholds.hr.low_bpm",
+            "hysteresis": 2.0
+          }
+        ],
+        "exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_rest_brady_10min_emergency_static",
+      "when": {
+        "all": [
+          {
+            "eq_key": [
+              "activity.state",
+              "STILL"
+            ]
+          },
+          {
+            "eq_key": [
+              "sleep.is_sleeping",
+              false
+            ]
+          },
+          {
             "lt_key": [
               "features.heart_rate",
               40.0
@@ -1070,9 +1130,10 @@
         ]
       },
       "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
-        "type": "warn",
+        "type": "warn_log",
         "severity": "EMERGENCY",
         "message": "LOW HR \u2014 below 40 bpm",
         "tags": [
@@ -1314,62 +1375,6 @@
       }
     },
     {
-      "id": "hr_zone4_exercise_10min_emergency_old",
-      "when": {
-        "all": [
-          {
-            "not": {
-              "eq_key": [
-                "activity.state",
-                "STILL"
-              ]
-            }
-          },
-          {
-            "eq_key": [
-              "sleep.is_sleeping",
-              false
-            ]
-          },
-          {
-            "between": [
-              "features.hrr_percent",
-              80.0,
-              90.0
-            ]
-          }
-        ]
-      },
-      "sustained_for_sec": 180,
-      "allow_sustain_override": true,
-      "action": {
-        "type": "none",
-        "severity": "EMERGENCY",
-        "message": "Exertion Warning: Above 80%",
-        "tags": [
-          "hr",
-          "zone4",
-          "exercise"
-        ],
-        "category": "CAT_HR_EMERGENCY",
-        "isTak": true,
-        "isLocal": true,
-        "priority_from": "severity",
-        "sendSms": false,
-        "timeout": 60,
-        "monitor": [
-          {
-            "feature": "features.hrr_percent",
-            "exit_below": 80.0,
-            "hysteresis": 2.0
-          }
-        ],
-        "exit_below_hrr_percent": 80.0,
-        "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
-      }
-    },
-    {
       "id": "hr_zone4_exercise_10min_emergency",
       "when": {
         "all": [
@@ -1381,7 +1386,7 @@
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "warn",
         "severity": "EMERGENCY",
         "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
         "isTak": false,
@@ -1446,61 +1451,6 @@
           }
         ],
         "exit_below_hrr_percent": 80.0,
-        "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
-      }
-    },
-    {
-      "id": "hr_zone5_exercise_5min_emergency_old",
-      "when": {
-        "all": [
-          {
-            "not": {
-              "eq_key": [
-                "activity.state",
-                "STILL"
-              ]
-            }
-          },
-          {
-            "eq_key": [
-              "sleep.is_sleeping",
-              false
-            ]
-          },
-          {
-            "gte_key": [
-              "features.hrr_percent",
-              90.0
-            ]
-          }
-        ]
-      },
-      "sustained_for_sec": 180,
-      "allow_sustain_override": true,
-      "action": {
-        "type": "none",
-        "severity": "EMERGENCY",
-        "message": "Exertion Alert: Above 90%",
-        "tags": [
-          "hr",
-          "zone5",
-          "exercise"
-        ],
-        "category": "CAT_HR_EMERGENCY",
-        "isTak": true,
-        "isLocal": true,
-        "priority_from": "severity",
-        "sendSms": false,
-        "timeout": 60,
-        "monitor": [
-          {
-            "feature": "features.hrr_percent",
-            "exit_below": 90.0,
-            "hysteresis": 2.0
-          }
-        ],
-        "exit_below_hrr_percent": 90.0,
         "exit_hysteresis_hrr_percent": 2.0,
         "exit_sustain_sec": 10
       }
