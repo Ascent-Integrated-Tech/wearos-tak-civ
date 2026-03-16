@@ -66,6 +66,9 @@ class BloodhoundRepository(private val context: Context) {
     ) {
         val server = bhEvent.server
         val uid = bhEvent.mapItem.uid
+        val originLabel: String?
+            get() = bhEvent.issuer?.parentCallsign
+                ?: bhEvent.mapItem.creator?.callsign
 
         data class Target(
             val mapItem: Utils.CotUtils.MarkerMapItem
@@ -155,7 +158,7 @@ class BloodhoundRepository(private val context: Context) {
         return Utils.BloodhoundItem(
             target = this.target.name ?: "unknown",
             uid = this.uid,
-            callsign = this.bhEvent.issuer?.parentCallsign ?: "unknown",
+            callsign = this.originLabel ?: "Unknown sender",
             timeReceived = eventMs,
             distance = distKmRounded,
             orientation = needle.round(1).toFloat(),

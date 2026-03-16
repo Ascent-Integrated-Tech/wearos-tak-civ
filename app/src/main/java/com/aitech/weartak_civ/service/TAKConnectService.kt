@@ -1397,7 +1397,6 @@ class TAKConnectService: Service() {
                         if (endIdx >= 0) {
                             val rawXml = bufStr.substring(0, endIdx + "</event>".length)
                             buffer.delete(0, endIdx + "</event>".length)
-
                             //if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
                             //Log.d(TAG, "Received xml=$rawXml")
                             if (CotUtils.isChatMessage(rawXml)
@@ -1416,7 +1415,15 @@ class TAKConnectService: Service() {
                                         Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
                                         continue
                                     }
-                                    Log.i(TAG, "Received a marker message!: \n $markerCotEvent")
+                                    val shouldTrackMarker = dataRepository.applyReceivedMarkerEvent(
+                                        event = markerCotEvent,
+                                        source = takServerDetail.address
+                                    )
+                                    if (!shouldTrackMarker) {
+                                        Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
+                                        continue
+                                    }
+                                    Log.i(TAG, "Received a marker message:\n$markerCotEvent")
                                     val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                                     val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                         mapItem = mapItem,

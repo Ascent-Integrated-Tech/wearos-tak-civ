@@ -145,17 +145,16 @@ class MapActivity : ComponentActivity() {
     }
 }
 @Composable
-fun rememberMarkerFeatures(markers: List<DataRepository.DroppedMarker>) =
+fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
     remember(markers) {
         FeatureCollection(
             features = markers.map { m ->
                 Feature(
-                    geometry = Point(coordinates = Position(m.location?.lon ?: 0.0, m.location?.lat ?: 0.0)),
+                    geometry = Point(coordinates = Position(m.lon, m.lat)),
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
                             "title" to JsonPrimitive(m.title),
-                            "iconKey" to JsonPrimitive(m.markerType),
                             "markerType" to JsonPrimitive(m.markerType)
                         )
                     )
@@ -163,9 +162,18 @@ fun rememberMarkerFeatures(markers: List<DataRepository.DroppedMarker>) =
             }
         )
     }
+
+data class MapMarkerItem(
+    val uid: String,
+    val markerType: String,
+    val title: String,
+    val lat: Double,
+    val lon: Double
+)
+
 @Composable
 fun MarkersOnMap(
-    markers: List<DataRepository.DroppedMarker>,
+    markers: List<MapMarkerItem>,
     onMarkerClick: (id: String, title: String) -> Unit,
     camera: CameraState
 ) {
@@ -228,6 +236,37 @@ fun MapApp(exitActivity: () -> Unit) {
     val droppedMarkerListSetting by dataRepository
         .droppedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val receivedMarkerListSetting by dataRepository
+        .receivedMarkerList
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val mapMarkers = remember(droppedMarkerListSetting, receivedMarkerListSetting) {
+        buildList {
+            addAll(
+                droppedMarkerListSetting.mapNotNull { marker ->
+                    val location = marker.location ?: return@mapNotNull null
+                    MapMarkerItem(
+                        uid = marker.uid,
+                        markerType = marker.markerType,
+                        title = marker.title,
+                        lat = location.lat,
+                        lon = location.lon
+                    )
+                }
+            )
+            addAll(
+                receivedMarkerListSetting.mapNotNull { marker ->
+                    val location = marker.location ?: return@mapNotNull null
+                    MapMarkerItem(
+                        uid = marker.uid,
+                        markerType = marker.markerType,
+                        title = marker.title,
+                        lat = location.lat,
+                        lon = location.lon
+                    )
+                }
+            )
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         MaplibreMap(
@@ -267,7 +306,7 @@ fun MapApp(exitActivity: () -> Unit) {
                 )
             }
             MarkersOnMap(
-                markers = droppedMarkerListSetting,
+                markers = mapMarkers,
                 onMarkerClick = { id, title -> /* show dialog/toast */ },
                 cameraState
             )
