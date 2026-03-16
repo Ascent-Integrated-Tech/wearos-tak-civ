@@ -540,31 +540,6 @@ class CotDispatchService : Service() {
 
     }
 
-    /*private fun enqueueUserWarnOnly(uid: String, category: String, description: String) {
-        Log.i(TAG, "===> enqueueUserWarnOnly uid=$uid category=$category")
-        showUserWarnActivity(
-            uid = uid,
-            category = category,
-            description = description,
-            source = UserWarnActivity.SOURCE_PHYSIO
-        )
-    }
-
-    /**
-     * When an alert could not be sent to TAK, warn the user: haptic + UserWarnActivity (Acknowledge / Cancel).
-     */
-    private fun showUserWarnActivity(uid: String, category: String, description: String, source: String) {
-        Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 5, timeBtwnVibesMs = 120L)
-        val intent = Intent(context, UserWarnActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(UserWarnActivity.EXTRA_UID, uid)
-            putExtra(UserWarnActivity.EXTRA_CATEGORY, category)
-            putExtra(UserWarnActivity.EXTRA_DESCRIPTION, description)
-            putExtra(UserWarnActivity.EXTRA_SOURCE, source)
-        }
-        context.startActivity(intent)
-    }*/
-
     private fun startClearPhysioAndAutoGenAlertCollector() {
         serviceScope.launch {
             dataRepository.clearPhysioAndAutoGenAlert.collect { req ->

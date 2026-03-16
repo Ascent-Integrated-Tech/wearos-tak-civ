@@ -61,21 +61,6 @@ class WarnLogActionHandler(
         val uid      = tak.rawUid
         val category = ctx.action.category ?: "CAT_HEALTH_GENERIC"
 
-        //val enableUserWarning = dataRepository.getEnableUserWarning.first()
-
-        /*if (enableUserWarning) {
-            val appContext = WearTakApplication.AppCtx.app.applicationContext
-            Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 5, timeBtwnVibesMs = 120L)
-            val intent = Intent(appContext, UserWarnActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                putExtra(UserWarnActivity.EXTRA_UID, uid)
-                putExtra(UserWarnActivity.EXTRA_CATEGORY, category)
-                putExtra(UserWarnActivity.EXTRA_DESCRIPTION, expandedMessage.ifEmpty { ctx.ruleId })
-                putExtra(UserWarnActivity.EXTRA_SOURCE, UserWarnActivity.SOURCE_PHYSIO)
-            }
-            appContext.startActivity(intent)
-        }*/
-
         dataRepository.addPhysioAndAutoGenAlertRequest(
             uid         = uid,
             category    = category,
