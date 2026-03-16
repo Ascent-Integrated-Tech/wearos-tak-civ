@@ -201,7 +201,7 @@ class BloodhoundRepository(private val context: Context) {
                 BloodhoundItem(e)
             } else {
                 // Preserve state; refresh event payload
-                curr.copy(bhEvent = e)
+                curr.copy(bhEvent = e, target = BloodhoundItem.Target(e.mapItem), origin = BloodhoundItem.Origin(e))
             }
             prev + (e.uid to updated)
         }
