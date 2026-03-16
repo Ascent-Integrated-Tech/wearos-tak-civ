@@ -28,9 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -59,11 +57,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -77,41 +73,17 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import com.aitech.weartak_civ.DESC_HIGH_EXERTION_ALERT
-import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
-import com.aitech.weartak_civ.DESC_LOW_HEART_RATE_ALERT
-import com.aitech.weartak_civ.MARKER_FRIENDLY
-import com.aitech.weartak_civ.MARKER_HOSTILE
-import com.aitech.weartak_civ.MARKER_NEUTRAL
-import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.complication.PhysioStatusAndAlertingComplicationService
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.allergyList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodTypeValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsignSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightFeetValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.heightInchesValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeight
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHeartRate
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHrLowAlertBpmThreshold
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.restingHrLowAlertBpmThresholdState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.sexValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.strideLength
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformPantsLength
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.uniformWaistSize
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.userTypeValue
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.weightValue
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.alertListPreview
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -136,7 +108,6 @@ class PhysioAlertsActivity : ComponentActivity() {
         Log.d(TAG, "Physio Oncreate Called")
         dataRepository = DataRepository(applicationContext)
         selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
-
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -147,7 +118,6 @@ class PhysioAlertsActivity : ComponentActivity() {
         }
     }
 }
-
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
