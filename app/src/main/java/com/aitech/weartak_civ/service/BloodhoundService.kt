@@ -173,6 +173,7 @@ class BloodhoundService: Service() {
             bhRepo.requestInPosition.collect { uid ->
                 if (uid.isNotBlank()) {
                     val item = bhRepo.setInPos(uid)
+                    //repo.removeReceivedMarkerByUid(uid)
                     sendBloodhoundReply(item, "In Position at")
                     openIssuerChat(item)
                 }
@@ -182,7 +183,7 @@ class BloodhoundService: Service() {
 
     private suspend fun sendBloodhoundReply(item: BloodhoundItem?, messagePrefix: String) {
         val issuerUid = item?.origin?.issuerUid
-        val chatTitle = item?.bhEvent?.issuer?.parentCallsign
+        val chatTitle = item?.originLabel ?: "Unknown sender"
         val targetTitle = item?.target?.name
         if (issuerUid.isNullOrBlank() || chatTitle.isNullOrBlank() || targetTitle.isNullOrBlank()) {
             Log.w(TAG, "Skipping bloodhound auto-reply due to missing issuer metadata: uid=$issuerUid, title=$chatTitle")
