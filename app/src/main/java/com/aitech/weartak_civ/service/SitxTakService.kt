@@ -748,15 +748,23 @@ class SitxTakService : Service() {
                     Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
                     return
                 }
-                Log.i(TAG, "Received a marker message!: \n $markerCotEvent")
-                val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
-                val bhEvent = BloodhoundRepository.BloodhoundEvent(
-                    mapItem = mapItem,
-                    server = flowTag,
-                    timeIssued = mapItem.link?.productionTime,
-                    timeCompleted = null
-                )
                 serviceScope.launch {
+                    val shouldTrackMarker = dataRepo.applyReceivedMarkerEvent(
+                        event = markerCotEvent,
+                        source = flowTag
+                    )
+                    if (!shouldTrackMarker) {
+                        Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
+                        return@launch
+                    }
+                    Log.i(TAG, "Received a marker message!: \n $markerCotEvent")
+                    val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
+                    val bhEvent = BloodhoundRepository.BloodhoundEvent(
+                        mapItem = mapItem,
+                        server = flowTag,
+                        timeIssued = mapItem.link?.productionTime,
+                        timeCompleted = null
+                    )
                     Log.i(TAG, "updateBloodhoundEvent called=$bhEvent")
                     bhRepo.updateBloodhoundEvent(bhEvent)
                 }

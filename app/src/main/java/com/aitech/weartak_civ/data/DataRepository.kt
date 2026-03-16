@@ -1113,8 +1113,21 @@ class DataRepository(private val context: Context) {
         val location: LocationSnapshot?
     )
 
+    data class ReceivedMarker(
+        val uid: String,
+        val markerType: String,
+        val title: String,
+        val timeReceived: Long,
+        val staleTime: Long,
+        val location: LocationSnapshot?,
+        val source: String
+    )
+
     private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())
     val droppedMarkerList: StateFlow<List<DroppedMarker>> = _droppedMarkerList
+
+    private val _receivedMarkerList = MutableStateFlow<List<ReceivedMarker>>(emptyList())
+    val receivedMarkerList: StateFlow<List<ReceivedMarker>> = _receivedMarkerList
 
     // Backend-only mutators (UI never calls these)
     suspend fun appendDroppedMarker(item: DroppedMarker) {
@@ -1127,6 +1140,57 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeDroppedMarkerList(droppedMarkerList: List<DroppedMarker>) {
         _droppedMarkerList.emit(droppedMarkerList)
+    }
+
+    suspend fun upsertReceivedMarker(item: ReceivedMarker) {
+        _receivedMarkerList.update { list ->
+            val existingIndex = list.indexOfFirst { it.uid == item.uid }
+            if (existingIndex < 0) {
+                list + item
+            } else {
+                list.toMutableList().apply { this[existingIndex] = item }
+            }
+        }
+    }
+
+    suspend fun removeReceivedMarkerByUid(uid: String) {
+        _receivedMarkerList.update { list -> list.filterNot { it.uid == uid } }
+    }
+
+    suspend fun clearReceivedMarkers() {
+        _receivedMarkerList.emit(emptyList())
+    }
+
+    suspend fun applyReceivedMarkerEvent(
+        event: Utils.CotUtils.MarkerCotEvent,
+        source: String
+    ): Boolean {
+        if (event.stale <= System.currentTimeMillis()) {
+            removeReceivedMarkerByUid(event.uid)
+            return false
+        }
+
+        upsertReceivedMarker(
+            ReceivedMarker(
+                uid = event.uid,
+                markerType = event.type,
+                title = event.detail.markerCallsign.orEmpty(),
+                timeReceived = event.time,
+                staleTime = event.stale,
+                location = LocationSnapshot(
+                    timeMillis = event.time,
+                    lat = event.point.lat,
+                    lon = event.point.lon,
+                    hae = event.point.hae,
+                    ce = event.point.ce.toFloat(),
+                    le = event.point.le.toFloat(),
+                    course = null,
+                    speed = null
+                ),
+                source = source
+            )
+        )
+        return true
     }
 
     enum class MarkerType(
