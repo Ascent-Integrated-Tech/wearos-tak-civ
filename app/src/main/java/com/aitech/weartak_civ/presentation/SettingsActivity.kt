@@ -372,7 +372,6 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.String
 
-
 class SettingsActivity : ComponentActivity() {
 
     companion object Constants {
@@ -5663,7 +5662,6 @@ fun SettingsScreen(
                                  Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
                              }
 
-                             //TODO: WEAR-399 Add store data repo values for threshold lengths
                              if (restingHeartRateHighThresholdChanged) {
                                  Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
                                  dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
