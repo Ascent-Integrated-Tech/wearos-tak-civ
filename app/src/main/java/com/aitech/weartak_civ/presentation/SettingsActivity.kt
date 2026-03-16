@@ -4918,15 +4918,6 @@ fun SettingsScreen(
                         settingsChanged = true; exertionAlertThresholdLengthChanged = true
                         exertionAlertThresholdLength = exertionAlertThresholdLengthState.value ?: exertionAlertThresholdLength
                     }
-//                    if (hrHighAlertBpmThreshold != hrHighAlertBpmThresholdState.value) {
-//                        settingsChanged = true; physiologicalAlertsBpmThresholdCheckedChanged = true
-//                        hrHighAlertBpmThreshold = hrHighAlertBpmThresholdState.value ?: hrHighAlertBpmThreshold
-//                    }
-//                    if (hrHighAlertNumSecsThreshold != hrHighAlertNumSecsThresholdSettingsState.value) {
-//                        settingsChanged = true; physiologicalAlertsBpmThresholdTimeCheckedChanged = true
-//                        hrHighAlertNumSecsThreshold = hrHighAlertNumSecsThresholdState.value ?: hrHighAlertNumSecsThreshold
-//                    }
-
                     if (birthYearValue != birthYearState.value) {
                         settingsChanged = true; birthYearChanged = true
                         birthYearValue = birthYearState.value ?: birthYearValue
@@ -5539,10 +5530,6 @@ fun SettingsScreen(
                                  //Updating the hrProfile in the CEP
                                  CepProvider.getOrCreateEngine(context).updateHrProfile()
                              }
-//                             if (restingHeartRateThresholdLengthChanged) {
-//                                 Log.d(TAG, "Storing restingHrAlertBpmThresholdLength $restingHrAlertBpmThresholdLength")
-//                                 dataRepository.storeRestingHrAlertBpmThresholdLength(restingHrAlertBpmThresholdLength)
-//                             }
                              if (exertionWarningThresholdChanged) {
                                  Log.d(TAG, "Storing exertionThresholdWarning $exertionThresholdWarning")
                                  dataRepository.storeExertionThresholdWarning(exertionThresholdWarning)
@@ -5598,21 +5585,6 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing hrHighAlertNumSecsThreshold $hrHighAlertNumSecsThreshold")
                                  dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold)
                              }
-//                             if (exertionThresholdLengthChanged) {
-//                                 Log.d(TAG, "Storing exertionThresholdLength $exertionThresholdLength")
-//                                 dataRepository.storeExertionThresholdLength(exertionThresholdLength)
-//                             }
-//                             if (physiologicalAlertsBpmThresholdCheckedChanged) {
-//                                 Log.d(TAG, "Storing hrHighAlertBpmThreshold $hrHighAlertBpmThreshold")
-//                                 dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold)
-//
-//                                 //Updating the hrProfile in the CEP
-//                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
-//                             }
-//                             if (physiologicalAlertsBpmThresholdTimeCheckedChanged) {
-//                                 Log.d(TAG, "Storing hrHighAlertNumSecsThreshold $hrHighAlertNumSecsThreshold")
-//                                 dataRepository.storeHrHighAlertNumSecsThreshold(hrHighAlertNumSecsThreshold)
-//                             }
                              if (physiologicalAlertsBpmThresholdCheckedChanged ||
                                  physiologicalAlertsBpmThresholdTimeCheckedChanged ||
                                  restingHeartRateHighThresholdChanged ||
