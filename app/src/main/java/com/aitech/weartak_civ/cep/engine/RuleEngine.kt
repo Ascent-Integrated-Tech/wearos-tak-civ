@@ -18,6 +18,14 @@ class RuleEngine(
     private val dispatcher = CepProvider.getActionDispatcher()
     private val compiledTimers = config.rules.associate { it.id to TriggerTimer(it.holdDownSec) }
 
+    // ✅ Extracted: removes the `when` block + its nesting increment from processTick
+    private fun resolveSeverity(raw: String): Severity = when (raw.uppercase()) {
+        "WARN"      -> Severity.WARN
+        "ALERT"     -> Severity.ALERT
+        "EMERGENCY" -> Severity.EMERGENCY
+        else        -> Severity.INFO
+    }
+
     suspend fun processTick(now: Long = System.currentTimeMillis()) {
         val overridesMain = sustainOverrideMainProvider()
         val overridesWarn = sustainOverrideWarnProvider()
@@ -40,15 +48,9 @@ class RuleEngine(
             if (!result.warnFired && !result.mainFired) return@forEach
 
             val snapshot = fs.snapshot(r.snapshotKeys)
-            val sev = when (r.action.severity.uppercase()) {
-                "WARN" -> Severity.WARN
-                "ALERT" -> Severity.ALERT
-                "EMERGENCY" -> Severity.EMERGENCY
-                else -> Severity.INFO
-            }
             val action = ActionDef(
                 type        = r.action.type,
-                severity    = sev,
+                severity    = resolveSeverity(r.action.severity), // ✅ one-liner replaces the when block
                 message     = r.action.message,
                 tags        = r.action.tags,
                 category    = r.action.category,
@@ -67,25 +69,16 @@ class RuleEngine(
             if (result.warnFired) {
                 scope.launch {
                     dispatcher.dispatch(
-                        TriggerContext(
-                            ruleId = r.id,
-                            action = action.copy(type = "warn"),
-                            snapshot = snapshot,
-                            ts = now,
-                            isPreWarn = true
-                        )
+                        TriggerContext(ruleId = r.id, action = action.copy(type = "warn"),
+                            snapshot = snapshot, ts = now, isPreWarn = true)
                     )
                 }
             }
             if (result.mainFired) {
                 scope.launch {
                     dispatcher.dispatch(
-                        TriggerContext(
-                            ruleId = r.id,
-                            action = action,
-                            snapshot = snapshot,
-                            ts = now
-                        )
+                        TriggerContext(ruleId = r.id, action = action,
+                            snapshot = snapshot, ts = now)
                     )
                 }
             }

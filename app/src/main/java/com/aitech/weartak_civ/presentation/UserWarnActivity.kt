@@ -97,7 +97,6 @@ class UserWarnActivity : ComponentActivity() {
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    val context = LocalContext.current
                     UserWarnApp(
                         description = description,
                         onAcknowledge = {

@@ -61,22 +61,13 @@ class WarnActionHandler(
                 exitSustainSec = sustainSec
             )
             if (!isFirstActivation) {
-                Log.d("CEP", "[AlertRegistry] Suppressing duplicate warn for rule=${ctx.ruleId}")
+                Log.d("CEP", "[AlertRegistry] Suppressing duplicate warn for rule=${ctx.ruleId} priority=${priority}")
                 return
             }
         }
 
         val uid = rawUid
         val category = ctx.action.category ?: "CAT_HEALTH_GENERIC"
-
-        /*dataRepository.addPhysioAndAutoGenAlertRequest(
-            uid = uid,
-            category = category,
-            description = expandedMessage.ifEmpty { ctx.ruleId },
-            priority = priority,
-            sendSms = ctx.action.sendSms,
-            timeMillis = System.currentTimeMillis()
-        )*/
 
         // Show UserWarnActivity only if user warning is enabled
         val enableUserWarning = dataRepository.getEnableUserWarning.first()

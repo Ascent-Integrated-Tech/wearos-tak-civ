@@ -369,7 +369,6 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.String
 
-
 class SettingsActivity : ComponentActivity() {
 
     companion object Constants {
@@ -381,6 +380,9 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
+        const val LABEL_WARNING_LENGTH = "Warning Length"
+        const val LABEL_ALERT_LENGTH = "Alert Length"
+        const val UNIT_MINUTES = " minutes"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -759,7 +761,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "exertion_warning_threshold_length") {
-            NumericEntryPage(navController, exertionWarningThresholdLengthSettingsState, 100,0, "Warning Length", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionWarningThresholdLengthSettingsState, 100,0, SettingsActivity.LABEL_WARNING_LENGTH, context,"physiological_exertion_alerts_setting_screen")
         }
         composable(
             "exertion_threshold_alert_screen") {
@@ -767,7 +769,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "exertion_alert_threshold_length") {
-            NumericEntryPage(navController, exertionAlertThresholdLengthSettingsState, 100,0, "Alert Length", context,"physiological_exertion_alerts_setting_screen")
+            NumericEntryPage(navController, exertionAlertThresholdLengthSettingsState, 100,0, SettingsActivity.LABEL_ALERT_LENGTH, context,"physiological_exertion_alerts_setting_screen")
         }
 //        composable(
 //            "physiological_alerts_bpm_screen") {
@@ -3476,8 +3478,8 @@ fun HeartRateAlertsSetting(navController: NavController) {
                     .padding(bottom = 5.dp, top = 10.dp)
             )
             DataMetricsChip("high_resting_hr_bpm_threshold_screen", "High HR Threshold", restingHrHighAlertBpmThresholdSettingsState.value.toString() + " bpm", navController)
-            DataMetricsChip("high_resting_hr_warning_threshold_length", "Warning Length", highRestingHrWarningThresholdLengthSettingsState.value.toString() + " minutes", navController)
-            DataMetricsChip("high_resting_hr_alert_threshold_length", "Alert Length", highRestingHrAlertThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            DataMetricsChip("high_resting_hr_warning_threshold_length", SettingsActivity.LABEL_WARNING_LENGTH, highRestingHrWarningThresholdLengthSettingsState.value.toString() + SettingsActivity.UNIT_MINUTES, navController)
+            DataMetricsChip("high_resting_hr_alert_threshold_length", SettingsActivity.LABEL_ALERT_LENGTH, highRestingHrAlertThresholdLengthSettingsState.value.toString() + SettingsActivity.UNIT_MINUTES, navController)
             Spacer(modifier = Modifier.height(15.dp))
             Text(
                 text = "Low Resting Heart Rate:",
@@ -3487,8 +3489,8 @@ fun HeartRateAlertsSetting(navController: NavController) {
                     .padding(bottom = 5.dp, top = 10.dp)
             )
             DataMetricsChip("low_resting_hr_bpm_threshold_screen", "Low HR Threshold", restingHrLowAlertBpmThresholdSettingsState.value.toString() + " bpm", navController)
-            DataMetricsChip("low_resting_hr_warning_threshold_length", "Warning Length", lowRestingHrWarningThresholdLengthSettingsState.value.toString() + " minutes", navController)
-            DataMetricsChip("low_resting_hr_alert_threshold_length", "Alert Length", lowRestingHrAlertThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            DataMetricsChip("low_resting_hr_warning_threshold_length", SettingsActivity.LABEL_WARNING_LENGTH, lowRestingHrWarningThresholdLengthSettingsState.value.toString() + SettingsActivity.UNIT_MINUTES, navController)
+            DataMetricsChip("low_resting_hr_alert_threshold_length", SettingsActivity.LABEL_ALERT_LENGTH, lowRestingHrAlertThresholdLengthSettingsState.value.toString() + SettingsActivity.UNIT_MINUTES, navController)
             Spacer(modifier = Modifier.height(16.dp))
         },
         rowContent = {
@@ -3535,10 +3537,10 @@ fun ExertionAlertsSetting(navController: NavController) {
         columnContent = {
 
             DataMetricsChip("exertion_threshold_warning_screen", "Exertion Warning Threshold", exertionThresholdWarningSettingsState.value.toString() + "%", navController)
-            DataMetricsChip("exertion_warning_threshold_length", "Warning Length", exertionWarningThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            DataMetricsChip("exertion_warning_threshold_length", SettingsActivity.LABEL_WARNING_LENGTH, exertionWarningThresholdLengthSettingsState.value.toString() + SettingsActivity.UNIT_MINUTES, navController)
             Spacer(modifier = Modifier.height(15.dp))
             DataMetricsChip("exertion_threshold_alert_screen", "Exertion Alert Threshold", exertionThresholdAlertSettingsState.value.toString() + "%", navController)
-            DataMetricsChip("exertion_alert_threshold_length", "Alert Length", exertionAlertThresholdLengthSettingsState.value.toString() + " minutes", navController)
+            DataMetricsChip("exertion_alert_threshold_length", SettingsActivity.LABEL_ALERT_LENGTH, exertionAlertThresholdLengthSettingsState.value.toString() + SettingsActivity.UNIT_MINUTES, navController)
 
             Spacer(modifier = Modifier.height(16.dp))
         },
@@ -5491,7 +5493,6 @@ fun SettingsScreen(
                                  Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
                              }
 
-                             //TODO: WEAR-399 Add store data repo values for threshold lengths
                              if (restingHeartRateHighThresholdChanged) {
                                  Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
                                  dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
