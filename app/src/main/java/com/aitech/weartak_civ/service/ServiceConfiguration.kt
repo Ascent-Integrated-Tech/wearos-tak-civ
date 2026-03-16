@@ -96,6 +96,9 @@ class ServiceConfiguration(
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.CUST_ACCESS,
         ServiceType.BATTERY,
+            //TODO - ALERT SIMULATION: Uncomment to use
+//        ServiceType.CEP_SIMULATION,
+
 //        ServiceType.BATTERY_ALERTS -> dataRepository.getEnableBatteryAlerts.distinctUntilChanged()
         ServiceType.POWER_MGR -> flowOf(true).distinctUntilChanged()
         ServiceType.OFF_BODY_DETECT -> flowOf(true).distinctUntilChanged()
@@ -158,6 +161,8 @@ class ServiceConfiguration(
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.BATTERY,
         ServiceType.GEOFENCE,
+            //TODO - ALERT SIMULATION: Uncomment to use
+//        ServiceType.CEP_SIMULATION,
         ServiceType.POWER_MGR -> emptyList()
         ServiceType.COMPANION_APP -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)

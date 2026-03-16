@@ -224,8 +224,6 @@ import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_HEART_HR_THRESHOLD_LENGTH
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_FEET
 import com.aitech.weartak_civ.DEFAULT_HEIGHT_INCHES
-import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_HIGH_HEART_RATE_ALERT_THRESHOLD_NUMBER_SECONDS
 import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOADOUT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
@@ -259,25 +257,23 @@ import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
-import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
+import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricTitleComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
 import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
-import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
-import kotlin.math.round
+
 
 class MainActivity : ComponentActivity() {
 
@@ -483,6 +479,7 @@ class MainActivity : ComponentActivity() {
         val selectedPhysioMetricSettingsState = MutableLiveData<String>(DEFAULT_SELECTED_PHYSIO_METRIC)
         var physioMetricStringComplication: String = ""
         var physioMetricIconComplication: Int = 0
+        var physioMetricTitleComplication: String = ""
 
         var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
         var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
@@ -2612,8 +2609,8 @@ fun MainScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(0.8f)
-                            .padding(vertical = 3.dp)
+                            .weight(1f)
+                            .padding(vertical = 0.dp)
                     ) {
                         requestPhysioStatusAndAlertingComplicationUpdate(context)
                         HeartRate(context)
@@ -2926,6 +2923,21 @@ fun selectedMetricValueFromKey(key: String?): String {
     return string
 }
 
+@Composable
+fun selectedMetricTitleFromKey(key: String?): String {
+    val physioString: String = when (key) {
+        "key_exertion" -> "Exertion"
+        "key_heart_rate" -> ""
+        "key_steps" -> ""
+        "key_skin_temp" -> ""
+        "key_floors" -> ""
+        "key_calories" -> ""
+        else -> ""
+    }
+    physioMetricTitleComplication = physioString
+    return physioString
+}
+
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun HeartRate(context: Context) {
@@ -2947,6 +2959,12 @@ fun HeartRate(context: Context) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+        if ((alerts.isEmpty() && !containsAlert)) {
+            Text(
+                text = selectedMetricTitleFromKey(metricKey),
+                fontSize = 11.sp
+            )
+        }
         Chip(
             border = ChipDefaults.outlinedChipBorder(alertChipColors(chipState), borderWidth = 2.dp),
             onClick = {

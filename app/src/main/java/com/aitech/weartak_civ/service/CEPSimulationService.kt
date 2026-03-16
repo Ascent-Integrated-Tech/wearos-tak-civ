@@ -91,7 +91,8 @@ class CEPSimulationService : Service() {
 
         Log.d(TAG, "CEPSimulationService STARTED")
 
-        //testAlert()
+        //TODO - ALERT SIMULATION: Uncomment to use
+//        testAlert()
 
         return START_STICKY
     }

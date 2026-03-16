@@ -28,6 +28,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiolo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricTitleComplication
 import com.aitech.weartak_civ.presentation.alertChipState
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
@@ -45,6 +46,7 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
             getString(R.string.heart_rate),
             icon = physioMetricIconComplication,
             image = R.drawable.alert_warning,
+            ""
         )
     }
 
@@ -61,18 +63,21 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
                         getString(R.string.heart_rate),
                         icon = physioMetricIconComplication,
                         image = R.drawable.blank,
+                        physioMetricTitleComplication
                     )
                     Utils.AlertChipState.Warning -> createComplicationData(
                         "WARNING",
                         getString(R.string.heart_rate),
                         icon = R.drawable.blank,
                         image = R.drawable.alert_warning,
+                        ""
                     )
                     Utils.AlertChipState.Emergency -> createComplicationData(
                         "ALERT",
                         getString(R.string.heart_rate),
                         icon = R.drawable.blank,
                         image = R.drawable.alert_emergency,
+                        ""
                     )
                 }
 
@@ -81,6 +86,7 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
                     getString(R.string.heart_rate),
                     icon = physioMetricIconComplication,
                     image = R.drawable.blank,
+                    physioMetricTitleComplication
                 )
             }
 
@@ -89,11 +95,12 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
                 getString(R.string.heart_rate),
                 icon = physioMetricIconComplication,
                 image = R.drawable.blank,
+                physioMetricTitleComplication
             )
         }
     }
 
-    private fun createComplicationData(text: String, contentDescription: String, icon: Int, image: Int, titleText: String = ""): LongTextComplicationData {
+    private fun createComplicationData(text: String, contentDescription: String, icon: Int, image: Int, titleText: String): LongTextComplicationData {
 
         //Physio Metric Text
         val complicationData = LongTextComplicationData.Builder(

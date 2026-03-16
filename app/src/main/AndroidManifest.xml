@@ -365,6 +365,7 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
+<!--        TODO - ALERT SIMULATION: Uncomment to use-->
 <!--        <service-->
 <!--            android:name=".service.CEPSimulationService"-->
 <!--            android:exported="false"-->
