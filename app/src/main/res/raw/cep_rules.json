@@ -894,6 +894,7 @@
         ]
       },
       "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
         "type": "log",
@@ -1257,6 +1258,65 @@
             ]
           },
           {
+            "lte_keys": [
+              "features.heart_rate",
+              "thresholds.hr.low_bpm"
+            ]
+          },
+          {
+            "eq_key": [
+              "offbody.on_wrist",
+              true
+            ]
+          }
+        ]
+      },
+      "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "warn_log",
+        "severity": "EMERGENCY",
+        "message": "LOW HR — below {thresholds.hr.low_bpm} bpm",
+        "tags": [
+          "hr",
+          "rest",
+          "brady"
+        ],
+        "category": "CAT_HR_REST_BRADY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "monitor": [
+          {
+            "feature": "features.heart_rate",
+            "exit_below": null,
+            "exit_above": "thresholds.hr.low_bpm",
+            "hysteresis": 2.0
+          }
+        ],
+        "exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_rest_brady_10min_emergency_static",
+      "when": {
+        "all": [
+          {
+            "eq_key": [
+              "activity.state",
+              "STILL"
+            ]
+          },
+          {
+            "eq_key": [
+              "sleep.is_sleeping",
+              false
+            ]
+          },
+          {
             "lt_key": [
               "features.heart_rate",
               40.0
@@ -1560,7 +1620,7 @@
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "warn",
         "severity": "EMERGENCY",
         "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
         "isTak": false,
