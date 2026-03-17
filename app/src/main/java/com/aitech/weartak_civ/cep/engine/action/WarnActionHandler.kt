@@ -12,7 +12,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.UserWarnActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
-import java.util.UUID
 
 /**
  * Handles CEP rules with action type "warn": same pipeline as log (AlertRegistry + physio request)
@@ -23,16 +22,6 @@ class WarnActionHandler(
 ) : BaseCepActionHandler(appScope) {
 
     override val type: String = "warn"
-
-    private val PLACEHOLDER_REGEX = "\\{([a-zA-Z0-9._-]+)\\}".toRegex()
-
-    private fun expandMessage(template: String, snapshot: Map<String, Any?>): String {
-        if (!template.contains("{")) return template
-        return PLACEHOLDER_REGEX.replace(template) { match ->
-            val key = match.groupValues[1]
-            snapshot[key]?.toString() ?: "?"
-        }
-    }
 
     override suspend fun handle(ctx: TriggerContext) {
         val expandedMessage = expandMessage(ctx.action.message.ifEmpty { "Triggered" }, ctx.snapshot)
