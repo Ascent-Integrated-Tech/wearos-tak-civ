@@ -101,9 +101,6 @@ class UserWarnActivity : ComponentActivity() {
                         description = description,
                         onAcknowledge = {
                             Log.w(TAG, "User acknowledged alert uid=$uid")
-                            /*if (source == SOURCE_PHYSIO) {
-                                AlertRegistry.clearByUid(uid)
-                            }*/
                             finishAndRemoveTask()
                         }
                     )
