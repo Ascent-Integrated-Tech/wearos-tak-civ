@@ -89,6 +89,7 @@ import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -127,6 +128,11 @@ class BloodhoundActivity  : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bloodhoundActivity = this
+        val app = applicationContext as WearTakApplication
+        Log.i(TAG, "onCreate() Bloodhound clearing unread state")
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            app.repo.clearBloodhoundUnreadCount("BloodhoundActivity.onCreate")
+        }
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
