@@ -3377,8 +3377,15 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                     ).show()
                 }
             }),
-        verticalAlignment = Alignment.CenterVertically
+//        verticalAlignment = Alignment.CenterVertically
     ){
+         Image(
+             painter = painterResource(R.drawable.new_item_indicator),
+             contentDescription = "Top Left Icon",
+             modifier = Modifier
+                 .size(10.dp),
+             alignment = Alignment.TopCenter
+         )
         Image(
             painter = if (activeItem != null) painterResource(R.drawable.compass_1) else painterResource(R.drawable.compass_needle),
             alpha = if (bloodhoundChecked == true) 1F else 0.5F,
