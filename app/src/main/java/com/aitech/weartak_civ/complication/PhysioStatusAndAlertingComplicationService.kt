@@ -25,6 +25,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServices
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
@@ -56,7 +57,7 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
             return null
         }
         return when (isLicenseValid()) {
-            true -> return when (enablePhysiologicalAlerts) {
+            true -> return when (enablePhysiologicalServices) {
                 true -> return when (dataRepository.physioAndAutoGenAlertList.value.alertChipState(true)) {
                     Utils.AlertChipState.None -> createComplicationData(
                         physioMetricStringComplication,

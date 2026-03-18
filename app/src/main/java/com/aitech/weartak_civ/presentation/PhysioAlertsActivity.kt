@@ -142,12 +142,12 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
                 exitActivity()
             }
-            isValid && enablePhysioService == true && enablePhysioAlerts == true && currentDestination != "alerts_screen" -> {
+            isValid && enablePhysioService == true && currentDestination != "alerts_screen" -> {
                 navController.navigate("alerts_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
                 }
             }
-            isValid && enablePhysioService == false || enablePhysioAlerts == false && currentDestination != "alerts_disabled_screen" -> {
+            isValid && enablePhysioService == false && currentDestination != "alerts_disabled_screen" -> {
                 navController.navigate("alerts_disabled_screen") {
                     popUpTo(0) { inclusive = true }
                 }
@@ -159,13 +159,14 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
         navController = navController,
         startDestination =
             if (isLicenseValid()) {
-                if (enablePhysioService == true && enablePhysioAlerts == true) "alerts_screen" else "alerts_disabled_screen"
+                if (enablePhysioService == true) "alerts_screen" else "alerts_disabled_screen"
+//                if (enablePhysioService == true && enablePhysioAlerts == true) "alerts_screen" else "alerts_disabled_screen"
             } else {
                 "invalid_license_screen"
             }
     ) {
         composable("alerts_screen") {
-            AlertsScreen(navController, exitActivity, alerts)
+            AlertsScreen(navController, exitActivity, enablePhysioAlerts, alerts)
 
         }
 
@@ -174,8 +175,8 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
             ActivityDisabledScreen(
                 navController,
                 exitActivity,
-                "Alerts Disabled",
-                "Please enable alerts in order to use this feature"
+                "Physio Monitoring Disabled",
+                "Please enable physio monitoring in order to use this feature"
             )
         }
 
@@ -241,7 +242,8 @@ fun alertCategoryFromString(category: String): String {
 fun AlertsScreen(
     navController: NavController,
     exitActivity: () -> Unit,
-    alerts: List<DataRepository.CustomEmergencyAlert> // <-- Use Utils.ChatRoom here
+    alertsEnabled: Boolean?,
+    alerts: List<DataRepository.CustomEmergencyAlert> // <-- Use Utils.ChatRoom here,
 ) {
     Log.d(TAG, "AlertsScreen called")
     Log.d(TAG, "$alerts")
@@ -330,7 +332,7 @@ fun AlertsScreen(
                 }
             })
         },
-        text = ""
+        text = if (alertsEnabled == true) "Alerts: ON" else "Alerts: OFF"
     )
 }
 
@@ -516,7 +518,7 @@ fun requestPhysioStatusAndAlertingComplicationUpdate(context: Context) {
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
 fun AlertsScreenPreview() {
-    AlertsScreen(rememberSwipeDismissableNavController(), {}, alertListPreview)
+    AlertsScreen(rememberSwipeDismissableNavController(), {}, true, alertListPreview)
 }
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
