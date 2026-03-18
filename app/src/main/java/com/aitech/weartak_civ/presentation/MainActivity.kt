@@ -3356,6 +3356,16 @@ fun SOSButton(context: Context, isAlertingLiveData: Boolean?) {
         )
     }
 }
+
+fun bloodhoundActiveComplication(): Int {
+    val hasUnreadBloodhound = dataRepository.hasUnreadBloodhounds.value
+    val icon: Int = when (hasUnreadBloodhound) {
+        true -> (R.drawable.new_item_indicator)
+        false -> (R.drawable.blank)
+    }
+    return icon
+}
+
 @Composable
 fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
     val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
@@ -3363,6 +3373,8 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
     val activeTarget = activeItem?.target ?: ""
+    val hasUnreadBloodhound by dataRepository.hasUnreadBloodhounds.collectAsState() // monitor the number of unread messages
+
     requestBloodhoundComplicationUpdate(context)
  Row(
         modifier = Modifier.clickable(
@@ -3379,13 +3391,20 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
             }),
 //        verticalAlignment = Alignment.CenterVertically
     ){
-         Image(
-             painter = painterResource(R.drawable.new_item_indicator),
-             contentDescription = "Top Left Icon",
-             modifier = Modifier
-                 .size(10.dp),
-             alignment = Alignment.TopCenter
-         )
+     if (bloodhoundChecked == true) {
+         if (hasUnreadBloodhound) {
+             requestBloodhoundComplicationUpdate(context)
+             Image(
+                 painter = painterResource(R.drawable.new_item_indicator),
+                 contentDescription = "Top Left Icon",
+                 modifier = Modifier
+                     .size(10.dp),
+                 alignment = Alignment.TopCenter
+             )
+         } else {
+             requestBloodhoundComplicationUpdate(context)
+         }
+     }
         Image(
             painter = if (activeItem != null) painterResource(R.drawable.compass_1) else painterResource(R.drawable.compass_needle),
             alpha = if (bloodhoundChecked == true) 1F else 0.5F,

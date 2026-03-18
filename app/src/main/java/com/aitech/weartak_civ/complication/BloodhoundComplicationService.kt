@@ -3,7 +3,9 @@ package com.aitech.weartak_civ.complication
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Matrix
+import android.graphics.Paint
 import androidx.annotation.DrawableRes
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -14,6 +16,8 @@ import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
+import androidx.wear.watchface.complications.data.SmallImage
+import androidx.wear.watchface.complications.data.SmallImageType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.aitech.weartak_civ.R
@@ -24,8 +28,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplicati
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
+import com.aitech.weartak_civ.presentation.bloodhoundActiveComplication
 import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withRotation
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
@@ -37,7 +44,8 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
         if (type != ComplicationType.LONG_TEXT) {
             return null
         }
-        return createComplicationData(callsign, getString(R.string.watch_callsign), R.drawable.compass_1, getString(R.string.compass), 0F)
+        return createComplicationData(callsign, getString(R.string.watch_callsign), R.drawable.compass_1, R.drawable.new_item_indicator,
+            getString(R.string.compass), 0F)
 
     }
 
@@ -49,7 +57,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
         val needleOrientation = active?.orientation ?: properNorthBearing
 
         if (null == mainActivityIsInit) {
-            return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, "Loading", 0F)
+            return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, R.drawable.new_item_indicator,"Loading", 0F)
         }
         return when (isLicenseValid()) {
             true -> return when (enableBloodhoundCompassServiceSettingsState.value) {
@@ -58,6 +66,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                         text = active.distance.toString() + " km",
                         contentDescription = getString(R.string.watch_callsign),
                         icon = R.drawable.compass_1,
+                        image = bloodhoundActiveComplication(),
                         titleText = active.target,
                         orientation = active.orientation
                     )
@@ -66,6 +75,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                         "---",
                         getString(R.string.watch_callsign),
                         icon = R.drawable.compass_needle,
+                        image = bloodhoundActiveComplication(),
                         titleText = getString(R.string.compass),
                         needleOrientation.toFloat()
                     )
@@ -74,6 +84,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     "---",
                     getString(R.string.watch_callsign),
                     icon = R.drawable.disabled_compass,
+                    image = bloodhoundActiveComplication(),
                     titleText = getString(R.string.compass_disabled),
                     needleOrientation.toFloat()
                 )
@@ -81,6 +92,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     "---",
                     getString(R.string.watch_callsign),
                     icon = R.drawable.disabled_compass,
+                    image = bloodhoundActiveComplication(),
                     titleText = getString(R.string.compass_disabled),
                     needleOrientation.toFloat()
                 )
@@ -88,6 +100,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
             false -> createComplicationData(
                 getString(R.string.invalid_license), getString(R.string.invalid_license_key),
                 icon = R.drawable.disabled_compass,
+                image = bloodhoundActiveComplication(),
                 titleText = getString(R.string.invalid_license),
                 0F
             )
@@ -136,29 +149,27 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     //TODO: WEAR-161: Change this back and add code to bloodhoundcomplicationservice when its made
 
     //TODO: WEAR-161: See if this is more or less jank than referencing the 360 images vvvv
-   private fun getRotatedCompassBitmap(
+    private fun getRotatedCompassBitmap(
         context: Context,
         @DrawableRes drawableResId: Int,
         rotationDegrees: Float
     ): Bitmap {
-        // Decode your existing PNG into a bitmap
         val baseBitmap = BitmapFactory.decodeResource(context.resources, drawableResId)
-        val matrix = Matrix().apply {
-            postRotate(rotationDegrees)
+
+        val outWidth = baseBitmap.width
+        val outHeight = baseBitmap.height
+
+        val output = createBitmap(outWidth, outHeight)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+        canvas.withRotation(rotationDegrees, outWidth / 2f, outHeight / 2f) {
+            drawBitmap(baseBitmap, 0f, 0f, paint)
         }
 
-        // Create a new rotated bitmap
-        return Bitmap.createBitmap(
-            baseBitmap,
-            0,
-            0,
-            baseBitmap.width,
-            baseBitmap.height,
-            matrix,
-            true
-        )
+        return output
     }
-    private fun createComplicationData(text: String, contentDescription: String, icon: Int, titleText: String, orientation: Float): LongTextComplicationData {
+    private fun createComplicationData(text: String, contentDescription: String, icon: Int, image: Int, titleText: String, orientation: Float): LongTextComplicationData {
         val complicationData = LongTextComplicationData.Builder(
             text = PlainComplicationText.Builder(text).build(),
             contentDescription = PlainComplicationText.Builder(contentDescription).build()
@@ -172,6 +183,12 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
             drawableResId = icon, // your one compass PNG
             rotationDegrees = rotation
         )
+
+        val image = IconCompat.createWithResource(this, image).toIcon(this.baseContext)
+        complicationData.setSmallImage(SmallImage.Builder(
+            image,
+            SmallImageType.ICON
+        ).build())
 
         val icon = IconCompat.createWithBitmap(rotatedBitmap).toIcon(this.baseContext)
         complicationData.setMonochromaticImage(MonochromaticImage.Builder(icon).build())
