@@ -2974,7 +2974,7 @@ fun HeartRate(context: Context) {
             backgroundColor = Color.Transparent,
             contentColor = Color.White,
         ),
-            enabled = if (physioAlertsCheckedLive == true) true else false,
+            enabled = if (physioCheckedLive == true) true else false,
             icon = {
                 Icon(
                     painter = if (physioAlertsCheckedLive == true) {
