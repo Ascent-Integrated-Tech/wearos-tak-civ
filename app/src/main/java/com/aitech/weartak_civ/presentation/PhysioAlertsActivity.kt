@@ -216,7 +216,6 @@ fun alertIconFromString(category: String): Painter {
     return painter
 }
 
-@Composable
 fun alertCategoryFromString(category: String): String {
     val categoryString: String = when (category) {
         "CAT_COLD_FROSTBITE_OVERRIDE" -> "Cold Override: Frostbite Risk"

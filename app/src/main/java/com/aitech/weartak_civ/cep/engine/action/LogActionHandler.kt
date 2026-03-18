@@ -40,7 +40,7 @@ class LogActionHandler(
                 exitSustainSec = tak.sustainSec
             )
             if (!isFirstActivation) {
-                Log.d("CEP", "[AlertRegistry] Suppressing duplicate alert for rule=${ctx.ruleId}")
+                Log.i("CEP", "[AlertRegistry] Suppressing duplicate alert for rule=${ctx.ruleId}")
                 return
             }
 

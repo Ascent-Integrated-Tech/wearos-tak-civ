@@ -2955,6 +2955,30 @@ fun alertChipColors(state: Utils.AlertChipState): Color = when (state) {
         Color.Unspecified
 }
 
+fun alertText(alerts: List<DataRepository.CustomEmergencyAlert>): String {
+    if (alerts.isEmpty()) return ""
+
+    val lowestPriority = alerts.minOf { it.priority }
+
+    return when (lowestPriority) {
+        1 -> alertCategoryFromString(
+            alerts
+            .filter { it.priority == 1 }
+            .maxByOrNull { it.timeMillis }
+            ?.category
+            ?: ""
+        )
+
+        2 -> alertCategoryFromString(
+            alerts
+            .maxByOrNull { it.timeMillis }
+            ?.category
+            ?: ""
+        )
+
+        else -> ""
+    }
+}
 
 @Composable
 fun selectedMetricIconFromKey(key: String?): Int {
@@ -3064,14 +3088,12 @@ fun HeartRate(context: Context) {
                     if (physioCheckedLive == true) {
                         //TODO: In future - make these responsive to different alert types (ex. High HR, exertion, hypothermia)
                         Text(
-                            text = if (chipState == Utils.AlertChipState.Warning)
-                                "WARNING"
-                            else if (chipState == Utils.AlertChipState.Emergency)
-                                "ALERT"
+                            text = if (containsAlert)
+                                alertText(alerts)
                                 else
                                 selectedMetricValueFromKey(metricKey),
                             textAlign = TextAlign.Start,
-                            fontSize = 16.sp,
+                            fontSize = if (containsAlert) 12.sp else 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
                         )
