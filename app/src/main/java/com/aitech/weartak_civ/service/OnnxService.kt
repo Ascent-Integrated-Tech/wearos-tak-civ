@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.service
 
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtLoggingLevel
 import ai.onnxruntime.OrtSession
 import android.app.NotificationManager
 import android.app.Service
@@ -239,6 +240,11 @@ class OnnxService : Service() {
 
                 val modelBytes = assets.open(assetName).use { it.readBytes() }
                 val opts = OrtSession.SessionOptions()
+                opts.setLoggerId("WearTAK-ONNX")
+                opts.setSessionLogLevel(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE)
+                opts.setSessionLogVerbosityLevel(2)
+                opts.enableProfiling("/sdcard/Download/WearTAK-ONNX.txt")
+                opts.
                 detectorSession = env.createSession(modelBytes, opts)
 
                 detectorLoaded = true
@@ -276,6 +282,7 @@ class OnnxService : Service() {
 
         return try {
             val score = lock.withLock { runModelScalar(session, modelInput) }
+            Log.i(TAG, "Detector inference score=$score")
             GunshotDetectionResult(
                 isGunshot = score >= THRESHOLD,
                 confidence = score
