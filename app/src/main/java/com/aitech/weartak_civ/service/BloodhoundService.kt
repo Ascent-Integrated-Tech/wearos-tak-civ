@@ -119,7 +119,13 @@ class BloodhoundService: Service() {
                 .filterNotNull()
                 .collect { event ->
                     Log.i(TAG, "Bloodhound Event updated:\n$event")
+                    val isNewBloodhound = !bhRepo.isUidValid(event.uid)
                     bhRepo.upsertFromEvent(event)
+                    if (isNewBloodhound) {
+                        repo.incrementBloodhoundUnreadCount(event.uid)
+                    } else {
+                        Log.i(TAG, "Bloodhound event refreshed without unread increment uid=${event.uid}")
+                    }
                     updateVectors()
                 }
         }

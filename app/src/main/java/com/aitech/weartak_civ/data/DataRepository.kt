@@ -1744,9 +1744,13 @@ class DataRepository(private val context: Context) {
     /* ─── unread indicator ──────────────────────────────────────────────────── */
     private val _unreadCount      = MutableStateFlow(0)
     private val _hasUnread        = MutableStateFlow(false)
+    private val _bloodhoundUnreadCount = MutableStateFlow(0)
+    private val _hasUnreadBloodhounds = MutableStateFlow(false)
 
     val unreadCount : StateFlow<Int>  = _unreadCount        // if you need the exact number
     val hasUnread   : StateFlow<Boolean> = _hasUnread        // true/false for the badge
+    val bloodhoundUnreadCount: StateFlow<Int> = _bloodhoundUnreadCount
+    val hasUnreadBloodhounds: StateFlow<Boolean> = _hasUnreadBloodhounds
 
     suspend fun refreshUnreadCount() {
         val n = ChatService.getInstance()?.getUnreadMsgsCount() ?: 0
@@ -1768,6 +1772,22 @@ class DataRepository(private val context: Context) {
         // update indicator
         _unreadCount.emit(fresh.count { it.newMessagesPresent })
         _hasUnread.emit(fresh.any  { it.newMessagesPresent })
+    }
+
+    suspend fun incrementBloodhoundUnreadCount(uid: String) {
+        _bloodhoundUnreadCount.update { current ->
+            val updated = current + 1
+            Log.i(TAG, "Bloodhound unread incremented for uid=$uid count=$updated")
+            updated
+        }
+        _hasUnreadBloodhounds.emit(_bloodhoundUnreadCount.value > 0)
+    }
+
+    suspend fun clearBloodhoundUnreadCount(reason: String) {
+        val previous = _bloodhoundUnreadCount.value
+        _bloodhoundUnreadCount.emit(0)
+        _hasUnreadBloodhounds.emit(false)
+        Log.i(TAG, "Bloodhound unread cleared reason=$reason previousCount=$previous")
     }
 
     // --- request flow (UI --> backend ChatService)
