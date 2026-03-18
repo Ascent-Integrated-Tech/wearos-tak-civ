@@ -20,6 +20,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,9 +36,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -278,12 +282,6 @@ fun BloodhoundScreen(
 
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.bloodhound),
-                    contentDescription = "Favorite icon",
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(25.dp),
-                )
                 Text(
                     text = stringResource(R.string.bloodhound),
                     fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
@@ -293,18 +291,24 @@ fun BloodhoundScreen(
                         .padding(vertical = 10.dp, horizontal = 20.dp)
                         .align(Alignment.CenterHorizontally)
                 )
-                Button(
+                IconButton(
                     onClick = {context.startActivity(Intent(context, MapActivity::class.java)) },
-                    colors = ButtonDefaults.buttonColors(
+                    modifier = Modifier
+                        .size(40.dp),
+                    colors = IconButtonColors(
                         containerColor = colors.primary,
-                        contentColor = Color.Black
+                        contentColor = Color.Black,
+                        disabledContentColor = colors.primary,
+                        disabledContainerColor = Color.Black
                     ),
-                    content = {
-                        Text(
-                            text = "View Map",
-                            color = Color.Black)
-                    }
-                )
+                ) {
+                    Icon(
+                        painterResource(R.drawable.maps),
+                        contentDescription = "Marker Drop Button",
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.Black
+                    )
+                }
                 LazyColumn(modifier = Modifier
                     .height(200.dp).padding(top = 10.dp)){
                     itemsIndexed(bloodhounds){ index, bloodhoundItem ->
