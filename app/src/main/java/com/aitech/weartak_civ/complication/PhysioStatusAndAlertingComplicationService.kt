@@ -24,13 +24,13 @@ import androidx.wear.watchface.complications.datasource.SuspendingComplicationDa
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServices
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricTitleComplication
 import com.aitech.weartak_civ.presentation.alertChipState
+import com.aitech.weartak_civ.presentation.alertText
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 
 class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSourceService() {
@@ -67,14 +67,14 @@ class PhysioStatusAndAlertingComplicationService : SuspendingComplicationDataSou
                         physioMetricTitleComplication
                     )
                     Utils.AlertChipState.Warning -> createComplicationData(
-                        "WARNING",
+                        alertText(dataRepository.physioAndAutoGenAlertList.value),
                         getString(R.string.heart_rate),
                         icon = R.drawable.blank,
                         image = R.drawable.alert_warning,
                         ""
                     )
                     Utils.AlertChipState.Emergency -> createComplicationData(
-                        "ALERT",
+                        alertText(dataRepository.physioAndAutoGenAlertList.value),
                         getString(R.string.heart_rate),
                         icon = R.drawable.blank,
                         image = R.drawable.alert_emergency,

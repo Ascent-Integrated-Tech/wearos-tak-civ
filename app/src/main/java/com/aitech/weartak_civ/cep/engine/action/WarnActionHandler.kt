@@ -41,7 +41,7 @@ class WarnActionHandler(
                 exitSustainSec = tak.sustainSec
             )
             if (!isFirstActivation) {
-                Log.d("CEP", "[AlertRegistry] Suppressing duplicate warn for rule=${ctx.ruleId} priority=${tak.priority}")
+                Log.i("CEP", "[AlertRegistry] Suppressing duplicate warn for rule=${ctx.ruleId} priority=${tak.priority}")
                 return
             }
         }
