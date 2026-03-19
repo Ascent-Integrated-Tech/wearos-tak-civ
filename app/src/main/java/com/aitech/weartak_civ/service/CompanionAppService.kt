@@ -456,11 +456,12 @@ class CompanionAppService : Service() {
         txCharacteristic = BluetoothGattCharacteristic(
             capRepo.TX_TO_COMPANION_UUID,
             BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ
+            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED_MITM
         ).apply {
             val cccd = BluetoothGattDescriptor(
                 capRepo.CLIENT_CHARACTERISTIC_CONFIG_UUID,
-                BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
+                BluetoothGattDescriptor.PERMISSION_READ_ENCRYPTED_MITM or
+                    BluetoothGattDescriptor.PERMISSION_WRITE_ENCRYPTED_MITM
             )
             addDescriptor(cccd)
         }
@@ -468,7 +469,7 @@ class CompanionAppService : Service() {
         rxCharacteristic = BluetoothGattCharacteristic(
             capRepo.RX_FROM_COMPANION_UUID,
             BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
-            BluetoothGattCharacteristic.PERMISSION_WRITE
+            BluetoothGattCharacteristic.PERMISSION_WRITE_ENCRYPTED_MITM
         )
 
         service.addCharacteristic(txCharacteristic)
@@ -565,6 +566,14 @@ class CompanionAppService : Service() {
     }
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
+        private fun bondStatus(device: BluetoothDevice): Int = try {
+            device.bondState
+        } catch (_: Throwable) {
+            BluetoothDevice.BOND_NONE
+        }
+
+        private fun isBonded(device: BluetoothDevice): Boolean =
+            bondStatus(device) == BluetoothDevice.BOND_BONDED
 
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
@@ -661,15 +670,25 @@ class CompanionAppService : Service() {
 
             // Respond immediately so the companion doesn't block on the write.
             if (responseNeeded) {
-                val status = if (characteristic.uuid == capRepo.RX_FROM_COMPANION_UUID)
-                    BluetoothGatt.GATT_SUCCESS
-                else
-                    BluetoothGatt.GATT_FAILURE
+                val status = when {
+                    characteristic.uuid != capRepo.RX_FROM_COMPANION_UUID -> BluetoothGatt.GATT_FAILURE
+                    !isActive(device) -> BluetoothGatt.GATT_FAILURE
+                    !isBonded(device) -> BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION
+                    else -> BluetoothGatt.GATT_SUCCESS
+                }
 
                 gattServer?.sendResponse(device, requestId, status, offset, null)
             }
 
             if (characteristic.uuid != capRepo.RX_FROM_COMPANION_UUID) return
+            if (!isActive(device)) {
+                Log.w(TAG, "Ignoring write from stale device=${device.address} active=$activeAddr")
+                return
+            }
+            if (!isBonded(device)) {
+                Log.w(TAG, "Ignoring write from unbonded device=${device.address} bond=${bondStatus(device)}")
+                return
+            }
 
             val chunk = value.toString(Charsets.UTF_8)
             Log.d(TAG, "RX from companion chunk: $chunk")
@@ -726,6 +745,11 @@ class CompanionAppService : Service() {
             if (device != connectedDevice) {
                 Log.i(TAG, "CCCD write ignored: device ${device.address} != connected ${connectedDevice?.address}")
                 respond(BluetoothGatt.GATT_FAILURE)
+                return
+            }
+            if (!isBonded(device)) {
+                Log.i(TAG, "CCCD write ignored: device ${device.address} is not bonded")
+                respond(BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION)
                 return
             }
 
