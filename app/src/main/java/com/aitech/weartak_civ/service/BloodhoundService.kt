@@ -162,7 +162,8 @@ class BloodhoundService: Service() {
                         ActivationResult.FIRST_ACK,
                         ActivationResult.SWITCH_ONLY -> {
                             sendBloodhoundReply(item, "Roger: Bloodhounding to")
-                            openIssuerChat(item)
+                            //openIssuerChat(item)
+                            repo.sendBloodhoundUiCommand(DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen)
                         }
                         //ActivationResult.SWITCH_ONLY -> {
                         //    repo.sendBloodhoundUiCommand(DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen)
@@ -181,7 +182,8 @@ class BloodhoundService: Service() {
                     val item = bhRepo.setInPos(uid)
                     //repo.removeReceivedMarkerByUid(uid)
                     sendBloodhoundReply(item, "In Position at")
-                    openIssuerChat(item)
+                    //openIssuerChat(item)
+                    repo.sendBloodhoundUiCommand(DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen)
                 }
             }
         }
