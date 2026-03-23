@@ -35,6 +35,7 @@ import android.os.IBinder
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CompanionAppRepository
@@ -226,7 +227,13 @@ class CompanionAppService : Service() {
             addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
             addAction(ACTION_KEY_MISSING)
         }
-        registerReceiver(bondStateReceiver, filter)
+        //registerReceiver(bondStateReceiver, filter)
+        ContextCompat.registerReceiver(
+            this,
+            bondStateReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         bondReceiverRegistered = true
     }
 
@@ -639,6 +646,7 @@ class CompanionAppService : Service() {
     }
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
+        @SuppressLint("MissingPermission")
         private fun bondStatus(device: BluetoothDevice): Int = try {
             device.bondState
         } catch (_: Throwable) {
