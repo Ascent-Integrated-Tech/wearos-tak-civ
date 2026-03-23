@@ -27,7 +27,8 @@ data class TriggerContext(
     val action: ActionDef,
     val snapshot: Map<String, Any?>,
     val ts: Long = System.currentTimeMillis(),
-    val isPreWarn: Boolean = false
+    val isPreWarn: Boolean = false,
+    val sustainedSecs: Int = -1
 )
 
 

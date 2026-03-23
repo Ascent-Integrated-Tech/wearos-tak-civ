@@ -53,7 +53,7 @@ class OffBodyDetectService: Service() {
         runBlocking {
             dataRepository.storeLatestIsDeviceWorn(false)
             // Device is not worn at service start
-            CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = false)))
+            CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
         }
         startOffBodySensor()
     }
@@ -116,14 +116,14 @@ class OffBodyDetectService: Service() {
                         dataRepository.storeLatestIsDeviceWorn(false)
                         Log.i(TAG, "OffBodyDetectService Device is not worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
-                        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = false)))
+                        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
                     }
                 } else {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(true)
                         Log.i(TAG, "OffBodyDetectService Device is worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))
-                        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = true)))
+                        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 1)))
                     }
                 }
             }

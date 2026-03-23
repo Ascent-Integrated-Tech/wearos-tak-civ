@@ -953,6 +953,7 @@ class DataRepository(private val context: Context) {
         val sendSms: Boolean,
         val timeMillis: Long,
         val enqueuedToBeSent: Boolean,
+        val sendOutbound: Boolean = true
     )
 
     // UI reads manualAlertList to display manual alerts sent out

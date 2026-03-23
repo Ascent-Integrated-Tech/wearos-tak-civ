@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.cep.engine
 
+import android.util.Log
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.engine.action.ActionDef
 import com.aitech.weartak_civ.cep.engine.action.Severity
@@ -67,6 +68,7 @@ class RuleEngine(
             )
 
             if (result.warnFired) {
+                Log.d("CEP", "result.warnFired (${result.warnFired}, ${result.mainFired}); sustainWarnSec=$sustainWarnSec; effMain=$effMain")
                 scope.launch {
                     dispatcher.dispatch(
                         TriggerContext(ruleId = r.id, action = action.copy(type = "warn"),
@@ -75,6 +77,7 @@ class RuleEngine(
                 }
             }
             if (result.mainFired) {
+                Log.d("CEP", "result.mainFired (${result.warnFired}, ${result.mainFired}); sustainWarnSec=$sustainWarnSec; effMain=$effMain")
                 scope.launch {
                     dispatcher.dispatch(
                         TriggerContext(ruleId = r.id, action = action,

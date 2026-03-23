@@ -5554,15 +5554,17 @@ fun SettingsScreen(
                                  exertionAlertThresholdLengthChanged) {
                                  val mainMap = mapOf(
                                      "hr_high_threshold_resting_alert" to (highRestingHrAlertThresholdLength * 60L).coerceAtLeast(0L),
+                                     "hr_high_threshold_resting_warning" to (highRestingHrWarningThresholdLength * 60L).coerceAtLeast(0L),
                                      "hr_rest_brady_10min_emergency" to (lowRestingHrAlertThresholdLength * 60L).coerceAtLeast(0L),
                                      "hr_zone4_exercise_10min_emergency" to (exertionWarningThresholdLength * 60L).coerceAtLeast(0L),
                                      "hr_zone5_exercise_5min_emergency" to (exertionAlertThresholdLength * 60L).coerceAtLeast(0L)
                                  )
                                  val warnMap = mapOf(
-                                     "hr_high_threshold_resting_alert" to (highRestingHrWarningThresholdLength * 60L).coerceAtLeast(0L),
+                                     "hr_high_threshold_resting_alert" to (highRestingHrAlertThresholdLength * 60L).coerceAtLeast(0L),
+                                     "hr_high_threshold_resting_warning" to (highRestingHrWarningThresholdLength * 60L).coerceAtLeast(0L),
                                      "hr_rest_brady_10min_emergency" to (lowRestingHrWarningThresholdLength * 60L).coerceAtLeast(0L),
                                      "hr_zone4_exercise_10min_emergency" to (exertionWarningThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_zone5_exercise_5min_emergency" to (exertionWarningThresholdLength * 60L).coerceAtLeast(0L)
+                                     "hr_zone5_exercise_5min_emergency" to (exertionAlertThresholdLength * 60L).coerceAtLeast(0L)
                                  )
                                  dataRepository.storeCepSustainOverridesDual(mainMap, warnMap)
                                  CepProvider.getOrCreateEngine(context).updateSustainOverrides()

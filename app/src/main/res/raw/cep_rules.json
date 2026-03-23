@@ -33,9 +33,22 @@
       "type": "derived",
       "id": "features.device.off_body",
       "expr": {
-        "key": "device.off_body"
+        "lte": [
+          {
+            "key": "offbody.on_wrist"
+          },
+          0.5
+        ]
       },
       "units": "bool"
+    },
+    {
+      "type": "derived",
+      "id": "features.device.off_body_int",
+      "expr": {
+        "key": "offbody.on_wrist"
+      },
+      "units": "int"
     },
     {
       "type": "slope_multi",
@@ -879,7 +892,7 @@
               "STILL"
             ]
           },
-          {"eq_key": ["offbody.on_wrist", true]},
+          {"gte_key": ["offbody.on_wrist", 0.5]},
           {
             "gte_keys": [
               "features.heart_rate",
@@ -889,12 +902,11 @@
         ]
       },
       "sustained_for_sec": 600,
-      "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
-        "type": "warn_log",
-        "severity": "ALERT",
-        "message": "RESTING HIGH HR ALERT \u2014 above {features.hr.high_threshold_bpm} bpm",
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "HIGH RESTING HR ALERT \u2014 above {features.hr.high_threshold_bpm} bpm",
         "tags": [
           "hr",
           "high"
@@ -910,8 +922,67 @@
             "exit_below": "features.hr.high_threshold_bpm",
             "exit_above": null,
             "hysteresis": 2.0
+          },
+          {
+            "feature": "offbody.on_wrist",
+            "exit_below": 0.5,
+            "exit_above": null,
+            "hysteresis": 0.25
           }
         ],
+        "exit_logic": "OR",
+        "exit_sustain_sec": 3
+      }
+    },
+    {
+      "id": "hr_high_threshold_resting_warning",
+      "when": {
+        "all": [
+          {
+            "eq_key": [
+              "activity.state",
+              "STILL"
+            ]
+          },
+          {"gte_key": ["offbody.on_wrist", 0.5]},
+          {
+            "gte_keys": [
+              "features.heart_rate",
+              "features.hr.high_threshold_bpm"
+            ]
+          }
+        ]
+      },
+      "sustained_for_sec": 300,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "HIGH RESTING HR WARNING \u2014 above {features.hr.high_threshold_bpm} bpm",
+        "tags": [
+          "hr",
+          "high"
+        ],
+        "category": "CAT_HR_HIGH",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "timeout": 60,
+        "monitor": [
+          {
+            "feature": "features.heart_rate",
+            "exit_below": "features.hr.high_threshold_bpm",
+            "exit_above": null,
+            "hysteresis": 2.0
+          },
+          {
+            "feature": "offbody.on_wrist",
+            "exit_below": 0.5,
+            "exit_above": null,
+            "hysteresis": 0.25
+          }
+        ],
+        "exit_logic": "OR",
         "exit_sustain_sec": 3
       }
     },
@@ -1068,9 +1139,9 @@
             ]
           },
           {
-            "eq_key": [
+            "gte_key": [
               "offbody.on_wrist",
-              true
+              0.5
             ]
           }
         ]
@@ -1126,7 +1197,7 @@
               40.0
             ]
           },
-          {"eq_key": ["offbody.on_wrist", true]}
+          {"gte_key": ["offbody.on_wrist", 0.5]}
         ]
       },
       "sustained_for_sec": 600,

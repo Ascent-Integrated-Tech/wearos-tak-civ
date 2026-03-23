@@ -34,6 +34,7 @@ class WarnActionHandler(
         if (!ctx.isPreWarn) {
             val isFirstActivation = AlertRegistry.tryActivate(
                 ruleId         = ctx.ruleId,
+                priority = tak.priority,
                 uid            = tak.rawUid,
                 exitConditions = tak.exitConditions,
                 exitLogic      = tak.exitLogic,

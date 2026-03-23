@@ -1,6 +1,9 @@
 package com.aitech.weartak_civ.cep.engine.action
 
 import android.util.Log
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 
@@ -31,6 +34,7 @@ class LogActionHandler(
 
             val isFirstActivation = AlertRegistry.tryActivate(
                 ruleId        = ctx.ruleId,
+                priority      = tak.priority,
                 uid           = tak.rawUid,
                 exitConditions = tak.exitConditions,
                 exitLogic     = tak.exitLogic,
@@ -41,14 +45,27 @@ class LogActionHandler(
                 return
             }
 
-            dataRepository.addPhysioAndAutoGenAlertRequest(
-                uid        = tak.rawUid,
-                category   = ctx.action.category ?: "CAT_HEALTH_GENERIC",
-                description = expandedMessage.ifEmpty { ctx.ruleId },
-                priority   = tak.priority,
-                sendSms    = ctx.action.sendSms,
-                timeMillis = System.currentTimeMillis()
-            )
+            Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 5, timeBtwnVibesMs = 120L)
+            if (tak.priority == 1) {
+                dataRepository.addPhysioAndAutoGenAlertRequest(
+                    uid = tak.rawUid,
+                    category = ctx.action.category ?: "CAT_HEALTH_GENERIC",
+                    description = expandedMessage.ifEmpty { ctx.ruleId },
+                    priority = tak.priority,
+                    sendSms = ctx.action.sendSms,
+                    timeMillis = System.currentTimeMillis()
+                )
+            } else {
+                dataRepository.appendPhysioAndAutoGenAlert(
+                    DataRepository.CustomEmergencyAlert(uuid = tak.rawUid,
+                        alertState = DataRepository.AlertState.ALERT,
+                        category = ctx.action.category ?: "CAT_HEALTH_GENERIC",
+                        description = expandedMessage.ifEmpty { ctx.ruleId },
+                        priority = tak.priority,
+                        sendSms = ctx.action.sendSms,
+                        timeMillis = System.currentTimeMillis(),
+                        enqueuedToBeSent = false))
+            }
         }
     }
 }

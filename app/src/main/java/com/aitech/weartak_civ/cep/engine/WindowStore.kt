@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.cep.engine
 
+import android.util.Log
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.CepPayload
 import com.aitech.weartak_civ.cep.model.Topics
@@ -72,6 +73,7 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 }
             }
             is ActivityPayload -> {
+                Log.i("CEP", "latest[activity_state] = ${p.state}")
                 latest[activity_state] = p.state
                 fs.put(activity_state, p.state, tsMs)
             }
@@ -99,6 +101,7 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 )
             }
             is OffBodyPayload -> {
+                Log.i("CEP", "latest[offbody_on_wrist] = ${p.on_wrist}")
                 latest[offbody_on_wrist] = p.on_wrist; fs.put(
                     offbody_on_wrist,
                     p.on_wrist,

@@ -179,7 +179,7 @@ class ActivityRecognitionService : Service() {
                     ActivityRecognized.UNKNOWN          -> "UNKNOWN"
                 }
 
-                //Log.i(TAG, "CEP Activity: $cepState")
+                Log.i(TAG, "CEP Activity: $cepState")
                 // Emit to CEP inside coroutine scope
                 ioScope.launch {
                     CepBus.emit(

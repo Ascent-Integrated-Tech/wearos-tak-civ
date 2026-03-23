@@ -192,12 +192,15 @@ class CepEngine(
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {
         val now = System.currentTimeMillis()
+        Log.i("CEP", "checkAndClearAlerts: checking for expired alerts")
 
         for (alert in AlertRegistry.allActive()) {
+            Log.i("CEP", "exitlogic: ${alert.exitLogic}; conditions: ${alert.exitConditions}")
             val conditions = alert.exitConditions
             if (conditions.isEmpty()) continue
 
             val satisfiedFlags = conditions.map { cond ->
+                Log.i("CEP", "${featureStore.latestAsDouble(cond.feature)}")
                 val value = featureStore.latestAsDouble(cond.feature) ?: return@map false
 
                 // Resolve thresholds: prefer literal, else feature-key
@@ -206,6 +209,7 @@ class CepEngine(
 
                 val belowOk = below?.let { value < it - cond.hysteresis } ?: false
                 val aboveOk = above?.let { value > it + cond.hysteresis } ?: false
+                Log.i("CEP", "$below, $belowOk; above $above, $aboveOk")
 
                 belowOk || aboveOk
             }
@@ -214,17 +218,25 @@ class CepEngine(
                 "OR" -> satisfiedFlags.any { it }
                 else -> satisfiedFlags.all { it }  // default AND
             }
+            Log.i("CEP", "checkAndClearAlerts: allOrAnySatisfied=$allOrAnySatisfied")
 
             if (allOrAnySatisfied) {
                 val since = alert.exitSatisfiedSinceMs
                 if (since == null) {
                     alert.exitSatisfiedSinceMs = now
                 } else {
+                    Log.i("CEP", "$now, $since, ${now - since}/1000L")
                     val elapsedSec = (now - since) / 1000L
                     if (elapsedSec >= alert.exitSustainSec) {
-                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
-                        AlertRegistry.clear(alert.ruleId)
-                        EventBus.getDefault().post(AlertClearedEvent(alert.uid))
+                        if (alert.priority == 1) {
+                            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+                            AlertRegistry.clear(alert.ruleId)
+                            EventBus.getDefault().post(AlertClearedEvent(alert.uid))
+                        } else {
+                            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
+                            AlertRegistry.clear(alert.ruleId)
+                            EventBus.getDefault().post(AlertClearedEvent(alert.uid))
+                        }
                     }
                 }
             } else {

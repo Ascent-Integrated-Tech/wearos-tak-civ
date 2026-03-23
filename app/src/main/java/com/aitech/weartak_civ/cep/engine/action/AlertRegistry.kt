@@ -13,6 +13,7 @@ object AlertRegistry {
 
     data class ActiveAlert(
         val ruleId: String,
+        val priority: Int,
         val uid: String,
         val startedAtMs: Long,
         val exitConditions: List<ExitCondition>,
@@ -37,6 +38,7 @@ object AlertRegistry {
      */
     fun tryActivate(
         ruleId: String,
+        priority: Int,
         uid: String,
         exitConditions: List<ExitCondition>,
         exitLogic: String,
@@ -47,6 +49,7 @@ object AlertRegistry {
 
         active[ruleId] = ActiveAlert(
             ruleId = ruleId,
+            priority = priority,
             uid = uid,
             startedAtMs = now,
             exitConditions = exitConditions,
