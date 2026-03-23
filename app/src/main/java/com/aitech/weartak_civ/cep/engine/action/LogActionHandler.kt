@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.cep.engine.action
 
 import android.util.Log
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +65,7 @@ class LogActionHandler(
                         sendSms = ctx.action.sendSms,
                         timeMillis = System.currentTimeMillis(),
                         enqueuedToBeSent = false))
+                addToSensorLogFileLocation(Utils.SensorLogType.ALERT_CLEAR, -1, "AutoGenAlert: ${ctx.ruleId} (desc=${expandedMessage.ifEmpty { ctx.ruleId }})")
             }
         }
     }

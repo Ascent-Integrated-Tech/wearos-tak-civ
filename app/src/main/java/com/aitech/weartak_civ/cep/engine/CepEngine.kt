@@ -9,6 +9,8 @@ import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
@@ -205,6 +207,7 @@ class CepEngine(
                             dataRepository.addAlertClearedEventCep(alert.uid)
                         } else {
                             dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
+                            addToSensorLogFileLocation(Utils.SensorLogType.ALERT_CLEAR, -1, "AutoGenClear: ${alert.ruleId}")
                             AlertRegistry.clear(alert.ruleId)
                             dataRepository.addAlertClearedEventCep(alert.uid)
                         }
