@@ -27,7 +27,10 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
 import android.os.ParcelUuid
 import android.util.Log
@@ -173,6 +176,7 @@ class CompanionAppService : Service() {
 
         // Drop state
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
+        activeAddr = null
         connectedDevice = null
         notificationsEnabled = false
         negotiatedMtu = DEFAULT_ATT_MTU
@@ -216,6 +220,72 @@ class CompanionAppService : Service() {
         synchronized(pendingLock) { pendingJson.clear() }
     }
 
+    private fun registerBondReceiver() {
+        if (bondReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            addAction(ACTION_KEY_MISSING)
+        }
+        registerReceiver(bondStateReceiver, filter)
+        bondReceiverRegistered = true
+    }
+
+    private fun unregisterBondReceiver() {
+        if (!bondReceiverRegistered) return
+        try {
+            unregisterReceiver(bondStateReceiver)
+        } catch (t: Throwable) {
+            Log.w(TAG, "unregisterReceiver(bondStateReceiver) failed", t)
+        } finally {
+            bondReceiverRegistered = false
+        }
+    }
+
+    private val bondStateReceiver = object : BroadcastReceiver() {
+        @Suppress("DEPRECATION")
+        @SuppressLint("MissingPermission")
+        @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            val device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE) as? BluetoothDevice ?: return
+            val address = device.address ?: return
+
+            if (action == ACTION_KEY_MISSING) {
+                Log.w(TAG, "Bond key missing for $address active=$activeAddr")
+
+                removeBondIfPossible(device, "key_missing:$address")
+                forceBleReset("key_missing:$address")
+                return
+            }
+
+            if (action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+            val prevBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.BOND_NONE)
+
+            Log.d(TAG, "Bond state changed for $address: $prevBondState -> $bondState active=$activeAddr")
+
+            if (bondState != BluetoothDevice.BOND_NONE || prevBondState == BluetoothDevice.BOND_NONE) return
+            if (!isActive(device)) return
+
+            Log.w(TAG, "Active companion bond lost for $address; forcing BLE reset")
+            forceBleReset("bond_lost:$address")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun removeBondIfPossible(device: BluetoothDevice, why: String): Boolean {
+        return try {
+            val removed = BluetoothDevice::class.java
+                .getMethod("removeBond")
+                .invoke(device) as? Boolean ?: false
+            Log.w(TAG, "removeBond($why) for ${device.address} -> $removed")
+            removed
+        } catch (t: Throwable) {
+            Log.w(TAG, "removeBond($why) failed for ${device.address}", t)
+            false
+        }
+    }
+
     private fun bleSendReady(): Boolean {
         return (connectedDevice != null &&
                 gattServer != null &&
@@ -235,6 +305,7 @@ class CompanionAppService : Service() {
 
     @Volatile
     private var connectedDevice: BluetoothDevice? = null
+    @Volatile private var bondReceiverRegistered: Boolean = false
     @Volatile private var negotiatedMtu: Int = DEFAULT_ATT_MTU
     @Volatile private var notificationsEnabled: Boolean = false
     @Volatile private var helloSentForConnection: Boolean = false
@@ -274,6 +345,7 @@ class CompanionAppService : Service() {
 
         // 3) Collect state *before* BLE init so transitions are not missed
         collectBleState()
+        registerBondReceiver()
 
         // 4) Initialize BLE server + GATT service
         initBle()
@@ -409,7 +481,8 @@ class CompanionAppService : Service() {
         // 2) Stop outbound work
         serviceJob.cancel()
 
-        // 3) Stop advertising + close the server + force disconnect
+        // 3) Stop bond monitoring, advertising + close the server + force disconnect
+        unregisterBondReceiver()
         stopAdvertising()
         closeGattServer() // should cancel connection + close server
 
@@ -580,10 +653,15 @@ class CompanionAppService : Service() {
             super.onConnectionStateChange(device, status, newState)
 
             Log.d(TAG, "onConnectionStateChange: dev=${device.address} status=$status newState=$newState")
-
+            val sessionEstablished = notificationsEnabled || helloSentForConnection
 
             if (status != BluetoothGatt.GATT_SUCCESS && newState != BluetoothProfile.STATE_CONNECTED) {
-                // e.g. 133 or other error – treat as failure, reset and re-advertise Log.w(TAG, "Connection error status=$status, resetting BLE state")
+                if (isBonded(device) && !sessionEstablished) {
+                    Log.w(TAG, "Bonded device ${device.address} failed before secure session; removing stale bond")
+                    removeBondIfPossible(device, "connect_error:${device.address}")
+                }
+                Log.w(TAG, "Connection error status=$status, resetting BLE state")
+                activeAddr = null
                 connectedDevice = null
                 resetNegotiatedMtu()
                 capRepo.updateBleConnectionState(
@@ -630,6 +708,11 @@ class CompanionAppService : Service() {
                     negotiatedMtu = DEFAULT_ATT_MTU
                     notificationsEnabled = false
                     helloSentForConnection = false
+
+                    if (isBonded(device) && !sessionEstablished) {
+                        Log.w(TAG, "Bonded device ${device.address} disconnected before secure session; removing stale bond")
+                        removeBondIfPossible(device, "disconnect_before_session:${device.address}")
+                    }
 
                     capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTED)
                     startAdvertising()
@@ -814,9 +897,11 @@ class CompanionAppService : Service() {
         val dev = connectedDevice
 
         // Drop local flags immediately
+        activeAddr = null
         connectedDevice = null
         notificationsEnabled = false
         negotiatedMtu = DEFAULT_ATT_MTU
+        helloSentForConnection = false
 
         if (server != null && dev != null) {
             try {
@@ -1042,6 +1127,7 @@ class CompanionAppService : Service() {
 
     companion object {
         private val TAG = "WearTAK-" + CompanionAppService::class.java.simpleName
+        private const val ACTION_KEY_MISSING = "android.bluetooth.device.action.KEY_MISSING"
         private const val NOTIFICATION_ID = 999  // change per service
         val isRunning: AtomicBoolean = AtomicBoolean(false)
         private const val DEFAULT_ATT_MTU = 23
