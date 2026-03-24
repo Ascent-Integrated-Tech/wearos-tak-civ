@@ -1041,7 +1041,7 @@ object Utils {
              * Start strict and widen later as needed.
              */
             fun isMarkerType(typeStr: String): Boolean {
-                val types = listOf("a-f-G","a-h-G","a-u-G","a-n-G")
+                val types = listOf("a-f-G","a-h-G","a-u-G","a-n-G","b-m-p-s-p-i")
 //                val isMarker = types.contains(typeStr)
 //                if (!isMarker) {
 //                    Log.i(TAG, "Marker not suspected: \n $typeStr")

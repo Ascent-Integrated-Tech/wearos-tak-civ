@@ -733,6 +733,7 @@ fun markerIconFromString(markerType: String): Painter {
         "a-h-G" -> painterResource(R.drawable.hostile)
         MARKER_NEUTRAL -> painterResource(R.drawable.neutral)
         "a-n-G" -> painterResource(R.drawable.neutral)
+        "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.unknown)
     }
