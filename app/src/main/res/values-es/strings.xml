@@ -53,7 +53,6 @@
     <string name="update_license">Actualizar licencia</string>
     <string name="bpm">bpm</string>
     <string name="sos">SOS</string>
-    <string name="weartak_accessibility_settings_toast">Active el WearTAK-– versión civil (Wearable Team Awareness Kit – Civilian, TAK-CIV) en las aplicaciones instaladas de configuración de accesibilidad</string>
     <string name="connecting_to_toast">Conectando a %1$s</string>
     <string name="connected_to_toast">Conectado a %1$s</string>
     <string name="connection_failed">Conexión fallida</string>

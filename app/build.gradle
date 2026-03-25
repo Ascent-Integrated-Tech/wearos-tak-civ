@@ -73,6 +73,7 @@ android {
     }
 
     // Grab android key vars, prioritize Gitlab env vars, fall back on local signing.properties
+
     signingConfigs {
         debug {
             def keystorePath = signingValue(
@@ -176,6 +177,10 @@ android {
     }
     buildToolsVersion '35.0.0'
     ndkVersion '27.0.12077973'
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
     lint {
         abortOnError true
         checkReleaseBuilds true

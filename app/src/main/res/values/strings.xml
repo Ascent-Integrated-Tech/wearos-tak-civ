@@ -70,7 +70,6 @@
     <string name="bpm">" bpm"</string>
     <string name="sos">SOS</string>
 
-    <string name="weartak_accessibility_settings_toast">Please switch ON WearTAK-CIV in Installed Apps of Accessibility Settings</string>
     <string name="connecting_to_toast">Connecting to %1$s</string>
     <string name="connected_to_toast">Connected to %1$s</string>
     <string name="connection_failed">Connection Failed</string>
