@@ -2015,6 +2015,38 @@ class DataRepository(private val context: Context) {
         val p12Cert: String,
         val p12CertPassword: String
     )
+
+    private fun normalizeP12Password(password: String): String {
+        val trimmed = password.trim()
+        return if (trimmed.isEmpty()) "atakatak" else trimmed
+    }
+
+    private fun normalizeP12Cert(cert: String): String =
+        cert
+            .replace("\\/", "/")
+            .replace("\r", "")
+            .replace("\n", "")
+            .trim()
+
+    private fun normalizeTakServerItem(item: TakServerItem): TakServerItem {
+        val normalizedCert = normalizeP12Cert(item.p12Cert)
+        if (!item.isP12Cert) {
+            return if (normalizedCert == item.p12Cert) item else item.copy(p12Cert = normalizedCert)
+        }
+        val normalizedPassword = normalizeP12Password(item.p12CertPassword)
+        return if (normalizedPassword == item.p12CertPassword && normalizedCert == item.p12Cert) {
+            item
+        } else {
+            item.copy(
+                p12Cert = normalizedCert,
+                p12CertPassword = normalizedPassword
+            )
+        }
+    }
+
+    private fun normalizeTakServerList(list: List<TakServerItem>): List<TakServerItem> =
+        list.map(::normalizeTakServerItem)
+
     val getTakServerList: Flow<List<TakServerItem>> = takServerSecretsRepository.takServerListJson
         .map { jsonString ->
             if (jsonString.isNullOrEmpty()) {
@@ -2025,13 +2057,14 @@ class DataRepository(private val context: Context) {
                 // Split into typeToken and type for minifyEnabled true. Do not combine into one line
                 val typeToken = object : TypeToken<List<TakServerItem>>() {}
                 val type = typeToken.type
-                gson.fromJson<List<TakServerItem>>(jsonString, type)
+                normalizeTakServerList(gson.fromJson<List<TakServerItem>>(jsonString, type))
             }
         }
 
     suspend fun storeTakServerList(newList: List<TakServerItem>) {
         // Convert list to JSON
-        val jsonString = gson.toJson(newList)
+        val normalizedList = normalizeTakServerList(newList)
+        val jsonString = gson.toJson(normalizedList)
         Log.i(TAG, "storeTakServerList: writing list size=${newList.size}, len=${jsonString.length}")
         takServerSecretsRepository.setTakServerListJson(jsonString)
 

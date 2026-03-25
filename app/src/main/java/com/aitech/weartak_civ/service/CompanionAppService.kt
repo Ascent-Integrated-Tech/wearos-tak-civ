@@ -55,6 +55,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -799,13 +800,6 @@ class CompanionAppService : Service() {
                 }
             }
 
-            // 2) Fallback: if companion sends a whole JSON object without newline,
-            // and buffer currently looks like a complete object, process it.
-            val bufTrim = rxBuf.toString().trim()
-            if (bufTrim.startsWith("{") && bufTrim.endsWith("}")) {
-                rxBuf.setLength(0)
-                handleCompanionLine(bufTrim)
-            }
         }
 
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -1042,8 +1036,9 @@ class CompanionAppService : Service() {
         // 1) Store servers
         Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
         repo.storeTakServerList(payload.takServerList)
+        val storedTakServerList = repo.getTakServerList.first()
         // reflect the settings ui.
-        takServerList = payload.takServerList
+        takServerList = storedTakServerList
         takServerListState.postValue(takServerList)
 
         // 2) Store reporting interval
