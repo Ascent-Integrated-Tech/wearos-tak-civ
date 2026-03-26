@@ -763,7 +763,8 @@ class SitxTakService : Service() {
                         mapItem = mapItem,
                         server = flowTag,
                         timeIssued = mapItem.link?.productionTime,
-                        timeCompleted = null
+                        timeCompleted = null,
+                        remark = markerCotEvent.detail.remarks ?: ""
                     )
                     Log.i(TAG, "updateBloodhoundEvent called=$bhEvent")
                     bhRepo.updateBloodhoundEvent(bhEvent)

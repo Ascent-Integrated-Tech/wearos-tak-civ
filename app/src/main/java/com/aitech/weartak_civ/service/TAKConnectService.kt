@@ -1429,7 +1429,8 @@ class TAKConnectService: Service() {
                                         mapItem = mapItem,
                                         server = takServerDetail.address,
                                         timeIssued = mapItem.link?.productionTime,
-                                        timeCompleted = null
+                                        timeCompleted = null,
+                                        remark = markerCotEvent.detail.remarks ?: ""
                                     )
                                     bhRepo.updateBloodhoundEvent(bhEvent)
                                 }

@@ -1009,13 +1009,14 @@ object Utils {
                 val callsign = contactCallsign(rawXml) ?: "" // keep empty-string safe for UI
                 val creator = creatorOf(rawXml)
                 val link = linkOf(rawXml)
+                val remark = extractElementText(rawXml, "remarks")
 
                 val detail = MarkerDetail(
                     markerCallsign = callsign,
                     creator = creator,
                     link = link,
                     usericon = null,
-                    remarks = null,
+                    remarks = remark,
                     contact = null
                 )
 
@@ -1110,6 +1111,14 @@ object Utils {
                 val pattern = """<${Regex.escape(elementName)}\b[^>]*?\b${Regex.escape(attrName)}\s*=\s*(['"])(.*?)\1""".toRegex(RegexOption.DOT_MATCHES_ALL)
                 val m = pattern.find(xml) ?: return null
                 return m.groupValues.getOrNull(2)
+            }
+
+            private fun extractElementText(xml: String, elementName: String): String? {
+                val pattern = """<${Regex.escape(elementName)}\b[^>]*>(.*?)</${Regex.escape(elementName)}>"""
+                    .toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+
+                val match = pattern.find(xml) ?: return null
+                return match.groupValues[1].trim()
             }
 
             /** ISO8601 (e.g., 2025-10-22T17:54:57Z or ...11:00:11.065Z) → epoch millis. */

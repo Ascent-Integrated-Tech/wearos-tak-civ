@@ -1865,11 +1865,16 @@ class DataRepository(private val context: Context) {
     suspend fun incrementBloodhoundUnreadCount(uid: String) {
         _bloodhoundUnreadCount.update { current ->
             val updated = current + 1
-            Log.i(TAG, "Bloodhound unread incremented for uid=$uid count=$updated")
+            //Log.i(TAG, "Bloodhound unread incremented for uid=$uid count=$updated")
             updated
         }
         _hasUnreadBloodhounds.emit(_bloodhoundUnreadCount.value > 0)
     }
+
+    suspend fun updateHasUnreadBloodhounds(hasUnread: Boolean) {
+        _hasUnreadBloodhounds.emit(hasUnread)
+    }
+
 
     suspend fun clearBloodhoundUnreadCount(reason: String) {
         val previous = _bloodhoundUnreadCount.value
