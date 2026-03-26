@@ -1423,7 +1423,7 @@ class TAKConnectService: Service() {
                                         Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
                                         continue
                                     }
-                                    Log.i(TAG, "Received a marker message:\n$rawXml\n$markerCotEvent")
+                                    //Log.i(TAG, "Received a marker message:\n$rawXml\n$markerCotEvent")
                                     val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                                     val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                         mapItem = mapItem,
