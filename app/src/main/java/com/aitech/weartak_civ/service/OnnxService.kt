@@ -276,7 +276,7 @@ class OnnxService : Service() {
 
         return try {
             val score = lock.withLock { runModelScalar(session, modelInput) }
-            Log.i(TAG, "Detector inference score=$score") //first log
+            //Log.i(TAG, "Detector inference score=$score") //first log
             GunshotDetectionResult(
                 isGunshot = score >= THRESHOLD,
                 confidence = score
@@ -414,7 +414,7 @@ class OnnxService : Service() {
 
         // in assets/
         //private const val DETECTOR_ASSET = "dart_detector_h2.onnx" //old module
-        private const val DETECTOR_ASSET = "dart_bin_20260225.onnx" //old module
+        private const val DETECTOR_ASSET = "dart_bin_20260225.onnx"
         private const val INPUT_NAME = "input"
         private const val OUTPUT_NAME = "result"
 

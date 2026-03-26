@@ -757,7 +757,7 @@ class SitxTakService : Service() {
                         Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
                         return@launch
                     }
-                    Log.i(TAG, "Received a marker message:\n$markerCotEvent")
+                    //Log.i(TAG, "Received a marker message:\n$markerCotEvent")
                     val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
                     val bhEvent = BloodhoundRepository.BloodhoundEvent(
                         mapItem = mapItem,

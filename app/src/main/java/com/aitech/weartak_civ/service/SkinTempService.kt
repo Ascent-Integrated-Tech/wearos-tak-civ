@@ -364,8 +364,8 @@ class SkinTempService : Service() {
                             val lastIbi = ibiList.last()
                             batchMostRecentIbi = lastIbi
                             if (lastIbi > 0) lastNonZeroIbi = lastIbi
-                            Log.i(TAG, "[0] IBI_LIST(ms)=$ibiList")
-                            Log.i(TAG, "[0] IBI_STATUS_LIST=$ibiStatusList")
+                            //Log.i(TAG, "[0] IBI_LIST(ms)=$ibiList")
+                            //Log.i(TAG, "[0] IBI_STATUS_LIST=$ibiStatusList")
                         }
                     }
                 } catch (t: Throwable) {
@@ -387,11 +387,11 @@ class SkinTempService : Service() {
 				lastNonZeroRmssdMs = rmssd
 			}
 			val effectiveRmssd = if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) rmssd else lastNonZeroRmssdMs
-			Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
+			//Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
         }
 
         override fun onFlushCompleted() {
-            Log.i(TAG, "HR flush completed t=${SystemClock.elapsedRealtime()}")
+            //Log.i(TAG, "HR flush completed t=${SystemClock.elapsedRealtime()}")
         }
 
         override fun onError(error: HealthTracker.TrackerError) {
@@ -402,7 +402,7 @@ class SkinTempService : Service() {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: android.content.Context, intent: Intent) {
             val interactive = isInteractiveNow
-            Log.w(TAG, "SCREEN EVENT: ${intent.action} | interactive=$interactive | deviceWorn=$deviceWorn | hrRunning=$isHrRunning")
+            //Log.w(TAG, "SCREEN EVENT: ${intent.action} | interactive=$interactive | deviceWorn=$deviceWorn | hrRunning=$isHrRunning")
             if (!deviceWorn) return
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> {
@@ -425,7 +425,7 @@ class SkinTempService : Service() {
             ppgTracker?.unsetEventListener()
             ppgRunning = false
             ppgPausedForSpo2 = true
-            Log.i(TAG, "[PPG] Paused PPG_CONTINUOUS for SpO2")
+            //Log.i(TAG, "[PPG] Paused PPG_CONTINUOUS for SpO2")
         } catch (t: Throwable) {
             Log.e(TAG, "[PPG] Failed to pause PPG_CONTINUOUS for SpO2", t)
         }
@@ -435,7 +435,7 @@ class SkinTempService : Service() {
         if (!ppgPausedForSpo2) return
         ppgPausedForSpo2 = false
         startPpgContinuousIfSelected()
-        Log.i(TAG, "[PPG] Resumed PPG_CONTINUOUS after SpO2")
+        //Log.i(TAG, "[PPG] Resumed PPG_CONTINUOUS after SpO2")
     }
 
     // Initialize PPG capability: prefer continuous if available, fall back to on-demand
@@ -456,7 +456,7 @@ class SkinTempService : Service() {
                 ppgTracker = tracker
                 ppgTrackerType = type
                 ppgAvailable = true
-                Log.i(TAG, "[PPG] Using tracker type=$type with PpgTypeSet=$ppgValueSet")
+                //Log.i(TAG, "[PPG] Using tracker type=$type with PpgTypeSet=$ppgValueSet")
                 break
             } catch (t: Throwable) {
                 Log.w(TAG, "[PPG] Failed to create tracker for type=$type (will try next)", t)
