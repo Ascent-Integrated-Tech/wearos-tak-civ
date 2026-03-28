@@ -130,7 +130,9 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.Utils.addToSensorLogFileLocation
 import com.aitech.weartak_civ.data.model.PressureReading
+import kotlin.text.ifEmpty
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -1113,6 +1115,7 @@ class DataRepository(private val context: Context) {
 
     // Backend-only use
     suspend fun appendPhysioAndAutoGenAlert(item: CustomEmergencyAlert) {
+        addToSensorLogFileLocation(Utils.SensorLogType.ALERT_CLEAR, -1, "AutoGenAlert(DataRepo): ${item.description}")
         _physioAndAutoGenAlertList.emit(_physioAndAutoGenAlertList.value + item)
     }
 
@@ -1135,6 +1138,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun removePhysioAndAutoGenAlertByUid(uid: String) {
+        addToSensorLogFileLocation(Utils.SensorLogType.ALERT_CLEAR, -1, "AutoGenClear(DataRepo): ${_physioAndAutoGenAlertList.value.first { it.uuid == uid }.description}")
         _physioAndAutoGenAlertList.emit(_physioAndAutoGenAlertList.value.filterNot { it.uuid == uid })
     }
 
