@@ -1266,6 +1266,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
     val showLocationChangeConfirm = remember {mutableStateOf(false)}
     val removeMarker = remember {mutableStateOf(false)}
     val anyEndpointConnected by viewModel.anyEndpointConnected.collectAsStateWithLifecycle()
+    val multicastRunning by viewModel.multicastRunning.collectAsStateWithLifecycle()
     val droppedMarkerListSetting by viewModel.droppedMarkerListSetting.collectAsStateWithLifecycle()
 
     val location = viewModel.location
@@ -1304,13 +1305,13 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                 // TODO Senni: Should UI check for location?? We are anyway queuing it to be sent later
                 // TODO Senni: Also if anyEndpointConnected is false, backend will send it later. So UI should just say that it will be sent later
                 confirmFunction = {
-                    successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
+                    successBoolean.value = (location != null && locationEnabled && (anyEndpointConnected || multicastRunning))
                 }
             )
 
             SuccessfulCotSentCheck(
                 shouldShowDropMarkerConfirm,
-                anyEndpointConnected,
+                anyEndpointConnected || multicastRunning,
                 context,
                 {
                     exitActivity()
@@ -1386,7 +1387,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                             viewModel.requestClearLast()
                         }
                         // dialog UX logic
-                        successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
+                        successBoolean.value = (location != null && locationEnabled && (anyEndpointConnected || multicastRunning))
                     }
                 )
             }
@@ -1441,13 +1442,13 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                         viewModel.requestClearAllMarkers()
                     }
                     // dialog UX logic
-                    successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
+                    successBoolean.value = (location != null && locationEnabled && (anyEndpointConnected || multicastRunning))
                 }
             )
 
             SuccessfulCotSentCheck(
                 shouldShowClearAllConfirm,
-                anyEndpointConnected,
+                anyEndpointConnected || multicastRunning,
                 context,
                 {
                     markerTitleSettingsState.value = ""
@@ -1493,13 +1494,13 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                     CoroutineScope(Dispatchers.Main).launch {
                     viewModel.requestUpdateMarkerLocation(uid)
                 }
-                    successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
+                    successBoolean.value = (location != null && locationEnabled && (anyEndpointConnected || multicastRunning))
                 }
             )
 
             SuccessfulCotSentCheck(
                 showLocationChangeConfirm,
-                anyEndpointConnected,
+                anyEndpointConnected || multicastRunning,
                 context,
                 { },
                 successBoolean,

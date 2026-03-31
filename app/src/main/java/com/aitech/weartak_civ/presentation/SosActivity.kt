@@ -357,12 +357,15 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     val shouldShowConfirm = remember { mutableStateOf(false) }
     isAlertingLiveData.observeAsState()
     val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle(initialValue = false)
+    val multicastRunning by dataRepository.multicastPublisherRunning.collectAsStateWithLifecycle(initialValue = false)
 //    val anyEndpointConnected = connectedEndpoints.isNotEmpty()
 
     val location = dataRepository.latestLocation.value
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+    successBoolean.value = (locationEnabled && (anyEndpointConnected || multicastRunning))
+    Log.i(TAG, "multicastRunning=$multicastRunning; successBoolean=${successBoolean.value}")
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -412,7 +415,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isConfirmed,
                 isAlertingLiveData,
                 {
-                    successBoolean.value = (locationEnabled && anyEndpointConnected)
+                    successBoolean.value = (locationEnabled && (anyEndpointConnected || multicastRunning))
+                    Log.i(TAG, "successBoolean.value=${successBoolean}")
                     if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)}
                 },
                 {exitActivity()}
@@ -420,7 +424,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
 
             SuccessfulCotSentCheck(
                 isConfirmed,
-                anyEndpointConnected,
+                anyEndpointConnected || multicastRunning,
                 context,
                 {
                     exitActivity()

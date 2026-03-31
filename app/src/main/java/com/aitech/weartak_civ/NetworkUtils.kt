@@ -89,12 +89,12 @@ object NetworkUtils {
         /**
          * Call when Wi-Fi becomes available. We resolve the Wi-Fi Network and bind the socket to it.
          */
-        fun start(network: Network, address: String, port: Int) {
+        fun start(network: Network, address: String, port: Int): Boolean {
             Log.i(TAG, "MulticastPublisher starting → $address:$port")
             MulticastPublisher.port = port
             synchronized(this) {
                 // No-op if already bound to this same Network and socket is alive
-                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed && (address == MulticastPublisher.address)) return
+                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed && (address == MulticastPublisher.address)) return true
 
                 // If running but on a different (or stale) Network, rebuild
                 stopLocked()
@@ -111,7 +111,7 @@ object NetworkUtils {
                     } catch (e: Exception) {
                         android.util.Log.e(TAG, "bindSocket failed: ${e.message}", e)
                         ms.close()
-                        return
+                        return false
                     }
 
                     socket = ms
@@ -119,9 +119,11 @@ object NetworkUtils {
                     currentNetwork = network
                     running = true
                     Log.i(TAG, "MulticastPublisher started → $address:${MulticastPublisher.port}")
+                    return true
                 } catch (e: Exception) {
                     Log.e(TAG, "start() error: ${e.message}", e)
                     stopLocked() // clean up partial state
+                    return false
                 }
             }
         }

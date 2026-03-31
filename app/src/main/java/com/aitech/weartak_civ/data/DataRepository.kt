@@ -361,6 +361,14 @@ class DataRepository(private val context: Context) {
     // ======== ======== HAIL SECTION END ======== ==========
 
     // ======== ======== Multicast SECTION Start ======== ==========
+
+    private val _multicastPublisherRunning = MutableStateFlow<Boolean> (false)
+    val multicastPublisherRunning: StateFlow<Boolean> = _multicastPublisherRunning
+
+    fun setMulticastPublisherRunning(running: Boolean) {
+        _multicastPublisherRunning.value = running
+    }
+
     val multicastEnabled: StateFlow<Boolean?> =
         context.dataStore.data
             .map { prefs ->
@@ -432,6 +440,11 @@ class DataRepository(private val context: Context) {
             prefs[MULTICAST_PORT] = multicastPort
         }
     }
+
+    /*
+     *  tracks the wifi connection state to start or stop multicasting.
+     */
+    var isWifiConnected = MutableStateFlow<Boolean>(false)
 
     // ======== ======== Multicast SECTION END ======== ==========
 
@@ -1668,11 +1681,6 @@ class DataRepository(private val context: Context) {
     suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {
         _reportingUpdateIntervalSecs.emit(reportingUpdateInterval)
     }
-
-    /*
-     *  tracks the wifi connection state to start or stop multicasting.
-     */
-    var isWifiConnected = MutableStateFlow<Boolean>(false)
 
     val getEnableWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION

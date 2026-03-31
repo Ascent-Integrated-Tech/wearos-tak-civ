@@ -31,6 +31,11 @@ class MarkerViewModel : ViewModel() {
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = false
     )
+    val multicastRunning: StateFlow<Boolean> = dataRepository.multicastPublisherRunning.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
     val location = dataRepository.latestLocation.value
 
 
