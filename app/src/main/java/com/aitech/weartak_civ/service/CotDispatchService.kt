@@ -60,6 +60,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -169,14 +172,16 @@ class CotDispatchService : Service() {
 
         startSendChatMessageCollector()
 
-        startAnyEndpointConnectedCollector()
+        startAnyEndpointOrMulticastConnectedCollector()
     }
 
-    private fun startAnyEndpointConnectedCollector() {
+    private fun startAnyEndpointOrMulticastConnectedCollector() {
         serviceScope.launch {
-            dataRepository.anyEndpointConnected.collect { connected ->
-                Log.i(TAG, "Any endpoint connected: $connected")
-                if (connected) {
+            combine(dataRepository.anyEndpointConnected, dataRepository.multicastPublisherRunning) {
+                anyEndpointConnected, multicastRunning ->
+                anyEndpointConnected || multicastRunning
+            }.distinctUntilChanged().collectLatest{ shouldSend ->
+                if (shouldSend) {
                     sendPendingChatMessages()
                 }
             }
@@ -335,7 +340,7 @@ class CotDispatchService : Service() {
         // But if location is stale, we don't immediately send out but wait for fresh location
         val send = if (null == loc) true else (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
         //Log.i(TAG, "loc: ${if (null == loc) "null" else "NOT null"}; FRESH: ${(System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS}, ${(System.currentTimeMillis() - lastLocationUpdateRcvd) / 1000.0} s ago")
-        return (dataRepository.anyEndpointConnected.value && send)
+        return ((dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) && send)
     }
 
     private fun startAddManualAlertCollector() {
@@ -348,7 +353,7 @@ class CotDispatchService : Service() {
                 if (readyToSendAlertEvents()) {
                     sendAllManualAlerts(manualAlertWithState)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueManualAlertAndUpdateUI(manualAlertWithState)
@@ -442,7 +447,7 @@ class CotDispatchService : Service() {
         if (readyToSendAlertEvents()) {
             sendAllManualAlerts(manualAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value) {
+            if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                 EventBus.getDefault().post(LocationUpdateRequired())
             }
             enqueueManualAlertAndUpdateUI(manualAlertClearWithState)
@@ -475,7 +480,7 @@ class CotDispatchService : Service() {
                 if (readyToSendAlertEvents()) {
                     sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertAlertWithState)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
@@ -570,7 +575,7 @@ class CotDispatchService : Service() {
         if (readyToSendAlertEvents()) {
             sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value) {
+            if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                 EventBus.getDefault().post(LocationUpdateRequired())
             }
             enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertClearWithState)
@@ -592,7 +597,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.chatRequestSend.collect { req ->
                 Log.i(TAG, "Received req to send chat message: $req")
-                if (dataRepository.anyEndpointConnected.value) {
+                if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                     sendAllChatMessages(req)
                 } else {
                     val chatMsg = Utils.ChatMessage(message = req.message, uid = req.dstUid, callsign = req.dstChatroom, timeReceived = req.timeMillis)
@@ -630,7 +635,7 @@ class CotDispatchService : Service() {
         }
         if (dataRepository.getEnableMulticast.first()) {
             sendMulticastDatagram(chatCotXml)
-            //sent = true
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", chatCotXml))
@@ -704,7 +709,7 @@ class CotDispatchService : Service() {
                     sendMarkerDropNow(req)
                     sendPendingMarkerDrops()
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueDrop(req)
@@ -721,7 +726,7 @@ class CotDispatchService : Service() {
                     sendMarkerEditNow(req)
                     sendPendingMarkerEdits()
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueEdit(req)
@@ -734,8 +739,7 @@ class CotDispatchService : Service() {
     private fun readyToSendMarkerEvents(): Boolean {
         val loc = dataRepository.latestLocation.value
         val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
-        // TODO Senni: Check how anyEndpointConnected is set
-        return (dataRepository.anyEndpointConnected.value && (null != loc) && fresh)
+        return ((dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) && (null != loc) && fresh)
     }
 
     private fun startMarkerDropListCollector() {
@@ -1914,7 +1918,7 @@ class CotDispatchService : Service() {
         }
         if (dataRepository.getEnableMulticast.first()) {
             sendMulticastDatagram(xml)
-            //sent = true
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
@@ -2058,6 +2062,7 @@ class CotDispatchService : Service() {
         }
         if (dataRepository.getEnableMulticast.first()) {
             sendMulticastDatagram(xml)
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))

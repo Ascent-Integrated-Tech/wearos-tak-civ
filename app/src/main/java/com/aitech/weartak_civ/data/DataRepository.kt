@@ -361,6 +361,14 @@ class DataRepository(private val context: Context) {
     // ======== ======== HAIL SECTION END ======== ==========
 
     // ======== ======== Multicast SECTION Start ======== ==========
+
+    private val _multicastPublisherRunning = MutableStateFlow<Boolean> (false)
+    val multicastPublisherRunning: StateFlow<Boolean> = _multicastPublisherRunning
+
+    fun setMulticastPublisherRunning(running: Boolean) {
+        _multicastPublisherRunning.value = running
+    }
+
     val multicastEnabled: StateFlow<Boolean?> =
         context.dataStore.data
             .map { prefs ->
@@ -432,6 +440,11 @@ class DataRepository(private val context: Context) {
             prefs[MULTICAST_PORT] = multicastPort
         }
     }
+
+    /*
+     *  tracks the wifi connection state to start or stop multicasting.
+     */
+    var isWifiConnected = MutableStateFlow<Boolean>(false)
 
     // ======== ======== Multicast SECTION END ======== ==========
 
@@ -1669,11 +1682,6 @@ class DataRepository(private val context: Context) {
         _reportingUpdateIntervalSecs.emit(reportingUpdateInterval)
     }
 
-    /*
-     *  tracks the wifi connection state to start or stop multicasting.
-     */
-    var isWifiConnected = MutableStateFlow<Boolean>(false)
-
     val getEnableWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
     }
@@ -1921,7 +1929,7 @@ class DataRepository(private val context: Context) {
         _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
     }
 
-    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, SITX }
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, SITX, MULTICAST }
 
     private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
     val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected

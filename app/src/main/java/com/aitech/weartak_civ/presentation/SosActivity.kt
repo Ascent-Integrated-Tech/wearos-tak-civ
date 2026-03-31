@@ -363,6 +363,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+    successBoolean.value = locationEnabled && anyEndpointConnected
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -413,6 +414,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isAlertingLiveData,
                 {
                     successBoolean.value = (locationEnabled && anyEndpointConnected)
+                    Log.i(TAG, "successBoolean.value=${successBoolean}")
                     if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)}
                 },
                 {exitActivity()}

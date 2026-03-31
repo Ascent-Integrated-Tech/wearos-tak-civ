@@ -155,8 +155,8 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 // TODO: What happens if the actual SSID is called <unknown_ssid>. For now, this case is not being handled
                 connectedWifiSsid = currWifiSsid
                 EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                handleMulticastToggle(network)
             }
+            handleMulticastToggle(network)
         } else {
             //Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
             //writeToLogFileLocation(logFile, "No change detected in network connection information.So NOT sending NwConnEvent")
