@@ -91,6 +91,7 @@ import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -100,9 +101,14 @@ import androidx.navigation.navArgument
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.const
@@ -242,6 +248,7 @@ fun MapApp(exitActivity: () -> Unit) {
         )
     )
     val scope = rememberCoroutineScope()
+    val markerScope = CoroutineScope(Dispatchers.IO)
     val locationProvider = remember(scope) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
@@ -282,6 +289,8 @@ fun MapApp(exitActivity: () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
+        var pointerOffset by remember { mutableStateOf<DpOffset?>(null) }
+
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
             baseStyle = BaseStyle.Uri("asset://style.json"),
@@ -290,6 +299,32 @@ fun MapApp(exitActivity: () -> Unit) {
                 ornamentOptions = OrnamentOptions.AllDisabled,
                 gestureOptions = GestureOptions.RotationLocked),
             zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
+            onMapLongClick = { coordinates, offset ->
+                pointerOffset = offset
+                val time = System.currentTimeMillis()
+
+                Log.d(TAG, "LongClick Map before launch")
+
+                markerScope.launch {
+                    try {
+                        Log.d(TAG, "LongClick coroutine started")
+                        Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
+
+                        dataRepository.requestMarkerDrop(
+                            "a-u-G",
+                            "hello",
+                            time
+                        )
+
+                        Log.d(TAG, "requestMarkerDrop finished")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "requestMarkerDrop failed", e)
+                    }
+                }
+
+                ClickResult.Pass
+            }
+
         ) {
             if (locationProvider.location.collectAsState().value != null) {
                 LocationPuck(
