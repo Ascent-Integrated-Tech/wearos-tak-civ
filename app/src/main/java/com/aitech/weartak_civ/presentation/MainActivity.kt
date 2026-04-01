@@ -1201,6 +1201,9 @@ class MainActivity : ComponentActivity() {
         bhRepo = (context.applicationContext as WearTakApplication).bhRepo
         sitxRepo = (context.applicationContext as WearTakApplication).sitxRepo
 
+        runBlocking {
+            dataRepository.storeEnableActivityRecognitionService(true)
+        }
         seedVariablesFromRepo()
         runBlocking {
             updateCepSustainOverridesMap()

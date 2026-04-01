@@ -106,6 +106,26 @@ class ActivityRecognitionService : Service() {
             Log.w(TAG, "Cannot request activity updates: permission not granted")
         }
 
+        ioScope.launch {
+            CepBus.emit(
+                CepEvent(
+                    topic = Topics.ACTIVITY,
+                    payload = ActivityPayload(state = "UNKNOWN")
+                )
+            )
+            addToSensorLogFileLocation(Utils.SensorLogType.ACTIVITY, 100,"UNKNOWN")
+        }
+
+        // Emit to CEP inside coroutine scope
+        ioScope.launch {
+            CepBus.emit(
+                CepEvent(
+                    topic = Topics.SLEEP,
+                    payload = SleepPayload(is_sleeping = false)
+                )
+            )
+        }
+
         scope.launch {
             CepBus.emit(
                 CepEvent(
