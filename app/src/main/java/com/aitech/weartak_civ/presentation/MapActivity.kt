@@ -8,6 +8,7 @@
  */
 package com.aitech.weartak_civ.presentation
 
+import android.content.Intent
 import androidx.compose.ui.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -48,7 +49,6 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.TAG
@@ -75,7 +75,6 @@ import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.map.OrnamentOptions
 import org.maplibre.compose.material3.ScaleBar
 import org.maplibre.compose.style.BaseStyle
-
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -89,15 +88,21 @@ import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
-import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
-import org.maplibre.compose.expressions.dsl.feature
 import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
@@ -105,7 +110,6 @@ import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
 import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.value.SymbolAnchor
-import org.maplibre.compose.expressions.value.TextUnitOffsetValue
 
 class MapActivity : ComponentActivity() {
 
@@ -139,7 +143,7 @@ class MapActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
-                    MapApp(exitActivity = {finishAndRemoveTask() })
+                MapApp({finishAndRemoveTask()})
             }
         }
     }
@@ -174,8 +178,8 @@ data class MapMarkerItem(
 @Composable
 fun MarkersOnMap(
     markers: List<MapMarkerItem>,
-    onMarkerClick: (id: String, title: String) -> Unit,
-    camera: CameraState
+    onMarkerClick: (id: String, title: String) -> Unit = { _, _ -> },
+    camera: CameraState,
 ) {
     if (markers.isEmpty()) return
     val fc = rememberMarkerFeatures(markers)
@@ -189,7 +193,7 @@ fun MarkersOnMap(
     typeGroups.forEach { (markerType, group) ->
         val iconRes = markerIconFromString(markerType)
         SymbolLayer(
-            id = "markers-$markerType",
+            id = group.first().uid,
             source = source,
             filter = eq(get("markerType").asString(),const(markerType), c),
             iconImage = image(iconRes),
@@ -200,7 +204,7 @@ fun MarkersOnMap(
             onClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
                 onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
-                ClickResult.Consume
+                ClickResult.Pass
             },
             iconSize = const(1),
             textField = if (camera.position.zoom > 10.0) {
@@ -220,7 +224,8 @@ fun MarkersOnMap(
 }
 @Composable
 fun MapApp(exitActivity: () -> Unit) {
-        val locationFlow by dataRepository.latestLocation.collectAsState()
+    val context = LocalContext.current
+    val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
     val lat = locationFlow?.latitude ?: 0.0
     val lon = locationFlow?.longitude ?: 0.0
@@ -233,6 +238,7 @@ fun MapApp(exitActivity: () -> Unit) {
         )
     )
     val scope = rememberCoroutineScope()
+    val markerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val locationProvider = remember(scope) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
@@ -243,7 +249,7 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val mapMarkers = remember(droppedMarkerListSetting, receivedMarkerListSetting) {
+    val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
                 droppedMarkerListSetting.mapNotNull { marker ->
@@ -257,6 +263,10 @@ fun MapApp(exitActivity: () -> Unit) {
                     )
                 }
             )
+        }
+    }
+    val receivedMapMarkers = remember(receivedMarkerListSetting) {
+        buildList {
             addAll(
                 receivedMarkerListSetting.mapNotNull { marker ->
                     val location = marker.location ?: return@mapNotNull null
@@ -273,6 +283,9 @@ fun MapApp(exitActivity: () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
+        var pointerOffset by remember { mutableStateOf<DpOffset?>(null) }
+        val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle()
+
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
             baseStyle = BaseStyle.Uri("asset://style.json"),
@@ -281,6 +294,38 @@ fun MapApp(exitActivity: () -> Unit) {
                 ornamentOptions = OrnamentOptions.AllDisabled,
                 gestureOptions = GestureOptions.RotationLocked),
             zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
+            onMapLongClick = { coordinates, offset ->
+                Utils.vibrateWatch(vibDurationMs = 100L, numberOfVibes = 1, timeBtwnVibesMs = 10L)
+                pointerOffset = offset
+                val time = System.currentTimeMillis()
+
+                Log.d(TAG, "LongClick Map before launch")
+                 markerScope.launch {
+                    try {
+                        Log.d(TAG, "LongClick coroutine started")
+                        Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
+
+                        dataRepository.requestMarkerDrop(
+                            MarkerActivity.markerType,
+                            "",
+                            time,
+                            lat = coordinates.latitude,
+                            lon = coordinates.longitude,
+                        )
+
+                        Log.d(TAG, "requestMarkerDrop finished")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "requestMarkerDrop failed", e)
+                    }
+                }
+                if (!anyEndpointConnected) {
+                    Toast.makeText(
+                        mainActivity,
+                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
+                }
+                ClickResult.Pass
+            }
+
         ) {
             if (locationProvider.location.collectAsState().value != null) {
                 LocationPuck(
@@ -310,9 +355,22 @@ fun MapApp(exitActivity: () -> Unit) {
                 )
             }
             MarkersOnMap(
-                markers = mapMarkers,
-                onMarkerClick = { id, title -> /* show dialog/toast */ },
+                markers = droppedMapMarkers,
+                onMarkerClick = { id, title ->
+                    val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
+                    Log.d(TAG, "Index from map: $index")
+                    val intent = Intent(context, MarkerActivity::class.java).apply {
+                        putExtra("marker_index", index)
+                        putExtra("start_route", "edit_marker_screen/$index")
+                        putExtra("from_maps", true)
+                    }
+                    context.startActivity(intent)
+                },
                 cameraState
+            )
+            MarkersOnMap(
+                markers = receivedMapMarkers,
+                camera = cameraState
             )
         }
         Image(
