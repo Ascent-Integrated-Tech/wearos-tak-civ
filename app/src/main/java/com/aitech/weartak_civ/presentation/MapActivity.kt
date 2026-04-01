@@ -24,17 +24,12 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,7 +51,6 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.TAG
@@ -83,7 +77,6 @@ import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.map.OrnamentOptions
 import org.maplibre.compose.material3.ScaleBar
 import org.maplibre.compose.style.BaseStyle
-
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -98,36 +91,22 @@ import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import androidx.wear.compose.material.Icon
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import com.aitech.weartak_civ.MARKER_FRIENDLY
-import com.aitech.weartak_civ.MARKER_HOSTILE
-import com.aitech.weartak_civ.MARKER_NEUTRAL
-import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
-import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerTitleSettingsState
-import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
-import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
-import org.maplibre.compose.expressions.dsl.feature
 import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
@@ -135,7 +114,6 @@ import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
 import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.value.SymbolAnchor
-import org.maplibre.compose.expressions.value.TextUnitOffsetValue
 
 class MapActivity : ComponentActivity() {
 
@@ -169,9 +147,7 @@ class MapActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
-                val context = LocalContext.current
-                val markerVm: MarkerViewModel = viewModel()
-                MapCivApp(exitActivity = {finishAndRemoveTask(); }, context, markerVm)
+                MapApp({finishAndRemoveTask()})
             }
         }
     }
@@ -251,8 +227,9 @@ fun MarkersOnMap(
     }
 }
 @Composable
-fun MapApp(exitActivity: () -> Unit, navController: NavController) {
-        val locationFlow by dataRepository.latestLocation.collectAsState()
+fun MapApp(exitActivity: () -> Unit) {
+    val context = LocalContext.current
+    val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
     val lat = locationFlow?.latitude ?: 0.0
     val lon = locationFlow?.longitude ?: 0.0
@@ -345,7 +322,12 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
                 markers = mapMarkers,
                 onMarkerClick = { id, title ->
                     val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
-                    navController.navigate("edit_marker_screen/$index")
+                    Log.d(TAG, "Index from map: $index")
+                    val intent = Intent(context, MarkerActivity::class.java).apply {
+                        putExtra("marker_index", index)
+                        putExtra("start_route", "edit_marker_screen/$index")
+                    }
+                    context.startActivity(intent)
                 },
                 cameraState
             )
@@ -590,97 +572,6 @@ fun MapUi(
                 .rotate(45f),  // bottom
             shape = RoundedCornerShape(0.dp,0.dp,20.dp,20.dp),
             ) { Text("−", modifier = Modifier.rotate(-45f)) }
-    }
-}
-
-@SuppressLint("StateFlowValueCalledInComposition")
-@Composable
-fun MapCivApp(exitActivity: () -> Unit, context: Context, viewModel: MarkerViewModel) {
-    val navController = rememberSwipeDismissableNavController()
-    val licenseKey by viewModel.licenseKey.collectAsStateWithLifecycle()
-    val showLocationChangeDialog = remember {mutableStateOf(false)}
-    val showLocationChangeConfirm = remember {mutableStateOf(false)}
-    val showTypeChangeConfirm = remember {mutableStateOf(false)}
-    val anyEndpointConnected by viewModel.anyEndpointConnected.collectAsStateWithLifecycle()
-    val successBoolean = remember { mutableStateOf(false) }
-    val droppedMarkerListSetting by viewModel.droppedMarkerListSetting.collectAsStateWithLifecycle()
-
-    val location = viewModel.location
-    var locationEnabled by remember { mutableStateOf(enableLocationService) }
-// react to changes in the license.
-    LaunchedEffect(licenseKey) {
-        val currentDestination = navController.currentBackStackEntry?.destination?.route
-        val isValid = isLicenseValid()
-
-        when {
-            !isValid && currentDestination != "invalid_license_screen" -> {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
-                exitActivity()
-            }
-            isValid == true && currentDestination != "map_screen" -> {
-                navController.navigate("map_screen") {
-                    popUpTo(0) { inclusive = true } // clears the back stack
-                }
-            }
-        }
-    }
-
-    SwipeDismissableNavHost(
-        navController = navController,
-        startDestination = if (isLicenseValid()) "map_screen" else "invalid_license_screen"
-    ) {
-        composable("map_screen" ) {
-            MapApp(exitActivity, navController)
-        }
-
-        composable(
-            "edit_marker_screen/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
-        ) { backStackEntry ->
-            EditMarkerScreen(
-                backStackEntry = backStackEntry,
-                droppedMarkerListSetting = droppedMarkerListSetting,
-                navController = navController,
-                showLocationChangeDialog = showLocationChangeDialog,
-                showLocationChangeConfirm = showLocationChangeConfirm,
-                successBoolean = successBoolean,
-                location = location,
-                locationEnabled = locationEnabled,
-                anyEndpointConnected = anyEndpointConnected,
-                context = context,
-                viewModel = viewModel
-            )
-        }
-        composable(
-            "edit_marker_title/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val index = backStackEntry.arguments?.getInt("index") ?: -1
-            Log.i(MarkerActivity.Constants.TAG, "edit_marker_title index: $index")
-            MarkerTitleSetting(navController, index, droppedMarkerListSetting, viewModel)
-        }
-        composable(
-            "edit_marker_type/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
-        ) { backStackEntry ->
-            EditMarkerTypeScreen(
-                backStackEntry = backStackEntry,
-                droppedMarkerListSetting = droppedMarkerListSetting,
-                navController = navController,
-                successBoolean = successBoolean,
-                location = location,
-                locationEnabled = locationEnabled,
-                anyEndpointConnected = anyEndpointConnected,
-                context = context,
-                viewModel = viewModel,
-                exitActivity = {exitActivity()},
-                showTypeChangeConfirm = showTypeChangeConfirm
-            )
-        }
-        composable(
-            "invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
-        }
     }
 }
 
