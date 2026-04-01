@@ -110,6 +110,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -174,6 +175,95 @@ class MarkerActivity : ComponentActivity() {
         }
     }
 
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@SuppressLint("StateFlowValueCalledInComposition")
+@Composable
+fun RadialSelectionScreen(
+    exitActivity: () -> Unit,
+    shouldShowDialog: MutableState<Boolean>,
+    onClickRightButton: () -> Unit,
+    onClickBottomButton: () -> Unit,
+    onClickLeftButton: () -> Unit,
+    onClickTopButton: () -> Unit,
+    longPressBoolean: Boolean,
+    navController: NavController
+) {
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Transparent),
+            contentAlignment = Alignment.Center
+        ) {
+            val context = LocalContext.current
+
+            DonutArcButton(
+                startAngle = -45f,
+                sweepAngle = 85f,
+                Alignment.CenterEnd,
+                "Friendly",
+                marker = painterResource(R.drawable.friendly),
+                onClick = { onClickRightButton() }
+            )
+            DonutArcButton(
+                startAngle = 45f,
+                sweepAngle = 85f,
+                Alignment.BottomCenter,
+                "Unknown",
+                marker = painterResource(R.drawable.unknown),
+                onClick = { onClickBottomButton() }
+            )
+            DonutArcButton(
+                startAngle = 135f,
+                sweepAngle = 85f,
+                Alignment.CenterStart,
+                "Neutral",
+                marker = painterResource(R.drawable.neutral),
+                onClick = { onClickLeftButton() }
+            )
+            DonutArcButton(
+                startAngle = 225f,
+                sweepAngle = 85f,
+                Alignment.TopCenter,
+                "Hostile",
+                marker = painterResource(R.drawable.hostile),
+                onClick = { onClickTopButton() }
+            )
+            if (longPressBoolean) {
+                LongPressProgressButtonWithInteraction(
+                    navController,
+                    onShortPress = {
+                        shouldShowDialog.value = false
+                        markerType = ""
+                        exitActivity()
+                        context.startActivity(Intent(context, MainActivity::class.java))
+                    }
+                )
+            } else {
+                IconButton(
+                    onClick = {
+                        markerType = ""
+                        navController.popBackStack()}, // No-op: we handle interaction manually
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(60.dp)
+                        .border(1.dp, Color.Black, CircleShape),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = Color.Black,
+                        containerColor = Color.LightGray
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Close icon",
+                        tint = Color.Black
+                    )
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1029,7 +1119,8 @@ fun EditSelectedMarker(
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     modifier = Modifier
-                        .padding(horizontal = 20.dp).padding(top = 10.dp, bottom = 5.dp)
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 10.dp, bottom = 5.dp)
                         .align(Alignment.CenterHorizontally)
                 )
                 Text(
@@ -1054,6 +1145,26 @@ fun EditSelectedMarker(
                     onClick = { navController.navigate("edit_marker_title/$index")},
                     enabled = true,
                     label = { androidx.wear.compose.material.Text(text = "Change Title") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                )
+                Chip(
+                    onClick = { navController.navigate("edit_marker_type/$index")},
+                    enabled = true,
+                    label = { androidx.wear.compose.material.Text(text = "Change Marker") },
+                    secondaryLabel = {androidx.wear.compose.material.Text(markerTextFromString(markerType))},
+                    icon = {Icon(
+                        markerIconFromString(markerType),
+                        contentDescription = "",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(30.dp)
+                    )},
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
@@ -1264,6 +1375,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
     val shouldShowClearAllConfirm = remember { mutableStateOf(false) }
     val showLocationChangeDialog = remember {mutableStateOf(false)}
     val showLocationChangeConfirm = remember {mutableStateOf(false)}
+    val showTypeChangeConfirm = remember {mutableStateOf(false)}
     val removeMarker = remember {mutableStateOf(false)}
     val anyEndpointConnected by viewModel.anyEndpointConnected.collectAsStateWithLifecycle()
     val droppedMarkerListSetting by viewModel.droppedMarkerListSetting.collectAsStateWithLifecycle()
@@ -1294,7 +1406,33 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
         startDestination = if (isLicenseValid()) "marker_screen" else "invalid_license_screen"
     ) {
         composable("marker_screen" ) {
-            MarkerSelectionScreen(exitActivity = {exitActivity()}, shouldShowConfirm, navController)
+            RadialSelectionScreen(
+                exitActivity = { exitActivity() },
+                shouldShowDialog = shouldShowConfirm,
+                onClickRightButton = {
+                    markerType = MARKER_FRIENDLY
+                    shouldShowConfirm.value = true
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
+                },
+                onClickBottomButton = {
+                    markerType = MARKER_UNKNOWN
+                    shouldShowConfirm.value = true
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
+                },
+                onClickLeftButton = {
+                    markerType = MARKER_NEUTRAL
+                    shouldShowConfirm.value = true
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
+                },
+                onClickTopButton = {
+                    markerType = MARKER_HOSTILE
+                    shouldShowConfirm.value = true
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
+                },
+                longPressBoolean = true,
+                navController = navController
+            )
+//            MarkerSelectionScreen(exitActivity = {exitActivity()}, shouldShowConfirm, navController)
             markerTitleSettingsState.value = ""
 
             DropMarkerConfirmationDialog(
@@ -1530,20 +1668,83 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             MarkerTitleSetting(navController, index, droppedMarkerListSetting, viewModel)
         }
         composable(
+            "edit_marker_type/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.i(TAG, "edit_marker_title index: $index")
+            var markerType by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.markerType.orEmpty()) }
+            val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+            RadialSelectionScreen(
+                exitActivity = exitActivity,
+                shouldShowDialog = showTypeChangeConfirm,
+                onClickRightButton = {
+                    markerType = "a-f-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                 },
+                onClickBottomButton = {
+                    markerType = "a-u-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                onClickLeftButton = {
+                    markerType = "a-n-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                onClickTopButton = {
+                    markerType = "a-h-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                longPressBoolean = false,
+                navController = navController
+            )
+
+            SuccessfulCotSentCheck(
+                showTypeChangeConfirm,
+                anyEndpointConnected,
+                context,
+                { navController.popBackStack()},
+                successBoolean,
+                location,
+                locationEnabled,
+                {
+                    MarkerSuccessDialog(
+                        showTypeChangeConfirm,
+                        successBoolean,
+                        {Icon(
+                            markerIconFromString(markerType),
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Unspecified
+                        )},
+                        {}
+                    )
+                },
+                {}
+            )
+        }
+        composable(
             "invalid_license_screen") {
             context.startActivity(Intent(context, SettingsActivity::class.java))
         }
     }
 }
 
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
-@Composable
-fun PreviewMarkerSelectionScreen() {
-    val shouldShowConfirm = remember { mutableStateOf(true) }
-    val navController = rememberSwipeDismissableNavController()
-
-    MarkerSelectionScreen(exitActivity = {},shouldShowConfirm, navController)
-}
+//@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
+//@Composable
+//fun PreviewMarkerSelectionScreen() {
+//    val shouldShowConfirm = remember { mutableStateOf(true) }
+//    val navController = rememberSwipeDismissableNavController()
+//
+//    MarkerSelectionScreen(exitActivity = {},shouldShowConfirm, navController)
+//}
 //@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = false)
 //@Composable
 //fun PreviewLongPressScreen() {

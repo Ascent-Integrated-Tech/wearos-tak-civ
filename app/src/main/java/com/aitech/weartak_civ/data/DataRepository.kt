@@ -1327,6 +1327,21 @@ class DataRepository(private val context: Context) {
         emitMarkerEditRequest(updatedMarker)
     }
 
+      fun requestChangeMarkerType(uid: String, type: String) {
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) {
+                    marker.copy(markerType = type).also { updatedMarker = it }
+                } else {
+                    marker
+                }
+            }
+        }
+        emitMarkerEditRequest(updatedMarker)
+          Log.d(TAG, "Calling edit marker type request: $type")
+    }
+
     private fun emitMarkerEditRequest(marker: DroppedMarker?) {
         if (marker == null) return
         val markerType = MarkerType.parse(marker.markerType)
