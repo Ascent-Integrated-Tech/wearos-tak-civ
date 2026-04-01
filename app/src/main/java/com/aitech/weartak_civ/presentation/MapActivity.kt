@@ -8,6 +8,9 @@
  */
 package com.aitech.weartak_civ.presentation
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import androidx.compose.ui.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -21,12 +24,17 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -89,8 +97,30 @@ import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import androidx.wear.compose.material.Icon
+import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.aitech.weartak_civ.MARKER_FRIENDLY
+import com.aitech.weartak_civ.MARKER_HOSTILE
+import com.aitech.weartak_civ.MARKER_NEUTRAL
+import com.aitech.weartak_civ.MARKER_UNKNOWN
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerTitleSettingsState
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
+import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
+import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.compose.camera.CameraState
@@ -139,7 +169,9 @@ class MapActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
-                    MapApp(exitActivity = {finishAndRemoveTask() })
+                val context = LocalContext.current
+                val markerVm: MarkerViewModel = viewModel()
+                MapCivApp(exitActivity = {finishAndRemoveTask(); }, context, markerVm)
             }
         }
     }
@@ -189,7 +221,7 @@ fun MarkersOnMap(
     typeGroups.forEach { (markerType, group) ->
         val iconRes = markerIconFromString(markerType)
         SymbolLayer(
-            id = "markers-$markerType",
+            id = group.first().uid,
             source = source,
             filter = eq(get("markerType").asString(),const(markerType), c),
             iconImage = image(iconRes),
@@ -197,7 +229,7 @@ fun MarkersOnMap(
             iconIgnorePlacement = const(true),
             textAllowOverlap = const(true),
             textIgnorePlacement = const(true),
-            onClick = { features ->
+            onLongClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
                 onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
                 ClickResult.Consume
@@ -219,7 +251,7 @@ fun MarkersOnMap(
     }
 }
 @Composable
-fun MapApp(exitActivity: () -> Unit) {
+fun MapApp(exitActivity: () -> Unit, navController: NavController) {
         val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
     val lat = locationFlow?.latitude ?: 0.0
@@ -311,7 +343,10 @@ fun MapApp(exitActivity: () -> Unit) {
             }
             MarkersOnMap(
                 markers = mapMarkers,
-                onMarkerClick = { id, title -> /* show dialog/toast */ },
+                onMarkerClick = { id, title ->
+                    val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
+                    navController.navigate("edit_marker_screen/$index")
+                },
                 cameraState
             )
         }
@@ -555,6 +590,172 @@ fun MapUi(
                 .rotate(45f),  // bottom
             shape = RoundedCornerShape(0.dp,0.dp,20.dp,20.dp),
             ) { Text("−", modifier = Modifier.rotate(-45f)) }
+    }
+}
+
+@SuppressLint("StateFlowValueCalledInComposition")
+@Composable
+fun MapCivApp(exitActivity: () -> Unit, context: Context, viewModel: MarkerViewModel) {
+    val navController = rememberSwipeDismissableNavController()
+    val licenseKey by viewModel.licenseKey.collectAsStateWithLifecycle()
+    val showLocationChangeDialog = remember {mutableStateOf(false)}
+    val showLocationChangeConfirm = remember {mutableStateOf(false)}
+    val showTypeChangeConfirm = remember {mutableStateOf(false)}
+    val anyEndpointConnected by viewModel.anyEndpointConnected.collectAsStateWithLifecycle()
+    val successBoolean = remember { mutableStateOf(false) }
+    val droppedMarkerListSetting by viewModel.droppedMarkerListSetting.collectAsStateWithLifecycle()
+
+    val location = viewModel.location
+    var locationEnabled by remember { mutableStateOf(enableLocationService) }
+// react to changes in the license.
+    LaunchedEffect(licenseKey) {
+        val currentDestination = navController.currentBackStackEntry?.destination?.route
+        val isValid = isLicenseValid()
+
+        when {
+            !isValid && currentDestination != "invalid_license_screen" -> {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+                exitActivity()
+            }
+            isValid == true && currentDestination != "map_screen" -> {
+                navController.navigate("map_screen") {
+                    popUpTo(0) { inclusive = true } // clears the back stack
+                }
+            }
+        }
+    }
+
+    SwipeDismissableNavHost(
+        navController = navController,
+        startDestination = if (isLicenseValid()) "map_screen" else "invalid_license_screen"
+    ) {
+        composable("map_screen" ) {
+            MapApp(exitActivity, navController)
+        }
+
+        composable(
+            "edit_marker_screen/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.i(MarkerActivity.Constants.TAG, "edit_marker_screen index: $index")
+            val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+
+            EditSelectedMarker(navController, index, droppedMarkerListSetting, showLocationChangeDialog)
+
+            ChangeMarkerLocationConfirmationDialog(
+                showLocationChangeDialog = showLocationChangeDialog,
+                index = index,
+                viewModel = viewModel,
+                droppedMarkerListSetting = droppedMarkerListSetting,
+                isConfirmed = showLocationChangeConfirm,
+                confirmFunction = {
+                    CoroutineScope(Dispatchers.Main).launch {
+                        viewModel.requestUpdateMarkerLocation(uid)
+                    }
+                    successBoolean.value = (location != null && locationEnabled && anyEndpointConnected)
+                }
+            )
+
+            SuccessfulCotSentCheck(
+                showLocationChangeConfirm,
+                anyEndpointConnected,
+                context,
+                { },
+                successBoolean,
+                location,
+                locationEnabled,
+                {
+                    MarkerSuccessDialog(
+                        showLocationChangeConfirm,
+                        successBoolean,
+                        {Icon(
+                            Icons.Rounded.Check,
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Green
+                        )},
+                        {}
+                    )
+                },
+                {}
+            )
+        }
+        composable(
+            "edit_marker_title/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.i(MarkerActivity.Constants.TAG, "edit_marker_title index: $index")
+            MarkerTitleSetting(navController, index, droppedMarkerListSetting, viewModel)
+        }
+        composable(
+            "edit_marker_type/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.i(MarkerActivity.Constants.TAG, "edit_marker_title index: $index")
+            var markerType by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.markerType.orEmpty()) }
+            val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+            RadialSelectionScreen(
+                exitActivity = exitActivity,
+                shouldShowDialog = showTypeChangeConfirm,
+                onClickRightButton = {
+                    markerType = "a-f-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(MarkerActivity.Constants.TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                onClickBottomButton = {
+                    markerType = "a-u-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(MarkerActivity.Constants.TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                onClickLeftButton = {
+                    markerType = "a-n-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(MarkerActivity.Constants.TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                onClickTopButton = {
+                    markerType = "a-h-G"
+                    showTypeChangeConfirm.value = true
+                    viewModel.requestChangeMarkerType(uid, markerType)
+                    Log.i(MarkerActivity.Constants.TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
+                },
+                longPressBoolean = false,
+                navController = navController
+            )
+
+            SuccessfulCotSentCheck(
+                showTypeChangeConfirm,
+                anyEndpointConnected,
+                context,
+                { navController.popBackStack()},
+                successBoolean,
+                location,
+                locationEnabled,
+                {
+                    MarkerSuccessDialog(
+                        showTypeChangeConfirm,
+                        successBoolean,
+                        {Icon(
+                            markerIconFromString(markerType),
+                            modifier = Modifier.size(25.dp),
+                            contentDescription = null,
+                            tint = Color.Unspecified
+                        )},
+                        {}
+                    )
+                },
+                {}
+            )
+        }
+        composable(
+            "invalid_license_screen") {
+            context.startActivity(Intent(context, SettingsActivity::class.java))
+        }
     }
 }
 
