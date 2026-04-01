@@ -1302,7 +1302,6 @@ class DataRepository(private val context: Context) {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
         _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis, lat = lat, lon = lon))
         return true
-        Log.d(TAG, "Marker drop requested")
     }
 
     suspend fun requestUpdateMarkerLocation(uid: String) {
@@ -1346,7 +1345,6 @@ class DataRepository(private val context: Context) {
             }
         }
         emitMarkerEditRequest(updatedMarker)
-          Log.d(TAG, "Calling edit marker type request: $type")
     }
 
     private fun emitMarkerEditRequest(marker: DroppedMarker?) {
