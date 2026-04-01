@@ -903,7 +903,11 @@ class DataRepository(private val context: Context) {
     )
 
     suspend fun snapshotMarker(req: MarkerDropRequest): MarkerSnapshot? {
-        val loc = snapshotLocation() ?: return null
+        val loc = if (null == req.lat || null == req.lon) {
+             snapshotLocation() ?: return null
+        } else {
+            LocationSnapshot(timeMillis = req.timeMillis, lat = req.lat, lon = req.lon, hae = 0.0, ce = 0.0f, le = 0.0f, course = 0.0f, speed = 0.0f)
+        }
         val timeSnapshot = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
             staleOffset = Utils.TimeOffset(years = 1)
@@ -1269,7 +1273,9 @@ class DataRepository(private val context: Context) {
         val markerType: MarkerType,
         val title: String,
         val timeMillis: Long,
-        val uid: String = ""
+        val uid: String = "",
+        val lat: Double? = null,
+        val lon: Double? = null
     )
 
     data class MarkerEditRequest(
@@ -1289,12 +1295,12 @@ class DataRepository(private val context: Context) {
     val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
 
     // UI-facing API
-    suspend fun requestMarkerDrop(markerType: MarkerType, remark: String, timeMillis: Long) =
+    suspend fun requestMarkerDropLocation(markerType: MarkerType, remark: String, timeMillis: Long, lat: Double, lon: Double) =
         _markerDropRequests.emit(MarkerDropRequest(markerType, remark, timeMillis))
 
-    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long): Boolean {
+    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long, lat: Double? = null, lon: Double? = null): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis))
+        _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis, lat = lat, lon = lon))
         return true
         Log.d(TAG, "Marker drop requested")
     }

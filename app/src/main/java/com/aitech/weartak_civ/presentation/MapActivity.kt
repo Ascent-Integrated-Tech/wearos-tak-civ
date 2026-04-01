@@ -103,8 +103,10 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.cotDispatchService
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
+import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +128,7 @@ class MapActivity : ComponentActivity() {
     companion object Constants {
         val TAG = "WearTAK-" + MapActivity::class.java.simpleName
         lateinit var mapActivity: MapActivity
+        lateinit var cotDispatchService: CotDispatchService
         val orange = Color(0xFFFF7700)
         val maroon = Color(0xFF7F0000)
         val purple = Color(0xFF7F007F)
@@ -211,10 +214,10 @@ fun MarkersOnMap(
             iconIgnorePlacement = const(true),
             textAllowOverlap = const(true),
             textIgnorePlacement = const(true),
-            onLongClick = { features ->
+            onClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
                 onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
-                ClickResult.Consume
+                ClickResult.Pass
             },
             iconSize = const(1),
             textField = if (camera.position.zoom > 10.0) {
@@ -304,16 +307,17 @@ fun MapApp(exitActivity: () -> Unit) {
                 val time = System.currentTimeMillis()
 
                 Log.d(TAG, "LongClick Map before launch")
-
-                markerScope.launch {
+                 markerScope.launch {
                     try {
                         Log.d(TAG, "LongClick coroutine started")
                         Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
 
                         dataRepository.requestMarkerDrop(
                             "a-u-G",
-                            "hello",
-                            time
+                            "",
+                            time,
+                            lat = coordinates.latitude,
+                            lon = coordinates.longitude,
                         )
 
                         Log.d(TAG, "requestMarkerDrop finished")

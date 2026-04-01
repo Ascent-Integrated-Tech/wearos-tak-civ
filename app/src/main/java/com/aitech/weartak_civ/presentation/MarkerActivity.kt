@@ -1068,7 +1068,7 @@ fun SuccessfulCotSentCheck(
     if (shouldShowConfirm.value) {
         successBoolean.value = (location != null && locationChecked && anyEndpointConnected == true)
         LaunchedEffect(Unit) {
-            delay(2000) // Delay for 5 seconds
+            delay(1000) // Delay for 5 seconds
             shouldShowConfirm.value = false // Dismiss the dialog
             exitActivity()
 //            context.startActivity(Intent(context, MainActivity::class.java))
