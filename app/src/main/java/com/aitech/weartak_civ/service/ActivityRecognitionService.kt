@@ -105,6 +105,22 @@ class ActivityRecognitionService : Service() {
         }
 
         scope.launch {
+            CepBus.emit(
+                CepEvent(
+                    topic = Topics.ACTIVITY,
+                    payload = ActivityPayload(state = "UNKNOWN")
+                )
+            )
+
+            CepBus.emit(
+                CepEvent(
+                    topic = Topics.SLEEP,
+                    payload = SleepPayload(is_sleeping = false)
+                )
+            )
+        }
+
+        scope.launch {
             try {
                 val caps = passiveMonitoringClient.getCapabilities()
 
@@ -180,28 +196,22 @@ class ActivityRecognitionService : Service() {
                 }
 
                 //Log.i(TAG, "CEP Activity: $cepState")
-                // Emit to CEP inside coroutine scope
                 ioScope.launch {
+                    // Emit to CEP inside coroutine scope
                     CepBus.emit(
                         CepEvent(
                             topic = Topics.ACTIVITY,
                             payload = ActivityPayload(state = cepState)
                         )
                     )
-                }
-
-                // Emit to CEP inside coroutine scope
-                ioScope.launch {
                     CepBus.emit(
                         CepEvent(
                             topic = Topics.SLEEP,
                             payload = SleepPayload(is_sleeping = false)
                         )
                     )
-                }
 
-                // Persist in repo (backend-only)
-                ioScope.launch {
+                    // Persist in repo (backend-only)
                     //RestingHrManager.onActivityRecognized(detectedActivity.name)
                     repo.storeLatestActivityRecognized(detectedActivity)
                     repo.storeLatestActivityConfidence(act?.confidence ?: 100)
@@ -228,13 +238,13 @@ class ActivityRecognitionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private val passiveDailyListenerCallback = object : PassiveListenerCallback {
-        override fun onNewDataPointsReceived(container: DataPointContainer) {
+        override fun onNewDataPointsReceived(dataPoints: DataPointContainer) {
             // Read the optional points
             // Each call may contain 0-many data points for each requested type
-            container.getData(DataType.STEPS_DAILY).firstOrNull()?.value?.toLong()?.let { cumulativeSteps = it }
-            container.getData(DataType.CALORIES_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeCalories = it }
-            container.getData(DataType.FLOORS_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeFloors = it }
-            container.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
+            dataPoints.getData(DataType.STEPS_DAILY).firstOrNull()?.value?.toLong()?.let { cumulativeSteps = it }
+            dataPoints.getData(DataType.CALORIES_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeCalories = it }
+            dataPoints.getData(DataType.FLOORS_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeFloors = it }
+            dataPoints.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
             // DEBUG LOG: shows the cached snapshot
             val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
