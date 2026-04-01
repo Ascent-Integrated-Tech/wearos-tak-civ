@@ -40,6 +40,9 @@ class MarkerViewModel : ViewModel() {
      fun requestChangeMarkerTitle(uid: String, title: String){
         dataRepository.requestChangeMarkerTitle(uid, title)
     }
+    fun requestChangeMarkerType(uid: String, type: String){
+        dataRepository.requestChangeMarkerType(uid, type)
+    }
     suspend fun requestClearAllMarkers(){
         dataRepository.requestClearAll()
     }
