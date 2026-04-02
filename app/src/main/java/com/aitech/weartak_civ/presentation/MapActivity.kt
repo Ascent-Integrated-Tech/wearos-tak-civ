@@ -191,8 +191,8 @@ data class MapMarkerItem(
 @Composable
 fun MarkersOnMap(
     markers: List<MapMarkerItem>,
-    onMarkerClick: (id: String, title: String) -> Unit,
-    camera: CameraState
+    onMarkerClick: (id: String, title: String) -> Unit = { _, _ -> },
+    camera: CameraState,
 ) {
     if (markers.isEmpty()) return
     val fc = rememberMarkerFeatures(markers)
@@ -262,7 +262,7 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val mapMarkers = remember(droppedMarkerListSetting, receivedMarkerListSetting) {
+    val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
                 droppedMarkerListSetting.mapNotNull { marker ->
@@ -276,6 +276,10 @@ fun MapApp(exitActivity: () -> Unit) {
                     )
                 }
             )
+        }
+    }
+    val receivedMapMarkers = remember(receivedMarkerListSetting) {
+        buildList {
             addAll(
                 receivedMarkerListSetting.mapNotNull { marker ->
                     val location = marker.location ?: return@mapNotNull null
@@ -358,7 +362,7 @@ fun MapApp(exitActivity: () -> Unit) {
                 )
             }
             MarkersOnMap(
-                markers = mapMarkers,
+                markers = droppedMapMarkers,
                 onMarkerClick = { id, title ->
                     val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
                     Log.d(TAG, "Index from map: $index")
@@ -369,6 +373,10 @@ fun MapApp(exitActivity: () -> Unit) {
                     context.startActivity(intent)
                 },
                 cameraState
+            )
+            MarkersOnMap(
+                markers = receivedMapMarkers,
+                camera = cameraState
             )
         }
         Image(
