@@ -903,10 +903,22 @@ class DataRepository(private val context: Context) {
     )
 
     suspend fun snapshotMarker(req: MarkerDropRequest): MarkerSnapshot? {
-        val loc = if (null == req.lat || null == req.lon) {
-             snapshotLocation() ?: return null
+        val lat = req.lat
+        val lon = req.lon
+        val loc = if (lat == null || lon == null) {
+            _droppedMarkerList.value.firstOrNull { it.uid == req.uid }?.location
+                ?: snapshotLocation() ?: return null
         } else {
-            LocationSnapshot(timeMillis = req.timeMillis, lat = req.lat, lon = req.lon, hae = 0.0, ce = 0.0f, le = 0.0f, course = 0.0f, speed = 0.0f)
+            LocationSnapshot(
+                timeMillis = req.timeMillis,
+                lat = lat,
+                lon = lon,
+                hae = 0.0,
+                ce = 0.0f,
+                le = 0.0f,
+                course = 0.0f,
+                speed = 0.0f
+            )
         }
         val timeSnapshot = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
