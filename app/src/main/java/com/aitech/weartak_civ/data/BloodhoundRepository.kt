@@ -70,6 +70,10 @@ class BloodhoundRepository(private val context: Context) {
             get() = bhEvent.issuer?.parentCallsign
                 ?: bhEvent.mapItem.creator?.callsign
 
+        val containsHoundmasterRemark: Boolean
+            get() = bhEvent.remark.equals("#houndmaster")
+
+
         data class Target(
             val mapItem: Utils.CotUtils.MarkerMapItem
         ) {
@@ -114,6 +118,7 @@ class BloodhoundRepository(private val context: Context) {
         var issuer: Link? = mapItem.link,                 // so we send the chat to the right person
         var timeIssued: Long?,                            // tell user on UI when it was sent.
         val timeCompleted: Long?,                         // tell the issuer how long it took.
+        val remark: String = ""
     )
 
     /*
@@ -269,6 +274,9 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)
+
+    fun remarkFromHoundmaster(uid: String) = _bloodhoundMap.value[uid]?.containsHoundmasterRemark ?: false
+
 
     fun updateBloodhoundCompassNeedle(uid: String, needleDeg: Double) {
         _bloodhoundMap.update { currentMap ->

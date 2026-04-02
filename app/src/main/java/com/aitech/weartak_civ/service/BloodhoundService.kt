@@ -120,12 +120,17 @@ class BloodhoundService: Service() {
                 .collect { event ->
                     //Log.i(TAG, "Bloodhound Event updated:\n$event")
                     val isNewBloodhound = !bhRepo.isUidValid(event.uid)
+                    val currRemarkFromHoundmaster = event.remark.equals("#houndmaster")
+                    val previousRemarkFromHoundmaster = if (isNewBloodhound) false else bhRepo.remarkFromHoundmaster(event.uid)
                     bhRepo.upsertFromEvent(event)
                     if (isNewBloodhound) {
                         repo.incrementBloodhoundUnreadCount(event.uid)
-                    } /*else {
-                        Log.i(TAG, "Bloodhound event refreshed without unread increment uid=${event.uid}")
-                    } */
+                    } else {
+                        if (currRemarkFromHoundmaster && !previousRemarkFromHoundmaster) {
+                            repo.updateHasUnreadBloodhounds(true)
+                        }
+                        //Log.i(TAG, "Bloodhound event refreshed without unread increment uid=${event.uid}")
+                    }
                     updateVectors()
                 }
         }
