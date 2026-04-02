@@ -298,7 +298,7 @@ class MainActivity : ComponentActivity() {
         lateinit var device_uid : String
         var callsign = "WEAROS-0"
         // TODO: Use MC and dataRepo; Can remove this finally.
-        var quickReplyOptions: List<Utils.TextSelectionButton> = listOf(
+        var quickReplyOptions: MutableList<Utils.TextSelectionButton> = mutableListOf(
             Utils.TextSelectionButton("RGR", "Roger"),
             Utils.TextSelectionButton("NEG", "Negative"),
             Utils.TextSelectionButton("Obj", "Objective sighted"),
@@ -3202,7 +3202,8 @@ fun HeartRate(context: Context) {
                             textAlign = TextAlign.Start,
                             fontSize = if (containsAlert) 12.sp else 16.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1
                         )
                     } else {
                         Text(

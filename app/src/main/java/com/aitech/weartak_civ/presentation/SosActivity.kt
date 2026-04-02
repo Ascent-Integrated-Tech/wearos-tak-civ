@@ -44,6 +44,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -80,12 +81,15 @@ import com.aitech.weartak_civ.presentation.SosActivity.Constants.isAlertingLiveD
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertOptions
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertType
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertTypeSaved
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.sword26HDAlertUUID
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 import kotlin.collections.List
 
 
@@ -94,7 +98,7 @@ companion object Constants{
     lateinit var sosActivity : SosActivity
     val TAG = "WearTAK-" + SosActivity::class.java.simpleName
     val isAlertingLiveData = MutableLiveData<Boolean>(false)
-    val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
+    val manualAlertOptions: MutableList<Utils.TextSelectionButton> = mutableStateListOf(
         Utils.TextSelectionButton("GATERU", "Gate Runner"),
         Utils.TextSelectionButton("GNSHOT", "Gunshot"),
         Utils.TextSelectionButton("INJURY", "Injury"),
@@ -102,6 +106,7 @@ companion object Constants{
         Utils.TextSelectionButton("VEH", "Vehicle")
     )
 
+    var sword26HDAlertUUID: String? = null
     val manualAlertType = MutableLiveData<String>("")
     val manualAlertTypeSaved = MutableLiveData<String>("")
 }
@@ -334,16 +339,30 @@ fun SuccessDialogActivity(
     }
 }
 
-fun manualAlertOrClearRequest(isAlerting: Boolean){
+fun manualAlertOrClearRequest(isAlerting: Boolean, wearTakDevMode: Boolean, manualAlertType: String) {
     CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
         val timeMillis = System.currentTimeMillis()
         if (isAlerting != true) {
             Log.d(TAG, "Manual Alert Triggered")
-            val descManualAlert = manualAlertTypeSaved.value
-            dataRepository.addManualAlertRequest(DataRepository.AlertState.ALERT, CAT_MANUAL_ALERT, if (descManualAlert.isNullOrEmpty()) DESC_SOS_ALERT else descManualAlert.trim(), timeMillis)
+            if (wearTakDevMode && manualAlertType.contains("SWORD 26")) {
+                Log.d(TAG, "wearTakDevModeEnabled && manualAlertType.value == \"SWORD 26\"")
+                sword26Alert()
+            } else {
+                val descManualAlert = manualAlertTypeSaved.value
+                dataRepository.addManualAlertRequest(
+                    DataRepository.AlertState.ALERT,
+                    CAT_MANUAL_ALERT,
+                    if (descManualAlert.isNullOrEmpty()) DESC_SOS_ALERT else descManualAlert.trim(),
+                    timeMillis
+                )
+            }
         } else {
             Log.d(TAG, "Cancel Manual Alert Triggered")
             dataRepository.clearManualAlertRequestLast()
+            if (null != sword26HDAlertUUID) {
+                dataRepository.clearPhysioAndAutoGenAlertRequestUid(sword26HDAlertUUID!!)
+                sword26HDAlertUUID = null
+            }
         }
     }
 }
@@ -367,6 +386,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     LaunchedEffect(locationEnabled, anyEndpointConnected) {
         successBoolean.value = locationEnabled && anyEndpointConnected
     }
+    val wearTakDevModeEnabled by dataRepository.getEnableWearTakDevMode
+        .collectAsStateWithLifecycle(initialValue = false)
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -398,11 +419,26 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
             if (isAlertingLiveData.value == false) {
                 TextSelectionScreen(
                     navController,
-                    manualAlertOptions,
+                    if (wearTakDevModeEnabled) {
+                        if (manualAlertOptions[0].shortenedText.contains("SWORD 26")) {
+                            Log.i(TAG, "manualAlertOptions contains SWORD 26")
+                            manualAlertOptions
+                        } else {
+                            Log.i(TAG, "manualAlertOptions does NOT contain SWORD 26. Adding it")
+                            manualAlertOptions.add(0, Utils.TextSelectionButton("SWORD 26", "SWORD 26"))
+                            manualAlertOptions
+                        }
+                    } else {
+                        if (manualAlertOptions[0].shortenedText.contains("SWORD 26")) {
+                            manualAlertOptions.removeAt(0)
+                        }
+                        manualAlertOptions
+                           },
                     manualAlertType,
                     "Manual Alert",
                     { shouldShowConfirm.value = true
                         manualAlertTypeSaved.value = manualAlertType.value
+                        Log.d(TAG, "manual alert type string: ${manualAlertType.value}")
                     },
                     {
                         manualAlertType.value = ""
@@ -417,8 +453,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isAlertingLiveData,
                 {
                     successBoolean.value = (locationEnabled && anyEndpointConnected)
-                    Log.i(TAG, "successBoolean.value=${successBoolean}")
-                    manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
+                    Log.d(TAG, "successBoolean.value: ${successBoolean.value}")
+                    manualAlertOrClearRequest(isAlertingLiveData.value ?: false, wearTakDevModeEnabled, manualAlertType.value ?: "")
                 },
                 {exitActivity()}
             )
@@ -450,6 +486,27 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
             "invalid_license_screen") {
             context.startActivity(Intent(context, SettingsActivity::class.java))
         }
+    }
+}
+
+fun sword26Alert(){
+    val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    scope.launch {
+        dataRepository.addManualAlertRequest(
+            DataRepository.AlertState.ALERT,
+            "CAT_GUNSHOT_ALERT",
+            "Gunshot Detected",
+            System.currentTimeMillis())
+        delay(5000) // Delay for 5 seconds
+        sword26HDAlertUUID = UUID.randomUUID().toString()
+        dataRepository.addPhysioAndAutoGenAlertRequest(
+            uid = sword26HDAlertUUID!!,
+            category = "CAT_HEMODYNAMIC_INSTABILITY_ALERT",
+            description = "Hemodynamic Instability: CRM 50%",
+            priority = 1,
+            sendSms = false,
+            timeMillis = System.currentTimeMillis()
+        )
     }
 }
 

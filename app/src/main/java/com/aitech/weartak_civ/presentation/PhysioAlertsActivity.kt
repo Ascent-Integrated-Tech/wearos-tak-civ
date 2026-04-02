@@ -213,7 +213,7 @@ fun alertIconFromString(category: String): Painter {
         "CAT_IMMERSION_ALERT" -> painterResource(R.drawable.immersion_icon)
         "CAT_LOW_PRESSURE_ALERT" -> painterResource(R.drawable.pressure_icon)
         "CAT_HIGH_PRESSURE_ALERT" -> painterResource(R.drawable.pressure_icon)
-
+        "CAT_HEMODYNAMIC_INSTABILITY_ALERT" -> painterResource(R.drawable.hemodynamic)
 
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.heart_rate)
@@ -239,6 +239,7 @@ fun alertCategoryFromString(category: String): String {
         "CAT_IMMERSION_ALERT" -> "Immersion Alert"
         "CAT_LOW_PRESSURE_ALERT" -> "Low Pressure Alert"
         "CAT_HIGH_PRESSURE_ALERT" -> "High Pressure Alert"
+        "CAT_HEMODYNAMIC_INSTABILITY_ALERT" -> "HD Instability"
         else ->
             "ERROR"
     }
