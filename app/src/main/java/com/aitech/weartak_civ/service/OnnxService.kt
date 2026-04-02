@@ -5,7 +5,10 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
@@ -21,19 +24,16 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import org.pytorch.executorch.Module;
 
 
 class OnnxService : Service() {
-
     private lateinit var env: OrtEnvironment
     private var detectorSession: OrtSession? = null
     @Volatile private var detectorLoaded: Boolean = false
@@ -62,6 +62,44 @@ class OnnxService : Service() {
         }
     }
 
+    private var vulkanModule: Module? = null
+    private var useGpu = false
+
+    object VulkanSupport {
+        fun isVulkanLikelyAvailable(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+
+            val pm = context.packageManager
+
+            // Basic Vulkan feature presence
+            val hasVersion = pm.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION)
+            val hasLevel = pm.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL)
+
+            return hasVersion || hasLevel
+        }
+    }
+
+    object AssetUtils {
+        fun copyAssetToFilesDir(
+            context: Context,
+            assetName: String,
+            outFileName: String = assetName
+        ): String {
+            val outFile = File(context.filesDir, outFileName)
+
+            if (!outFile.exists()) {
+                context.assets.open(assetName).use { input ->
+                    outFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+
+            return outFile.absolutePath
+        }
+    }
+
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "OnnxService onCreate()")
@@ -72,6 +110,19 @@ class OnnxService : Service() {
         )
         env = OrtEnvironment.getEnvironment()
         ensureDetectorLoaded()
+        useGpu = VulkanSupport.isVulkanLikelyAvailable(applicationContext)
+        Log.d(TAG, android.os.Build.SUPPORTED_ABIS.joinToString())
+        if (useGpu) {
+            val vulkanPteFileWithPath = AssetUtils.copyAssetToFilesDir(applicationContext, "dart-bin-2chan-vulkan_20260327.pte")
+            Log.i(TAG, "vulkanPteFileWithPath=($vulkanPteFileWithPath)")
+            try {
+                vulkanModule = Module.load(vulkanPteFileWithPath)
+                Log.i(TAG, "vulkanModule=$vulkanModule")
+            } catch (t: Throwable) {
+                useGpu = false
+                Log.w(TAG, "Falling back to ONNX CPU path", t)
+            }
+        }
 
         scope.launch { audioRepo.requestStartRecording() }
         pcmCollectJob = scope.launch { collectPcmStream() }

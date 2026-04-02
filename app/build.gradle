@@ -215,6 +215,10 @@ dependencies {
     implementation("org.maplibre.compose:maplibre-compose-material3:0.12.1")
     //implementation("org.maplibre.gl:android-plugin-annotation-v9:3.0.2")
 
+    // Executorch
+    implementation("org.pytorch:executorch-android:1.1.0")
+    implementation("com.facebook.soloader:soloader:0.12.1")
+    implementation("com.facebook.fbjni:fbjni:0.7.0")
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
