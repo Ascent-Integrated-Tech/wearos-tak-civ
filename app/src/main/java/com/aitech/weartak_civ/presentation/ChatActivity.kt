@@ -567,7 +567,7 @@ fun ChatMessageItem(
 @Composable
 fun TextSelectionScreen(
     navController: NavController,
-    buttonOptions: List<Utils.TextSelectionButton>,
+    buttonOptions: MutableList<Utils.TextSelectionButton>,
     confirmedText: MutableLiveData<String>,
     titleText: String,
     onConfirm: () -> Unit,
