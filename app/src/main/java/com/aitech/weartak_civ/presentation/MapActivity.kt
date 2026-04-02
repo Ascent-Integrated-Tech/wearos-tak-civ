@@ -203,7 +203,11 @@ fun MarkersOnMap(
                 ClickResult.Consume
             },
             iconSize = const(1),
-            textField = if (camera.position.zoom > 10.0) const(group.first().title) else const(""),
+            textField = if (camera.position.zoom > 10.0) {
+                get("title").asString()
+            } else {
+                const("")
+            },
             textSize = const(0.6.em),
             textAnchor = const(SymbolAnchor.Bottom),
             textColor = const(Color.White),
