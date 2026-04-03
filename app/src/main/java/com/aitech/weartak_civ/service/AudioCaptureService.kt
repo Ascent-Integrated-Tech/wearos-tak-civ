@@ -5,57 +5,87 @@ import android.app.Service
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
-import android.os.SystemClock
 import android.util.Log
+import com.aitech.weartak_civ.ArtifactStorage
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.first
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.yield
+import org.json.JSONObject
+import java.io.BufferedOutputStream
+import android.os.StatFs
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioCaptureService : Service() {
 
-
     companion object {
         val isRunning = AtomicBoolean(false)
     }
-    // --- Config ---
+
     private val SAMPLE_RATE_HZ = 44100
     private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
     private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     private val READ_SIZE = 2048
     private val MIN_INTERNAL_BUFFER_MULT = 2
+    private val SEGMENT_DURATION_SEC = 60
+    private val SEGMENT_SAMPLE_COUNT = SAMPLE_RATE_HZ * SEGMENT_DURATION_SEC
+    private val SEGMENT_MIN_FREE_BYTES = SEGMENT_SAMPLE_COUNT * 2L + 32_768L
 
-    // --- Runtime ---
     private val NOTIFICATION_ID = 201
     private val TAG = "WearTAK-AudioCapSrvc"
+
+    private val modelCaptureRequested = AtomicBoolean(false)
+    private val fieldSessionRequested = AtomicBoolean(false)
     private val isCollecting = AtomicBoolean(false)
 
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
-    private val serviceScope = CoroutineScope(Dispatchers.IO)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private var handlerThread: HandlerThread? = null
-    private var handler: Handler? = null
-    private var currentFile: File? = null
-    private var currentTempFile: File? = null
+    private val fieldSessionMutex = Mutex()
+    private var fieldSessionRuntime: FieldSessionRuntime? = null
+
+    private data class SegmentRuntime(
+        val index: Int,
+        val pcmFile: File,
+        val jsonFile: File,
+        val output: BufferedOutputStream,
+        val openedAtMs: Long,
+        var sampleCount: Long = 0,
+        var firstChunkTimestampMs: Long? = null,
+        var lastChunkTimestampMs: Long? = null
+    )
+
+    private data class FieldSessionRuntime(
+        val sessionId: String,
+        val sessionDir: File,
+        val startedAtMs: Long,
+        val source: AudioCaptureRepository.AudioSourceMode,
+        var nextSegmentIndex: Int = 1,
+        var currentSegment: SegmentRuntime? = null
+    )
 
     private val repo by lazy {
         try {
@@ -78,57 +108,15 @@ class AudioCaptureService : Service() {
         Log.d(TAG, "onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(NOTIFICATION_ID, importance = NotificationManager.IMPORTANCE_LOW)
-
-        handlerThread = HandlerThread("AudioCaptureService-Thread").also {
-            try {
-                it.start()
-                handler = Handler(it.looper)
-            } catch (t: Throwable) {
-                Log.w(TAG, "handler thread start failed: ${t.message}")
-            }
-        }
-
         collectAudioFlows()
-
+        serviceScope.launch {
+            audioRepo.clearFieldRecordingStatus()
+            audioRepo.clearRecordingError()
+        }
         if (!hasRecordAudioPermission()) {
             updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
         } else {
             updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
-        }
-    }
-
-    private fun collectAudioFlows() {
-        serviceScope.launch(Dispatchers.IO) {
-            audioRepo.getRecordRequest.collect { req ->
-                when (req) {
-                    AudioCaptureRepository.RecordAction.START -> startAudioCollection()
-                    AudioCaptureRepository.RecordAction.STOP  -> stopAudioCollection()
-                    AudioCaptureRepository.RecordAction.PAUSE -> pauseAudioCollection()
-                }
-            }
-        }
-
-        serviceScope.launch(Dispatchers.IO) {
-            audioRepo.getRecordingState
-                .collect { state ->
-                    when (state) {
-                        AudioCaptureRepository.RecordingState.RECORDING -> Log.i(TAG, "RecordingState --> RECORDING")
-                        AudioCaptureRepository.RecordingState.AVAILABLE -> Log.i(TAG, "RecordingState --> AVAILABLE")
-                        AudioCaptureRepository.RecordingState.UNAVAILABLE -> Log.i(TAG, "RecordingState --> UNAVAILABLE")
-                        AudioCaptureRepository.RecordingState.PAUSED -> Log.i(TAG, "RecordingState --> PAUSED")
-                        AudioCaptureRepository.RecordingState.PLAYING -> Log.i(TAG, "RecordingState --> PLAYING")
-                    }
-            }
-        }
-
-        serviceScope.launch(Dispatchers.IO) {
-            audioRepo.getRecordingSessionState
-                .collect { state ->
-                    when (state) {
-                        true -> Log.i(TAG, "Recording Session IN PROGRESS")
-                        false -> Log.i(TAG, "Recording Session NOT IN PROGRESS")
-                    }
-                }
         }
     }
 
@@ -137,227 +125,240 @@ class AudioCaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private suspend fun destroyCleanly() {
-        try { stopAudioCollection() } catch (_: Throwable) {}
-        audioRepo.updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
-    }
-
     override fun onDestroy() {
         Log.d(TAG, "onDestroy()")
-        serviceScope.launch {
+        runBlocking {
             destroyCleanly()
         }
         isRunning.set(false)
-        recordingJob?.cancel()
-        handler?.removeCallbacksAndMessages(null)
-        handlerThread?.quitSafely()
-        handlerThread = null
-        handler = null
         stopForeground(STOP_FOREGROUND_DETACH)
         serviceScope.cancel()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-//TODO: Use isCollecting as a state holder for "paused" or not, use the state in repo later for is a session happening or not.
-    private fun updateRecordingSessionState(isSessionRunning: Boolean) {
-        if (!isSessionRunning) {
-            if (hasRecordAudioPermission()) {
-                updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
-            } else {
-                updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
+
+    private fun collectAudioFlows() {
+        serviceScope.launch {
+            audioRepo.captureCommands.collect { command ->
+                when (command) {
+                    AudioCaptureRepository.CaptureCommand.StartModelCapture -> handleStartModelCapture()
+                    AudioCaptureRepository.CaptureCommand.StopModelCapture -> handleStopModelCapture()
+                    AudioCaptureRepository.CaptureCommand.StartFieldSession -> handleStartFieldSession()
+                    AudioCaptureRepository.CaptureCommand.StopFieldSession -> handleStopFieldSession()
+                    AudioCaptureRepository.CaptureCommand.PauseFieldSession -> handlePauseFieldSession()
+                    is AudioCaptureRepository.CaptureCommand.ApplyAudioSource ->
+                        handleApplyAudioSource(command.source)
+                }
             }
         }
+
         serviceScope.launch {
-            isCollecting.set(isSessionRunning)
-            audioRepo.updateRecordingSessionState(isSessionRunning)
+            audioRepo.getRecordingState.collect { state ->
+                Log.i(TAG, "RECORDING_STATE state=$state")
+            }
+        }
+
+        serviceScope.launch {
+            audioRepo.getRecordingSessionState.collect { active ->
+                Log.i(TAG, "CAPTURE_SESSION_ACTIVE active=$active")
+            }
+        }
+
+        serviceScope.launch {
+            audioRepo.fieldRecordingStatus.collect { status ->
+                Log.i(
+                    TAG,
+                    "FIELD_SESSION_STATUS active=${status.active} sessionId=${status.sessionId} " +
+                        "source=${status.selectedSource.name} segmentIndex=${status.segmentIndex}"
+                )
+            }
         }
     }
 
-    private fun updateRecordingState(state: AudioCaptureRepository.RecordingState) {
-        serviceScope.launch {
-            audioRepo.updateRecordingState(state)
+    private suspend fun handleStartModelCapture() {
+        if (modelCaptureRequested.getAndSet(true)) {
+            Log.i(TAG, "MODEL_CAPTURE demand already active")
+            return
+        }
+        syncCaptureState("model_start")
+    }
+
+    private suspend fun handleStopModelCapture() {
+        if (!modelCaptureRequested.getAndSet(false)) {
+            Log.i(TAG, "MODEL_CAPTURE demand already inactive")
+            return
+        }
+        syncCaptureState("model_stop")
+    }
+
+    private suspend fun handleStartFieldSession() {
+        if (fieldSessionRequested.getAndSet(true)) {
+            Log.i(TAG, "FIELD_AUDIO start ignored; session already active")
+            return
+        }
+
+        audioRepo.clearRecordingError()
+        val started = if (isCollecting.get()) true else startAudioCollection("field_start")
+        if (!started) {
+            fieldSessionRequested.set(false)
+            audioRepo.clearFieldRecordingStatus()
+            return
+        }
+
+        fieldSessionMutex.withLock {
+            startNewFieldSessionLocked("field_start")
         }
     }
-/*
-    private fun startAudioCollection() {
-        if (!isRunning.get()) {
-            Log.w(TAG, "Service not running; cannot start collection")
+
+    private suspend fun handleStopFieldSession() {
+        if (!fieldSessionRequested.getAndSet(false)) {
+            Log.i(TAG, "FIELD_AUDIO stop ignored; session not active")
             return
+        }
+
+        fieldSessionMutex.withLock {
+            closeFieldSessionLocked("field_stop")
+        }
+        syncCaptureState("field_stop")
+    }
+
+    private suspend fun handlePauseFieldSession() {
+        Log.i(TAG, "FIELD_AUDIO pause requested but not enabled for WEAR-454")
+        audioRepo.updateRecordingError("Pause / Resume is not enabled for WEAR-454 MVP.")
+    }
+
+    private suspend fun handleApplyAudioSource(source: AudioCaptureRepository.AudioSourceMode) {
+        Log.i(
+            TAG,
+            "AUDIO_SOURCE_APPLY source=${source.name} collecting=${isCollecting.get()} " +
+                "fieldActive=${fieldSessionRequested.get()} modelActive=${modelCaptureRequested.get()}"
+        )
+
+        audioRepo.clearRecordingError()
+
+        if (!isCollecting.get()) {
+            Log.i(TAG, "AUDIO_SOURCE_APPLIED source=${source.name} restarted=false")
+            return
+        }
+
+        val resumeFieldSession = fieldSessionRequested.get()
+        fieldSessionMutex.withLock {
+            if (resumeFieldSession) {
+                closeFieldSessionLocked("source_change")
+            }
+        }
+
+        stopAudioCollection("source_change")
+        val restarted = startAudioCollection("source_change")
+
+        if (!restarted) {
+            if (resumeFieldSession) {
+                fieldSessionRequested.set(false)
+                audioRepo.clearFieldRecordingStatus()
+            }
+            return
+        }
+
+        if (resumeFieldSession) {
+            fieldSessionMutex.withLock {
+                startNewFieldSessionLocked("source_change")
+            }
+        }
+
+        Log.i(TAG, "AUDIO_SOURCE_APPLIED source=${source.name} restarted=true")
+    }
+
+    private suspend fun syncCaptureState(reason: String) {
+        val shouldCapture = modelCaptureRequested.get() || fieldSessionRequested.get()
+
+        if (shouldCapture) {
+            if (!isCollecting.get()) {
+                startAudioCollection(reason)
+            }
+        } else if (isCollecting.get()) {
+            stopAudioCollection(reason)
+        }
+    }
+
+    private suspend fun destroyCleanly() {
+        modelCaptureRequested.set(false)
+        fieldSessionRequested.set(false)
+        fieldSessionMutex.withLock {
+            closeFieldSessionLocked("service_destroy")
+        }
+        stopAudioCollection("service_destroy")
+        audioRepo.updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
+    }
+
+    private suspend fun startAudioCollection(reason: String): Boolean {
+        if (!isRunning.get()) {
+            Log.w(TAG, "AUDIO_CAPTURE start ignored; service not running")
+            return false
         }
         if (isCollecting.getAndSet(true)) {
-            Log.w(TAG, "Already collecting")
-            return
+            Log.i(TAG, "AUDIO_CAPTURE start ignored; already collecting")
+            return true
         }
 
-        // Permission guard
         if (!hasRecordAudioPermission()) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted; aborting")
-            updateRecordingSessionState(false)
+            val message = "RECORD_AUDIO permission not granted"
+            Log.e(TAG, message)
+            isCollecting.set(false)
             updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
-            return
+            audioRepo.updateRecordingError(message)
+            return false
         }
+
+        val selectedSource = audioRepo.selectedAudioSource.value
+        Log.i(
+            TAG,
+            "AUDIO_CAPTURE_INIT reason=$reason source=${selectedSource.name} " +
+                "recorderValue=${selectedSource.recorderValue}"
+        )
 
         try {
-            prepareOutputFiles()
-            initAudioRecord()
+            initAudioRecord(selectedSource)
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to init recording: ${t.message}", t)
-            updateRecordingSessionState(false)
-            return
+            val message = "Audio source ${selectedSource.name} failed to initialize: ${t.message}"
+            Log.e(TAG, message, t)
+            isCollecting.set(false)
+            updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
+            audioRepo.updateRecordingError(message)
+            return false
         }
 
         recordingJob = serviceScope.launch {
             try {
-                // start may throw SecurityException if permission revoked mid-flight
                 audioRecord?.startRecording()
                 updateRecordingSessionState(true)
                 updateRecordingState(AudioCaptureRepository.RecordingState.RECORDING)
-            } catch (se: SecurityException) {
-                Log.e(TAG, "startRecording() SecurityException: ${se.message}", se)
-                updateRecordingSessionState(false)
-                return@launch
+                audioRepo.clearRecordingError()
+                Log.i(
+                    TAG,
+                    "AUDIO_CAPTURE_STARTED reason=$reason source=${selectedSource.name} " +
+                        "recorderValue=${selectedSource.recorderValue}"
+                )
             } catch (t: Throwable) {
-                Log.e(TAG, "startRecording() error: ${t.message}", t)
+                val message = "startRecording failed for ${selectedSource.name}: ${t.message}"
+                Log.e(TAG, message, t)
+                isCollecting.set(false)
                 updateRecordingSessionState(false)
-                return@launch
-            }
-
-            FileOutputStream(currentTempFile).use { out ->
-                // READ_SIZE is bytes; AudioRecord(short[]) is samples
-                val shortBuf = ShortArray(READ_SIZE / 2)
-
-                // For saving to .pcm file (little-endian)
-                val byteBuf = ByteArray(shortBuf.size * 2)
-
-                var seq = 0L
-                val sessionId = currentTempFile?.name ?: "session" // or generate a UUID if you prefer
-
-                while (isActive && isCollecting.get()) {
-                    val readShorts = try {
-                        audioRecord?.read(shortBuf, 0, shortBuf.size) ?: AudioRecord.ERROR_INVALID_OPERATION
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "AudioRecord.read(short[]) error: ${t.message}", t)
-                        AudioRecord.ERROR
-                    }
-
-                    if (readShorts > 0) {
-                        // 1) Emit to repo as samples (copy only the valid portion)
-                        val now = System.currentTimeMillis()
-                        val chunk = AudioCaptureRepository.AudioPcmChunk(
-                            sessionId = sessionId,
-                            seq = seq++,
-                            timestampMs = now,
-                            sampleRateHz = SAMPLE_RATE_HZ,
-                            channels = 1,
-                            samples = shortBuf.copyOf(readShorts)
-                        )
-
-                        val ok = audioRepo.tryEmitChunk(chunk)
-
-                        if (!ok) {
-                            Log.w(TAG, "PCM chunk dropped seq=$seq readShorts=$readShorts")
-                        }
-
-                        // 2) Also write to disk as PCM16 LE (optional, but keeps your current WAV finalize flow)
-//                        shortsToPcm16LeBytes(shortBuf, readShorts, byteBuf)
-//                        out.write(byteBuf, 0, readShorts * 2)
-                    } else if (readShorts == AudioRecord.ERROR_INVALID_OPERATION || readShorts == AudioRecord.ERROR_BAD_VALUE) {
-                        yield()
-                    } else if (readShorts == AudioRecord.ERROR) {
-                        delay(5)
+                updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
+                audioRepo.updateRecordingError(message)
+                if (fieldSessionRequested.getAndSet(false)) {
+                    fieldSessionMutex.withLock {
+                        closeFieldSessionLocked("start_failed")
                     }
                 }
-
-                try { out.fd.sync() } catch (_: Throwable) {}
-            }
-        }
-
-        Log.d(TAG, "startAudioCollection(): writing to ${currentTempFile?.absolutePath}")
-    }
-
-    fun stopAudioCollection() {
-        if (!isCollecting.getAndSet(false)) {
-            Log.w(TAG, "Not currently collecting")
-            return
-        }
-
-        try {
-            recordingJob?.cancel()
-            try { audioRecord?.stop() } catch (_: Throwable) {}
-            audioRecord?.release()
-            audioRecord = null
-            updateRecordingSessionState(false)
-            updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
-        } catch (t: Throwable) {
-            Log.w(TAG, "stopAudioCollection cleanup error: ${t.message}")
-        }
-
-        try {
-            finalizeWavFile(currentTempFile, currentFile)
-            Log.d(TAG, "stopAudioCollection(): finalized ${currentFile?.absolutePath}")
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to finalize WAV: ${t.message}", t)
-        } finally {
-            currentTempFile = null
-            currentFile = null
-            recordingJob = null
-        }
-    }
-*/
-
-    private fun startAudioCollection() {
-        if (!isRunning.get()) {
-            Log.w(TAG, "Service not running; cannot start collection")
-            return
-        }
-        if (isCollecting.getAndSet(true)) {
-            Log.w(TAG, "Already collecting")
-            return
-        }
-
-        if (!hasRecordAudioPermission()) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted; aborting")
-            updateRecordingSessionState(false)
-            updateRecordingState(AudioCaptureRepository.RecordingState.UNAVAILABLE)
-            isCollecting.set(false)
-            return
-        }
-
-        try {
-            // If stream-only, we don't need to prepare output files:
-            // prepareOutputFiles()
-            initAudioRecord()
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to init recording: ${t.message}", t)
-            updateRecordingSessionState(false)
-            isCollecting.set(false)
-            return
-        }
-
-        recordingJob = serviceScope.launch {
-            try {
-                audioRecord?.startRecording()
-                updateRecordingSessionState(true)
-                updateRecordingState(AudioCaptureRepository.RecordingState.RECORDING)
-            } catch (se: SecurityException) {
-                Log.e(TAG, "startRecording() SecurityException: ${se.message}", se)
-                updateRecordingSessionState(false)
-                isCollecting.set(false)
-                return@launch
-            } catch (t: Throwable) {
-                Log.e(TAG, "startRecording() error: ${t.message}", t)
-                updateRecordingSessionState(false)
-                isCollecting.set(false)
                 return@launch
             }
 
-            val shortBuf = ShortArray(READ_SIZE / 2) // READ_SIZE is bytes; short[] is samples
-
+            val shortBuf = ShortArray(READ_SIZE / 2)
             var seq = 0L
-            val sessionId = "audio_${System.currentTimeMillis()}" // or UUID.randomUUID().toString()
+            val sessionId = "audio_${System.currentTimeMillis()}"
 
-            while (isActive && isCollecting.get()) {
+            while (isCollecting.get()) {
                 val readShorts = try {
                     audioRecord?.read(shortBuf, 0, shortBuf.size)
                         ?: AudioRecord.ERROR_INVALID_OPERATION
@@ -368,26 +369,44 @@ class AudioCaptureService : Service() {
 
                 when {
                     readShorts > 0 -> {
-                        val nowEl = SystemClock.elapsedRealtime()
-                        val now = System.currentTimeMillis()
+                        val nowMs = System.currentTimeMillis()
                         val chunk = AudioCaptureRepository.AudioPcmChunk(
                             sessionId = sessionId,
                             seq = seq++,
-                            timestampMs = now,
-                            timestampElMs = nowEl,
+                            timestampMs = nowMs,
+                            timestampElMs = android.os.SystemClock.elapsedRealtime(),
                             sampleRateHz = SAMPLE_RATE_HZ,
                             channels = 1,
                             samples = shortBuf.copyOf(readShorts)
                         )
 
-                        val ok = audioRepo.tryEmitChunk(chunk)
-                        if (!ok) {
-                            Log.w(TAG, "PCM chunk dropped seq=${seq - 1} readShorts=$readShorts")
+                        if (fieldSessionRequested.get()) {
+                            try {
+                                writeChunkToFieldSession(chunk)
+                            } catch (t: Throwable) {
+                                val message = "Field audio write failed: ${t.message}"
+                                Log.e(TAG, message, t)
+                                fieldSessionRequested.set(false)
+                                fieldSessionMutex.withLock {
+                                    closeFieldSessionLocked("write_error")
+                                }
+                                audioRepo.updateRecordingError(message)
+                                syncCaptureState("field_write_error")
+                            }
+                        }
+
+                        val emitted = audioRepo.tryEmitChunk(chunk)
+                        if (!emitted) {
+                            Log.w(
+                                TAG,
+                                "PCM chunk dropped seq=${seq - 1} sampleCount=$readShorts " +
+                                    "source=${selectedSource.name}"
+                            )
                         }
                     }
 
                     readShorts == AudioRecord.ERROR_INVALID_OPERATION ||
-                            readShorts == AudioRecord.ERROR_BAD_VALUE -> {
+                        readShorts == AudioRecord.ERROR_BAD_VALUE -> {
                         yield()
                     }
 
@@ -398,77 +417,297 @@ class AudioCaptureService : Service() {
             }
         }
 
-        Log.d(TAG, "startAudioCollection(): streaming chunks only")
+        return true
     }
 
-    fun stopAudioCollection() {
+    private suspend fun stopAudioCollection(reason: String) {
         if (!isCollecting.getAndSet(false)) {
-            Log.w(TAG, "Not currently collecting")
             return
         }
 
+        Log.i(TAG, "AUDIO_CAPTURE_STOP reason=$reason")
+
+        recordingJob?.cancelAndJoin()
+        recordingJob = null
+
         try {
-            recordingJob?.cancel()
-            try { audioRecord?.stop() } catch (_: Throwable) {}
+            audioRecord?.stop()
+        } catch (_: Throwable) {
+        }
+
+        try {
             audioRecord?.release()
-            audioRecord = null
-        } catch (t: Throwable) {
-            Log.w(TAG, "stopAudioCollection cleanup error: ${t.message}")
+        } catch (_: Throwable) {
+        }
+
+        audioRecord = null
+        updateRecordingSessionState(false)
+        updateRecordingState(
+            if (hasRecordAudioPermission()) {
+                AudioCaptureRepository.RecordingState.AVAILABLE
+            } else {
+                AudioCaptureRepository.RecordingState.UNAVAILABLE
+            }
+        )
+    }
+
+    private suspend fun writeChunkToFieldSession(chunk: AudioCaptureRepository.AudioPcmChunk) {
+        fieldSessionMutex.withLock {
+            val runtime = fieldSessionRuntime ?: startNewFieldSessionLocked("lazy")
+            var offset = 0
+
+            while (offset < chunk.samples.size) {
+                val segment = ensureSegmentLocked(runtime)
+                val remaining = SEGMENT_SAMPLE_COUNT - segment.sampleCount.toInt()
+                val copyCount = minOf(remaining, chunk.samples.size - offset)
+
+                writePcmSamples(segment.output, chunk.samples, offset, copyCount)
+
+                segment.sampleCount += copyCount.toLong()
+                segment.firstChunkTimestampMs = segment.firstChunkTimestampMs ?: chunk.timestampMs
+                segment.lastChunkTimestampMs = chunk.timestampMs
+                offset += copyCount
+
+                if (segment.sampleCount >= SEGMENT_SAMPLE_COUNT.toLong()) {
+                    closeCurrentSegmentLocked(runtime, "segment_full")
+                }
+            }
+        }
+    }
+
+    private suspend fun startNewFieldSessionLocked(reason: String): FieldSessionRuntime {
+        val source = audioRepo.selectedAudioSource.value
+        val nowMs = System.currentTimeMillis()
+        val sessionId = buildSessionId(nowMs, source)
+        val rootDir = ArtifactStorage.fieldAudioRoot(this)
+        ensureUsableSpace(rootDir)
+
+        val sessionDir = File(rootDir, sessionId).apply { mkdirs() }
+        val runtime = FieldSessionRuntime(
+            sessionId = sessionId,
+            sessionDir = sessionDir,
+            startedAtMs = nowMs,
+            source = source
+        )
+
+        fieldSessionRuntime = runtime
+        audioRepo.updateFieldRecordingStatus(
+            AudioCaptureRepository.FieldRecordingStatus(
+                active = true,
+                startedAtMs = nowMs,
+                sessionId = sessionId,
+                selectedSource = source,
+                segmentIndex = 0
+            )
+        )
+
+        Log.i(
+            TAG,
+            "FIELD_AUDIO_SESSION_STARTED reason=$reason sessionId=$sessionId " +
+                "source=${source.name} dir=${sessionDir.absolutePath}"
+        )
+
+        return runtime
+    }
+
+    private suspend fun closeFieldSessionLocked(reason: String) {
+        val runtime = fieldSessionRuntime ?: run {
+            audioRepo.clearFieldRecordingStatus()
+            return
+        }
+
+        closeCurrentSegmentLocked(runtime, reason)
+        Log.i(
+            TAG,
+            "FIELD_AUDIO_SESSION_STOPPED reason=$reason sessionId=${runtime.sessionId} " +
+                "dir=${runtime.sessionDir.absolutePath}"
+        )
+        fieldSessionRuntime = null
+        audioRepo.clearFieldRecordingStatus()
+    }
+
+    private suspend fun ensureSegmentLocked(runtime: FieldSessionRuntime): SegmentRuntime {
+        runtime.currentSegment?.let { return it }
+
+        ensureUsableSpace(runtime.sessionDir)
+
+        val segmentIndex = runtime.nextSegmentIndex++
+        val sourceLabel = runtime.source.name.lowercase(Locale.US)
+        val segmentBase = "chunk_${segmentIndex.toString().padStart(6, '0')}_$sourceLabel"
+        val pcmFile = File(runtime.sessionDir, "$segmentBase.pcm")
+        val jsonFile = File(runtime.sessionDir, "$segmentBase.json")
+        val output = BufferedOutputStream(FileOutputStream(pcmFile, false), 32 * 1024)
+
+        val segment = SegmentRuntime(
+            index = segmentIndex,
+            pcmFile = pcmFile,
+            jsonFile = jsonFile,
+            output = output,
+            openedAtMs = System.currentTimeMillis()
+        )
+
+        runtime.currentSegment = segment
+        audioRepo.updateFieldRecordingStatus(
+            AudioCaptureRepository.FieldRecordingStatus(
+                active = true,
+                startedAtMs = runtime.startedAtMs,
+                sessionId = runtime.sessionId,
+                selectedSource = runtime.source,
+                segmentIndex = segmentIndex
+            )
+        )
+
+        Log.i(
+            TAG,
+            "FIELD_AUDIO_SEGMENT_OPENED sessionId=${runtime.sessionId} " +
+                "segmentIndex=$segmentIndex source=${runtime.source.name}"
+        )
+
+        return segment
+    }
+
+    private suspend fun closeCurrentSegmentLocked(
+        runtime: FieldSessionRuntime,
+        reason: String
+    ) {
+        val segment = runtime.currentSegment ?: return
+
+        runtime.currentSegment = null
+        try {
+            segment.output.flush()
         } finally {
-            recordingJob = null
-            updateRecordingSessionState(false)
-            updateRecordingState(AudioCaptureRepository.RecordingState.AVAILABLE)
+            segment.output.close()
+        }
+
+        if (segment.sampleCount <= 0L) {
+            segment.pcmFile.delete()
+            segment.jsonFile.delete()
+            return
+        }
+
+        val location = repo.snapshotLocation()
+        val metadata = buildSegmentMetadata(runtime, segment, location)
+        segment.jsonFile.writeText(metadata.toString(2), Charsets.UTF_8)
+
+        Log.i(
+            TAG,
+            "FIELD_AUDIO_SEGMENT_CLOSED reason=$reason sessionId=${runtime.sessionId} " +
+                "segmentIndex=${segment.index} samples=${segment.sampleCount} " +
+                "path=${segment.pcmFile.absolutePath}"
+        )
+    }
+
+    private fun buildSegmentMetadata(
+        runtime: FieldSessionRuntime,
+        segment: SegmentRuntime,
+        location: DataRepository.LocationSnapshot?
+    ): JSONObject {
+        val json = JSONObject()
+        json.put("session_id", runtime.sessionId)
+        json.put("segment_index", segment.index)
+        json.put("file_name", segment.pcmFile.name)
+        json.put("device_uid", safeDeviceUid())
+        json.put("audio_source", runtime.source.name)
+        json.put("audio_source_display", runtime.source.displayLabel)
+        json.put("sample_rate_hz", SAMPLE_RATE_HZ)
+        json.put("channels", 1)
+        json.put("pcm_encoding", "PCM_16BIT_LE")
+        json.put("sample_count", segment.sampleCount)
+        json.put("segment_opened_at_ms", segment.openedAtMs)
+        json.put("first_chunk_timestamp_ms", segment.firstChunkTimestampMs ?: segment.openedAtMs)
+        json.put("last_chunk_timestamp_ms", segment.lastChunkTimestampMs ?: segment.openedAtMs)
+        json.put("battery_percent", repo.nonNullBatteryPercentage.value)
+
+        if (location != null) {
+            val locJson = JSONObject()
+            locJson.put("time_millis", location.timeMillis)
+            locJson.put("lat", location.lat)
+            locJson.put("lon", location.lon)
+            locJson.put("hae", location.hae)
+            locJson.put("ce", location.ce)
+            locJson.put("le", location.le)
+            locJson.put("course", location.course)
+            locJson.put("speed", location.speed)
+            json.put("location", locJson)
+        } else {
+            json.put("location", JSONObject.NULL)
+        }
+
+        return json
+    }
+
+    private fun writePcmSamples(
+        output: BufferedOutputStream,
+        samples: ShortArray,
+        offset: Int,
+        count: Int
+    ) {
+        val bytes = ByteArray(count * 2)
+        var srcIndex = offset
+        var dstIndex = 0
+        repeat(count) {
+            val value = samples[srcIndex++].toInt()
+            bytes[dstIndex++] = (value and 0xFF).toByte()
+            bytes[dstIndex++] = ((value shr 8) and 0xFF).toByte()
+        }
+        output.write(bytes)
+    }
+
+    private fun buildSessionId(
+        nowMs: Long,
+        source: AudioCaptureRepository.AudioSourceMode
+    ): String {
+        val utcFormatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return "${safeDeviceUid()}_${utcFormatter.format(Date(nowMs))}_${source.name.lowercase(Locale.US)}"
+    }
+
+    private fun ensureUsableSpace(targetDir: File) {
+        val availableBytes = runCatching {
+            StatFs(targetDir.absolutePath).availableBytes
+        }.getOrNull()
+
+        val usableBytes = availableBytes?.takeIf { it > 0 } ?: targetDir.usableSpace.takeIf { it > 0 }
+
+        if (usableBytes == null) {
+            Log.w(
+                TAG,
+                "Unable to determine usable space for ${targetDir.absolutePath}; skipping free-space guard"
+            )
+            return
+        }
+
+        if (usableBytes < SEGMENT_MIN_FREE_BYTES) {
+            Log.w(
+                TAG,
+                "Not enough space for new field-audio segment (available=$usableBytes threshold=$SEGMENT_MIN_FREE_BYTES)"
+            )
+            throw IOException("Insufficient free space for next audio segment")
         }
     }
 
-    fun pauseAudioCollection() {
-        //TODO: Pause Audio Collection
+    private fun safeDeviceUid(): String =
+        runCatching { device_uid }
+            .getOrDefault("UNKNOWN_DEVICE")
+
+    private fun hasRecordAudioPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun updateRecordingSessionState(isSessionRunning: Boolean) {
         serviceScope.launch {
-            val state = audioRepo.getRecordingState.first()
-            if (state == AudioCaptureRepository.RecordingState.PAUSED) {
-                resumeAudioCollection()
-            }
-            if (state == AudioCaptureRepository.RecordingState.RECORDING) {
-                updateRecordingState(AudioCaptureRepository.RecordingState.PAUSED)
-            }
+            audioRepo.updateRecordingSessionState(isSessionRunning)
         }
     }
 
-    fun resumeAudioCollection() {
-        updateRecordingState(AudioCaptureRepository.RecordingState.RECORDING)
-    }
-
-    // ---------------- Internals ----------------
-
-    private fun hasRecordAudioPermission(): Boolean {
-        return checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun prepareOutputFiles() {
-        val recordingsDir = File(filesDir, "recordings")
-        if (!recordingsDir.exists()) recordingsDir.mkdirs()
-        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        currentFile = File(recordingsDir, "audio_$ts.wav")
-        currentTempFile = File(recordingsDir, "audio_$ts.pcm")
-        if (currentTempFile!!.exists()) currentTempFile!!.delete()
-        currentTempFile!!.createNewFile()
-    }
-
-    private fun shortsToPcm16LeBytes(src: ShortArray, count: Int, dst: ByteArray) {
-        // dst must be at least count*2
-        var i = 0
-        var j = 0
-        while (i < count) {
-            val s = src[i].toInt()
-            dst[j] = (s and 0xFF).toByte()         // low byte
-            dst[j + 1] = ((s shr 8) and 0xFF).toByte() // high byte
-            i++
-            j += 2
+    private fun updateRecordingState(state: AudioCaptureRepository.RecordingState) {
+        serviceScope.launch {
+            audioRepo.updateRecordingState(state)
         }
     }
 
-    private fun initAudioRecord() {
+    private fun initAudioRecord(source: AudioCaptureRepository.AudioSourceMode) {
         if (audioRecord != null) return
 
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE_HZ, CHANNEL_CONFIG, AUDIO_FORMAT)
@@ -477,55 +716,23 @@ class AudioCaptureService : Service() {
         }
         val bufferSize = maxOf(minBuf * MIN_INTERNAL_BUFFER_MULT, READ_SIZE)
 
-        try {
-            audioRecord = AudioRecord(
-                audioRepo.audioSource,
-                SAMPLE_RATE_HZ,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
-        } catch (se: SecurityException) {
-            Log.e(TAG, "AudioRecord ctor SecurityException: ${se.message}", se)
-            throw se
+        audioRecord = AudioRecord(
+            source.recorderValue,
+            SAMPLE_RATE_HZ,
+            CHANNEL_CONFIG,
+            AUDIO_FORMAT,
+            bufferSize
+        )
+
+        val state = audioRecord?.state
+        require(state == AudioRecord.STATE_INITIALIZED) {
+            "AudioRecord init failed for ${source.name} (state=$state)"
         }
 
-        val st = audioRecord?.state
-        require(st == AudioRecord.STATE_INITIALIZED) { "AudioRecord init failed (state=$st)" }
-    }
-
-    private fun finalizeWavFile(tempPcm: File?, outWav: File?) {
-        if (tempPcm == null || outWav == null) throw IllegalArgumentException("Files missing")
-        val pcmSize = tempPcm.length()
-        val byteRate = SAMPLE_RATE_HZ * 2 /* bytesPerSample */ * 1 /* channels */
-
-        // Write header + PCM
-        RandomAccessFile(outWav, "rw").use { raf ->
-            raf.setLength(0)
-            val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
-            header.put("RIFF".toByteArray(Charsets.US_ASCII))
-            header.putInt((pcmSize + 36).toInt())
-            header.put("WAVE".toByteArray(Charsets.US_ASCII))
-            header.put("fmt ".toByteArray(Charsets.US_ASCII))
-            header.putInt(16)                // PCM subchunk size
-            header.putShort(1.toShort())     // PCM format
-            header.putShort(1.toShort())     // channels = 1
-            header.putInt(SAMPLE_RATE_HZ)
-            header.putInt(byteRate)
-            header.putShort(2.toShort())     // block align = channels * bytes/sample
-            header.putShort(16.toShort())    // bits per sample
-            header.put("data".toByteArray(Charsets.US_ASCII))
-            header.putInt(pcmSize.toInt())
-            raf.write(header.array())
-
-            FileInputStream(tempPcm).use { fis ->
-                val buf = ByteArray(8192)
-                var read: Int
-                while (fis.read(buf).also { read = it } > 0) {
-                    raf.write(buf, 0, read)
-                }
-            }
-        }
-        tempPcm.delete()
+        Log.i(
+            TAG,
+            "AUDIO_RECORD_INITIALIZED source=${source.name} " +
+                "recorderValue=${source.recorderValue} sampleRate=$SAMPLE_RATE_HZ"
+        )
     }
 }

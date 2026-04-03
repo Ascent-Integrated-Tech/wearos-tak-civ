@@ -48,6 +48,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,6 +85,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -194,6 +196,7 @@ import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BLOOD_TYPE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -282,6 +285,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
+import java.util.Locale
 import com.aitech.weartak_civ.data.model.PressureReading
 import java.io.File
 
@@ -305,6 +309,8 @@ class MainActivity : ComponentActivity() {
         )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
+        var enableAudioCaptureServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_AUDIO_CAP_SERVICE)
+        var enableAudioCaptureService : Boolean = DEFAULT_ENABLE_AUDIO_CAP_SERVICE
         var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -900,6 +906,7 @@ class MainActivity : ComponentActivity() {
             enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
+            enableAudioCaptureService      = dataRepository.getEnableAudioCaptureService.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
@@ -1371,6 +1378,7 @@ class MainActivity : ComponentActivity() {
         enableLocationServiceSettingsState.postValue(enableLocationService)
         enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
 
+        enableAudioCaptureServiceSettingsState.postValue(enableAudioCaptureService)
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
@@ -1722,6 +1730,7 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.CHAT]       = enableChatService
         localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
         localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
+        localMap[ServiceType.AUDIO_CAP] = enableAudioCaptureService || enableOnnxGunshotService
         localMap[ServiceType.HAIL]        = enableHailService
         localMap[ServiceType.GEOFENCE] = enableGeofenceService
         localMap[ServiceType.SITX_SERVICE] = enableSitxService
@@ -2660,11 +2669,20 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
     val bloodhoundCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
+    val fieldAudioEnabled by MainActivity.enableAudioCaptureServiceSettingsState.observeAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     // Get the repo for gunshots
     val context = LocalContext.current
+    val audioRepo = remember(context.applicationContext) {
+        try {
+            (context.applicationContext as WearTakApplication).audioRepo
+        } catch (_: Throwable) {
+            AudioCaptureRepository(context.applicationContext)
+        }
+    }
     val onnxRepo = remember(context.applicationContext) {
         try {
             (context.applicationContext as WearTakApplication).onnxRepo
@@ -2672,6 +2690,9 @@ fun MainScreen(
             OnnxRepository(context.applicationContext)
         }
     }
+    val fieldRecordingStatus by audioRepo.fieldRecordingStatus.collectAsState()
+    val recordingError by audioRepo.recordingError.collectAsState()
+    val recordingState by audioRepo.getRecordingState.collectAsState()
 
     val shouldShowGunshotDialog = remember { mutableStateOf(false) }
     val pendingGunshot          = remember { mutableStateOf<OnnxRepository.OnnxGunshotEvent?>(null) }
@@ -2802,7 +2823,32 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        SOSButton(context, isAlerting)
+                        if (fieldAudioEnabled == true) {
+                            FieldAudioPrimaryButton(
+                                status = fieldRecordingStatus,
+                                recordingState = recordingState,
+                                recordingError = recordingError,
+                                onToggleRecording = {
+                                    coroutineScope.launch {
+                                        if (fieldRecordingStatus.active) {
+                                            audioRepo.requestStopFieldRecording()
+                                        } else {
+                                            audioRepo.requestStartFieldRecording()
+                                        }
+                                    }
+                                },
+                                onCycleSource = {
+                                    coroutineScope.launch {
+                                        val sources = AudioCaptureRepository.AudioSourceMode.entries
+                                        val currentIndex = sources.indexOf(fieldRecordingStatus.selectedSource)
+                                        val nextSource = sources[(currentIndex + 1) % sources.size]
+                                        audioRepo.requestSelectAudioSource(nextSource)
+                                    }
+                                }
+                            )
+                        } else {
+                            SOSButton(context, isAlerting)
+                        }
                         Spacer(
                             modifier = Modifier.width(10.dp)
                         )
@@ -2903,6 +2949,217 @@ fun MainScreen(
                 finishPrompt(event.uid, label)
             }
         )
+    }
+}
+
+@Composable
+fun FieldAudioPrimaryButton(
+    status: AudioCaptureRepository.FieldRecordingStatus,
+    recordingState: AudioCaptureRepository.RecordingState,
+    recordingError: String?,
+    onToggleRecording: () -> Unit,
+    onCycleSource: () -> Unit
+) {
+    var nowMs by remember(status.active) { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(status.active, status.startedAtMs) {
+        if (!status.active || status.startedAtMs == null) {
+            nowMs = System.currentTimeMillis()
+            return@LaunchedEffect
+        }
+
+        while (status.active) {
+            nowMs = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+
+    val primaryText = if (status.active) "STOP" else "REC"
+    val isEnabled = recordingState != AudioCaptureRepository.RecordingState.UNAVAILABLE || status.active
+    val secondaryText = when {
+        !recordingError.isNullOrBlank() -> "ERR ${status.selectedSource.shortLabel}"
+        status.active && status.startedAtMs != null ->
+            "${status.selectedSource.shortLabel} ${formatFieldAudioElapsed(nowMs - status.startedAtMs)}"
+        else -> status.selectedSource.shortLabel
+    }
+
+    val borderColor = when {
+        status.active -> Color(0xFFCD3D3D)
+        !recordingError.isNullOrBlank() -> Color(0xFFE6A23C)
+        recordingState == AudioCaptureRepository.RecordingState.UNAVAILABLE -> Color.Gray
+        else -> Color(0xFF2FA65A)
+    }
+
+    val containerColor = when {
+        status.active -> Color(0x33CD3D3D)
+        !recordingError.isNullOrBlank() -> Color(0x33E6A23C)
+        else -> Color.Transparent
+    }
+
+    Box(
+        modifier = Modifier
+            .background(containerColor, RoundedCornerShape(40.dp))
+            .border(
+                width = 4.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(40.dp),
+            )
+            .size(110.dp, 60.dp)
+            .pointerInput(isEnabled, status.selectedSource, status.active, recordingError) {
+                detectTapGestures(
+                    onTap = { if (isEnabled) onToggleRecording() },
+                    onLongPress = { if (isEnabled) onCycleSource() }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = primaryText,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            Text(
+                text = secondaryText,
+                color = if (!recordingError.isNullOrBlank()) Color(0xFFFFD18A) else borderColor,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    } 
+}
+
+@Composable
+fun FieldAudioRecorderDock(
+    modifier: Modifier = Modifier,
+    status: AudioCaptureRepository.FieldRecordingStatus,
+    recordingState: AudioCaptureRepository.RecordingState,
+    recordingError: String?,
+    onToggleRecording: () -> Unit,
+    onCycleSource: () -> Unit
+) {
+    var nowMs by remember(status.active) { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(status.active, status.startedAtMs) {
+        if (!status.active || status.startedAtMs == null) {
+            nowMs = System.currentTimeMillis()
+            return@LaunchedEffect
+        }
+
+        while (status.active) {
+            nowMs = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+
+    val elapsedText = remember(status.active, status.startedAtMs, nowMs) {
+        if (!status.active || status.startedAtMs == null) {
+            "Idle"
+        } else {
+            formatFieldAudioElapsed(nowMs - status.startedAtMs)
+        }
+    }
+
+    val statusText = remember(status.active, recordingState, recordingError, elapsedText, status.selectedSource) {
+        when {
+            !recordingError.isNullOrBlank() -> recordingError
+            status.active -> "$elapsedText  ${status.selectedSource.shortLabel}"
+            else -> "${recordingState.name.lowercase(Locale.US)}  ${status.selectedSource.shortLabel}"
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xD8111111), RoundedCornerShape(24.dp))
+            .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = "Field Audio",
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Text(
+                text = statusText,
+                color = if (recordingError.isNullOrBlank()) Color(0xFFD7D7D7) else Color(0xFFFFB3B3),
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        FieldAudioControlPill(
+            text = if (status.active) "Stop" else "Start",
+            backgroundColor = if (status.active) Color(0xFF8B1E1E) else Color(0xFF1E6A3A),
+            enabled = recordingState != AudioCaptureRepository.RecordingState.UNAVAILABLE || status.active,
+            onClick = onToggleRecording
+        )
+
+        FieldAudioControlPill(
+            text = status.selectedSource.shortLabel,
+            backgroundColor = Color(0xFF2A2A2A),
+            enabled = !status.active || recordingState == AudioCaptureRepository.RecordingState.RECORDING,
+            onClick = onCycleSource
+        )
+    }
+}
+
+@Composable
+private fun FieldAudioControlPill(
+    text: String,
+    backgroundColor: Color,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .background(
+                color = if (enabled) backgroundColor else Color(0xFF1D1D1D),
+                shape = RoundedCornerShape(18.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = if (enabled) Color(0x44FFFFFF) else Color(0x22FFFFFF),
+                shape = RoundedCornerShape(18.dp)
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (enabled) Color.White else Color.Gray,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
+        )
+    }
+}
+
+private fun formatFieldAudioElapsed(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -3993,5 +4250,3 @@ public fun Modifier.unswipeable() =
             state = DraggableState {}
         )
     )
-
-

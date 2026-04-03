@@ -1641,6 +1641,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getAudioCaptureSource: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[AUDIO_CAPTURE_SOURCE] ?: AudioCaptureRepository.AudioSourceMode.DEFAULT_SELECTION.recorderValue
+    }
+
+    suspend fun storeAudioCaptureSource(audioCaptureSource: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[AUDIO_CAPTURE_SOURCE] = audioCaptureSource
+        }
+    }
+
     val getEnableOnnxGunshotService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ONNX_GUNSHOT_SERVICE] ?: DEFAULT_ENABLE_ONNX_GUNSHOT
     }
@@ -2948,6 +2958,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
+        private val AUDIO_CAPTURE_SOURCE = intPreferencesKey("audio_capture_source")
         private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
 
         private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")

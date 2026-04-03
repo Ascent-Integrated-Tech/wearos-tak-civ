@@ -474,7 +474,7 @@ object Utils {
         responseLatencyMs: Long,
         extra: Map<String, Any?> = emptyMap()
     ) {
-        val dir = File(context.filesDir, "gunshot_debug").apply { mkdirs() }
+        val dir = ArtifactStorage.gunshotDebugRoot(context)
         val logFile = File(dir, "gunshot_feedback.jsonl")
         val sl = repo.snapshotLocation()
         val ss = repo.snapshotSystem()

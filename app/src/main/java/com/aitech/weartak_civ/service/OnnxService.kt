@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import com.aitech.weartak_civ.ArtifactStorage
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -19,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -150,7 +152,7 @@ class OnnxService : Service() {
             if (gs.isGunshot && (nowEl - lastTriggerMs) > TRIGGER_COOLDOWN_MS) {
                 lastTriggerMs = nowEl
 
-                val dir = File(filesDir, "gunshot_debug").apply { mkdirs() }
+                val dir = ArtifactStorage.gunshotDebugRoot(this@OnnxService)
                 val uid = UUID.randomUUID().toString()
                 val windowFile = File(dir, "$uid.pcm")
 
@@ -388,6 +390,9 @@ class OnnxService : Service() {
     }
 
     override fun onDestroy() {
+        runBlocking {
+            audioRepo.requestStopRecording()
+        }
         isRunning.set(false)
         pcmCollectJob?.cancel()
         scope.cancel()

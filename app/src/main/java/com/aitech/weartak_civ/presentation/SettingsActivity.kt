@@ -172,6 +172,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiB
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiBatteryOptimizationState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServices
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAudioCaptureService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAudioCaptureServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
@@ -418,6 +420,7 @@ suspend fun refreshTakServerSettings() {
 
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
+    enableAudioCaptureServiceSettingsState.postValue(enableAudioCaptureService)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
@@ -4508,6 +4511,7 @@ fun SettingsScreen(
     val dittoCheckedLive by enableDittoServiceSettingsState.observeAsState()
     val companionAppCheckedLive by enableCompanionAppServiceSettingsState.observeAsState()
     val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
+    val audioCaptureCheckedLive by enableAudioCaptureServiceSettingsState.observeAsState()
     val immersionAlertsCheckedLive by enableImmersionAlertsSettingsState.observeAsState()
     val batteryAlertsCheckedLive by enableBatteryAlertsSettingsState.observeAsState()
     val enableSmsCheckedLive by enableSmsForAlertsSettingsState.observeAsState()
@@ -4730,6 +4734,13 @@ fun SettingsScreen(
 
             if (wearTakDevModeEnabled) {
                 SettingSwitchToggleLiveData(
+                    audioCaptureCheckedLive,
+                    { enableAudioCaptureServiceSettingsState.postValue(it) },
+                    {},
+                    "Field Audio Capture",
+                    stringResource(R.string.service_on_off)
+                )
+                SettingSwitchToggleLiveData(
                     onnxGunshotDetectCheckedLive,
                     { enableOnnxGunshotServiceSettingsState.postValue(it) },
                     {},
@@ -4946,6 +4957,7 @@ fun SettingsScreen(
                     var lowPressureAlertThresholdChanged = false
                     var highPressureAlertChanged = false
                     var highPressureAlertThresholdChanged = false
+                    var audioCaptureCheckedChanged: Boolean = false
                     var onnxGunDetectChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
@@ -5335,6 +5347,15 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (enableAudioCaptureService != enableAudioCaptureServiceSettingsState.value) {
+                        settingsChanged = true; audioCaptureCheckedChanged = true
+                        enableAudioCaptureService =
+                            enableAudioCaptureServiceSettingsState.value ?: enableAudioCaptureService
+                        runBlocking {
+                            enableAudioCaptureServiceSettingsState.postValue(enableAudioCaptureService)
+                        }
+                    }
+
                     if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
                         settingsChanged = true; batteryAlertsCheckedChanged = true
                         enableBatteryAlerts = enableBatteryAlertsSettingsState.value
@@ -5618,6 +5639,10 @@ fun SettingsScreen(
                              if (onnxGunDetectChanged) {
                                  Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
                                  dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
+                             }
+                             if (audioCaptureCheckedChanged) {
+                                 Log.d(TAG, "Storing enableAudioCaptureService $enableAudioCaptureService")
+                                 dataRepository.storeEnableAudioCaptureService(enableAudioCaptureService)
                              }
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")

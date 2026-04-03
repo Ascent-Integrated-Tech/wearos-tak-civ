@@ -86,7 +86,12 @@ class ServiceConfiguration(
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
         ServiceType.GEOFENCE  -> dataRepository.getEnableGeofenceService.distinctUntilChanged()
         ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
-        ServiceType.AUDIO_CAP -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()  //TODO: if other audio
+        ServiceType.AUDIO_CAP -> combine(
+            dataRepository.getEnableAudioCaptureService.distinctUntilChanged(),
+            dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
+        ) { fieldAudioEnabled, onnxEnabled ->
+            fieldAudioEnabled || onnxEnabled
+        }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().

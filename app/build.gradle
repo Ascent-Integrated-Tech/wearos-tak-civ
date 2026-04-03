@@ -19,9 +19,9 @@ android {
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
-        targetSdk 34
-        versionCode 55
-        versionName "5.7.0"
+        targetSdk 1001
+        versionCode 1001
+        versionName "1001"
         vectorDrawables {
             useSupportLibrary true
         }
