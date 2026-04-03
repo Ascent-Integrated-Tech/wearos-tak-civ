@@ -328,6 +328,9 @@ class AudioCaptureService : Service() {
             return false
         }
 
+        audioRepo.resetNumFilesWrittenSinceFieldStart()
+        audioRepo.resetWriteErrorsSinceFieldStart()
+
         recordingJob = serviceScope.launch {
             try {
                 audioRecord?.startRecording()
@@ -524,6 +527,7 @@ class AudioCaptureService : Service() {
         )
         fieldSessionRuntime = null
         audioRepo.clearFieldRecordingStatus()
+        audioRepo.resetWriteErrorsSinceFieldStart()
     }
 
     private suspend fun ensureSegmentLocked(runtime: FieldSessionRuntime): SegmentRuntime {
@@ -595,6 +599,15 @@ class AudioCaptureService : Service() {
                 "segmentIndex=${segment.index} samples=${segment.sampleCount} " +
                 "path=${segment.pcmFile.absolutePath}"
         )
+        audioRepo.incrementNumFilesWrittenSinceFieldStart()
+
+        /*
+        // TODO: Remove. Only for test
+        if (audioRepo.numFilesWrittenSinceFieldStart.value == 1) {
+            audioRepo.setWriteErrorDuringFieldSession()
+        } else {
+            audioRepo.resetWriteErrorsSinceFieldStart()
+        } */
     }
 
     private fun buildSegmentMetadata(
@@ -650,7 +663,12 @@ class AudioCaptureService : Service() {
             bytes[dstIndex++] = (value and 0xFF).toByte()
             bytes[dstIndex++] = ((value shr 8) and 0xFF).toByte()
         }
-        output.write(bytes)
+        try {
+            output.write(bytes)
+        } catch (ioException: IOException) {
+            Log.e(TAG, "writePcmSamples failed: ${ioException.message}", ioException)
+            audioRepo.setWriteErrorDuringFieldSession()
+        }
     }
 
     private fun buildSessionId(

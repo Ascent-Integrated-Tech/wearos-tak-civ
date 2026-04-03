@@ -105,6 +105,32 @@ class AudioCaptureRepository(private val context: Context) {
     fun tryEmitChunk(chunk: AudioPcmChunk): Boolean = _pcmChunks.tryEmit(chunk)
     val getPcmChunks: SharedFlow<AudioPcmChunk> = _pcmChunks
 
+    private val _numFilesWrittenSinceFieldStart = MutableStateFlow<Int>(0)
+    val numFilesWrittenSinceFieldStart: StateFlow<Int> = _numFilesWrittenSinceFieldStart
+
+    fun resetNumFilesWrittenSinceFieldStart() {
+        Log.i(TAG, "resetNumFilesWrittenSinceFieldStart()")
+        _numFilesWrittenSinceFieldStart.value = 0
+    }
+
+    fun incrementNumFilesWrittenSinceFieldStart(increment: Int = 1) {
+        _numFilesWrittenSinceFieldStart.value = _numFilesWrittenSinceFieldStart.value + increment
+        Log.i(TAG, "numFilesWrittenSinceFieldStart=${_numFilesWrittenSinceFieldStart.value}")
+    }
+
+    private val _writeErrorInFieldSession = MutableStateFlow<Boolean>(false)
+    val writeErrorInFieldSession: StateFlow<Boolean> = _writeErrorInFieldSession
+
+    fun resetWriteErrorsSinceFieldStart() {
+        Log.i(TAG, "resetWriteErrorsSinceFieldStart()")
+        _writeErrorInFieldSession.value = false
+    }
+
+    fun setWriteErrorDuringFieldSession() {
+        _writeErrorInFieldSession.value = true
+        Log.i(TAG, "setWriteErrorInFieldSession=${_writeErrorInFieldSession.value}")
+    }
+
     data class FieldRecordingStatus(
         val active: Boolean = false,
         val startedAtMs: Long? = null,

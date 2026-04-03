@@ -2693,6 +2693,8 @@ fun MainScreen(
     val fieldRecordingStatus by audioRepo.fieldRecordingStatus.collectAsState()
     val recordingError by audioRepo.recordingError.collectAsState()
     val recordingState by audioRepo.getRecordingState.collectAsState()
+    val numFilesWrittenSinceFieldStart by audioRepo.numFilesWrittenSinceFieldStart.collectAsState()
+    val writeErrorInFieldSession by audioRepo.writeErrorInFieldSession.collectAsState()
 
     val shouldShowGunshotDialog = remember { mutableStateOf(false) }
     val pendingGunshot          = remember { mutableStateOf<OnnxRepository.OnnxGunshotEvent?>(null) }
@@ -2828,6 +2830,7 @@ fun MainScreen(
                                 status = fieldRecordingStatus,
                                 recordingState = recordingState,
                                 recordingError = recordingError,
+                                writeError = writeErrorInFieldSession,
                                 onToggleRecording = {
                                     coroutineScope.launch {
                                         if (fieldRecordingStatus.active) {
@@ -2844,7 +2847,8 @@ fun MainScreen(
                                         val nextSource = sources[(currentIndex + 1) % sources.size]
                                         audioRepo.requestSelectAudioSource(nextSource)
                                     }
-                                }
+                                },
+                                numFilesWrittenSinceFieldStart
                             )
                         } else {
                             SOSButton(context, isAlerting)
@@ -2957,8 +2961,10 @@ fun FieldAudioPrimaryButton(
     status: AudioCaptureRepository.FieldRecordingStatus,
     recordingState: AudioCaptureRepository.RecordingState,
     recordingError: String?,
+    writeError: Boolean,
     onToggleRecording: () -> Unit,
-    onCycleSource: () -> Unit
+    onCycleSource: () -> Unit,
+    numFilesWrittenSinceStart: Int
 ) {
     var nowMs by remember(status.active) { mutableStateOf(System.currentTimeMillis()) }
 
@@ -2978,12 +2984,14 @@ fun FieldAudioPrimaryButton(
     val isEnabled = recordingState != AudioCaptureRepository.RecordingState.UNAVAILABLE || status.active
     val secondaryText = when {
         !recordingError.isNullOrBlank() -> "ERR ${status.selectedSource.shortLabel}"
+        writeError == true -> "WRITE ERR"
         status.active && status.startedAtMs != null ->
-            "${status.selectedSource.shortLabel} ${formatFieldAudioElapsed(nowMs - status.startedAtMs)}"
+            "${status.selectedSource.shortLabel} ${formatFieldAudioElapsed(nowMs - status.startedAtMs)} ($numFilesWrittenSinceStart)"
         else -> status.selectedSource.shortLabel
     }
 
     val borderColor = when {
+        writeError -> Color(0xFFE6A23C)
         status.active -> Color(0xFFCD3D3D)
         !recordingError.isNullOrBlank() -> Color(0xFFE6A23C)
         recordingState == AudioCaptureRepository.RecordingState.UNAVAILABLE -> Color.Gray
@@ -2991,6 +2999,7 @@ fun FieldAudioPrimaryButton(
     }
 
     val containerColor = when {
+        writeError -> Color(0x33E6A23C)
         status.active -> Color(0x33CD3D3D)
         !recordingError.isNullOrBlank() -> Color(0x33E6A23C)
         else -> Color.Transparent
@@ -3026,7 +3035,7 @@ fun FieldAudioPrimaryButton(
             )
             Text(
                 text = secondaryText,
-                color = if (!recordingError.isNullOrBlank()) Color(0xFFFFD18A) else borderColor,
+                color = if (!recordingError.isNullOrBlank() || writeError) Color(0xFFFFD18A) else borderColor,
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
