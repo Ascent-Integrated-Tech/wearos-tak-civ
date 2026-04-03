@@ -357,8 +357,6 @@ import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -371,9 +369,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
-import java.util.UUID
 import kotlin.String
-import kotlin.text.ifEmpty
 
 
 class SettingsActivity : ComponentActivity() {

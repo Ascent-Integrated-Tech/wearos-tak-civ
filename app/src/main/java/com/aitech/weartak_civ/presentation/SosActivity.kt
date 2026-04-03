@@ -80,6 +80,7 @@ import com.aitech.weartak_civ.presentation.SosActivity.Constants.isAlertingLiveD
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertOptions
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertType
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.manualAlertTypeSaved
+import com.aitech.weartak_civ.presentation.SosActivity.Constants.sword26HDAlertUUID
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +105,7 @@ companion object Constants{
         Utils.TextSelectionButton("VEH", "Vehicle")
     )
 
+    var sword26HDAlertUUID: String? = null
     val manualAlertType = MutableLiveData<String>("")
     val manualAlertTypeSaved = MutableLiveData<String>("")
 }
@@ -169,7 +171,7 @@ companion object Constants{
 }
 
 @Composable
-fun  ConfirmationAlertPage(
+fun ConfirmationAlertPage(
     shouldShowDialog: MutableState<Boolean>,
     isConfirmed: MutableState<Boolean>,
     isAlerting: MutableLiveData<Boolean>,
@@ -336,16 +338,30 @@ fun SuccessDialogActivity(
     }
 }
 
-fun manualAlertOrClearRequest(isAlerting: Boolean){
+fun manualAlertOrClearRequest(isAlerting: Boolean, wearTakDevMode: Boolean, manualAlertType: String) {
     CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
         val timeMillis = System.currentTimeMillis()
         if (isAlerting != true) {
             Log.d(TAG, "Manual Alert Triggered")
-            val descManualAlert = manualAlertTypeSaved.value
-            dataRepository.addManualAlertRequest(DataRepository.AlertState.ALERT, CAT_MANUAL_ALERT, if (descManualAlert.isNullOrEmpty()) DESC_SOS_ALERT else descManualAlert.trim(), timeMillis)
+            if (wearTakDevMode && manualAlertType.contains("SWORD 26")) {
+                Log.d(TAG, "wearTakDevModeEnabled && manualAlertType.value == \"SWORD 26\"")
+                sword26Alert()
+            } else {
+                val descManualAlert = manualAlertTypeSaved.value
+                dataRepository.addManualAlertRequest(
+                    DataRepository.AlertState.ALERT,
+                    CAT_MANUAL_ALERT,
+                    if (descManualAlert.isNullOrEmpty()) DESC_SOS_ALERT else descManualAlert.trim(),
+                    timeMillis
+                )
+            }
         } else {
             Log.d(TAG, "Cancel Manual Alert Triggered")
             dataRepository.clearManualAlertRequestLast()
+            if (null != sword26HDAlertUUID) {
+                dataRepository.clearPhysioAndAutoGenAlertRequestUid(sword26HDAlertUUID!!)
+                sword26HDAlertUUID = null
+            }
         }
     }
 }
@@ -368,6 +384,9 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val wearTakDevModeEnabled by dataRepository.getEnableWearTakDevMode
         .collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(locationEnabled, anyEndpointConnected) {
+        successBoolean.value = locationEnabled && anyEndpointConnected
+    }
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -400,13 +419,19 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 TextSelectionScreen(
                     navController,
                     if (wearTakDevModeEnabled) {
-                         manualAlertOptions.add(0, Utils.TextSelectionButton("SWORD 26", "SWORD 26"))
-                        manualAlertOptions
+                        if (manualAlertOptions[0].shortenedText.contains("SWORD 26")) {
+                            Log.i(TAG, "manualAlertOptions contains SWORD 26")
+                            manualAlertOptions
+                        } else {
+                            Log.i(TAG, "manualAlertOptions does NOT contain SWORD 26. Adding it")
+                            manualAlertOptions.add(0, Utils.TextSelectionButton("SWORD 26", "SWORD 26"))
+                            manualAlertOptions
+                        }
                     } else {
-                        if (manualAlertOptions.contains(Utils.TextSelectionButton("SWORD 26", "SWORD 26"))){
+                        if (manualAlertOptions[0].shortenedText.contains("SWORD 26")) {
                             manualAlertOptions.removeAt(0)
                         }
-                          manualAlertOptions
+                        manualAlertOptions
                            },
                     manualAlertType,
                     "Manual Alert",
@@ -427,13 +452,9 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isAlertingLiveData,
                 {
                     successBoolean.value = (locationEnabled && anyEndpointConnected)
-                    if (wearTakDevModeEnabled && manualAlertType.value == " SWORD 26"){
-                        Log.d(TAG, "wearTakDevModeEnabled && manualAlertType.value == \"SWORD 26\"")
-                        sword26Alert()
-                    } else {
-                        if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
-                            Log.d(TAG, "successBoolean.value")
-                        }
+                    Log.d(TAG, "successBoolean.value: ${successBoolean.value}")
+                    if (successBoolean.value) {
+                        manualAlertOrClearRequest(isAlertingLiveData.value ?: false, wearTakDevModeEnabled, manualAlertType.value ?: "")
                     }
                 },
                 {exitActivity()}
@@ -468,6 +489,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
         }
     }
 }
+
 fun sword26Alert(){
     val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     scope.launch {
@@ -477,8 +499,9 @@ fun sword26Alert(){
             "Gunshot Detected",
             System.currentTimeMillis())
         delay(5000) // Delay for 5 seconds
+        sword26HDAlertUUID = UUID.randomUUID().toString()
         dataRepository.addPhysioAndAutoGenAlertRequest(
-            uid = UUID.randomUUID().toString(),
+            uid = sword26HDAlertUUID!!,
             category = "CAT_HEMODYNAMIC_INSTABILITY_ALERT",
             description = "Hemodynamic Instability: CRM 50%",
             priority = 1,
