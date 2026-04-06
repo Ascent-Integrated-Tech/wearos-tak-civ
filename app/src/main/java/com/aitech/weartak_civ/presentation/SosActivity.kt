@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -363,7 +364,9 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-    successBoolean.value = locationEnabled && anyEndpointConnected
+    LaunchedEffect(locationEnabled, anyEndpointConnected) {
+        successBoolean.value = locationEnabled && anyEndpointConnected
+    }
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -415,7 +418,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 {
                     successBoolean.value = (locationEnabled && anyEndpointConnected)
                     Log.i(TAG, "successBoolean.value=${successBoolean}")
-                    if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)}
+                    manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
                 },
                 {exitActivity()}
             )
