@@ -8,7 +8,7 @@
  */
 
 /*
- * HiveBtleService handles HIVE BLE mesh sync lifecycle using the hive-btle library.
+ * PeatBtleService handles Peat BLE mesh sync lifecycle using the peat-btle library.
  * This is a power-efficient replacement for DittoService, optimized for WearOS.
  */
 
@@ -26,42 +26,41 @@ import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.data.HiveBtleRepository
-import com.aitech.weartak_civ.events.HiveCannedMessageEvent
-import com.aitech.weartak_civ.events.HiveDocumentEvent
+import com.aitech.weartak_civ.data.PeatBtleRepository
+import com.aitech.weartak_civ.events.PeatCannedMessageEvent
+import com.aitech.weartak_civ.events.PeatDocumentEvent
 import com.aitech.weartak_civ.events.TakChatEvent
-import com.aitech.weartak_civ.hive.CotHiveTranslator
+import com.aitech.weartak_civ.peat.CotPeatTranslator
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import android.util.Base64
-import uniffi.hive_lite_android.CannedMessageAckEventData
-import uniffi.hive_lite_android.CannedMessageEventData
-import uniffi.hive_lite_android.CannedMessageType
-import uniffi.hive_lite_android.cannedMessageAckEventAddAck
-import uniffi.hive_lite_android.cannedMessageAckEventAckCount
-import uniffi.hive_lite_android.cannedMessageAckEventHasAcked
-import uniffi.hive_lite_android.cannedMessageAckEventMerge
-import uniffi.hive_lite_android.cannedMessageMarker
-import uniffi.hive_lite_android.cannedMessageShortName
-import uniffi.hive_lite_android.createCannedMessageAckEvent
-import uniffi.hive_lite_android.createCannedMessageEvent
-import uniffi.hive_lite_android.decodeCannedMessageAckEvent
-import uniffi.hive_lite_android.decodeCannedMessageEvent
-import uniffi.hive_lite_android.encodeCannedMessageAckEvent
-import uniffi.hive_lite_android.encodeCannedMessageEvent
-import com.revolveteam.hive.HiveBtle
-import com.revolveteam.hive.HiveChat
-import com.revolveteam.hive.HiveDocument
-import com.revolveteam.hive.HiveEventType
-import com.revolveteam.hive.HiveLocation
-import com.revolveteam.hive.HiveMarker
-import com.revolveteam.hive.HiveMeshListener
-import com.revolveteam.hive.HivePeer
-import uniffi.hive_btle.CannedMessageInfo
-import uniffi.hive_btle.DeviceIdentity
-import uniffi.hive_btle.MeshGenesis
-import uniffi.hive_btle.restoreDeviceIdentity
-import uniffi.hive_btle.decodeMeshGenesis
+import uniffi.peat_lite_android.CannedMessageAckEventData
+import uniffi.peat_lite_android.CannedMessageEventData
+import uniffi.peat_lite_android.CannedMessageType
+import uniffi.peat_lite_android.cannedMessageAckEventAddAck
+import uniffi.peat_lite_android.cannedMessageAckEventAckCount
+import uniffi.peat_lite_android.cannedMessageAckEventHasAcked
+import uniffi.peat_lite_android.cannedMessageAckEventMerge
+import uniffi.peat_lite_android.cannedMessageMarker
+import uniffi.peat_lite_android.cannedMessageShortName
+import uniffi.peat_lite_android.createCannedMessageAckEvent
+import uniffi.peat_lite_android.createCannedMessageEvent
+import uniffi.peat_lite_android.decodeCannedMessageAckEvent
+import uniffi.peat_lite_android.decodeCannedMessageEvent
+import uniffi.peat_lite_android.encodeCannedMessageAckEvent
+import uniffi.peat_lite_android.encodeCannedMessageEvent
+import com.defenseunicorns.peat.PeatBtle
+import com.defenseunicorns.peat.PeatChat
+import com.defenseunicorns.peat.PeatDocument
+import com.defenseunicorns.peat.PeatEventType
+import com.defenseunicorns.peat.PeatLocation
+import com.defenseunicorns.peat.PeatMarker
+import com.defenseunicorns.peat.PeatMeshListener
+import com.defenseunicorns.peat.PeatPeer
+import uniffi.peat_btle.DeviceIdentity
+import uniffi.peat_btle.MeshGenesis
+import uniffi.peat_btle.restoreDeviceIdentity
+import uniffi.peat_btle.decodeMeshGenesis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -75,20 +74,20 @@ import org.greenrobot.eventbus.ThreadMode
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * HIVE BLE Mesh Sync Service.
+ * Peat BLE Mesh Sync Service.
  *
- * Power-efficient replacement for DittoService using the hive-btle library.
+ * Power-efficient replacement for DittoService using the peat-btle library.
  * Targets <5% radio duty cycle for 18+ hour battery life on WearOS devices.
  *
- * Uses HiveBtle for BLE operations (scanning, advertising, GATT) and implements
- * HiveMeshListener to receive mesh events (peer updates, emergencies, document sync).
+ * Uses PeatBtle for BLE operations (scanning, advertising, GATT) and implements
+ * PeatMeshListener to receive mesh events (peer updates, emergencies, document sync).
  */
-class HiveBtleService : Service(), HiveMeshListener {
+class PeatBtleService : Service(), PeatMeshListener {
 
     private lateinit var dataRepository: DataRepository
-    private lateinit var hiveBtleRepository: HiveBtleRepository
-    private var hiveBtle: HiveBtle? = null
-    private var meshId: String = "HIVE"  // Default, updated on init
+    private lateinit var peatBtleRepository: PeatBtleRepository
+    private var peatBtle: PeatBtle? = null
+    private var meshId: String = "PEAT"  // Default, updated on init
 
     private var syncUpdateHandler: Handler? = null
     private var syncUpdateThread: HandlerThread? = null
@@ -100,17 +99,17 @@ class HiveBtleService : Service(), HiveMeshListener {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "HiveBtleService onCreate()")
+        Log.d(TAG, "PeatBtleService onCreate()")
         isRunning.set(true)
 
         startForegroundServiceCompat(
-            notificationId = HIVE_SERVICE_NOTIFICATION_ID,
+            notificationId = PEAT_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
         )
 
         val app = applicationContext as WearTakApplication
         dataRepository = app.repo
-        hiveBtleRepository = app.hiveBtleRepo
+        peatBtleRepository = app.peatBtleRepo
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -121,35 +120,35 @@ class HiveBtleService : Service(), HiveMeshListener {
 
         // Start scheduler FIRST so handler is available for retry logic
         startSyncScheduler()
-        initializeHiveBtle()
+        initializePeatBtle()
 
-        hiveBtleRepository.updateMeshState(HiveBtleRepository.HiveMeshState.ACTIVE)
-        dataRepository.setEndpointConnected(DataRepository.Endpoint.HIVE_BTLE)
-        Log.i(TAG, "HiveBtleService started")
+        peatBtleRepository.updateMeshState(PeatBtleRepository.PeatMeshState.ACTIVE)
+        dataRepository.setEndpointConnected(DataRepository.Endpoint.PEAT_BTLE)
+        Log.i(TAG, "PeatBtleService started")
     }
 
     /**
-     * Initialize the HiveBtle mesh with configuration from DataRepository.
+     * Initialize the PeatBtle mesh with configuration from DataRepository.
      * Now uses encrypted mesh with DeviceIdentity and MeshGenesis.
      *
-     * IMPORTANT: This waits for the callsign to be set before starting hive.
+     * IMPORTANT: This waits for the callsign to be set before starting peat.
      * The callsign identifies this node to other peers in the mesh.
      */
-    private fun initializeHiveBtle() {
+    private fun initializePeatBtle() {
         try {
             // Ensure callsign is loaded from DataRepository before starting
             // This prevents starting with a default/placeholder callsign
             val storedCallsign = runBlocking { dataRepository.getCallsign.first() }
             if (storedCallsign.isBlank() || storedCallsign == "WEAROS-0") {
-                Log.w(TAG, "Callsign not yet set (current: '$storedCallsign'), delaying hive initialization")
-                hiveBtleRepository.updateMeshState(HiveBtleRepository.HiveMeshState.INITIALIZING)
+                Log.w(TAG, "Callsign not yet set (current: '$storedCallsign'), delaying peat initialization")
+                peatBtleRepository.updateMeshState(PeatBtleRepository.PeatMeshState.INITIALIZING)
                 // Retry after delay
-                syncUpdateHandler?.postDelayed({ initializeHiveBtle() }, 1000)
+                syncUpdateHandler?.postDelayed({ initializePeatBtle() }, 1000)
                 return
             }
 
             // Get configuration from DataRepository
-            meshId = runBlocking { dataRepository.getHiveMeshId.first() }
+            meshId = runBlocking { dataRepository.getPeatMeshId.first() }
 
             // Set Bluetooth adapter name to callsign so it appears in BLE advertisements
             // This makes the device identifiable in nRF Connect and other BLE scanners
@@ -176,11 +175,11 @@ class HiveBtleService : Service(), HiveMeshListener {
             // Load or create mesh genesis (shared across all mesh nodes)
             val genesis = loadOrCreateGenesis(identity)
 
-            Log.d(TAG, "Initializing HiveBtle with encryption: meshId=${genesis.getMeshId()}, callsign=$storedCallsign")
+            Log.d(TAG, "Initializing PeatBtle with encryption: meshId=${genesis.getMeshId()}, callsign=$storedCallsign")
 
-            // Create encrypted HiveBtle instance
+            // Create encrypted PeatBtle instance
             // IMPORTANT: Pass genesis.getMeshId() for BLE advertising!
-            hiveBtle = HiveBtle(
+            peatBtle = PeatBtle(
                 context = applicationContext,
                 meshId = genesis.getMeshId(),  // Use genesis meshId for advertising
                 identity = identity,
@@ -188,21 +187,21 @@ class HiveBtleService : Service(), HiveMeshListener {
             )
 
             // Initialize BLE adapter
-            hiveBtle?.init()
+            peatBtle?.init()
 
             // Start the mesh with this service as the listener
-            hiveBtle?.startMesh(this)
+            peatBtle?.startMesh(this)
 
             // Verify encryption is active
-            if (hiveBtle?.isEncryptionEnabled() == true) {
-                Log.i(TAG, "HiveBtle mesh initialized with ENCRYPTION ENABLED")
+            if (peatBtle?.isEncryptionEnabled() == true) {
+                Log.i(TAG, "PeatBtle mesh initialized with ENCRYPTION ENABLED")
             } else {
-                Log.w(TAG, "HiveBtle mesh initialized but encryption NOT enabled")
+                Log.w(TAG, "PeatBtle mesh initialized but encryption NOT enabled")
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize HiveBtle: ${e.message}", e)
-            hiveBtleRepository.updateMeshState(HiveBtleRepository.HiveMeshState.ERROR)
+            Log.e(TAG, "Failed to initialize PeatBtle: ${e.message}", e)
+            peatBtleRepository.updateMeshState(PeatBtleRepository.PeatMeshState.ERROR)
         }
     }
 
@@ -211,7 +210,7 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Identity is an Ed25519 keypair that persists across app restarts.
      */
     private fun loadOrCreateIdentity(): DeviceIdentity {
-        val storedIdentity = runBlocking { dataRepository.getHiveDeviceIdentity.first() }
+        val storedIdentity = runBlocking { dataRepository.getPeatDeviceIdentity.first() }
 
         return if (storedIdentity != null) {
             try {
@@ -240,7 +239,7 @@ class HiveBtleService : Service(), HiveMeshListener {
         val identity = DeviceIdentity.generate()
         // Store the 32-byte private key (Base64 encoded)
         val encoded = Base64.encodeToString(identity.getPrivateKey(), Base64.NO_WRAP)
-        runBlocking { dataRepository.storeHiveDeviceIdentity(encoded) }
+        runBlocking { dataRepository.storePeatDeviceIdentity(encoded) }
         Log.i(TAG, "Generated and stored new DeviceIdentity: nodeId=${String.format("%08X", identity.getNodeId().toLong())}")
         return identity
     }
@@ -270,7 +269,7 @@ class HiveBtleService : Service(), HiveMeshListener {
         // Create genesis for WEARTAK mesh
         val genesis = MeshGenesis.create("WEARTAK", identity)
         val encoded = Base64.encodeToString(genesis.encode(), Base64.NO_WRAP)
-        runBlocking { dataRepository.storeHiveMeshGenesis(encoded) }
+        runBlocking { dataRepository.storePeatMeshGenesis(encoded) }
 
         // Log the genesis for sharing with ATAK Plugin team
         Log.i(TAG, "=== SHAREABLE GENESIS (copy this for ATAK Plugin) ===")
@@ -282,29 +281,29 @@ class HiveBtleService : Service(), HiveMeshListener {
         return genesis
     }
 
-    // ==================== HiveMeshListener Implementation ====================
+    // ==================== PeatMeshListener Implementation ====================
 
     /**
      * Called when the mesh state changes (peers added/removed/updated).
      *
-     * All peer management is handled by hive-btle. We just convert HivePeer
-     * to HivePeerInfo for UI display. Callsign, location, battery, emergency
-     * state all come from peer.lastDocument which hive-btle manages.
+     * All peer management is handled by peat-btle. We just convert PeatPeer
+     * to PeatPeerInfo for UI display. Callsign, location, battery, emergency
+     * state all come from peer.lastDocument which peat-btle manages.
      */
-    override fun onMeshUpdated(peers: List<HivePeer>) {
+    override fun onMeshUpdated(peers: List<PeatPeer>) {
         val directCount = peers.count { it.address.isNotEmpty() }
         val relayedCount = peers.count { it.address.isEmpty() }
         Log.d(TAG, "Mesh updated: ${peers.size} peers (direct=$directCount, relayed=$relayedCount)")
 
-        // Convert to HivePeerInfo - extract ALL data from hive-btle's HivePeer
-        // No management, just display. hive-btle handles deduplication, cleanup, etc.
+        // Convert to PeatPeerInfo - extract ALL data from peat-btle's PeatPeer
+        // No management, just display. peat-btle handles deduplication, cleanup, etc.
         val peerInfoList = peers.map { peer ->
-            // Get data from peer's last synced document (managed by hive-btle)
+            // Get data from peer's last synced document (managed by peat-btle)
             val doc = peer.lastDocument
             val location = doc?.location()
             val eventType = peer.currentEventType()
 
-            HiveBtleRepository.HivePeerInfo(
+            PeatBtleRepository.PeatPeerInfo(
                 nodeId = peer.nodeId,
                 identifier = peer.address,
                 name = peer.name,
@@ -317,7 +316,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                 altitude = location?.altitude?.toDouble(),
                 battery = doc?.batteryPercent(),
                 heartRate = doc?.heartRate(),
-                isInEmergency = eventType == HiveEventType.EMERGENCY,
+                isInEmergency = eventType == PeatEventType.EMERGENCY,
                 hopCount = if (peer.address.isNotEmpty()) 0 else 1
             )
         }
@@ -329,8 +328,8 @@ class HiveBtleService : Service(), HiveMeshListener {
             }}")
         }
 
-        // Just set peers - no merging, no deduplication. hive-btle handles all that.
-        hiveBtleRepository.setPeers(peerInfoList)
+        // Just set peers - no merging, no deduplication. peat-btle handles all that.
+        peatBtleRepository.setPeers(peerInfoList)
     }
 
     /**
@@ -340,49 +339,49 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Peer emergency state is extracted from peer.currentEventType() in onMeshUpdated.
      * This callback handles app-level notifications (canned messages to chat UI).
      */
-    override fun onPeerEvent(peer: HivePeer, eventType: HiveEventType) {
+    override fun onPeerEvent(peer: PeatPeer, eventType: PeatEventType) {
         Log.i(TAG, "Peer event from ${peer.displayName()}: $eventType")
 
         val timestamp = System.currentTimeMillis()
-        // Get callsign from peer's document (managed by hive-btle)
+        // Get callsign from peer's document (managed by peat-btle)
         val senderCallsign = peer.lastDocument?.callsign()
 
         ioScope.launch {
             when (eventType) {
-                HiveEventType.EMERGENCY -> {
+                PeatEventType.EMERGENCY -> {
                     Log.w(TAG, "PEER SOS received from ${peer.displayName()}")
                     // Update global emergency state for UI
-                    hiveBtleRepository.setEmergencyState(
-                        HiveBtleRepository.EmergencyState(
+                    peatBtleRepository.setEmergencyState(
+                        PeatBtleRepository.EmergencyState(
                             isActive = true,
                             sourceNodeId = peer.nodeId,
                             timestamp = timestamp
                         )
                     )
                 }
-                HiveEventType.ACK -> {
+                PeatEventType.ACK -> {
                     Log.i(TAG, "ACK received from ${peer.displayName()}")
                     // Add ACK to global emergency state
-                    val current = hiveBtleRepository.emergencyState.value
+                    val current = peatBtleRepository.emergencyState.value
                     if (current.isActive) {
-                        hiveBtleRepository.setEmergencyState(
+                        peatBtleRepository.setEmergencyState(
                             current.copy(ackedByNodes = current.ackedByNodes + peer.nodeId)
                         )
                     }
                 }
-                HiveEventType.MOVING -> {
+                PeatEventType.MOVING -> {
                     Log.i(TAG, "MOVING from ${peer.displayName()}")
-                    ChatService.addHiveCannedMessageStatic(peer.nodeId, "MOVING", 0x11, timestamp, senderCallsign)
+                    ChatService.addPeatCannedMessageStatic(peer.nodeId, "MOVING", 0x11, timestamp, senderCallsign)
                 }
-                HiveEventType.IN_POSITION -> {
+                PeatEventType.IN_POSITION -> {
                     Log.i(TAG, "IN POSITION from ${peer.displayName()}")
-                    ChatService.addHiveCannedMessageStatic(peer.nodeId, "IN POSITION", 0x13, timestamp, senderCallsign)
+                    ChatService.addPeatCannedMessageStatic(peer.nodeId, "IN POSITION", 0x13, timestamp, senderCallsign)
                 }
-                HiveEventType.NEED_ASSIST -> {
+                PeatEventType.NEED_ASSIST -> {
                     Log.w(TAG, "NEED ASSIST from ${peer.displayName()}")
-                    ChatService.addHiveCannedMessageStatic(peer.nodeId, "NEED ASSIST", 0x31, timestamp, senderCallsign)
+                    ChatService.addPeatCannedMessageStatic(peer.nodeId, "NEED ASSIST", 0x31, timestamp, senderCallsign)
                 }
-                HiveEventType.NONE -> {
+                PeatEventType.NONE -> {
                     // Event cleared - peer is no longer in emergency
                     // Emergency state per-peer is handled by onMeshUpdated extracting from peer.currentEventType()
                     Log.d(TAG, "Event cleared for ${peer.displayName()}")
@@ -396,29 +395,29 @@ class HiveBtleService : Service(), HiveMeshListener {
 
     /**
      * Called when a peer connection is established.
-     * Just log - peer state is managed by hive-btle and updated via onMeshUpdated.
+     * Just log - peer state is managed by peat-btle and updated via onMeshUpdated.
      */
-    override fun onPeerConnected(peer: HivePeer) {
+    override fun onPeerConnected(peer: PeatPeer) {
         Log.i(TAG, "Peer connected: ${peer.displayName()} (${peer.address})")
-        // No peer management - hive-btle handles this and notifies via onMeshUpdated
+        // No peer management - peat-btle handles this and notifies via onMeshUpdated
     }
 
     /**
      * Called when a peer connection is lost.
-     * Just log - peer state is managed by hive-btle and updated via onMeshUpdated.
+     * Just log - peer state is managed by peat-btle and updated via onMeshUpdated.
      */
-    override fun onPeerDisconnected(peer: HivePeer) {
+    override fun onPeerDisconnected(peer: PeatPeer) {
         Log.i(TAG, "Peer disconnected: ${peer.displayName()} (${peer.address})")
-        // No peer management - hive-btle handles this and notifies via onMeshUpdated
+        // No peer management - peat-btle handles this and notifies via onMeshUpdated
     }
 
     /**
      * Called when a mesh document is synced.
      *
      * Just log and record stats. Peer data (callsign, location, etc.) is stored
-     * in peer.lastDocument by hive-btle and extracted in onMeshUpdated.
+     * in peer.lastDocument by peat-btle and extracted in onMeshUpdated.
      */
-    override fun onDocumentSynced(document: HiveDocument) {
+    override fun onDocumentSynced(document: PeatDocument) {
         val nodeIdHex = document.nodeId.toString(16).uppercase()
         val location = document.location()
         val docCallsign = document.callsign()
@@ -432,23 +431,23 @@ class HiveBtleService : Service(), HiveMeshListener {
             Log.v(TAG, "Document synced from $nodeIdHex (no location)")
         }
 
-        // Just record stats - peer data is managed by hive-btle
-        hiveBtleRepository.recordDocumentReceived(64)
+        // Just record stats - peer data is managed by peat-btle
+        peatBtleRepository.recordDocumentReceived(64)
     }
 
     /**
      * Called when a map marker is synced from a peer.
-     * Converts HiveMarker back to CoT format and publishes to EventBus for TAK display.
+     * Converts PeatMarker back to CoT format and publishes to EventBus for TAK display.
      */
-    override fun onMarkerSynced(peer: HivePeer, marker: HiveMarker) {
+    override fun onMarkerSynced(peer: PeatPeer, marker: PeatMarker) {
         val nodeIdHex = peer.nodeId.toString(16).uppercase()
         Log.i(TAG, "Marker synced from $nodeIdHex: uid=${marker.uid}, type=${marker.type}, callsign=${marker.callsign}")
 
         ioScope.launch {
             try {
-                // Convert HiveMarker to CoT XML for local display
-                val cotXml = CotHiveTranslator.compactMarkerToCotXml(
-                    CotHiveTranslator.CompactMarker(
+                // Convert PeatMarker to CoT XML for local display
+                val cotXml = CotPeatTranslator.compactMarkerToCotXml(
+                    CotPeatTranslator.CompactMarker(
                         uid = marker.uid,
                         type = marker.type,
                         lat = marker.lat,
@@ -460,8 +459,8 @@ class HiveBtleService : Service(), HiveMeshListener {
                 )
 
                 // Publish to EventBus for UI/TAK to receive
-                EventBus.getDefault().post(HiveDocumentEvent("mapitem_rx", cotXml))
-                hiveBtleRepository.recordDocumentReceived(84)
+                EventBus.getDefault().post(PeatDocumentEvent("mapitem_rx", cotXml))
+                peatBtleRepository.recordDocumentReceived(84)
 
                 Log.d(TAG, "Marker converted to CoT and published: ${marker.uid}")
 
@@ -475,12 +474,12 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Called when a chat message is received from a mesh peer.
      * Converts to CoT XML and posts TakChatEvent for existing chat UI.
      */
-    override fun onChatReceived(chat: HiveChat, fromPeer: HivePeer) {
+    override fun onChatReceived(chat: PeatChat, fromPeer: PeatPeer) {
         val nodeIdHex = chat.originNode.toString(16).uppercase()
         Log.i(TAG, "[CHAT-RX] From $nodeIdHex (${chat.sender}): ${chat.message}")
 
         // Filter out ACKs that aren't meant for us (i.e., ACKs for other peers' messages)
-        val myNodeId = hiveBtle?.nodeId ?: 0L
+        val myNodeId = peatBtle?.nodeId ?: 0L
         if (chat.message.equals("ACK", ignoreCase = true) && chat.replyToNode != 0L && chat.replyToNode != myNodeId) {
             Log.v(TAG, "[CHAT-RX] Ignoring ACK for another peer (replyTo: ${String.format("%08X", chat.replyToNode)})")
             return
@@ -493,20 +492,20 @@ class HiveBtleService : Service(), HiveMeshListener {
         EventBus.getDefault().post(TakChatEvent(chatCotXml))
 
         // Store for ACK replyTo (no popup)
-        hiveBtleRepository.setLastMeshChat(HiveBtleRepository.InboundChat(
+        peatBtleRepository.setLastMeshChat(PeatBtleRepository.InboundChat(
             sender = chat.sender,
             message = chat.message,
             timestamp = chat.timestamp,
             originNodeId = chat.originNode
         ))
 
-        hiveBtleRepository.recordDocumentReceived(chat.message.length + 30)
+        peatBtleRepository.recordDocumentReceived(chat.message.length + 30)
         Log.d(TAG, "[CHAT-RX] Posted TakChatEvent for mesh chat from ${chat.sender}")
     }
 
     /**
      * Called when raw decrypted data is received from a peer.
-     * This is the hive-lite interface - app handles message parsing directly.
+     * This is the peat-lite interface - app handles message parsing directly.
      */
     // Canned message document storage: (sourceNode, timestamp) -> latest document with ACKs
     // Key is (sourceNode, timestamp) since that uniquely identifies a message for CRDT merge
@@ -521,7 +520,7 @@ class HiveBtleService : Service(), HiveMeshListener {
      */
     private fun observeCannedMessageTtl() {
         ioScope.launch {
-            dataRepository.getHiveCannedMessageTtlSeconds.collect { ttlSeconds ->
+            dataRepository.getPeatCannedMessageTtlSeconds.collect { ttlSeconds ->
                 val newTtlMs = ttlSeconds * 1000L
                 if (newTtlMs != cannedMessageTtlMs) {
                     Log.i(TAG, "[CONFIG] Canned message TTL changed: ${cannedMessageTtlMs/1000}s -> ${ttlSeconds}s")
@@ -551,186 +550,16 @@ class HiveBtleService : Service(), HiveMeshListener {
     }
 
     /**
-     * Poll for CannedMessages that arrived via delta sync (0xB2/0xC0 documents).
-     * Delta-synced documents are stored in Rust and need to be polled since they
-     * don't come through onDecryptedData callback.
+     * Poll for CannedMessages from delta sync.
+     * NOTE: Rust-side delta sync API (getAllCannedMessages) not yet available in peat-btle.
+     * CannedMessages are currently handled via broadcastBytes/onDecryptedData path.
      */
     private fun pollCannedMessagesFromDeltaSync() {
-        val btle = hiveBtle ?: return
-
-        try {
-            val cannedMessages = btle.getAllCannedMessages()
-            Log.d(TAG, "[DELTA-POLL] Polling: found ${cannedMessages.size} canned messages in Rust")
-            if (cannedMessages.isEmpty()) return
-
-            val myNodeId = btle.nodeId
-
-            for (msgInfo in cannedMessages) {
-                val docKey = Pair(msgInfo.sourceNode.toLong(), msgInfo.timestamp.toLong())
-
-                // Decode the CannedMessageAckEvent from bytes
-                val event = decodeCannedMessageAckEvent(msgInfo.encodedBytes)
-                if (event == null) {
-                    Log.w(TAG, "[DELTA-POLL] Failed to decode CannedMessageAckEvent")
-                    continue
-                }
-
-                val messageType = event.message
-                val sourceNode = event.sourceNode.toLong()
-                val targetNode = event.targetNode.toLong()
-                val timestamp = event.timestamp.toLong()
-                val label = cannedMessageShortName(messageType)
-
-                // Filter: ignore messages targeted to other nodes
-                if (targetNode != 0L && targetNode != myNodeId) {
-                    Log.v(TAG, "[DELTA-POLL] Ignoring $label for another node")
-                    processedCannedMessages.add(docKey)  // Mark processed to avoid re-checking
-                    continue
-                }
-
-                // Store/merge the document and check if ACK count changed
-                val storedEvent = cannedMessageDocs[docKey]
-                val previousAckCount = storedEvent?.let { cannedMessageAckEventAckCount(it) } ?: 0u
-                val mergedEvent = if (storedEvent != null) {
-                    cannedMessageAckEventMerge(storedEvent, event)
-                } else {
-                    event
-                }
-                cannedMessageDocs[docKey] = mergedEvent
-                cannedMessageStoredAt[docKey] = System.currentTimeMillis()
-
-                val newAckCount = cannedMessageAckEventAckCount(mergedEvent)
-                val isNewMessage = !processedCannedMessages.contains(docKey)
-                val ackCountChanged = newAckCount != previousAckCount
-
-                // Update UI if ACK count changed (even for already-processed messages)
-                if (ackCountChanged && !isNewMessage) {
-                    Log.i(TAG, "[DELTA-POLL] ACK count updated for ${String.format("%08X", sourceNode)}:$timestamp: $previousAckCount -> $newAckCount")
-                    ChatService.updateHiveAckCountStatic(sourceNode, timestamp, newAckCount.toInt())
-                    continue  // Skip new message handling since already processed
-                }
-
-                // Skip if already processed and ACK count didn't change
-                if (!isNewMessage) {
-                    continue
-                }
-
-                Log.i(TAG, "[DELTA-POLL] NEW $label from ${String.format("%08X", sourceNode)}" +
-                        if (targetNode != 0L) " to ${String.format("%08X", targetNode)}" else " (broadcast)" +
-                        ", ACKs: $newAckCount")
-
-                // Look up callsign
-                val senderCallsign = hiveBtleRepository.peers.value
-                    .find { it.nodeId == sourceNode }?.callsign
-                    ?: btle.getPeer(sourceNode)?.let { blePeer ->
-                        blePeer.name.takeIf { it.isNotEmpty() }
-                    }
-
-                // Check if this message type requires ChatService
-                val requiresChatService = when (messageType) {
-                    CannedMessageType.CHECK_IN,
-                    CannedMessageType.MOVING,
-                    CannedMessageType.HOLDING,
-                    CannedMessageType.ON_STATION,
-                    CannedMessageType.RETURNING,
-                    CannedMessageType.COMPLETE,
-                    CannedMessageType.ALERT,
-                    CannedMessageType.CONTACT,
-                    CannedMessageType.NEED_EXTRACT,
-                    CannedMessageType.NEED_SUPPORT,
-                    CannedMessageType.NEED_RESUPPLY -> true
-                    else -> false
-                }
-
-                // If ChatService is required but not running, skip this message for now
-                // It will be retried on the next poll when ChatService is available
-                if (requiresChatService && !ChatService.isRunning.get()) {
-                    Log.d(TAG, "[DELTA-POLL] Deferring $label - ChatService not running yet")
-                    continue
-                }
-
-                // Mark as processed now that we're going to handle it
-                processedCannedMessages.add(docKey)
-
-                // Handle based on message type
-                when (messageType) {
-                    CannedMessageType.EMERGENCY,
-                    CannedMessageType.NEED_MEDIC,
-                    CannedMessageType.UNDER_FIRE -> {
-                        Log.w(TAG, "[DELTA-POLL] EMERGENCY from ${String.format("%08X", sourceNode)}")
-                        hiveBtleRepository.setEmergencyState(
-                            HiveBtleRepository.EmergencyState(
-                                isActive = true,
-                                sourceNodeId = sourceNode,
-                                timestamp = timestamp
-                            )
-                        )
-                    }
-
-                    CannedMessageType.ALL_CLEAR -> {
-                        Log.i(TAG, "[DELTA-POLL] ALL_CLEAR from ${String.format("%08X", sourceNode)}")
-                        val current = hiveBtleRepository.emergencyState.value
-                        if (current.sourceNodeId == sourceNode) {
-                            hiveBtleRepository.setEmergencyState(HiveBtleRepository.EmergencyState())
-                        }
-                    }
-
-                    // Status updates - add to chat
-                    CannedMessageType.CHECK_IN,
-                    CannedMessageType.MOVING,
-                    CannedMessageType.HOLDING,
-                    CannedMessageType.ON_STATION,
-                    CannedMessageType.RETURNING,
-                    CannedMessageType.COMPLETE -> {
-                        Log.i(TAG, "[DELTA-POLL] Status: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
-                        ChatService.addHiveCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
-                    }
-
-                    // Alerts - add to chat
-                    CannedMessageType.ALERT,
-                    CannedMessageType.CONTACT -> {
-                        Log.w(TAG, "[DELTA-POLL] Alert: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
-                        ChatService.addHiveCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
-                    }
-
-                    // Requests - add to chat
-                    CannedMessageType.NEED_EXTRACT,
-                    CannedMessageType.NEED_SUPPORT,
-                    CannedMessageType.NEED_RESUPPLY -> {
-                        Log.w(TAG, "[DELTA-POLL] Request: $label from ${senderCallsign ?: String.format("%08X", sourceNode)}")
-                        ChatService.addHiveCannedMessageStatic(sourceNode, label, messageType.ordinal, timestamp, senderCallsign)
-                    }
-
-                    // ACK types
-                    CannedMessageType.ACK,
-                    CannedMessageType.ACK_WILCO,
-                    CannedMessageType.ACK_NEGATIVE,
-                    CannedMessageType.ACK_SAY_AGAIN -> {
-                        Log.i(TAG, "[DELTA-POLL] ACK from ${String.format("%08X", sourceNode)}")
-                        val current = hiveBtleRepository.emergencyState.value
-                        if (current.isActive) {
-                            hiveBtleRepository.setEmergencyState(
-                                current.copy(ackedByNodes = current.ackedByNodes + sourceNode)
-                            )
-                        }
-                    }
-
-                    else -> {
-                        Log.d(TAG, "[DELTA-POLL] Other message: $label ($messageType)")
-                    }
-                }
-
-                // Update ACK count in ChatService (only if ChatService is running)
-                if (ChatService.isRunning.get()) {
-                    ChatService.updateHiveAckCountStatic(sourceNode, timestamp, newAckCount.toInt())
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "[DELTA-POLL] Error polling canned messages: ${e.message}", e)
-        }
+        // No-op: Rust delta sync API not yet available in peat-btle.
+        // CannedMessages flow through broadcastBytes → onDecryptedData instead.
     }
 
-    override fun onDecryptedData(peer: HivePeer?, data: ByteArray) {
+    override fun onDecryptedData(peer: PeatPeer?, data: ByteArray) {
         // CannedMessages now flow through delta sync only (0xB2/0xC0 documents)
         // No longer handling raw 0xAF broadcasts here - use pollCannedMessagesFromDeltaSync()
         if (data.isNotEmpty()) {
@@ -742,14 +571,14 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Build CoT XML for an incoming mesh chat message.
      * Uses "All Chat Rooms" as the destination so it appears in the main chat view.
      */
-    private fun buildMeshChatCotXml(chat: HiveChat): String {
+    private fun buildMeshChatCotXml(chat: PeatChat): String {
         val now = System.currentTimeMillis()
         val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
         dateFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
         val timeStr = dateFormat.format(java.util.Date(now))
 
         val uid = java.util.UUID.randomUUID().toString()
-        val senderUid = "HIVE-${chat.originNode.toString(16).uppercase()}"
+        val senderUid = "PEAT-${chat.originNode.toString(16).uppercase()}"
         val dstUid = "All Chat Rooms"
         val dstChatroom = "All Chat Rooms"
 
@@ -778,7 +607,7 @@ class HiveBtleService : Service(), HiveMeshListener {
      */
     private val syncUpdateRunnable = object : Runnable {
         override fun run() {
-            Log.d(TAG, "[SYNC] Sync scheduler tick (interval=${CotDispatchService.currReportingIntervalInSecs}s)")
+            Log.d(TAG, "[SYNC] Sync scheduler tick (interval=${SYNC_INTERVAL_MS / 1000}s)")
             ioScope.launch {
                 val location = dataRepository.latestLocation.value
                 val battery = dataRepository.latestBatteryPercentage.value
@@ -786,7 +615,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                 if (location != null && battery != null) {
                     broadcastTrackUpdate()
                 } else {
-                    Log.w(TAG, "Missing data for HIVE sync. Skipping this cycle.")
+                    Log.w(TAG, "Missing data for Peat sync. Skipping this cycle.")
                 }
 
                 // Poll for CannedMessages that arrived via delta sync
@@ -798,13 +627,12 @@ class HiveBtleService : Service(), HiveMeshListener {
 
             // Schedule next run - use shorter interval for responsive delta sync polling
             // (reporting interval is for CoT, but delta sync should be faster)
-            val pollIntervalMs = minOf(CotDispatchService.currReportingIntervalInSecs * 1000L, 10_000L)
-            syncUpdateHandler?.postDelayed(this, pollIntervalMs)
+            syncUpdateHandler?.postDelayed(this, SYNC_INTERVAL_MS)
         }
     }
 
     private fun startSyncScheduler() {
-        syncUpdateThread = HandlerThread("HiveSyncThread")
+        syncUpdateThread = HandlerThread("PeatSyncThread")
         syncUpdateThread?.start()
         syncUpdateHandler = syncUpdateThread?.looper?.let { Handler(it) }
 
@@ -823,15 +651,15 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Broadcast current track (position/vitals) to mesh.
      */
     private fun broadcastTrackUpdate() {
-        val btle = hiveBtle ?: return
+        val btle = peatBtle ?: return
 
         try {
             val location = dataRepository.latestLocation.value ?: return
             val heartRate = dataRepository.latestHeartRate.value
             val battery = dataRepository.latestBatteryPercentage.value ?: 100
 
-            // Create HiveLocation from Android location
-            val hiveLocation = HiveLocation(
+            // Create PeatLocation from Android location
+            val peatLocation = PeatLocation(
                 latitude = location.latitude.toFloat(),
                 longitude = location.longitude.toFloat(),
                 altitude = location.altitude.toFloat()
@@ -839,15 +667,15 @@ class HiveBtleService : Service(), HiveMeshListener {
 
             // Send sync event with location and vitals
             btle.sendEvent(
-                eventType = HiveEventType.NONE,
-                location = hiveLocation,
+                eventType = PeatEventType.NONE,
+                location = peatLocation,
                 callsign = callsign,
                 battery = battery,
                 heartRate = heartRate
             )
 
-            hiveBtleRepository.recordDocumentSent(64) // Approximate size
-            Log.i(TAG, "Track update broadcast: lat=${hiveLocation.latitude}, lon=${hiveLocation.longitude}, callsign=$callsign")
+            peatBtleRepository.recordDocumentSent(64) // Approximate size
+            Log.i(TAG, "Track update broadcast: lat=${peatLocation.latitude}, lon=${peatLocation.longitude}, callsign=$callsign")
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to broadcast track update: ${e.message}", e)
@@ -857,14 +685,14 @@ class HiveBtleService : Service(), HiveMeshListener {
     // ==================== EventBus Handlers ====================
 
     /**
-     * Handle HiveDocumentEvent from CotDispatchService.
-     * Converts CoT XML to HiveDocument format and broadcasts to mesh.
+     * Handle PeatDocumentEvent from CotDispatchService.
+     * Converts CoT XML to PeatDocument format and broadcasts to mesh.
      */
     @Subscribe(threadMode = ThreadMode.ASYNC)
-    fun onHiveDoc(evt: HiveDocumentEvent) {
+    fun onPeatDoc(evt: PeatDocumentEvent) {
         ioScope.launch {
             try {
-                Log.v(TAG, "Received HiveDocumentEvent: collection=${evt.collection}")
+                Log.v(TAG, "Received PeatDocumentEvent: collection=${evt.collection}")
 
                 when (evt.collection) {
                     "alert" -> handleAlertDocument(evt.cotXml)
@@ -875,26 +703,26 @@ class HiveBtleService : Service(), HiveMeshListener {
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to process HiveDocumentEvent: ${e.message}", e)
+                Log.e(TAG, "Failed to process PeatDocumentEvent: ${e.message}", e)
             }
         }
     }
 
     /**
-     * Handle HiveCannedMessageEvent - sends tactical canned messages via mesh.
-     * Uses hive-lite CannedMessageAckEvent format for proper CRDT ACK tracking.
+     * Handle PeatCannedMessageEvent - sends tactical canned messages via mesh.
+     * Uses peat-lite CannedMessageAckEvent format for proper CRDT ACK tracking.
      */
     @Subscribe(threadMode = ThreadMode.ASYNC)
-    fun onHiveCannedMessage(evt: HiveCannedMessageEvent) {
-        val btle = hiveBtle ?: run {
-            Log.w(TAG, "[CANNED] HiveBtle not initialized, ignoring canned message")
+    fun onPeatCannedMessage(evt: PeatCannedMessageEvent) {
+        val btle = peatBtle ?: run {
+            Log.w(TAG, "[CANNED] PeatBtle not initialized, ignoring canned message")
             return
         }
 
         ioScope.launch {
             try {
                 // Convert message code to CannedMessageType
-                val messageType = uniffi.hive_lite_android.cannedMessageFromCode(evt.messageCode.toUByte())
+                val messageType = uniffi.peat_lite_android.cannedMessageFromCode(evt.messageCode.toUByte())
                     ?: run {
                         Log.w(TAG, "[CANNED-TX] Unknown message code: ${evt.messageCode}")
                         return@launch
@@ -922,20 +750,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                     if (docKey != null) {
                         Log.i(TAG, "[CANNED-TX] Adding ACK to message from ${String.format("%08X", evt.targetNode)} (timestamp=${docKey.second})")
 
-                        // Update the Rust-side document for delta sync propagation
-                        val rustUpdated = btle.ackCannedMessage(
-                            docKey.first.toUInt(),
-                            docKey.second.toULong(),
-                            myNodeId.toUInt(),
-                            timestamp.toULong()
-                        )
-                        if (rustUpdated) {
-                            Log.i(TAG, "[CANNED-TX] ACK added to Rust document (will propagate via delta sync)")
-                        } else {
-                            Log.w(TAG, "[CANNED-TX] Failed to add ACK to Rust document")
-                        }
-
-                        // Also update Kotlin-side cache if present
+                        // Update Kotlin-side cache and broadcast
                         val existingDoc = cannedMessageDocs[docKey]
                         if (existingDoc != null) {
                             val updatedDoc = cannedMessageAckEventAddAck(
@@ -950,7 +765,7 @@ class HiveBtleService : Service(), HiveMeshListener {
                             Log.i(TAG, "[CANNED-TX] ACK recorded locally, total ACKs: $ackCount")
 
                             // Update UI with new ACK count
-                            ChatService.updateHiveAckCountStatic(docKey.first, docKey.second, ackCount.toInt())
+                            ChatService.updatePeatAckCountStatic(docKey.first, docKey.second, ackCount.toInt())
                         }
                         return@launch
                     }
@@ -975,14 +790,11 @@ class HiveBtleService : Service(), HiveMeshListener {
                 cannedMessageStoredAt[docKey] = System.currentTimeMillis()
                 processedCannedMessages.add(docKey)
 
-                // Store in Rust for delta sync propagation
+                // Broadcast to mesh peers
                 val encoded = encodeCannedMessageAckEvent(event)
-                val stored = btle.storeCannedMessageDocument(encoded)
-                if (stored) {
-                    Log.i(TAG, "[CANNED-TX] $label stored in Rust (will propagate via delta sync)")
-                } else {
-                    Log.w(TAG, "[CANNED-TX] Failed to store $label in Rust")
-                }
+                btle.broadcastBytes(encoded)
+                peatBtleRepository.recordDocumentSent(encoded.size)
+                Log.i(TAG, "[CANNED-TX] $label broadcast to mesh (${encoded.size} bytes)")
 
             } catch (e: Exception) {
                 Log.e(TAG, "[CANNED-TX] Failed to send canned message: ${e.message}", e)
@@ -1005,11 +817,7 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Used when the message came via delta sync and isn't in Kotlin cache.
      */
     private fun findLatestMessageFromRust(nodeId: Long): Pair<Long, Long>? {
-        val btle = hiveBtle ?: return null
-        return btle.getAllCannedMessages()
-            .filter { it.sourceNode.toLong() == nodeId }
-            .maxByOrNull { it.timestamp.toLong() }
-            ?.let { Pair(it.sourceNode.toLong(), it.timestamp.toLong()) }
+        return null  // Rust delta sync API not yet available in peat-btle
     }
 
     /**
@@ -1017,8 +825,8 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Uses the new CRDT ACK approach which embeds the ACK in the message document itself.
      */
     private fun sendCannedMessageAck(targetNode: Long, originalTimestamp: Long) {
-        val btle = hiveBtle ?: run {
-            Log.w(TAG, "[ACK] HiveBtle not initialized, cannot send ACK")
+        val btle = peatBtle ?: run {
+            Log.w(TAG, "[ACK] PeatBtle not initialized, cannot send ACK")
             return
         }
 
@@ -1043,14 +851,14 @@ class HiveBtleService : Service(), HiveMeshListener {
                     // Encode and broadcast the updated document
                     val encoded = encodeCannedMessageAckEvent(updatedDoc)
                     btle.broadcastBytes(encoded)
-                    hiveBtleRepository.recordDocumentSent(encoded.size)
+                    peatBtleRepository.recordDocumentSent(encoded.size)
 
                     val ackCount = cannedMessageAckEventAckCount(updatedDoc)
                     Log.i(TAG, "[ACK-TX] Sent ACK (${encoded.size} bytes), total ACKs: $ackCount")
                 } else {
                     Log.w(TAG, "[ACK-TX] No stored document for ${String.format("%08X", targetNode)}:$originalTimestamp, using legacy ACK")
-                    // Fallback: send via HiveBtle sendEvent (legacy path)
-                    btle.sendEvent(HiveEventType.ACK)
+                    // Fallback: send via PeatBtle sendEvent (legacy path)
+                    btle.sendEvent(PeatEventType.ACK)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "[ACK-TX] Failed to send ACK: ${e.message}", e)
@@ -1059,11 +867,11 @@ class HiveBtleService : Service(), HiveMeshListener {
     }
 
     /**
-     * Handle emergency alert - uses HiveBtle emergency broadcast.
+     * Handle emergency alert - uses PeatBtle emergency broadcast.
      * Detects cancellation via type='b-a-o-can' or cancel='true' attribute.
      */
     private fun handleAlertDocument(cotXml: String) {
-        val btle = hiveBtle ?: return
+        val btle = peatBtle ?: return
 
         try {
             // Check if this is a cancellation (type='b-a-o-can' or cancel='true')
@@ -1073,22 +881,22 @@ class HiveBtleService : Service(), HiveMeshListener {
 
             if (isCancellation) {
                 // Send NONE to clear emergency state on peers
-                btle.sendEvent(HiveEventType.NONE)
-                hiveBtleRepository.setEmergencyState(HiveBtleRepository.EmergencyState())
-                hiveBtleRepository.recordDocumentSent(64)
+                btle.sendEvent(PeatEventType.NONE)
+                peatBtleRepository.setEmergencyState(PeatBtleRepository.EmergencyState())
+                peatBtleRepository.recordDocumentSent(64)
                 Log.i(TAG, "Emergency CANCELLED broadcast sent")
             } else {
-                // Send emergency event via HiveBtle
-                btle.sendEvent(HiveEventType.EMERGENCY)
+                // Send emergency event via PeatBtle
+                btle.sendEvent(PeatEventType.EMERGENCY)
                 val nodeId = btle.nodeId
-                hiveBtleRepository.setEmergencyState(
-                    HiveBtleRepository.EmergencyState(
+                peatBtleRepository.setEmergencyState(
+                    PeatBtleRepository.EmergencyState(
                         isActive = true,
                         sourceNodeId = nodeId,
                         timestamp = System.currentTimeMillis()
                     )
                 )
-                hiveBtleRepository.recordDocumentSent(64)
+                peatBtleRepository.recordDocumentSent(64)
                 Log.i(TAG, "Emergency broadcast sent")
             }
 
@@ -1101,14 +909,14 @@ class HiveBtleService : Service(), HiveMeshListener {
      * Handle map item (marker) - encode and broadcast to mesh peers.
      */
     private fun handleMapItemDocument(cotXml: String) {
-        val btle = hiveBtle ?: return
+        val btle = peatBtle ?: return
 
         try {
             // Parse CoT and create compact marker for BLE transmission
-            val cotEvent = CotHiveTranslator.parseCotXml(cotXml)
+            val cotEvent = CotPeatTranslator.parseCotXml(cotXml)
             if (cotEvent != null) {
-                // Convert CoT event to HiveMarker and send via mesh
-                val hiveMarker = HiveMarker(
+                // Convert CoT event to PeatMarker and send via mesh
+                val peatMarker = PeatMarker(
                     uid = cotEvent.uid,
                     type = cotEvent.type,
                     lat = cotEvent.lat.toFloat(),
@@ -1118,9 +926,9 @@ class HiveBtleService : Service(), HiveMeshListener {
                     time = cotEvent.time
                 )
 
-                btle.sendMarker(hiveMarker)
-                hiveBtleRepository.recordDocumentSent(84)  // ~84 bytes typical marker size
-                Log.i(TAG, "MapItem marker sent: uid=${cotEvent.uid}, type=${cotEvent.type}, callsign=${hiveMarker.callsign}")
+                btle.sendMarker(peatMarker)
+                peatBtleRepository.recordDocumentSent(84)  // ~84 bytes typical marker size
+                Log.i(TAG, "MapItem marker sent: uid=${cotEvent.uid}, type=${cotEvent.type}, callsign=${peatMarker.callsign}")
             }
 
         } catch (e: Exception) {
@@ -1138,14 +946,14 @@ class HiveBtleService : Service(), HiveMeshListener {
 
     /**
      * Handle outbound chat message - send to mesh peers.
-     * Parses CoT XML to extract message and broadcasts via HiveBtle.
+     * Parses CoT XML to extract message and broadcasts via PeatBtle.
      *
      * @param cotXml The CoT XML containing the message
      * @param replyToNode If non-zero, originNode of the message being replied to
      * @param replyToTimestamp If non-zero, timestamp of the message being replied to
      */
     private fun handleOutboundChatDocument(cotXml: String, replyToNode: Long = 0, replyToTimestamp: Long = 0) {
-        val btle = hiveBtle ?: return
+        val btle = peatBtle ?: return
 
         try {
             // Extract message from <remarks> element
@@ -1159,19 +967,19 @@ class HiveBtleService : Service(), HiveMeshListener {
                 return
             }
 
-            // Create HiveChat with threading support
-            val chat = HiveChat(
-                sender = callsign.take(HiveChat.MAX_SENDER_LENGTH),
-                message = message.take(HiveChat.MAX_MESSAGE_LENGTH),
+            // Create PeatChat with threading support
+            val chat = PeatChat(
+                sender = callsign.take(PeatChat.MAX_SENDER_LENGTH),
+                message = message.take(PeatChat.MAX_MESSAGE_LENGTH),
                 timestamp = System.currentTimeMillis(),
                 originNode = btle.nodeId,
                 replyToNode = replyToNode,
                 replyToTimestamp = replyToTimestamp
             )
 
-            // Send via mesh
-            btle.sendChat(chat)
-            hiveBtleRepository.recordDocumentSent(message.length + 42)  // +12 bytes for replyTo fields
+            // Send via mesh (encode and broadcast raw bytes)
+            btle.broadcastBytes(PeatChat.encode(chat))
+            peatBtleRepository.recordDocumentSent(message.length + 42)  // +12 bytes for replyTo fields
 
             if (replyToNode != 0L) {
                 Log.i(TAG, "[CHAT-TX] Sent reply to mesh: $message (replyTo: ${String.format("%08X", replyToNode)}:$replyToTimestamp)")
@@ -1188,25 +996,25 @@ class HiveBtleService : Service(), HiveMeshListener {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "HiveBtleService onDestroy()")
+        Log.d(TAG, "PeatBtleService onDestroy()")
         isRunning.set(false)
 
         stopForeground(STOP_FOREGROUND_DETACH)
         stopSyncScheduler()
 
         try {
-            hiveBtle?.stopMesh()
-            hiveBtle?.shutdown()
-            hiveBtle = null
-            Log.d(TAG, "HiveBtle stopped")
+            peatBtle?.stopMesh()
+            peatBtle?.shutdown()
+            peatBtle = null
+            Log.d(TAG, "PeatBtle stopped")
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping HiveBtle: ${e.message}", e)
+            Log.e(TAG, "Error stopping PeatBtle: ${e.message}", e)
         }
 
-        hiveBtleRepository.updateMeshState(HiveBtleRepository.HiveMeshState.NOT_INITIALIZED)
-        // Clear peers - hive-btle manages peer state, we just display it
-        hiveBtleRepository.clearPeers()
-        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.HIVE_BTLE)
+        peatBtleRepository.updateMeshState(PeatBtleRepository.PeatMeshState.NOT_INITIALIZED)
+        // Clear peers - peat-btle manages peer state, we just display it
+        peatBtleRepository.clearPeers()
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.PEAT_BTLE)
 
         ioScope.cancel()
 
@@ -1216,7 +1024,7 @@ class HiveBtleService : Service(), HiveMeshListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "HiveBtleService onStartCommand()")
+        Log.d(TAG, "PeatBtleService onStartCommand()")
         return START_NOT_STICKY
     }
 
@@ -1225,7 +1033,7 @@ class HiveBtleService : Service(), HiveMeshListener {
     }
 
     companion object {
-        private val TAG = "WearTAK-" + HiveBtleService::class.java.simpleName
+        private val TAG = "WearTAK-" + PeatBtleService::class.java.simpleName
 
         /**
          * Shared genesis for WEARTAK encrypted mesh.
@@ -1236,7 +1044,7 @@ class HiveBtleService : Service(), HiveMeshListener {
          */
         private const val SHARED_GENESIS_BASE64: String =
             "BwBXRUFSVEFL4O7thA03dXXBNkT+gG22aTRGICECcX5RHtOgIdLBrb7tU7LTxkFLCLP+De21IALSXAbi6ZR/c3VXW9lKWacbM0YqfK9n5JXqob7/stIM63nBMLzJiFTGl9E6wcF8Gz0gUerY2JsBAAAA"
-        private const val HIVE_SERVICE_NOTIFICATION_ID = 3334
+        private const val PEAT_SERVICE_NOTIFICATION_ID = 3334
         private const val SYNC_INTERVAL_MS = 5_000L // 5 seconds initial tick
 
         val isRunning: AtomicBoolean = AtomicBoolean(false)

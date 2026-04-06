@@ -25,22 +25,22 @@ import kotlinx.coroutines.flow.stateIn
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /**
- * Repository for HIVE BLE mesh display state.
+ * Repository for Peat BLE mesh display state.
  *
  * This repository ONLY stores and exposes mesh state for UI display.
- * All peer management (tracking, deduplication, cleanup) is handled by hive-btle.
+ * All peer management (tracking, deduplication, cleanup) is handled by peat-btle.
  *
  * The app receives peer updates via onMeshUpdated() and stores them directly.
  */
-class HiveBtleRepository(private val context: Context) {
+class PeatBtleRepository(private val context: Context) {
 
     companion object {
-        private const val TAG = "WearTAK-HiveBtleRepo"
+        private const val TAG = "WearTAK-PeatBtleRepo"
     }
 
     // --- Mesh connection state ---------------------------------------------------
 
-    enum class HiveMeshState {
+    enum class PeatMeshState {
         NOT_INITIALIZED,
         INITIALIZING,
         IDLE,               // Initialized but not scanning/advertising
@@ -51,18 +51,18 @@ class HiveBtleRepository(private val context: Context) {
         ERROR
     }
 
-    private val _meshState = MutableStateFlow(HiveMeshState.NOT_INITIALIZED)
-    val meshState: StateFlow<HiveMeshState> = _meshState
+    private val _meshState = MutableStateFlow(PeatMeshState.NOT_INITIALIZED)
+    val meshState: StateFlow<PeatMeshState> = _meshState
 
     // LiveData version for better WearOS deep sleep compatibility
-    val meshStateLiveData = MutableLiveData(HiveMeshState.NOT_INITIALIZED)
+    val meshStateLiveData = MutableLiveData(PeatMeshState.NOT_INITIALIZED)
 
     val isActive: StateFlow<Boolean> = meshState
         .map { state ->
-            state == HiveMeshState.ACTIVE ||
-            state == HiveMeshState.SCANNING ||
-            state == HiveMeshState.ADVERTISING ||
-            state == HiveMeshState.SYNCING
+            state == PeatMeshState.ACTIVE ||
+            state == PeatMeshState.SCANNING ||
+            state == PeatMeshState.ADVERTISING ||
+            state == PeatMeshState.SYNCING
         }
         .stateIn(
             scope = scope,
@@ -70,18 +70,18 @@ class HiveBtleRepository(private val context: Context) {
             initialValue = false
         )
 
-    fun updateMeshState(state: HiveMeshState) {
+    fun updateMeshState(state: PeatMeshState) {
         _meshState.value = state
         meshStateLiveData.postValue(state)
     }
 
-    // --- Peer display (read-only from hive-btle) ---------------------------------
+    // --- Peer display (read-only from peat-btle) ---------------------------------
 
     /**
-     * Peer info for display. All fields come directly from hive-btle.
+     * Peer info for display. All fields come directly from peat-btle.
      * The app does NOT manage or modify this data.
      */
-    data class HivePeerInfo(
+    data class PeatPeerInfo(
         val nodeId: Long,
         val identifier: String,     // BLE address
         val name: String?,
@@ -107,13 +107,13 @@ class HiveBtleRepository(private val context: Context) {
         val hasLocation: Boolean get() = latitude != null && longitude != null
     }
 
-    private val _peers = MutableStateFlow<List<HivePeerInfo>>(emptyList())
-    val peers: StateFlow<List<HivePeerInfo>> = _peers
+    private val _peers = MutableStateFlow<List<PeatPeerInfo>>(emptyList())
+    val peers: StateFlow<List<PeatPeerInfo>> = _peers
 
     // LiveData version for better WearOS deep sleep compatibility
     val peerCountLiveData = MutableLiveData(0)
 
-    val connectedPeers: StateFlow<List<HivePeerInfo>> = _peers
+    val connectedPeers: StateFlow<List<PeatPeerInfo>> = _peers
         .map { list -> list.filter { it.isConnected } }
         .stateIn(
             scope = scope,
@@ -129,7 +129,7 @@ class HiveBtleRepository(private val context: Context) {
         .map { it.size }
         .stateIn(scope, SharingStarted.Eagerly, 0)
 
-    val peersInEmergency: StateFlow<List<HivePeerInfo>> = _peers
+    val peersInEmergency: StateFlow<List<PeatPeerInfo>> = _peers
         .map { list -> list.filter { it.isInEmergency } }
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -138,10 +138,10 @@ class HiveBtleRepository(private val context: Context) {
         .stateIn(scope, SharingStarted.Eagerly, 0)
 
     /**
-     * Set peers directly from hive-btle. No processing, no deduplication.
-     * hive-btle handles all peer management.
+     * Set peers directly from peat-btle. No processing, no deduplication.
+     * peat-btle handles all peer management.
      */
-    fun setPeers(peerList: List<HivePeerInfo>) {
+    fun setPeers(peerList: List<PeatPeerInfo>) {
         _peers.value = peerList
         peerCountLiveData.postValue(peerList.size)
     }
@@ -154,7 +154,7 @@ class HiveBtleRepository(private val context: Context) {
         peerCountLiveData.postValue(0)
     }
 
-    // --- Emergency state (from hive-btle) ----------------------------------------
+    // --- Emergency state (from peat-btle) ----------------------------------------
 
     data class EmergencyState(
         val isActive: Boolean = false,
@@ -211,25 +211,25 @@ class HiveBtleRepository(private val context: Context) {
 
     // --- Outbound events (for service to process) --------------------------------
 
-    sealed class HiveOutboundEvent {
-        data class Document(val collection: String, val cotXml: String) : HiveOutboundEvent()
-        data class Emergency(val timestamp: Long) : HiveOutboundEvent()
-        data class Ack(val timestamp: Long) : HiveOutboundEvent()
+    sealed class PeatOutboundEvent {
+        data class Document(val collection: String, val cotXml: String) : PeatOutboundEvent()
+        data class Emergency(val timestamp: Long) : PeatOutboundEvent()
+        data class Ack(val timestamp: Long) : PeatOutboundEvent()
     }
 
-    private val _outboundEvents = MutableSharedFlow<HiveOutboundEvent>(extraBufferCapacity = 64)
-    val outboundEvents: SharedFlow<HiveOutboundEvent> = _outboundEvents
+    private val _outboundEvents = MutableSharedFlow<PeatOutboundEvent>(extraBufferCapacity = 64)
+    val outboundEvents: SharedFlow<PeatOutboundEvent> = _outboundEvents
 
     suspend fun enqueueDocument(collection: String, cotXml: String) {
-        _outboundEvents.emit(HiveOutboundEvent.Document(collection, cotXml))
+        _outboundEvents.emit(PeatOutboundEvent.Document(collection, cotXml))
     }
 
     suspend fun enqueueEmergency(timestamp: Long) {
-        _outboundEvents.emit(HiveOutboundEvent.Emergency(timestamp))
+        _outboundEvents.emit(PeatOutboundEvent.Emergency(timestamp))
     }
 
     suspend fun enqueueAck(timestamp: Long) {
-        _outboundEvents.emit(HiveOutboundEvent.Ack(timestamp))
+        _outboundEvents.emit(PeatOutboundEvent.Ack(timestamp))
     }
 
     // --- Inbound chat messages (for UI overlay) --------------------------------

@@ -1,17 +1,17 @@
 /*
  * Copyright (C) 2025-2026, Ascent Integrated Tech. All rights reserved.
  *
- * CannedMessage encoder/decoder for hive-lite tactical messaging.
+ * CannedMessage encoder/decoder for peat-lite tactical messaging.
  * This implements the 0xAF wire format for CannedMessages.
  */
 
-package com.aitech.weartak_civ.hive
+package com.aitech.weartak_civ.peat
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * CannedMessage encoder/decoder for hive-lite tactical messaging.
+ * CannedMessage encoder/decoder for peat-lite tactical messaging.
  *
  * Wire format (22 bytes):
  * - Marker: 1 byte (0xAF)

@@ -81,7 +81,7 @@ class ServiceConfiguration(
         }.distinctUntilChanged()
 
         ServiceType.DITTO -> dataRepository.getEnableDittoService.distinctUntilChanged()
-        ServiceType.HIVE_BTLE -> dataRepository.getEnableHiveBtleService.distinctUntilChanged()
+        ServiceType.PEAT_BTLE -> dataRepository.getEnablePeatBtleService.distinctUntilChanged()
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
@@ -142,7 +142,7 @@ class ServiceConfiguration(
             add(android.Manifest.permission.BLUETOOTH_CONNECT)
         }
 
-        ServiceType.HIVE_BTLE -> buildList {
+        ServiceType.PEAT_BTLE -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)
             add(android.Manifest.permission.BLUETOOTH_CONNECT)
             add(android.Manifest.permission.BLUETOOTH_ADVERTISE)

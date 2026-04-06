@@ -77,8 +77,6 @@ import androidx.lifecycle.MutableLiveData
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.wear.compose.material.CardDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
@@ -95,9 +93,9 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.ChatMessage
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.HiveBtleRepository
-import com.aitech.weartak_civ.events.HiveCannedMessageEvent
-import com.aitech.weartak_civ.events.HiveDocumentEvent
+import com.aitech.weartak_civ.data.PeatBtleRepository
+import com.aitech.weartak_civ.events.PeatCannedMessageEvent
+import com.aitech.weartak_civ.events.PeatDocumentEvent
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
@@ -153,7 +151,7 @@ class ChatActivity : ComponentActivity() {
 
         val app = applicationContext as WearTakApplication
         val dataRepository = app.repo
-        val hiveBtleRepo = app.hiveBtleRepo
+        val peatBtleRepo = app.peatBtleRepo
 
         setContent {
             WearTAKCIVTheme {
@@ -163,7 +161,7 @@ class ChatActivity : ComponentActivity() {
                         exitActivity = { finishAndRemoveTask() },
                         context = context,
                         initialRoomUid = intent.getStringExtra(EXTRA_OPEN_ROOM_UID),
-                        hiveBtleRepo = hiveBtleRepo,
+                        peatBtleRepo = peatBtleRepo,
                         dataRepository = dataRepository
                     )
                 }
@@ -174,7 +172,7 @@ class ChatActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, hiveBtleRepo: HiveBtleRepository, dataRepository: DataRepository) {
+fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, peatBtleRepo: PeatBtleRepository, dataRepository: DataRepository) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
@@ -247,7 +245,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "chat_screen_detailed index: $index")
-            ChatScreenDetailed(navController, index, chatRooms, hiveBtleRepo, dataRepository)
+            ChatScreenDetailed(navController, index, chatRooms, peatBtleRepo, dataRepository)
         }
 
         composable("invalid_license_screen") {
@@ -389,7 +387,7 @@ fun ChatScreenDetailed(
     navController: NavController,
     index: Int,
     chatRooms: List<Utils.ChatRoom>,
-    hiveBtleRepo: HiveBtleRepository,
+    peatBtleRepo: PeatBtleRepository,
     dataRepository: DataRepository
 ) {
     WearTAKCIVTheme {
@@ -405,8 +403,8 @@ fun ChatScreenDetailed(
         val replyMessage by reply.observeAsState(initial = "")
 
 
-        // Check if HIVE mesh is active for ACK button
-        val isHiveActive by hiveBtleRepo.isActive.collectAsState()
+        // Check if Peat mesh is active for ACK button
+        val isPeatActive by peatBtleRepo.isActive.collectAsState()
 
         // Mark this room as read when entering detail
         LaunchedEffect(key1 = index) {
@@ -541,21 +539,21 @@ fun ChatScreenDetailed(
                     }
                 })
 
-                // ACK button - only show when HIVE mesh is active
-                if (isHiveActive) {
+                // ACK button - only show when Peat mesh is active
+                if (isPeatActive) {
                     Spacer(modifier = Modifier.size(8.dp))
                     Button(
                         onClick = {
                             try {
-                                // Check if this is HIVE Mesh CannedMessage room (starts with "hive-")
-                                val isHiveMeshRoom = roomId?.startsWith("hive-") == true
+                                // Check if this is Peat Mesh CannedMessage room (starts with "peat-")
+                                val isPeatMeshRoom = roomId?.startsWith("peat-") == true
 
-                                if (isHiveMeshRoom && roomId != null) {
-                                    // Extract node ID from room ID (format: "hive-XXXXXXXX")
-                                    val nodeIdHex = roomId.removePrefix("hive-")
+                                if (isPeatMeshRoom && roomId != null) {
+                                    // Extract node ID from room ID (format: "peat-XXXXXXXX")
+                                    val nodeIdHex = roomId.removePrefix("peat-")
                                     val targetNode = nodeIdHex.toLongOrNull(16) ?: 0L
                                     if (targetNode != 0L) {
-                                        EventBus.getDefault().post(HiveCannedMessageEvent(
+                                        EventBus.getDefault().post(PeatCannedMessageEvent(
                                             messageCode = 0x00,  // ACK
                                             targetNode = targetNode
                                         ))
@@ -567,9 +565,9 @@ fun ChatScreenDetailed(
                                     }
                                 } else {
                                     // Regular chat ACK
-                                    val lastChat = hiveBtleRepo.lastMeshChat
+                                    val lastChat = peatBtleRepo.lastMeshChat
                                     val ackCot = "<remarks>ACK</remarks>"
-                                    EventBus.getDefault().post(HiveDocumentEvent(
+                                    EventBus.getDefault().post(PeatDocumentEvent(
                                         collection = "chat",
                                         cotXml = ackCot,
                                         replyToNode = lastChat?.originNodeId ?: 0L,
@@ -802,7 +800,7 @@ fun ChatScreenPreview() {
     ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList())
 }
 
-// Preview disabled - requires HiveBtleRepository
+// Preview disabled - requires PeatBtleRepository
 // @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 // @Composable
 // fun ChatScreenDetailedPreview() {

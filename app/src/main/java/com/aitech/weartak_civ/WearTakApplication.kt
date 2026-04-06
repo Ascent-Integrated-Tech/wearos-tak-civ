@@ -25,7 +25,7 @@ import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.data.PeatBtleRepository
 import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.data.secure.migration.TakServerMigration
 import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
@@ -47,7 +47,7 @@ class WearTakApplication : Application() {
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
-    lateinit var hiveBtleRepo: HiveBtleRepository; private set
+    lateinit var peatBtleRepo: PeatBtleRepository; private set
     lateinit var sitxRepo: SitxSecretsRepository; private set
     lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
@@ -65,7 +65,7 @@ class WearTakApplication : Application() {
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
         capRepo = CompanionAppRepository(applicationContext)
-        hiveBtleRepo = HiveBtleRepository(applicationContext)
+        peatBtleRepo = PeatBtleRepository(applicationContext)
         audioRepo = AudioCaptureRepository(applicationContext)
         onnxRepo = OnnxRepository(applicationContext)
         sitxRepo = SitxSecretsRepository(SitxEncryptedDataStore(applicationContext))

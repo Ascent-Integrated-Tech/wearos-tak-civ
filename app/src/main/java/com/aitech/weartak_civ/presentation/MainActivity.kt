@@ -150,9 +150,9 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.data.HiveBtleRepository
-import com.aitech.weartak_civ.events.HiveCannedMessageEvent
-import com.aitech.weartak_civ.events.HiveDocumentEvent
+import com.aitech.weartak_civ.data.PeatBtleRepository
+import com.aitech.weartak_civ.events.PeatCannedMessageEvent
+import com.aitech.weartak_civ.events.PeatDocumentEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -167,7 +167,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHiveBtleServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePeatBtleServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
@@ -222,8 +222,8 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_GEOFENCE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HAIL_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
-import com.aitech.weartak_civ.DEFAULT_ENABLE_HIVE_BTLE_SERVICE
-import com.aitech.weartak_civ.DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_PEAT_BTLE_SERVICE
+import com.aitech.weartak_civ.DEFAULT_PEAT_CANNED_MESSAGE_TTL_SECONDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
@@ -333,10 +333,10 @@ class MainActivity : ComponentActivity() {
         var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
         var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
         var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
-        var enableHiveBtleService : Boolean = DEFAULT_ENABLE_HIVE_BTLE_SERVICE
-        var enableHiveBtleServiceSettingsState = MutableLiveData<Boolean>(false)
-        var hiveCannedMessageTtlSeconds : Int = DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS
-        val hiveCannedMessageTtlSecondsSettingsState = MutableLiveData<Int>(DEFAULT_HIVE_CANNED_MESSAGE_TTL_SECONDS)
+        var enablePeatBtleService : Boolean = DEFAULT_ENABLE_PEAT_BTLE_SERVICE
+        var enablePeatBtleServiceSettingsState = MutableLiveData<Boolean>(false)
+        var peatCannedMessageTtlSeconds : Int = DEFAULT_PEAT_CANNED_MESSAGE_TTL_SECONDS
+        val peatCannedMessageTtlSecondsSettingsState = MutableLiveData<Int>(DEFAULT_PEAT_CANNED_MESSAGE_TTL_SECONDS)
         var enableCompanionAppService: Boolean = DEFAULT_ENABLE_COMPANION_APP_SERVICE
         var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_COMPANION_APP_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
@@ -915,8 +915,8 @@ class MainActivity : ComponentActivity() {
             enableLowAtmPressureAlert      = dataRepository.getEnableLowAtmPressureAlert.first()
             enableHighAtmPressureAlert     = dataRepository.getEnableHighAtmPressureAlert.first()
             enableDittoService             = dataRepository.getEnableDittoService.first()
-            enableHiveBtleService          = dataRepository.getEnableHiveBtleService.first()
-            hiveCannedMessageTtlSeconds    = dataRepository.getHiveCannedMessageTtlSeconds.first()
+            enablePeatBtleService          = dataRepository.getEnablePeatBtleService.first()
+            peatCannedMessageTtlSeconds    = dataRepository.getPeatCannedMessageTtlSeconds.first()
             enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
             enableChatService              = dataRepository.getEnableChatService.first()
             enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
@@ -1400,8 +1400,8 @@ class MainActivity : ComponentActivity() {
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)
-        enableHiveBtleServiceSettingsState.postValue(enableHiveBtleService)
-        hiveCannedMessageTtlSecondsSettingsState.postValue(hiveCannedMessageTtlSeconds)
+        enablePeatBtleServiceSettingsState.postValue(enablePeatBtleService)
+        peatCannedMessageTtlSecondsSettingsState.postValue(peatCannedMessageTtlSeconds)
         enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
         enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
         enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
@@ -1745,7 +1745,7 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.ACTIVITY_RECOGNITION] = enableActRecService
         localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
         localMap[ServiceType.DITTO]      = enableDittoService
-        localMap[ServiceType.HIVE_BTLE]  = enableHiveBtleService
+        localMap[ServiceType.PEAT_BTLE]  = enablePeatBtleService
         localMap[ServiceType.COMPANION_APP] = enableCompanionAppService
         localMap[ServiceType.CHAT]       = enableChatService
         localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
@@ -2786,8 +2786,8 @@ fun MainScreen(
     }
 
     // Observe peer emergency count for SOS button flash
-    val hiveBtleRepo = (context.applicationContext as WearTakApplication).hiveBtleRepo
-    val peerEmergencyCount by hiveBtleRepo.emergencyPeerCount.collectAsState()
+    val peatBtleRepo = (context.applicationContext as WearTakApplication).peatBtleRepo
+    val peerEmergencyCount by peatBtleRepo.emergencyPeerCount.collectAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2904,7 +2904,7 @@ fun MainScreen(
                 }
                 TroubleshootingIcons(sitxVm)
 
-                // HIVE mesh button - LOCKED POSITION (user approved)
+                // Peat mesh button - LOCKED POSITION (user approved)
                 // Known issue: disappears after deep sleep when off-charger
                 Box(
                     modifier = Modifier
@@ -2912,7 +2912,7 @@ fun MainScreen(
                         .height(30.dp),
                     contentAlignment = Alignment.TopStart
                 ) {
-                    HiveButtonSimple(
+                    PeatButtonSimple(
                         modifier = Modifier
                             .offset(x = 70.dp, y = 0.dp)
                     )
@@ -2920,15 +2920,15 @@ fun MainScreen(
 
                 TimeWithSecondsAware(context)
 
-                // HIVE mesh chat overlay - shows incoming chat with ACK button
-                val pendingChat by hiveBtleRepo.pendingChat.collectAsState()
-                HiveChatOverlay(
+                // Peat mesh chat overlay - shows incoming chat with ACK button
+                val pendingChat by peatBtleRepo.pendingChat.collectAsState()
+                PeatChatOverlay(
                     chat = pendingChat,
                     onAck = {
                         // Send ACK via CannedMessage to the original sender
                         pendingChat?.let { chat ->
                             try {
-                                EventBus.getDefault().post(HiveCannedMessageEvent(
+                                EventBus.getDefault().post(PeatCannedMessageEvent(
                                     messageCode = 0x00,  // CannedMessageCode.ACK
                                     targetNode = chat.originNodeId,
                                     originalTimestamp = chat.timestamp
@@ -2939,22 +2939,22 @@ fun MainScreen(
                             }
                         }
                         // Dismiss overlay
-                        hiveBtleRepo.clearPendingChat()
+                        peatBtleRepo.clearPendingChat()
                     },
                     onDismiss = {
-                        hiveBtleRepo.clearPendingChat()
+                        peatBtleRepo.clearPendingChat()
                     }
                 )
 
-                // HIVE mesh canned message overlay - shows incoming canned messages with ACK button
-                val pendingCannedMessage by hiveBtleRepo.pendingCannedMessage.collectAsState()
-                HiveCannedMessageOverlay(
+                // Peat mesh canned message overlay - shows incoming canned messages with ACK button
+                val pendingCannedMessage by peatBtleRepo.pendingCannedMessage.collectAsState()
+                PeatCannedMessageOverlay(
                     message = pendingCannedMessage,
                     onAck = {
                         // Send ACK to the original message using CRDT-proper approach
                         pendingCannedMessage?.let { msg ->
                             try {
-                                EventBus.getDefault().post(HiveCannedMessageEvent(
+                                EventBus.getDefault().post(PeatCannedMessageEvent(
                                     messageCode = 0x00,  // CannedMessageCode.ACK
                                     targetNode = msg.sourceNode,
                                     originalTimestamp = msg.timestamp
@@ -2965,10 +2965,10 @@ fun MainScreen(
                             }
                         }
                         // Dismiss overlay
-                        hiveBtleRepo.clearPendingCannedMessage()
+                        peatBtleRepo.clearPendingCannedMessage()
                     },
                     onDismiss = {
-                        hiveBtleRepo.clearPendingCannedMessage()
+                        peatBtleRepo.clearPendingCannedMessage()
                     }
                 )
 
@@ -3457,7 +3457,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
                 .size(25.dp)
         )
 
-        // HIVE mesh button - position locked, deep sleep issue is known bug
+        // Peat mesh button - position locked, deep sleep issue is known bug
         // DO NOT MOVE - user approved this position
 
         val wirelessConnPainter = when {
@@ -3557,30 +3557,30 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
 }
 
 /**
- * Simple HIVE button using LiveData (like other surviving icons) instead of StateFlow.
+ * Simple Peat button using LiveData (like other surviving icons) instead of StateFlow.
  * Other icons that survive deep sleep all use LiveData.observeAsState().
  */
 @Composable
-fun HiveButtonSimple(modifier: Modifier = Modifier) {
+fun PeatButtonSimple(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val hiveBtleRepo = (context.applicationContext as WearTakApplication).hiveBtleRepo
+    val peatBtleRepo = (context.applicationContext as WearTakApplication).peatBtleRepo
 
     // Use LiveData.observeAsState() - same pattern as other icons that survive deep sleep
-    val peerCount by hiveBtleRepo.peerCountLiveData.observeAsState(initial = 0)
-    val meshState by hiveBtleRepo.meshStateLiveData.observeAsState(
-        initial = HiveBtleRepository.HiveMeshState.NOT_INITIALIZED
+    val peerCount by peatBtleRepo.peerCountLiveData.observeAsState(initial = 0)
+    val meshState by peatBtleRepo.meshStateLiveData.observeAsState(
+        initial = PeatBtleRepository.PeatMeshState.NOT_INITIALIZED
     )
 
-    val isHiveActive = meshState != HiveBtleRepository.HiveMeshState.NOT_INITIALIZED &&
-                       meshState != HiveBtleRepository.HiveMeshState.ERROR
-    val hasConnectedPeers = isHiveActive && (peerCount ?: 0) > 0
+    val isPeatActive = meshState != PeatBtleRepository.PeatMeshState.NOT_INITIALIZED &&
+                       meshState != PeatBtleRepository.PeatMeshState.ERROR
+    val hasConnectedPeers = isPeatActive && (peerCount ?: 0) > 0
     val buttonColor = if (hasConnectedPeers) Color(0xFF4CAF50) else Color.DarkGray
 
     // Use Canvas to draw circle background + Icon on top - matches other icon patterns
     Box(
         modifier = modifier
             .size(25.dp)
-            .clickable { context.startActivity(Intent(context, HiveMeshActivity::class.java)) },
+            .clickable { context.startActivity(Intent(context, PeatMeshActivity::class.java)) },
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -3588,7 +3588,7 @@ fun HiveButtonSimple(modifier: Modifier = Modifier) {
         }
         Icon(
             painter = painterResource(R.drawable.bluetooth),
-            contentDescription = "HIVE Mesh",
+            contentDescription = "Peat Mesh",
             tint = Color.White,
             modifier = Modifier.size(15.dp)
         )
@@ -3596,26 +3596,26 @@ fun HiveButtonSimple(modifier: Modifier = Modifier) {
 }
 
 /**
- * Inline HIVE mesh button for embedding directly in TroubleshootingIcons.
+ * Inline Peat mesh button for embedding directly in TroubleshootingIcons.
  * Uses regular collectAsState (not lifecycle-aware) for stability across sleep/wake.
  */
 @Composable
-fun HiveMeshIconInline(modifier: Modifier = Modifier) {
+fun PeatMeshIconInline(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val hiveBtleRepo = (context.applicationContext as WearTakApplication).hiveBtleRepo
+    val peatBtleRepo = (context.applicationContext as WearTakApplication).peatBtleRepo
 
     // Use regular collectAsState - not lifecycle aware, always collects
-    val peers by hiveBtleRepo.peers.collectAsState()
-    val hiveBtleEnabled by enableHiveBtleServiceSettingsState.observeAsState(initial = true)
+    val peers by peatBtleRepo.peers.collectAsState()
+    val peatBtleEnabled by enablePeatBtleServiceSettingsState.observeAsState(initial = true)
 
     // Derive values to ensure recomposition
     val peerCount by remember { derivedStateOf { peers.size } }
-    val isEnabled by remember { derivedStateOf { hiveBtleEnabled == true } }
+    val isEnabled by remember { derivedStateOf { peatBtleEnabled == true } }
     val buttonColor by remember { derivedStateOf {
         if (peerCount > 0) Color(0xFF4CAF50) else Color.DarkGray
     }}
 
-    Log.d(TAG, "HiveMeshIconInline: peerCount=$peerCount, enabled=$isEnabled")
+    Log.d(TAG, "PeatMeshIconInline: peerCount=$peerCount, enabled=$isEnabled")
 
     // DEBUG: Make button very visible - bright red/green, larger
     Box(
@@ -3625,7 +3625,7 @@ fun HiveMeshIconInline(modifier: Modifier = Modifier) {
             .background(if (peerCount > 0) Color.Green else Color.Red)
             .border(2.dp, Color.Yellow, CircleShape)
             .clickable(enabled = isEnabled) {
-                context.startActivity(Intent(context, HiveMeshActivity::class.java))
+                context.startActivity(Intent(context, PeatMeshActivity::class.java))
             },
         contentAlignment = Alignment.Center
     ) {
@@ -3640,39 +3640,39 @@ fun HiveMeshIconInline(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun HiveMeshButton(context: Context) {
-    HiveMeshIconButton(context = context, modifier = Modifier)
+fun PeatMeshButton(context: Context) {
+    PeatMeshIconButton(context = context, modifier = Modifier)
 }
 
 @Composable
-fun HiveMeshIconButton(context: Context, modifier: Modifier = Modifier) {
+fun PeatMeshIconButton(context: Context, modifier: Modifier = Modifier) {
     // Use LocalContext to ensure fresh context after activity recreation
     val currentContext = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val hiveBtleRepo = (currentContext.applicationContext as WearTakApplication).hiveBtleRepo
+    val peatBtleRepo = (currentContext.applicationContext as WearTakApplication).peatBtleRepo
 
     // Track lifecycle state for debugging
     var lifecycleState by remember { mutableStateOf("INIT") }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             lifecycleState = event.name
-            Log.w(TAG, "HiveMeshButton LIFECYCLE: $event")
+            Log.w(TAG, "PeatMeshButton LIFECYCLE: $event")
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            Log.w(TAG, "HiveMeshButton DISPOSED")
+            Log.w(TAG, "PeatMeshButton DISPOSED")
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
     // Use lifecycle-aware collection - minActiveState=CREATED to collect even when screen off
-    val peers by hiveBtleRepo.peers.collectAsStateWithLifecycle(
+    val peers by peatBtleRepo.peers.collectAsStateWithLifecycle(
         minActiveState = Lifecycle.State.CREATED
     )
     val peerCount = peers.size
-    val hiveBtleEnabled by enableHiveBtleServiceSettingsState.observeAsState(initial = true)
+    val peatBtleEnabled by enablePeatBtleServiceSettingsState.observeAsState(initial = true)
 
-    Log.d(TAG, "HiveMeshButton RENDER: peerCount=$peerCount, enabled=$hiveBtleEnabled, lifecycle=$lifecycleState")
+    Log.d(TAG, "PeatMeshButton RENDER: peerCount=$peerCount, enabled=$peatBtleEnabled, lifecycle=$lifecycleState")
 
     // Button color: green if peers connected, dark gray otherwise
     val buttonColor = if (peerCount > 0) Color(0xFF4CAF50) else Color.DarkGray
@@ -3685,14 +3685,14 @@ fun HiveMeshIconButton(context: Context, modifier: Modifier = Modifier) {
             .clip(CircleShape)
             .background(buttonColor)
             .border(2.dp, Color.White, CircleShape)  // White border for visibility
-            .clickable(enabled = hiveBtleEnabled == true) {
-                currentContext.startActivity(Intent(currentContext, HiveMeshActivity::class.java))
+            .clickable(enabled = peatBtleEnabled == true) {
+                currentContext.startActivity(Intent(currentContext, PeatMeshActivity::class.java))
             },
         contentAlignment = Alignment.Center
     ) {
         Icon(
             painter = painterResource(R.drawable.bluetooth),
-            contentDescription = "HIVE Mesh ($peerCount peers)",
+            contentDescription = "Peat Mesh ($peerCount peers)",
             tint = Color.White,
             modifier = Modifier.size(18.dp)
         )

@@ -25,29 +25,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
-import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.data.PeatBtleRepository
 
 /**
- * Full-screen overlay that displays incoming HIVE mesh chat messages.
- * Shows sender, message, and ACK button.
+ * Full-screen overlay that displays incoming Peat mesh CannedMessages.
+ * Shows message type, sender, and ACK button.
  *
- * @param chat The chat to display, or null if no overlay should be shown
+ * @param message The CannedMessage to display, or null if no overlay should be shown
  * @param onAck Called when user taps the ACK button
  * @param onDismiss Called when user taps outside the message area
  */
 @Composable
-fun HiveChatOverlay(
-    chat: HiveBtleRepository.InboundChat?,
+fun PeatCannedMessageOverlay(
+    message: PeatBtleRepository.InboundCannedMessage?,
     onAck: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    if (chat == null) return
+    if (message == null) return
+
+    // Determine color based on message type
+    val (headerText, headerColor) = when {
+        message.messageCode in 0x20..0x2F -> "EMERGENCY" to Color(0xFFFF5252) // Red
+        message.messageCode in 0x30..0x3F -> "ALERT" to Color(0xFFFF9800) // Orange
+        message.messageCode in 0x40..0x4F -> "REQUEST" to Color(0xFFFFEB3B) // Yellow
+        else -> "STATUS" to Color(0xFF2196F3) // Blue
+    }
 
     Box(
         modifier = Modifier
@@ -67,36 +74,32 @@ fun HiveChatOverlay(
                 .clickable { /* Prevent dismiss when tapping message area */ },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Chat icon indicator
+            // Message type indicator
             Text(
-                text = "MESH CHAT",
-                color = Color(0xFF2196F3),
+                text = headerText,
+                color = headerColor,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Sender callsign
+            // Message label (e.g., "Check In", "Moving", etc.)
             Text(
-                text = chat.sender,
-                color = Color(0xFF4CAF50),
-                fontSize = 16.sp,
+                text = message.label,
+                color = Color.White,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Message text
+            // Sender node ID
             Text(
-                text = chat.message,
-                color = Color.White,
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
+                text = "from ${String.format("%08X", message.sourceNode)}",
+                color = Color(0xFF9E9E9E),
+                fontSize = 12.sp
             )
 
             Spacer(modifier = Modifier.height(16.dp))

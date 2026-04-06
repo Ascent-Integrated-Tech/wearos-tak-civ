@@ -1,19 +1,19 @@
-# HIVE-BTLE Integration Plan
+# PEAT-BTLE Integration Plan
 
-> Replacing Ditto P2P sync with hive-btle for power-efficient BLE mesh synchronization.
+> Replacing Ditto P2P sync with peat-btle for power-efficient BLE mesh synchronization.
 
-**Branch**: `feat/hive-btle-sync`
+**Branch**: `feat/peat-btle-sync`
 **Status**: Phases 1-4, 7-11 Complete ✅, Phase 5-6 In Progress
 **Last Updated**: 2026-01-18
-**hive-btle Version**: 0.0.12 (with ChatCRDT for persistent mesh chat)
+**peat-btle Version**: 0.0.12 (with ChatCRDT for persistent mesh chat)
 
 ## Document Purpose
 
-This document serves as the authoritative implementation specification for HIVE BLE mesh integration
+This document serves as the authoritative implementation specification for Peat BLE mesh integration
 in WearTAK-CIV. It is designed to support:
 
 1. **Development** - Clear implementation objectives with code references
-2. **Coordination** - Shared context between WearTAK and hive-btle teams
+2. **Coordination** - Shared context between WearTAK and peat-btle teams
 3. **Research** - Empirical foundations for academic publication on BLE mesh performance
 
 ### Changelog
@@ -23,10 +23,10 @@ in WearTAK-CIV. It is designed to support:
 | 2026-01-18 | 0.0.12 | **Chat Sync End-to-End Working** - (1) Fixed CRDT message tracking: replaced time-based `getChatMessagesSince()` with set-based `processedChatMessages` tracking using `originNode:timestamp` keys. Fixes issue where historical messages weren't detected after mesh recreation. (2) Fixed peer registration: call `onBleDiscovered`/`onBleConnected` before `onBleDataReceived` to ensure native peer_manager knows about peers. (3) Fixed DataRepository sharing: ChatActivity now uses `WearTakApplication.repo` instead of creating separate instance. Chat + ACK now works across watches and ATAK plugin. |
 | 2026-01-16 | 0.0.12 | **ChatCRDT Receive Fix** - Fixed critical bug where chat messages weren't being received via CRDT sync. The sender side called `mesh.buildDocument()` (which includes chat CRDT), but the receiver never called `mesh.onBleDataReceived()` to merge it. Fix: (1) Added CRDT merge call in `handlePeerDocumentInternal()`, (2) Added chat count tracking to detect new messages after merge, (3) Fixed GATT server path to pass raw bytes for merge. Chat now properly syncs via document exchange. |
 | 2026-01-15 | 0.0.12 | **ChatCRDT Implementation** - Chat messages now use proper CRDT semantics. Messages persist in local state and sync via document merge. Automatic deduplication by (originNode, timestamp). Max 32 messages retained. Chat survives disconnect/reconnect. Wire format: chat included in document with 0xAD section marker. |
-| 2026-01-15 | 0.0.11 | **Chat Threading Support** - Added `replyToNode` and `replyToTimestamp` fields to HiveChat for message threading. ACK messages now reference the original message's (originNode, timestamp). Wire format adds 12 bytes, backward compatible. |
-| 2026-01-15 | 0.0.11 | **Phase 7: Chat Integration (MVP)** - One-way ATAK → Watch chat via dedicated chat document format (0xAD). `HiveChat` data class, `sendChat()` API, `onChatReceived()` callback. Simple overlay UI design with ACK button. Added **Chat Integration Guide** for Android-ATAK team. |
+| 2026-01-15 | 0.0.11 | **Chat Threading Support** - Added `replyToNode` and `replyToTimestamp` fields to PeatChat for message threading. ACK messages now reference the original message's (originNode, timestamp). Wire format adds 12 bytes, backward compatible. |
+| 2026-01-15 | 0.0.11 | **Phase 7: Chat Integration (MVP)** - One-way ATAK → Watch chat via dedicated chat document format (0xAD). `PeatChat` data class, `sendChat()` API, `onChatReceived()` callback. Simple overlay UI design with ACK button. Added **Chat Integration Guide** for Android-ATAK team. |
 | 2026-01-14 | 0.0.10 | **Phase 11: Multi-Hop Relay** - Document forwarding to non-adjacent peers with deduplication. Fixes tablet seeing 2 peers but only syncing with direct peer. |
-| 2026-01-14 | 0.0.10 | **Phase 9: Map Marker Sync** - P2P marker sync via dedicated marker document format (0xAC). `HiveMarker` data class, `sendMarker()` API, `onMarkerSynced()` callback. CoT ↔ HiveMarker translation. Added comprehensive **Map Marker Sync** section to ATAK Plugin guide. |
+| 2026-01-14 | 0.0.10 | **Phase 9: Map Marker Sync** - P2P marker sync via dedicated marker document format (0xAC). `PeatMarker` data class, `sendMarker()` API, `onMarkerSynced()` callback. CoT ↔ PeatMarker translation. Added comprehensive **Map Marker Sync** section to ATAK Plugin guide. |
 | 2026-01-14 | - | **SOS Cancellation Fix** - Fixed SOS cancellation propagation: sender now broadcasts `eventType=NONE` when SOS is cancelled, receivers detect transition from EMERGENCY to NONE and clear peer emergency state. Added comprehensive **SOS/Emergency Event Handling** section to ATAK Plugin guide. |
 | 2026-01-14 | - | **Phase 8: SOS Distribution** - P2P emergency alerts, flashing SOS button when peer in distress, peer list SOS indicator with red badge |
 | 2026-01-14 | 0.0.10 | **Phase 10: Delta-Only Transmission** - Field-level deltas (UpdateLocation 12B, UpdateHealth 5B, UpdateCallsign, UpdateEvent 9B), 68-75% bandwidth savings vs full documents, per-peer sync state tracking |
@@ -39,7 +39,7 @@ in WearTAK-CIV. It is designed to support:
 - **HIVE button disappears after deep sleep** (off-charger): The button doesn't render after WearOS deep sleep when watch is off charger. Works fine when on charger. Other icons (TAK, network, battery) survive deep sleep normally.
 
 ### Pending UX Refinements (Chat)
-- **ACKs don't need ACK button**: Messages with `replyToNode != 0` are replies/ACKs and shouldn't show an ACK button. Check `HiveChat.replyToNode` in UI to hide ACK option for reply messages.
+- **ACKs don't need ACK button**: Messages with `replyToNode != 0` are replies/ACKs and shouldn't show an ACK button. Check `PeatChat.replyToNode` in UI to hide ACK option for reply messages.
 - **ACK display**: Consider showing ACKs inline with original message rather than as separate chat entries.
 
   **Attempted fixes (none worked):**
@@ -57,7 +57,7 @@ in WearTAK-CIV. It is designed to support:
 
 ## Executive Summary
 
-Replace Ditto SDK with hive-btle to achieve:
+Replace Ditto SDK with peat-btle to achieve:
 - **18+ hour battery life** (vs 3-4 hours with Ditto's continuous scanning)
 - **2-5% radio duty cycle** (vs 20%+ with Ditto)
 - **Open source** dependency (no vendor lock-in)
@@ -72,21 +72,21 @@ Replace Ditto SDK with hive-btle to achieve:
 │                        WearTAK Application                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │  CotDispatchService                                                 │
-│  └─ Posts: HiveDocumentEvent → EventBus                            │
+│  └─ Posts: PeatDocumentEvent → EventBus                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  HiveBtleService (replaces DittoService)                           │
-│  ├─ Owns: HiveMesh (Rust via JNI)                                  │
+│  PeatBtleService (replaces DittoService)                           │
+│  ├─ Owns: PeatMesh (Rust via JNI)                                  │
 │  ├─ Implements: HiveObserver (receives mesh events)                │
-│  ├─ Subscribes: @Subscribe onHiveDoc(HiveDocumentEvent)            │
+│  ├─ Subscribes: @Subscribe onHiveDoc(PeatDocumentEvent)            │
 │  └─ Broadcasts: GATT notifications to peers                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  HiveBtleRepository (state management)                             │
+│  PeatBtleRepository (state management)                             │
 │  ├─ Exposes: Flow<BleConnectionState>                              │
-│  ├─ Exposes: Flow<List<HivePeer>>                                  │
+│  ├─ Exposes: Flow<List<PeatPeer>>                                  │
 │  └─ Manages: Mesh configuration, encryption keys                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  com.revolveteam:hive (Published AAR dependency)             │
-│  ├─ HiveMesh: Peer discovery, document sync, encryption            │
+│  com.defenseunicorns:peat-btle (Published AAR dependency)             │
+│  ├─ PeatMesh: Peer discovery, document sync, encryption            │
 │  ├─ JNI Bridge: Kotlin ↔ Rust communication                        │
 │  └─ Native: libhive_btle.so (arm64-v8a, armeabi-v7a)              │
 └─────────────────────────────────────────────────────────────────────┘
@@ -94,15 +94,15 @@ Replace Ditto SDK with hive-btle to achieve:
 
 ---
 
-## Phase 1: hive-btle Android Library (in hive-btle repo) ✅ COMPLETE
+## Phase 1: peat-btle Android Library (in peat-btle repo) ✅ COMPLETE
 
-**Location**: `../hive-btle/android/`
-**Artifact**: `com.revolveteam:hive:0.0.9`
+**Location**: `../peat-btle/android/`
+**Artifact**: `com.defenseunicorns:peat-btle:0.0.9`
 **Status**: ✅ AAR built and ready for integration
 
 ### Completed Tasks
 
-- [x] **1.1** Create Android Library module structure in hive-btle repo
+- [x] **1.1** Create Android Library module structure in peat-btle repo
   - [x] `android/build.gradle.kts` - Android Library plugin, maven-publish, native build tasks
   - [x] `android/settings.gradle.kts` - Standalone module settings
   - [x] `android/gradle.properties` - Gradle configuration
@@ -116,12 +116,12 @@ Replace Ditto SDK with hive-btle to achieve:
   - [x] Gradle `buildNativeLibs` task for `aarch64-linux-android` and `armv7-linux-androideabi`
 
 - [x] **1.3** Kotlin JNI wrapper classes (already existed + new)
-  - [x] `HiveBtle.kt` - Pure Kotlin BLE implementation (2300+ lines, already existed)
-  - [x] `HiveMesh.kt` - **NEW** JNI wrapper for native Rust HiveMesh API
-  - [x] `HivePeer.kt` - Peer data class (inline in HiveBtle.kt)
-  - [x] `DiscoveredDevice.kt` - Discovered device data class (inline in HiveBtle.kt)
-  - [x] `DataReceivedResult` - Result from native data processing (in HiveMesh.kt)
-  - [x] `PeripheralType` / `DisconnectReason` - Type annotations (in HiveMesh.kt)
+  - [x] `PeatBtle.kt` - Pure Kotlin BLE implementation (2300+ lines, already existed)
+  - [x] `PeatMesh.kt` - **NEW** JNI wrapper for native Rust PeatMesh API
+  - [x] `PeatPeer.kt` - Peer data class (inline in PeatBtle.kt)
+  - [x] `DiscoveredDevice.kt` - Discovered device data class (inline in PeatBtle.kt)
+  - [x] `DataReceivedResult` - Result from native data processing (in PeatMesh.kt)
+  - [x] `PeripheralType` / `DisconnectReason` - Type annotations (in PeatMesh.kt)
 
 - [x] **1.4** JNI callback proxy classes (already existed)
   - [x] `ScanCallbackProxy.kt` - Forwards BLE scan results to native
@@ -135,10 +135,10 @@ Replace Ditto SDK with hive-btle to achieve:
 
 ### Rebuilding Native Library (Rust)
 
-When Rust code changes in hive-btle (e.g., `src/*.rs`, `src/platform/android/*.rs`), you must rebuild the native library:
+When Rust code changes in peat-btle (e.g., `src/*.rs`, `src/platform/android/*.rs`), you must rebuild the native library:
 
 ```bash
-cd ../hive-btle
+cd ../peat-btle
 make build-android
 ```
 
@@ -158,12 +158,12 @@ After rebuilding, the WearTAK gradle build will pick up the new `.so` files via 
 
 - [x] **1.7** Documentation
   - [x] `android/README.md` - Integration guide with build instructions
-  - [x] KDoc comments on HiveMesh public API
+  - [x] KDoc comments on PeatMesh public API
 
 ### Build Commands
 
 ```bash
-# From hive-btle/android directory:
+# From peat-btle/android directory:
 
 # Build AAR with native libraries (all-in-one)
 ./gradlew buildAar
@@ -173,7 +173,7 @@ After rebuilding, the WearTAK gradle build will pick up the new `.so` files via 
 
 # Output locations:
 # - AAR: build/outputs/aar/hive-0.0.9.aar
-# - Maven: ~/.m2/repository/com/revolveteam/hive/0.0.9/
+# - Maven: ~/.m2/repository/com/defenseunicorns/peat-btle/0.0.9/
 ```
 
 ### Prerequisites for Building
@@ -188,7 +188,7 @@ After rebuilding, the WearTAK gradle build will pick up the new `.so` files via 
 ### Files Created/Updated
 
 ```
-../hive-btle/
+../peat-btle/
 ├── .cargo/
 │   └── config.toml                    # NEW - Android NDK linker config
 └── android/
@@ -205,9 +205,9 @@ After rebuilding, the WearTAK gradle build will pick up the new `.so` files via 
         ├── jniLibs/
         │   ├── arm64-v8a/             # Created by buildNativeLibs
         │   └── armeabi-v7a/           # Created by buildNativeLibs
-        └── java/com/revolveteam/hive/
-            ├── HiveBtle.kt            # EXISTS - Pure Kotlin BLE (2300+ lines)
-            ├── HiveMesh.kt            # NEW - JNI wrapper for native HiveMesh
+        └── java/com/defenseunicorns/peat-btle/
+            ├── PeatBtle.kt            # EXISTS - Pure Kotlin BLE (2300+ lines)
+            ├── PeatMesh.kt            # NEW - JNI wrapper for native PeatMesh
             ├── ScanCallbackProxy.kt   # EXISTS - Scan callbacks
             ├── GattCallbackProxy.kt   # EXISTS - GATT callbacks
             └── AdvertiseCallbackProxy.kt # EXISTS - Advertise callbacks
@@ -215,12 +215,12 @@ After rebuilding, the WearTAK gradle build will pick up the new `.so` files via 
 
 ### Deliverable
 
-**Ready for WearTAK integration**: `../hive-btle/android/build/outputs/aar/hive-0.0.9.aar`
+**Ready for WearTAK integration**: `../peat-btle/android/build/outputs/aar/hive-0.0.9.aar`
 
 Contents:
 - `jni/arm64-v8a/libhive_btle.so` (925KB) - Modern devices
 - `jni/armeabi-v7a/libhive_btle.so` (604KB) - Older devices
-- Kotlin classes: `HiveMesh`, `HiveBtle`, callback proxies
+- Kotlin classes: `PeatMesh`, `PeatBtle`, callback proxies
 
 Build commands:
 1. `./gradlew buildAar` - Build AAR with native libraries
@@ -241,43 +241,43 @@ Build commands:
   - [x] `app/build.gradle` - Dependency added
   - [ ] Verify native library loads on device (Phase 6)
 
-- [x] **2.2** Create HiveDocumentEvent (EventBus event)
-  - [x] `events/HiveDocumentEvent.kt`
+- [x] **2.2** Create PeatDocumentEvent (EventBus event)
+  - [x] `events/PeatDocumentEvent.kt`
   - [x] Mirror DittoDocumentEvent pattern: `(collection: String, cotXml: String)`
 
-- [x] **2.3** Create HiveBtleRepository (state management)
-  - [x] `data/HiveBtleRepository.kt`
+- [x] **2.3** Create PeatBtleRepository (state management)
+  - [x] `data/PeatBtleRepository.kt`
   - [x] DataRepository keys: `enable_hive_btle`, `hive_mesh_id`, `hive_power_profile`
-  - [x] Flows: `getEnableHiveBtle`, `getHiveMeshId`, `getHivePowerProfile`
+  - [x] Flows: `getEnablePeatBtle`, `getPeatMeshId`, `getHivePowerProfile`
   - [x] State tracking: connected peers, mesh status
 
-- [x] **2.4** Create HiveBtleService (main service)
-  - [x] `service/HiveBtleService.kt`
+- [x] **2.4** Create PeatBtleService (main service)
+  - [x] `service/PeatBtleService.kt`
   - [x] Foreground service with `foregroundServiceType="connectedDevice"`
-  - [x] HiveBtle lifecycle: init → startMesh → stopMesh → shutdown
-  - [x] HiveMeshListener implementation for mesh events (onMeshUpdated, onPeerEvent, onDocumentSynced)
-  - [x] EventBus subscription for HiveDocumentEvent
+  - [x] PeatBtle lifecycle: init → startMesh → stopMesh → shutdown
+  - [x] PeatMeshListener implementation for mesh events (onMeshUpdated, onPeerEvent, onDocumentSynced)
+  - [x] EventBus subscription for PeatDocumentEvent
   - [x] Periodic track document updates via sync scheduler
   - [x] Companion object: `isRunning: AtomicBoolean`
 
-- [x] **2.5** Create CoT ↔ HiveDocument translation layer
+- [x] **2.5** Create CoT ↔ PeatDocument translation layer
   - [x] `hive/CotHiveTranslator.kt`
   - [x] `parseCotXml()` / `cotToCompactMarker()` - Outbound translation
   - [x] `compactMarkerToCotXml()` - Inbound translation
   - [x] Handle: track, mapitem, alert collections
 
 - [x] **2.6** Register service with system
-  - [x] `AndroidManifest.xml` - Declare HiveBtleService
-  - [x] `ServiceRegistry.kt` - Add HIVE_BTLE → HiveBtleService mapping
+  - [x] `AndroidManifest.xml` - Declare PeatBtleService
+  - [x] `ServiceRegistry.kt` - Add HIVE_BTLE → PeatBtleService mapping
   - [x] `ReactiveServiceManager.kt` - Add ServiceType.HIVE_BTLE with conflicts
 
 ### Architecture Note
 
-The service uses **HiveBtle** (pure Kotlin BLE mesh implementation) directly with its
-`startMesh(listener)` API instead of the native **HiveMesh** JNI wrapper. This provides:
-- Simpler integration (no bridging between HiveBtle and HiveMesh)
+The service uses **PeatBtle** (pure Kotlin BLE mesh implementation) directly with its
+`startMesh(listener)` API instead of the native **PeatMesh** JNI wrapper. This provides:
+- Simpler integration (no bridging between PeatBtle and PeatMesh)
 - Complete BLE operations (scanning, advertising, GATT) handled internally
-- Event callbacks via HiveMeshListener interface
+- Event callbacks via PeatMeshListener interface
 - Automatic peer discovery and connection management
 
 ---
@@ -288,16 +288,16 @@ The service uses **HiveBtle** (pure Kotlin BLE mesh implementation) directly wit
 
 ### Tasks
 
-- [x] **3.1** Wire CotDispatchService to post HiveDocumentEvent
-  - [x] `sendDropNow()` → post HiveDocumentEvent("mapitem", xml)
-  - [x] `handleClearUid()` → post HiveDocumentEvent("mapitem", clearXml)
-  - [x] `sendEmergencyAlertCotMessage()` → post HiveDocumentEvent("alert", xml)
-  - [x] Check `HiveBtleService.isRunning` before posting
+- [x] **3.1** Wire CotDispatchService to post PeatDocumentEvent
+  - [x] `sendDropNow()` → post PeatDocumentEvent("mapitem", xml)
+  - [x] `handleClearUid()` → post PeatDocumentEvent("mapitem", clearXml)
+  - [x] `sendEmergencyAlertCotMessage()` → post PeatDocumentEvent("alert", xml)
+  - [x] Check `PeatBtleService.isRunning` before posting
 
 - [ ] **3.2** Implement inbound document handling
-  - [x] HiveMeshListener.onPeerEvent() handles emergencies/ACKs
-  - [x] HiveMeshListener.onDocumentSynced() receives synced documents
-  - [ ] Convert HiveDocument → CoT and dispatch to local map display
+  - [x] PeatMeshListener.onPeerEvent() handles emergencies/ACKs
+  - [x] PeatMeshListener.onDocumentSynced() receives synced documents
+  - [ ] Convert PeatDocument → CoT and dispatch to local map display
   - [ ] Handle incoming tracks (update local peer positions on map)
   - [ ] Handle incoming emergencies (trigger alert UI via EventBus)
 
@@ -315,9 +315,9 @@ The service uses **HiveBtle** (pure Kotlin BLE mesh implementation) directly wit
 
 ## Phase 4: Data Model Mapping ✅ COMPLETE
 
-### HiveDocument Wire Format (for ATAK Plugin Team)
+### PeatDocument Wire Format (for ATAK Plugin Team)
 
-The HiveDocument is the primary data structure synced over BLE GATT. Each node maintains
+The PeatDocument is the primary data structure synced over BLE GATT. Each node maintains
 a **single persistent document** that is updated (not recreated) on each sync cycle.
 
 #### Document Structure (Little-Endian)
@@ -419,7 +419,7 @@ CD 0C 8E 43                 # altitude (float LE)
 11 12 17 B3 9B 01 00 00     # timestamp (6 bytes + 2 padding)
 ```
 
-#### Reading Location from HiveDocument
+#### Reading Location from PeatDocument
 
 ```kotlin
 // Kotlin example for ATAK plugin
@@ -489,7 +489,7 @@ fun readU16LE(data: ByteArray, offset: Int): Long {
 
 ### Collection Mapping
 
-| Ditto Collection | HiveDocument Field | Notes |
+| Ditto Collection | PeatDocument Field | Notes |
 |------------------|-------------------|-------|
 | `track` | `peripheral` | GPS, battery, vitals, activity |
 | `mapitem` | `extended` (custom payload) | Markers, waypoints |
@@ -498,7 +498,7 @@ fun readU16LE(data: ByteArray, offset: Int): Long {
 ### Track Document Fields
 
 ```kotlin
-// Ditto v2 schema (abbreviated) → HiveDocument.peripheral
+// Ditto v2 schema (abbreviated) → PeatDocument.peripheral
 mapOf(
     "j" to lat,           // → peripheral.location.latitude (float)
     "l" to lon,           // → peripheral.location.longitude (float)
@@ -511,14 +511,14 @@ mapOf(
 
 ### Tasks
 
-- [x] **4.1** HiveDocument wire format defined and documented
+- [x] **4.1** PeatDocument wire format defined and documented
   - [x] Header + GCounter + Peripheral extension structure
   - [x] HiveLocation encoding (3 floats, 12 bytes)
   - [x] Example wire data with byte-level breakdown
 
 - [x] **4.2** Implement track field mapping
-  - [x] `HiveBtleService.broadcastTrackUpdate()` - WearTAK → mesh
-  - [x] `HiveBtleService.onDocumentSynced()` - mesh → WearTAK
+  - [x] `PeatBtleService.broadcastTrackUpdate()` - WearTAK → mesh
+  - [x] `PeatBtleService.onDocumentSynced()` - mesh → WearTAK
   - [x] Location, callsign, battery, heartRate fields flowing
 
 - [x] **4.3** Persistent document model
@@ -530,7 +530,7 @@ mapOf(
   - [ ] `sendEvent(HiveEventType.EMERGENCY)` broadcasts emergency
   - [ ] `sendEvent(HiveEventType.ACK)` acknowledges emergency
   - [ ] Track ACK status per peer
-  - [ ] Sync SOS state across all HIVE BLE Mesh devices
+  - [ ] Sync SOS state across all Peat BLE Mesh devices
   - [ ] Visual/audio alert on receiving device
   - [ ] ACK confirmation propagates back to originator
 
@@ -541,7 +541,7 @@ mapOf(
   - [ ] Display markers on ATAK via HIVE→ATAK plugin bridge
   - [ ] Handle marker updates and deletions
 
-- [ ] **4.6** Implement full-duplex chat over HIVE BLE Mesh
+- [ ] **4.6** Implement full-duplex chat over Peat BLE Mesh
   - [ ] Define chat message payload format (sender, timestamp, message text)
   - [ ] Integrate with existing WearTAK chat UI (ChatActivity)
   - [ ] Bi-directional message flow between mesh peers
@@ -556,7 +556,7 @@ mapOf(
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enable_hive_btle_service` | Boolean | `false` | Enable HIVE BLE sync |
+| `enable_hive_btle_service` | Boolean | `false` | Enable Peat BLE sync |
 | `hive_mesh_id` | String | `"WEARTAK"` | Mesh identifier for filtering |
 | `hive_power_profile` | Int | `2` (LowPower) | 0=Aggressive, 1=Balanced, 2=LowPower |
 | `hive_encryption_key` | String? | `null` | Optional 32-byte hex key |
@@ -569,18 +569,18 @@ mapOf(
   - [ ] Flow emissions for reactive UI
 
 - [ ] **5.2** Settings UI (if applicable)
-  - [ ] Toggle for HIVE BLE sync
+  - [ ] Toggle for Peat BLE sync
   - [ ] Mesh ID configuration
   - [ ] Power profile selector
   - [ ] Encryption key input (advanced)
 
 - [x] **5.3** Status indicators
   - [x] Connection status in main UI (green/gray HIVE button next to TAK icon)
-  - [x] Peer count via button tap → HiveMeshActivity
+  - [x] Peer count via button tap → PeatMeshActivity
   - [x] Peer list showing callsign, distance, RSSI, battery
   - [ ] Sync activity indicator
 
-- [ ] **5.4** HIVE mesh status screen (HiveMeshActivity)
+- [ ] **5.4** Peat mesh status screen (PeatMeshActivity)
   - [x] Peer list with callsign, distance, signal strength
   - [x] Battery and heart rate display per peer
   - [ ] Peer detail view (tap peer for full info)
@@ -594,8 +594,8 @@ mapOf(
 
 - [ ] **6.1** Unit tests
   - [ ] CotHiveTranslator tests
-  - [ ] HiveBtleRepository tests
-  - [ ] Mock HiveMesh for service tests
+  - [ ] PeatBtleRepository tests
+  - [ ] Mock PeatMesh for service tests
 
 - [ ] **6.2** Integration tests
   - [ ] Service lifecycle tests
@@ -610,7 +610,7 @@ mapOf(
   - [ ] Battery life measurement (target: 18+ hours)
 
 - [ ] **6.5** Battery-life testing (comprehensive)
-  - [ ] Baseline: HIVE mesh idle (scanning/advertising only)
+  - [ ] Baseline: Peat mesh idle (scanning/advertising only)
   - [ ] Active sync: continuous PLI updates every 5s
   - [ ] Chat workload: periodic message send/receive
   - [ ] Emergency scenario: SOS + ACK round-trip
@@ -632,11 +632,11 @@ mapOf(
 ```
 app/src/main/java/com/aitech/weartak_civ/
 ├── service/
-│   └── HiveBtleService.kt
+│   └── PeatBtleService.kt
 ├── data/
-│   └── HiveBtleRepository.kt
+│   └── PeatBtleRepository.kt
 ├── events/
-│   └── HiveDocumentEvent.kt
+│   └── PeatDocumentEvent.kt
 └── hive/
     └── CotHiveTranslator.kt
 ```
@@ -651,10 +651,10 @@ app/src/main/java/com/aitech/weartak_civ/
 |------|---------|
 | `settings.gradle.kts` | Add composite build or mavenLocal() |
 | `app/build.gradle.kts` | Add hive dependency |
-| `AndroidManifest.xml` | Declare HiveBtleService |
-| `CotDispatchService.kt` | Post HiveDocumentEvent for sync |
+| `AndroidManifest.xml` | Declare PeatBtleService |
+| `CotDispatchService.kt` | Post PeatDocumentEvent for sync |
 | `ReactiveServiceManager.kt` | Add HIVE_BTLE ServiceType |
-| `ServiceRegistry.kt` | Register HiveBtleService |
+| `ServiceRegistry.kt` | Register PeatBtleService |
 | `DataRepository.kt` | Add HIVE settings and Endpoint.HIVE_BTLE |
 
 ---
@@ -676,19 +676,19 @@ app/src/main/java/com/aitech/weartak_civ/
 
 ### Option A: Composite Build (Recommended for Development)
 
-No publishing required. Gradle builds hive-btle from source.
+No publishing required. Gradle builds peat-btle from source.
 
 ```kotlin
 // In wearos-tak-civ/settings.gradle.kts
-includeBuild("../hive-btle/android") {
+includeBuild("../peat-btle/android") {
     dependencySubstitution {
-        substitute(module("com.revolveteam:hive")).using(project(":"))
+        substitute(module("com.defenseunicorns:peat-btle")).using(project(":"))
     }
 }
 
 // In wearos-tak-civ/app/build.gradle.kts
 dependencies {
-    implementation("com.revolveteam:hive")  // Version not needed
+    implementation("com.defenseunicorns:peat-btle")  // Version not needed
 }
 ```
 
@@ -705,7 +705,7 @@ dependencyResolutionManagement {
 
 // In wearos-tak-civ/app/build.gradle.kts
 dependencies {
-    implementation("com.revolveteam:hive:0.0.9")
+    implementation("com.defenseunicorns:peat-btle:0.0.9")
 }
 ```
 
@@ -716,7 +716,7 @@ dependencies {
 dependencyResolutionManagement {
     repositories {
         maven {
-            url = uri("https://maven.pkg.github.com/Ascent-Integrated-Tech/hive-btle")
+            url = uri("https://maven.pkg.github.com/Ascent-Integrated-Tech/peat-btle")
             credentials {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
@@ -727,7 +727,7 @@ dependencyResolutionManagement {
 
 // In wearos-tak-civ/app/build.gradle.kts
 dependencies {
-    implementation("com.revolveteam:hive:0.1.0")
+    implementation("com.defenseunicorns:peat-btle:0.1.0")
 }
 ```
 
@@ -747,12 +747,12 @@ dependencies {
 
 ## Phase 7: Chat Integration (MVP)
 
-> **Objective**: Display ATAK chat messages on WearTAK watches via HIVE BLE mesh with CRDT persistence.
+> **Objective**: Display ATAK chat messages on WearTAK watches via Peat BLE mesh with CRDT persistence.
 
 **Status**: ✅ Complete (WearTAK ready, ATAK Plugin pending)
 **Depends On**: Phase 4 (Data Model), multi-hop relay (Phase 11)
 **Scope**: Bidirectional chat via CRDT, persistent message history
-**hive-btle Version**: 0.0.12+
+**peat-btle Version**: 0.0.12+
 
 ### MVP Scope
 
@@ -778,13 +778,13 @@ This phase implements **CRDT-based chat** with automatic persistence and sync:
 │                                                                              │
 │  SENDER (ATAK or Watch):                                                     │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ Chat UI      │───▶│ HiveBtle       │───▶│ ChatCRDT        │              │
+│  │ Chat UI      │───▶│ PeatBtle       │───▶│ ChatCRDT        │              │
 │  │ (send msg)   │    │ sendChat()     │    │ add_message()   │              │
 │  └──────────────┘    └────────────────┘    └────────┬────────┘              │
 │                                                      │                       │
 │                                                      ▼                       │
 │                                             ┌─────────────────┐              │
-│                                             │ HiveDocument    │              │
+│                                             │ PeatDocument    │              │
 │                                             │ (includes chat) │              │
 │                                             └────────┬────────┘              │
 │                                                      │                       │
@@ -793,7 +793,7 @@ This phase implements **CRDT-based chat** with automatic persistence and sync:
 │                                                      │                       │
 │  RECEIVER (Watch or ATAK):                           ▼                       │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ Chat UI      │◀───│ HiveBtleService│◀───│ ChatCRDT.merge()│              │
+│  │ Chat UI      │◀───│ PeatBtleService│◀───│ ChatCRDT.merge()│              │
 │  │ (display)    │    │ onChatReceived │    │ (dedup + store) │              │
 │  └──────────────┘    └────────────────┘    └─────────────────┘              │
 │                                                                              │
@@ -808,16 +808,16 @@ This phase implements **CRDT-based chat** with automatic persistence and sync:
 
 ### Wire Format: Chat in Document (0xAD Section)
 
-**Chat Section Marker**: `0xAD` (as section within HiveDocument)
+**Chat Section Marker**: `0xAD` (as section within PeatDocument)
 
-Chat is now stored as a section within the standard HiveDocument, not as a standalone document.
+Chat is now stored as a section within the standard PeatDocument, not as a standalone document.
 This enables automatic sync via document merge.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ HIVEDOCUMENT WITH CHAT SECTION                                   │
 ├──────────────────────────────────────────────────────────────────┤
-│ [Standard HiveDocument header + counter + peripheral + emergency]│
+│ [Standard PeatDocument header + counter + peripheral + emergency]│
 │                                                                  │
 │ CHAT SECTION (if present):                                       │
 │ Offset │ Field           │ Type    │ Description                 │
@@ -853,12 +853,12 @@ CHAT MESSAGE ENCODING (per message):
 | Max messages retained | 32 | Oldest pruned on overflow |
 | Message ID | (originNode, timestamp) | Deduplication key |
 
-### HiveBtle API (hive-btle library)
+### PeatBtle API (peat-btle library)
 
 #### Data Class
 
 ```kotlin
-data class HiveChat(
+data class PeatChat(
     val sender: String,              // Sender callsign (max 12 chars)
     val message: String,             // Message text (max 128 chars)
     val timestamp: Long,             // Epoch milliseconds
@@ -884,14 +884,14 @@ data class HiveChat(
 #### Send Methods (CRDT-Based)
 
 ```kotlin
-// In HiveBtle class
+// In PeatBtle class
 
 /**
  * Send a chat message via CRDT.
  * Message is stored locally and document is broadcast to all peers.
  * Automatically deduplicated by (originNode, timestamp).
  */
-fun sendChat(chat: HiveChat) {
+fun sendChat(chat: PeatChat) {
     val mesh = _mesh ?: return
 
     val docBytes = if (chat.isReply()) {
@@ -916,7 +916,7 @@ fun sendChat(chat: HiveChat) {
 
 // Convenience overload
 fun sendChat(sender: String, message: String) {
-    sendChat(HiveChat(
+    sendChat(PeatChat(
         sender = sender.take(12),
         message = message.take(128),
         timestamp = System.currentTimeMillis(),
@@ -936,18 +936,18 @@ fun getChatCount(): Int = _mesh?.chatCount() ?: 0
 /**
  * Get all chat messages from local CRDT.
  */
-fun getAllChatMessages(): List<HiveChat>
+fun getAllChatMessages(): List<PeatChat>
 
 /**
  * Get chat messages received since a given timestamp.
  */
-fun getChatMessagesSince(sinceTimestamp: Long): List<HiveChat>
+fun getChatMessagesSince(sinceTimestamp: Long): List<PeatChat>
 ```
 
 #### Receive Callback
 
 ```kotlin
-interface HiveMeshListener {
+interface PeatMeshListener {
     // ... existing methods ...
 
     /**
@@ -955,21 +955,21 @@ interface HiveMeshListener {
      * @param chat The received chat message
      * @param fromPeer The peer that relayed this message (may differ from chat.originNode for multi-hop)
      */
-    fun onChatReceived(chat: HiveChat, fromPeer: HivePeer)
+    fun onChatReceived(chat: PeatChat, fromPeer: PeatPeer)
 }
 ```
 
 ### WearTAK Integration
 
-#### HiveBtleService Callback
+#### PeatBtleService Callback
 
 ```kotlin
-// In HiveBtleService.kt
-override fun onChatReceived(chat: HiveChat, fromPeer: HivePeer) {
+// In PeatBtleService.kt
+override fun onChatReceived(chat: PeatChat, fromPeer: PeatPeer) {
     Log.i(TAG, "[CHAT] Received from ${chat.sender}: ${chat.message}")
 
     // Post event for UI to display
-    EventBus.getDefault().post(HiveChatReceivedEvent(
+    EventBus.getDefault().post(PeatChatReceivedEvent(
         sender = chat.sender,
         message = chat.message,
         timestamp = chat.timestamp,
@@ -983,10 +983,10 @@ override fun onChatReceived(chat: HiveChat, fromPeer: HivePeer) {
 Simple overlay that appears when chat is received:
 
 ```kotlin
-// New file: HiveChatOverlay.kt
+// New file: PeatChatOverlay.kt
 @Composable
-fun HiveChatOverlay(
-    chat: HiveChatReceivedEvent?,
+fun PeatChatOverlay(
+    chat: PeatChatReceivedEvent?,
     onAck: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1042,17 +1042,17 @@ fun HiveChatOverlay(
 
 ### Implementation Tasks
 
-**hive-btle Library** (0.0.11):
-- [x] **7.1** Add `HiveChat` data class with encode/decode
+**peat-btle Library** (0.0.11):
+- [x] **7.1** Add `PeatChat` data class with encode/decode
 - [x] **7.2** Add `CHAT_DOCUMENT_MARKER = 0xAD` constant
-- [x] **7.3** Add `sendChat()` method to HiveBtle
-- [x] **7.4** Add `onChatReceived()` to HiveMeshListener
+- [x] **7.3** Add `sendChat()` method to PeatBtle
+- [x] **7.4** Add `onChatReceived()` to PeatMeshListener
 - [x] **7.5** Add `handlePeerChatDocument()` handler with multi-hop relay
 
 **WearTAK** (complete):
-- [x] **7.6** Add `InboundChat` data class to HiveBtleRepository
-- [x] **7.7** Implement `onChatReceived()` in HiveBtleService
-- [x] **7.8** Create `HiveChatOverlay` composable
+- [x] **7.6** Add `InboundChat` data class to PeatBtleRepository
+- [x] **7.7** Implement `onChatReceived()` in PeatBtleService
+- [x] **7.8** Create `PeatChatOverlay` composable
 - [x] **7.9** Integrate overlay in MainActivity
 - [x] **7.10** ACK button dismisses overlay (ACK transmission deferred)
 
@@ -1065,23 +1065,23 @@ fun HiveChatOverlay(
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `hive-btle/.../HiveBtle.kt` | Chat API: sendChat(), onChatReceived() | Complete |
-| `wearos-tak-civ/.../HiveBtleService.kt` | Chat callback handler | Complete |
-| `wearos-tak-civ/.../HiveChatOverlay.kt` | Overlay UI | Complete |
+| `peat-btle/.../PeatBtle.kt` | Chat API: sendChat(), onChatReceived() | Complete |
+| `wearos-tak-civ/.../PeatBtleService.kt` | Chat callback handler | Complete |
+| `wearos-tak-civ/.../PeatChatOverlay.kt` | Overlay UI | Complete |
 | `wearos-tak-civ/.../MainActivity.kt` | Overlay integration | Complete |
-| `wearos-tak-civ/.../HiveBtleRepository.kt` | InboundChat state | Complete |
+| `wearos-tak-civ/.../PeatBtleRepository.kt` | InboundChat state | Complete |
 
 ---
 
 ## Android-ATAK Plugin: Chat Integration Guide
 
-This section provides implementation guidance for the Android-ATAK team to enable chat message transmission over HIVE BLE mesh.
+This section provides implementation guidance for the Android-ATAK team to enable chat message transmission over Peat BLE mesh.
 
 ### Quick Start
 
 ```kotlin
-// 1. Get HiveBtle instance
-val hiveBtle = HiveBtle.getInstance(context)
+// 1. Get PeatBtle instance
+val hiveBtle = PeatBtle.getInstance(context)
 
 // 2. Send chat message
 hiveBtle.sendChat(
@@ -1090,7 +1090,7 @@ hiveBtle.sendChat(
 )
 
 // 3. (Optional) With full control
-val chat = HiveChat(
+val chat = PeatChat(
     sender = callsign,
     message = messageText,
     timestamp = System.currentTimeMillis(),
@@ -1104,9 +1104,9 @@ hiveBtle.sendChat(chat)
 ### Integration with ATAK Chat
 
 ```kotlin
-class AtakHiveChatPlugin : HiveMeshListener {
+class AtakPeatChatPlugin : PeatMeshListener {
 
-    private var hiveBtle: HiveBtle? = null
+    private var hiveBtle: PeatBtle? = null
 
     fun onAtakChatSent(roomId: String, message: String, senderCallsign: String) {
         // Only broadcast "All Chat Rooms" or team rooms
@@ -1116,12 +1116,12 @@ class AtakHiveChatPlugin : HiveMeshListener {
     }
 
     // Receive chat from mesh (if implementing tablet display)
-    override fun onChatReceived(chat: HiveChat, fromPeer: HivePeer) {
+    override fun onChatReceived(chat: PeatChat, fromPeer: PeatPeer) {
         Log.i(TAG, "[HIVE-CHAT] ${chat.sender}: ${chat.message}")
         // Optional: Display in ATAK chat UI
     }
 
-    // ... other HiveMeshListener methods ...
+    // ... other PeatMeshListener methods ...
 }
 ```
 
@@ -1164,7 +1164,7 @@ val contact = IndividualContact(peerId)
 Contacts.getInstance().addContact(contact)
 
 // 2. Add connector for HIVE transport
-contact.addConnector(HiveChatConnector(peerId))
+contact.addConnector(PeatChatConnector(peerId))
 
 // 3. Store message in ChatDatabase
 val messageBundle = Bundle().apply {
@@ -1215,7 +1215,7 @@ This review is out of scope for the current MVP but should be considered for v2.
 
 ## Phase 8: SOS Distribution
 
-> **Objective**: Synchronize emergency alerts (SOS) across all HIVE mesh peers with acknowledgment tracking.
+> **Objective**: Synchronize emergency alerts (SOS) across all Peat mesh peers with acknowledgment tracking.
 
 **Status**: ✅ Complete (P2P SOS distribution)
 **Completed**: 2026-01-14
@@ -1230,7 +1230,7 @@ This review is out of scope for the current MVP but should be considered for v2.
 │                                                                              │
 │  ORIGINATOR (Device A triggers SOS):                                         │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ SosActivity  │───▶│CotDispatchSvc  │───▶│ HiveBtleService │              │
+│  │ SosActivity  │───▶│CotDispatchSvc  │───▶│ PeatBtleService │              │
 │  │ (2-tap SOS)  │    │ line 922       │    │ handleAlert()   │              │
 │  └──────────────┘    └────────────────┘    └─────────────────┘              │
 │         │                    │                      │                        │
@@ -1240,7 +1240,7 @@ This review is out of scope for the current MVP but should be considered for v2.
 │                                                                              │
 │  RECEIVER (Device B receives SOS):                                           │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ HiveBtle     │───▶│ HiveBtleService│───▶│ AlertActivity   │              │
+│  │ PeatBtle     │───▶│ PeatBtleService│───▶│ AlertActivity   │              │
 │  │ onPeerEvent  │    │ onPeerEvent()  │    │ (visual/audio)  │              │
 │  └──────────────┘    └────────────────┘    └─────────────────┘              │
 │         │                    │                      │                        │
@@ -1250,7 +1250,7 @@ This review is out of scope for the current MVP but should be considered for v2.
 │                                                                              │
 │  ACK FLOW (Device B acknowledges):                                           │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ AlertActivity│───▶│ HiveBtleService│───▶│ HiveBtle        │              │
+│  │ AlertActivity│───▶│ PeatBtleService│───▶│ PeatBtle        │              │
 │  │ (tap ACK)    │    │ sendAck()      │    │ sendEvent(ACK)  │              │
 │  └──────────────┘    └────────────────┘    └─────────────────┘              │
 │                                                    │                         │
@@ -1263,15 +1263,15 @@ This review is out of scope for the current MVP but should be considered for v2.
 ### Current Implementation Status
 
 **Outbound SOS (WearTAK → HIVE)**: ✅ Complete
-- `CotDispatchService.sendEmergencyAlertCotMessage()` posts `HiveDocumentEvent("alert", xml)` at line 1591
-- `HiveBtleService.handleAlertDocument()` calls `hiveBtle.sendEvent(EMERGENCY)` at line 347
+- `CotDispatchService.sendEmergencyAlertCotMessage()` posts `PeatDocumentEvent("alert", xml)` at line 1591
+- `PeatBtleService.handleAlertDocument()` calls `hiveBtle.sendEvent(EMERGENCY)` at line 347
 - Also sends to TAK server (existing path preserved)
 
 **Inbound SOS (HIVE → WearTAK)**: ✅ Complete (visual indicator)
-- `HiveBtleService.onPeerEvent()` receives EMERGENCY events at line 162
+- `PeatBtleService.onPeerEvent()` receives EMERGENCY events at line 162
 - Sets `peer.isInEmergency = true` via `hiveBtleRepository.setPeerEmergency()`
 - **SOS Button**: Flashes orange when any peer in emergency (MainScreen:2850-2875)
-- **Peer List**: Shows red flashing "SOS" badge + status dot (HiveMeshActivity:254-267)
+- **Peer List**: Shows red flashing "SOS" badge + status dot (PeatMeshActivity:254-267)
 
 ### HivePeripheral Event Types
 
@@ -1288,7 +1288,7 @@ enum class HiveEventType(val value: Int) {
 
 - [x] **8.1** Complete inbound emergency handling
   - [x] In `onPeerEvent(peer, EMERGENCY)`, update peer emergency state
-  - [x] `HiveBtleRepository.setPeerEmergency(nodeId, true, timestamp)`
+  - [x] `PeatBtleRepository.setPeerEmergency(nodeId, true, timestamp)`
   - [x] Visual alert: SOS button flashes orange
   - [x] Peer list shows "SOS" badge + red flashing dot
   - [ ] *(Future)* Audio alert (alarm sound, vibration)
@@ -1302,7 +1302,7 @@ enum class HiveEventType(val value: Int) {
 - [ ] **8.3** *(Deferred)* ACK reception and display
 
 - [ ] **8.4** Emergency state persistence
-  - [x] Track active emergencies in `HiveBtleRepository.peersInEmergency`
+  - [x] Track active emergencies in `PeatBtleRepository.peersInEmergency`
   - [ ] *(Future)* Survive app restart (persist to DataStore)
   - [ ] *(Future)* Auto-clear stale emergencies
 
@@ -1315,16 +1315,16 @@ enum class HiveEventType(val value: Int) {
 |------|---------|-----------------|
 | `SosActivity.kt` | Emergency trigger UI | Line 293 (`SOSButtonEmergencyMessage`) |
 | `CotDispatchService.kt` | Emergency dispatch | Lines 922, 1547-1603 |
-| `HiveBtleService.kt` | HIVE emergency handling | Lines 162-168 (`onPeerEvent`) |
-| `HiveBtleRepository.kt` | Emergency state tracking | `setPeerEmergency()`, `peersInEmergency` |
+| `PeatBtleService.kt` | HIVE emergency handling | Lines 162-168 (`onPeerEvent`) |
+| `PeatBtleRepository.kt` | Emergency state tracking | `setPeerEmergency()`, `peersInEmergency` |
 | `MainActivity.kt` | SOS button flash | Lines 2850-2875 (`SOSButton`) |
-| `HiveMeshActivity.kt` | Peer list SOS indicator | Lines 207-224, 254-267 (`PeerCard`) |
+| `PeatMeshActivity.kt` | Peer list SOS indicator | Lines 207-224, 254-267 (`PeerCard`) |
 
 ---
 
 ## Phase 9: Map Marker Sync
 
-> **Objective**: Synchronize user-dropped map markers across HIVE mesh for shared situational awareness.
+> **Objective**: Synchronize user-dropped map markers across Peat mesh for shared situational awareness.
 
 **Status**: ✅ Complete
 **Completed**: 2026-01-14
@@ -1339,22 +1339,22 @@ enum class HiveEventType(val value: Int) {
 │                                                                              │
 │  DROP (Device A creates marker):                                             │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ MarkerActivity│───▶│CotDispatchSvc  │───▶│ HiveBtleService │              │
+│  │ MarkerActivity│───▶│CotDispatchSvc  │───▶│ PeatBtleService │              │
 │  │ (drop marker)│    │ sendDropNow()  │    │ handleMapItem() │              │
 │  └──────────────┘    └────────────────┘    └─────────────────┘              │
 │         │                    │                      │                        │
 │         ▼                    ▼                      ▼                        │
-│  DropRequest            CoT XML              HiveMarker.encode()            │
+│  DropRequest            CoT XML              PeatMarker.encode()            │
 │  (type, time)           + EventBus           → sendMarker()                 │
 │                                                                              │
 │  RECEIVE (Device B gets marker):                                             │
 │  ┌──────────────┐    ┌────────────────┐    ┌─────────────────┐              │
-│  │ HiveBtle     │───▶│ HiveBtleService│───▶│ EventBus        │              │
+│  │ PeatBtle     │───▶│ PeatBtleService│───▶│ EventBus        │              │
 │  │onMarkerSynced│    │ (decode marker)│    │ HiveDocEvent    │              │
 │  └──────────────┘    └────────────────┘    └─────────────────┘              │
 │         │                    │                      │                        │
 │         ▼                    ▼                      ▼                        │
-│  HiveMarker              CoT XML             Display on map                 │
+│  PeatMarker              CoT XML             Display on map                 │
 │  (0xAC format)           compactMarkerToCot  (ATAK / local UI)              │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -1373,11 +1373,11 @@ Markers use a dedicated document format separate from track/delta documents:
 │   0    │ marker     │ u8    │ 1    │ 0xAC = marker document      │
 │   1    │ nodeId     │ u32   │ 4    │ Sender node ID (LE)         │
 │   5    │ count      │ u16   │ 2    │ Number of markers (LE)      │
-│   7    │ markers[]  │ var   │ var  │ Array of HiveMarker data    │
+│   7    │ markers[]  │ var   │ var  │ Array of PeatMarker data    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### HiveMarker Structure (~84 bytes typical)
+### PeatMarker Structure (~84 bytes typical)
 
 Each marker in the array:
 
@@ -1412,13 +1412,13 @@ Each marker in the array:
 
 ### API Reference
 
-**HiveBtle.kt:**
+**PeatBtle.kt:**
 ```kotlin
 // Send a marker to all connected peers
-fun sendMarker(marker: HiveMarker)
+fun sendMarker(marker: PeatMarker)
 
 // Data class matching CotHiveTranslator.CompactMarker
-data class HiveMarker(
+data class PeatMarker(
     val uid: String,        // 36 bytes max (UUID)
     val type: String,       // 12 bytes max (CoT type)
     val lat: Float,         // IEEE 754 LE
@@ -1429,27 +1429,27 @@ data class HiveMarker(
 )
 ```
 
-**HiveMeshListener:**
+**PeatMeshListener:**
 ```kotlin
 // Called when a marker is received from a peer
-fun onMarkerSynced(peer: HivePeer, marker: HiveMarker) {}
+fun onMarkerSynced(peer: PeatPeer, marker: PeatMarker) {}
 ```
 
 ### Implementation Tasks ✅
 
 - [x] **9.1** Complete outbound marker encoding
   - [x] In `handleMapItemDocument()`, parse CoT via `CotHiveTranslator.parseCotXml()`
-  - [x] Convert to `HiveMarker` and call `hiveBtle.sendMarker()`
+  - [x] Convert to `PeatMarker` and call `hiveBtle.sendMarker()`
   - [x] Uses dedicated 0xAC document format (not embedded in track document)
 
 - [x] **9.2** Implement inbound marker decoding
   - [x] `handlePeerMarkerDocument()` detects 0xAC marker
-  - [x] `HiveMarker.decode()` parses marker data
-  - [x] `onMarkerSynced()` callback to HiveMeshListener
+  - [x] `PeatMarker.decode()` parses marker data
+  - [x] `onMarkerSynced()` callback to PeatMeshListener
 
 - [x] **9.3** WearTAK integration
-  - [x] `HiveBtleService.onMarkerSynced()` converts HiveMarker → CoT XML
-  - [x] Posts `HiveDocumentEvent("mapitem_rx", cotXml)` to EventBus
+  - [x] `PeatBtleService.onMarkerSynced()` converts PeatMarker → CoT XML
+  - [x] Posts `PeatDocumentEvent("mapitem_rx", cotXml)` to EventBus
   - [x] UI can subscribe to receive mesh markers
 
 - [ ] **9.4** Marker lifecycle management (future)
@@ -1461,8 +1461,8 @@ fun onMarkerSynced(peer: HivePeer, marker: HiveMarker) {}
 
 | File | Purpose | Line References |
 |------|---------|-----------------|
-| `HiveBtle.kt` | `HiveMarker` class, `sendMarker()`, `handlePeerMarkerDocument()` | Lines 3064-3198, 1230-1262, 1541-1584 |
-| `HiveBtleService.kt` | Marker handling, `onMarkerSynced()` | Lines 398-424, 266-295 |
+| `PeatBtle.kt` | `PeatMarker` class, `sendMarker()`, `handlePeerMarkerDocument()` | Lines 3064-3198, 1230-1262, 1541-1584 |
+| `PeatBtleService.kt` | Marker handling, `onMarkerSynced()` | Lines 398-424, 266-295 |
 | `CotHiveTranslator.kt` | CoT parsing, `compactMarkerToCotXml()` | Lines 276-291 |
 | `CotDispatchService.kt` | Marker drop handling | Lines 329-342, 1712-1753 |
 
@@ -1472,12 +1472,12 @@ fun onMarkerSynced(peer: HivePeer, marker: HiveMarker) {}
 
 > **Objective**: Minimize BLE bandwidth by transmitting only changed fields, not full documents.
 
-**Status**: ✅ Complete (implemented in hive-btle 0.0.10)
+**Status**: ✅ Complete (implemented in peat-btle 0.0.10)
 **Completed**: 2026-01-14
 
 ### Problem Statement
 
-Current implementation broadcasts full HiveDocument on each sync:
+Current implementation broadcasts full PeatDocument on each sync:
 - 96 bytes minimum (with location)
 - Redundant data when only position changes
 - Wastes battery on unnecessary radio time
@@ -1528,11 +1528,11 @@ Current implementation broadcasts full HiveDocument on each sync:
 | Battery only | 96 bytes | 11 bytes | **89%** |
 | Event (SOS) | 96 bytes | 19 bytes | **80%** |
 
-### Implementation Tasks (hive-btle library) ✅ COMPLETE
+### Implementation Tasks (peat-btle library) ✅ COMPLETE
 
-- [x] **10.1** Add delta encoding to HiveDocument
+- [x] **10.1** Add delta encoding to PeatDocument
   - [x] `PeerSyncState` class tracks per-peer: lastSentTimestamp, lastSentPeripheral, lastSentCounterValue, syncCount
-  - [x] `peerSyncState: ConcurrentHashMap<Long, PeerSyncState>` in HiveBtle class
+  - [x] `peerSyncState: ConcurrentHashMap<Long, PeerSyncState>` in PeatBtle class
   - [x] `buildSyncDocumentForPeer()` computes delta or full based on what changed
   - [x] `peripheralChanged()` detects location, health, event, callsign changes
 
@@ -1540,7 +1540,7 @@ Current implementation broadcasts full HiveDocument on each sync:
   - [x] `HiveDeltaDocument.isDeltaDocument()` checks for 0xB2 marker
   - [x] `HiveDeltaDocument.decode()` parses operations by type
   - [x] `handlePeerDeltaDocument()` applies operations to local state
-  - [x] Creates synthetic HiveDocument for mesh listener callbacks
+  - [x] Creates synthetic PeatDocument for mesh listener callbacks
 
 - [x] **10.3** Optimize sync scheduler
   - [x] First sync always sends full document (syncCount == 0)
@@ -1550,8 +1550,8 @@ Current implementation broadcasts full HiveDocument on each sync:
 
 ### Implementation Tasks (WearTAK)
 
-- [x] **10.4** Update HiveBtleService for delta support
-  - [x] No changes required - HiveBtle handles delta internally
+- [x] **10.4** Update PeatBtleService for delta support
+  - [x] No changes required - PeatBtle handles delta internally
   - [x] Delta encoding is transparent to WearTAK
   - [x] Logcat shows `[FULL]`, `[DELTA]`, `[SKIP]` for monitoring
 
@@ -1559,7 +1559,7 @@ Current implementation broadcasts full HiveDocument on each sync:
 
 | File | Changes |
 |------|---------|
-| `hive-btle/android/.../HiveBtle.kt` | +400 lines: delta classes, per-peer tracking, encoding/decoding |
+| `peat-btle/android/.../PeatBtle.kt` | +400 lines: delta classes, per-peer tracking, encoding/decoding |
 
 ### Wire Format Implemented (0xB2)
 
@@ -1605,13 +1605,13 @@ New field-level deltas send only the changed field (12-13 bytes typical), achiev
 **Logcat Monitoring:**
 ```bash
 # Filter for delta sync activity
-adb logcat | grep -E "HiveBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
+adb logcat | grep -E "PeatBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
 
 # Expected output patterns:
-# D HiveBtle: [FULL] Peer 12345678: 96 bytes (sync #1)      <- First sync
-# D HiveBtle: [DELTA] Peer 12345678: 76 bytes, 1 ops (sync #2)  <- Position changed
-# V HiveBtle: [SKIP] Peer 12345678: no changes             <- Nothing to send
-# D HiveBtle: [DELTA-RX] From HIVE_DEMO_87654321: 2 ops    <- Received delta
+# D PeatBtle: [FULL] Peer 12345678: 96 bytes (sync #1)      <- First sync
+# D PeatBtle: [DELTA] Peer 12345678: 76 bytes, 1 ops (sync #2)  <- Position changed
+# V PeatBtle: [SKIP] Peer 12345678: no changes             <- Nothing to send
+# D PeatBtle: [DELTA-RX] From HIVE_DEMO_87654321: 2 ops    <- Received delta
 ```
 
 **Verification Checklist:**
@@ -1628,8 +1628,8 @@ adb logcat | grep -E "HiveBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
 
 > **Objective**: Extend mesh coverage beyond direct BLE range via message forwarding.
 
-**Status**: 🔲 Not Started (requires hive-btle library support)
-**Depends On**: hive-btle 0.2.x with routing layer
+**Status**: 🔲 Not Started (requires peat-btle library support)
+**Depends On**: peat-btle 0.2.x with routing layer
 
 ### Problem Statement
 
@@ -1671,7 +1671,7 @@ Need: Messages reach all team members regardless of physical topology
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ ROUTING HEADER (8 bytes, prepended to HiveDocument)              │
+│ ROUTING HEADER (8 bytes, prepended to PeatDocument)              │
 ├──────────────────────────────────────────────────────────────────┤
 │ Offset │ Field      │ Type │ Description                         │
 ├──────────────────────────────────────────────────────────────────┤
@@ -1691,9 +1691,9 @@ Need: Messages reach all team members regardless of physical topology
 | Unicast | 1 | Targeted to specific nodeId | Chat DM |
 | Geo-fence | 2 | Nodes within radius of origin | Local alerts |
 
-### Implementation Tasks (hive-btle library)
+### Implementation Tasks (peat-btle library)
 
-- [ ] **11.1** Add routing header to HiveDocument
+- [ ] **11.1** Add routing header to PeatDocument
   - [ ] Prepend 8-byte routing header
   - [ ] Track origin vs relay node
   - [ ] Implement TTL decrement
@@ -1710,7 +1710,7 @@ Need: Messages reach all team members regardless of physical topology
 
 ### Implementation Tasks (WearTAK)
 
-- [ ] **11.4** Update HiveBtleService for multi-hop
+- [ ] **11.4** Update PeatBtleService for multi-hop
   - [ ] Configure default TTL (suggest: 3)
   - [ ] Handle forwarded messages same as direct
   - [ ] UI indicator for hop count (optional)
@@ -1734,7 +1734,7 @@ Need: Messages reach all team members regardless of physical topology
 ## Android-ATAK Plugin: Delta Integration Guide
 
 > **Audience**: Android-ATAK plugin development team
-> **Required hive-btle version**: 0.0.10+
+> **Required peat-btle version**: 0.0.10+
 
 ### Architecture: You Are a Mesh Node
 
@@ -1768,7 +1768,7 @@ node in the BLE mesh, directly communicating with watches:
 
 ### Delta Protocol Overview
 
-Starting with hive-btle 0.0.10, nodes send **field-level deltas** instead of full documents:
+Starting with peat-btle 0.0.10, nodes send **field-level deltas** instead of full documents:
 
 | Sync Type | When Used | Marker Byte |
 |-----------|-----------|-------------|
@@ -1971,7 +1971,7 @@ fun handleDeltaOperation(peer: PeerState, op: DeltaOperation) {
 When receiving a full document (0xAB marker), check the peripheral's event type:
 
 ```kotlin
-fun handleFullDocument(doc: HiveDocument) {
+fun handleFullDocument(doc: PeatDocument) {
     val peer = getOrCreatePeer(doc.nodeId)
     val wasInEmergency = peer.isInEmergency
 
@@ -2060,18 +2060,18 @@ adb logcat | grep -i "Emergency broadcast sent"
 adb logcat | grep -iE "PEER SOS|emergency|UpdateEvent.*EMERGENCY"
 
 # Expected log sequence on receiving device:
-# I HiveBtle: New event from HIVE_WEARTAK-XXXXXXXX: EMERGENCY
+# I PeatBtle: New event from HIVE_WEARTAK-XXXXXXXX: EMERGENCY
 # I WearTAK: Peer event from HIVE_WEARTAK-XXXXXXXX: EMERGENCY
-# D HiveBtleRepo: setPeerEmergency(XXXXXXXX, true)
+# D PeatBtleRepo: setPeerEmergency(XXXXXXXX, true)
 
 # On Watch 1: Cancel SOS
 # Watch 1 logs:
 adb logcat | grep -i "Emergency CANCELLED broadcast sent"
 
 # Watch 2 / ATAK should see:
-# I HiveBtle: Received document from XXXXXXXX, event=NONE
+# I PeatBtle: Received document from XXXXXXXX, event=NONE
 # I WearTAK: Peer XXXXXXXX emergency cancelled (now sending NONE)
-# D HiveBtleRepo: setPeerEmergency(XXXXXXXX, false)
+# D PeatBtleRepo: setPeerEmergency(XXXXXXXX, false)
 ```
 
 ### Typical Delta Scenarios
@@ -2101,19 +2101,19 @@ Field-level deltas dramatically reduce BLE bandwidth:
 
 ```bash
 # Monitor delta traffic from watches
-adb logcat | grep -E "HiveBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
+adb logcat | grep -E "PeatBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
 
 # Expected patterns:
-# D HiveBtle: [FULL] Peer 12345678: 96 bytes (sync #1)       <- First sync
-# D HiveBtle: [DELTA] Peer 12345678: 31 bytes (1 ops)       <- Location update
-# D HiveBtle: [SKIP] Peer 12345678: nothing changed          <- No transmission
-# D HiveBtle: [DELTA-RX] From HIVE-ABCD: 2 ops              <- Received delta
+# D PeatBtle: [FULL] Peer 12345678: 96 bytes (sync #1)       <- First sync
+# D PeatBtle: [DELTA] Peer 12345678: 31 bytes (1 ops)       <- Location update
+# D PeatBtle: [SKIP] Peer 12345678: nothing changed          <- No transmission
+# D PeatBtle: [DELTA-RX] From HIVE-ABCD: 2 ops              <- Received delta
 ```
 
 ### Checklist for ATAK Plugin Team
 
 **Core Delta Integration:**
-- [ ] Update hive-btle dependency to 0.0.10+
+- [ ] Update peat-btle dependency to 0.0.10+
 - [ ] Implement per-peer state storage (`ConcurrentHashMap<Long, PeerState>`)
 - [ ] Handle both full documents (0xAB) and delta documents (0xB2)
 - [ ] Apply field-level operations incrementally to peer state
@@ -2131,9 +2131,9 @@ adb logcat | grep -E "HiveBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
 
 **Map Marker Integration:**
 - [ ] Handle marker documents (0xAC) separately from track documents
-- [ ] Implement `onMarkerSynced()` callback in your `HiveMeshListener`
+- [ ] Implement `onMarkerSynced()` callback in your `PeatMeshListener`
 - [ ] Store received markers in local cache by UID
-- [ ] Convert `HiveMarker` to ATAK-compatible format for display
+- [ ] Convert `PeatMarker` to ATAK-compatible format for display
 - [ ] Handle marker updates (same UID, new data)
 - [ ] Test marker drop on watch → display in ATAK flow
 
@@ -2142,7 +2142,7 @@ adb logcat | grep -E "HiveBtle.*\[(FULL|DELTA|SKIP|DELTA-RX)\]"
 ## Android-ATAK Plugin: Map Marker Integration Guide
 
 > **Audience**: Android-ATAK plugin development team
-> **Required hive-btle version**: 0.0.10+
+> **Required peat-btle version**: 0.0.10+
 
 ### Overview
 
@@ -2165,15 +2165,15 @@ fun handleIncomingDocument(data: ByteArray) {
 
 ### Receiving Markers via Callback
 
-The simplest approach is implementing `onMarkerSynced()` in your `HiveMeshListener`:
+The simplest approach is implementing `onMarkerSynced()` in your `PeatMeshListener`:
 
 ```kotlin
-class AtakHiveListener : HiveMeshListener {
+class AtakHiveListener : PeatMeshListener {
 
     // Store received markers by UID for deduplication and updates
-    private val markerCache = ConcurrentHashMap<String, HiveMarker>()
+    private val markerCache = ConcurrentHashMap<String, PeatMarker>()
 
-    override fun onMarkerSynced(peer: HivePeer, marker: HiveMarker) {
+    override fun onMarkerSynced(peer: PeatPeer, marker: PeatMarker) {
         Log.i(TAG, "Marker from ${peer.displayName()}: ${marker.uid} at (${marker.lat}, ${marker.lon})")
 
         // Check if this is an update to existing marker
@@ -2190,8 +2190,8 @@ class AtakHiveListener : HiveMeshListener {
         displayMarkerOnMap(marker, peer)
     }
 
-    private fun displayMarkerOnMap(marker: HiveMarker, sourcePeer: HivePeer) {
-        // Convert HiveMarker to ATAK CoT or native format
+    private fun displayMarkerOnMap(marker: PeatMarker, sourcePeer: PeatPeer) {
+        // Convert PeatMarker to ATAK CoT or native format
         val cotXml = buildMarkerCot(marker)
 
         // Inject into ATAK map display
@@ -2200,10 +2200,10 @@ class AtakHiveListener : HiveMeshListener {
 }
 ```
 
-### Building CoT XML from HiveMarker
+### Building CoT XML from PeatMarker
 
 ```kotlin
-fun buildMarkerCot(marker: HiveMarker): String {
+fun buildMarkerCot(marker: PeatMarker): String {
     val staleTime = marker.time + 300_000  // 5 minute stale
     val timeIso = Instant.ofEpochMilli(marker.time).toString()
     val staleIso = Instant.ofEpochMilli(staleTime).toString()
@@ -2215,7 +2215,7 @@ fun buildMarkerCot(marker: HiveMarker): String {
                    ce="9999999" le="9999999"/>
             <detail>
                 <contact callsign="${marker.callsign}"/>
-                <remarks>Received via HIVE mesh</remarks>
+                <remarks>Received via Peat mesh</remarks>
             </detail>
         </event>
     """.trimIndent()
@@ -2227,12 +2227,12 @@ fun buildMarkerCot(marker: HiveMarker): String {
 If you need to parse marker documents directly (without the callback):
 
 ```kotlin
-fun parseMarkerDocument(data: ByteArray): List<HiveMarker> {
+fun parseMarkerDocument(data: ByteArray): List<PeatMarker> {
     if (data.isEmpty() || data[0] != 0xAC.toByte()) {
         return emptyList()
     }
 
-    val markers = mutableListOf<HiveMarker>()
+    val markers = mutableListOf<PeatMarker>()
     var offset = 1
 
     // Read source nodeId (4 bytes LE)
@@ -2245,7 +2245,7 @@ fun parseMarkerDocument(data: ByteArray): List<HiveMarker> {
 
     // Parse each marker
     for (i in 0 until markerCount) {
-        val (marker, newOffset) = HiveMarker.decode(data, offset)
+        val (marker, newOffset) = PeatMarker.decode(data, offset)
         if (marker != null) {
             markers.add(marker)
             offset = newOffset
@@ -2282,7 +2282,7 @@ To send markers from ATAK to watches:
 
 ```kotlin
 fun sendMarkerToMesh(atakMarker: AtakMapMarker) {
-    val hiveMarker = HiveMarker(
+    val hiveMarker = PeatMarker(
         uid = atakMarker.uid,
         type = atakMarker.cotType,
         lat = atakMarker.latitude.toFloat(),
@@ -2306,17 +2306,17 @@ adb logcat | grep -i "MapItem marker sent"
 adb logcat | grep -iE "MARKER-RX|onMarkerSynced"
 
 # Expected log sequence:
-# I HiveBtle: Broadcasting marker: uid=abc-123, callsign=HostilePos
-# I HiveBtle: [MARKER-RX] From HIVE_WEARTAK-XXXXXXXX: 1 markers
+# I PeatBtle: Broadcasting marker: uid=abc-123, callsign=HostilePos
+# I PeatBtle: [MARKER-RX] From HIVE_WEARTAK-XXXXXXXX: 1 markers
 # D YourPlugin: Marker from HIVE_WEARTAK-XXXXXXXX: abc-123 at (33.7, -84.4)
 ```
 
 ### Marker Checklist
 
-- [ ] Implement `onMarkerSynced()` in your `HiveMeshListener`
-- [ ] Create marker cache (`ConcurrentHashMap<String, HiveMarker>`)
+- [ ] Implement `onMarkerSynced()` in your `PeatMeshListener`
+- [ ] Create marker cache (`ConcurrentHashMap<String, PeatMarker>`)
 - [ ] Handle marker deduplication by UID + timestamp
-- [ ] Convert `HiveMarker` to ATAK CoT format
+- [ ] Convert `PeatMarker` to ATAK CoT format
 - [ ] Map CoT types to appropriate icons
 - [ ] Display markers on ATAK map
 - [ ] Test watch → ATAK marker flow
@@ -2339,8 +2339,8 @@ adb logcat | grep -iE "MARKER-RX|onMarkerSynced"
 
 ## References
 
-- [hive-btle library](../hive-btle/) - Rust BLE mesh implementation
-- [hive-btle Android README](../hive-btle/android/README.md) - Android library integration guide
-- [hive-btle JNI bridge](../hive-btle/src/platform/android/jni_bridge.rs) - Native method exports
+- [peat-btle library](../peat-btle/) - Rust BLE mesh implementation
+- [peat-btle Android README](../peat-btle/android/README.md) - Android library integration guide
+- [peat-btle JNI bridge](../peat-btle/src/platform/android/jni_bridge.rs) - Native method exports
 - [DittoService.kt](app/src/main/java/com/aitech/weartak_civ/service/DittoService.kt) - Current implementation to replace
 - [CompanionAppService.kt](app/src/main/java/com/aitech/weartak_civ/service/CompanionAppService.kt) - BLE patterns reference

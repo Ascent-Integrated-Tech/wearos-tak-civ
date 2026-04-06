@@ -58,13 +58,13 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.HiveBtleRepository
+import com.aitech.weartak_civ.data.PeatBtleRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 
-class HiveMeshActivity : ComponentActivity() {
+class PeatMeshActivity : ComponentActivity() {
     companion object {
-        val TAG = "WearTAK-HiveMeshActivity"
+        val TAG = "WearTAK-PeatMeshActivity"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,11 +75,11 @@ class HiveMeshActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    val hiveBtleRepo = (applicationContext as WearTakApplication).hiveBtleRepo
-                    HiveMeshApp(
+                    val peatBtleRepo = (applicationContext as WearTakApplication).peatBtleRepo
+                    PeatMeshApp(
                         exitActivity = { finishAndRemoveTask() },
                         context = context,
-                        hiveBtleRepo = hiveBtleRepo
+                        peatBtleRepo = peatBtleRepo
                     )
                 }
             }
@@ -88,19 +88,19 @@ class HiveMeshActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "HiveMeshActivity onDestroy()")
+        Log.d(TAG, "PeatMeshActivity onDestroy()")
     }
 }
 
 @Composable
-fun HiveMeshApp(
+fun PeatMeshApp(
     exitActivity: () -> Unit,
     context: Context,
-    hiveBtleRepo: HiveBtleRepository
+    peatBtleRepo: PeatBtleRepository
 ) {
     val navController = rememberSwipeDismissableNavController()
-    val peers by hiveBtleRepo.peers.collectAsState()
-    val meshState by hiveBtleRepo.meshState.collectAsState()
+    val peers by peatBtleRepo.peers.collectAsState()
+    val meshState by peatBtleRepo.meshState.collectAsState()
     val localLocation by dataRepository.latestLocation.collectAsState()
 
     SwipeDismissableNavHost(
@@ -108,7 +108,7 @@ fun HiveMeshApp(
         startDestination = "peer_list_screen"
     ) {
         composable("peer_list_screen") {
-            HiveMeshScreen(
+            PeatMeshScreen(
                 exitActivity = exitActivity,
                 context = context,
                 peers = peers,
@@ -121,11 +121,11 @@ fun HiveMeshApp(
 }
 
 @Composable
-fun HiveMeshScreen(
+fun PeatMeshScreen(
     exitActivity: () -> Unit,
     context: Context,
-    peers: List<HiveBtleRepository.HivePeerInfo>,
-    meshState: HiveBtleRepository.HiveMeshState,
+    peers: List<PeatBtleRepository.PeatPeerInfo>,
+    meshState: PeatBtleRepository.PeatMeshState,
     localLat: Double?,
     localLon: Double?
 ) {
@@ -133,11 +133,11 @@ fun HiveMeshScreen(
         columnContent = {
             // Show mesh state
             val stateText = when (meshState) {
-                HiveBtleRepository.HiveMeshState.ACTIVE -> "Active"
-                HiveBtleRepository.HiveMeshState.SCANNING -> "Scanning"
-                HiveBtleRepository.HiveMeshState.ADVERTISING -> "Advertising"
-                HiveBtleRepository.HiveMeshState.SYNCING -> "Syncing"
-                HiveBtleRepository.HiveMeshState.ERROR -> "Error"
+                PeatBtleRepository.PeatMeshState.ACTIVE -> "Active"
+                PeatBtleRepository.PeatMeshState.SCANNING -> "Scanning"
+                PeatBtleRepository.PeatMeshState.ADVERTISING -> "Advertising"
+                PeatBtleRepository.PeatMeshState.SYNCING -> "Syncing"
+                PeatBtleRepository.PeatMeshState.ERROR -> "Error"
                 else -> "Idle"
             }
             Text(
@@ -181,7 +181,7 @@ fun HiveMeshScreen(
 
 @Composable
 fun PeerCard(
-    peer: HiveBtleRepository.HivePeerInfo,
+    peer: PeatBtleRepository.PeatPeerInfo,
     localLat: Double?,
     localLon: Double?
 ) {
