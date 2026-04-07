@@ -377,11 +377,15 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
-<!--        TODO - ALERT SIMULATION: Uncomment to use-->
-<!--        <service-->
-<!--            android:name=".service.CEPSimulationService"-->
-<!--            android:exported="false"-->
-<!--            android:foregroundServiceType="connectedDevice|dataSync" />-->
+        <!-- Phase 1 testing: CEPSimulationService is registered but only activates when
+             CEPSimulationService.IN_TESTING = true is set in the companion object.
+             Safe to keep in production manifests — the service is a no-op by default. -->
+        <service
+            android:name=".service.CEPSimulationService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice|dataSync"
+            android:stopWithTask="false" />
         <service
             android:name=".service.EnvSensorService"
             android:exported="false"

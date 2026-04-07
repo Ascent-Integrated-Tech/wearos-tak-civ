@@ -363,8 +363,8 @@ class DataRepository(private val context: Context) {
             enable && (state == HailLicenseStates.VALID ||
                     state == HailLicenseStates.SOFT_EXPIRED)
         }
-        .distinctUntilChanged()
-        .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
+            .distinctUntilChanged()
+            .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
 
     // ======== ======== HAIL SECTION END ======== ==========
 
@@ -582,12 +582,12 @@ class DataRepository(private val context: Context) {
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
     // TODO: Later move nonNullBatteryPercentage to ViewModel
     val nonNullBatteryPercentage: StateFlow<Int> = latestBatteryPercentage
-            .map { it ?: 100 }
-            .stateIn(
-                scope = repoScope,
-                started = SharingStarted.Eagerly,
-                initialValue = 100
-            )
+        .map { it ?: 100 }
+        .stateIn(
+            scope = repoScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 100
+        )
 
     private val _dockType = MutableStateFlow(BatteryService.DockType.NONE)
     val dockType: StateFlow<BatteryService.DockType> = _dockType
@@ -2748,7 +2748,7 @@ class DataRepository(private val context: Context) {
     }
 
 
-//    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
+    //    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
 
@@ -3149,7 +3149,7 @@ class DataRepository(private val context: Context) {
 
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
-//        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
+        //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
         private val TEAM = stringPreferencesKey("team")
         private val TEAM_NAMES = stringPreferencesKey("team_names")

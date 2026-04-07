@@ -21,6 +21,13 @@ object DerivedEval {
         //Log.d(TAG, "[CEP][DERIVED][DerivedEval] $id=$value")
     }
 
+    /**
+     * Read a Double from the feature store.
+     * If [maxAgeSec] is set, enforces freshness via [FeatureStore.doubleIfFresh].
+     */
+    private fun readDouble(fs: FeatureStore, key: String, maxAgeSec: Double?): Double? =
+        if (maxAgeSec != null) fs.doubleIfFresh(key, maxAgeSec) else fs.double(key)
+
     fun eval(def: FeatureDef.Derived, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val id = def.id
         val expr = def.expr
@@ -31,8 +38,8 @@ object DerivedEval {
         when {
             expr.has("wind_chill") -> {
                 val cfg = expr.getJSONObject("wind_chill")
-                val t = fs.double(cfg.getString("temp_key")) ?: return
-                val w = fs.double(cfg.getString("wind_key")) ?: return
+                val t = readDouble(fs, cfg.getString("temp_key"), def.maxAgeSec) ?: return
+                val w = readDouble(fs, cfg.getString("wind_key"), def.maxAgeSec) ?: return
                 // m/s → km/h for Canadian wind-chill
                 val v = w * 3.6
                 val wc = if (v <= 4.8) t else 13.12 + 0.6215 * t - 11.37 * v.pow(0.16) + 0.3965 * t * v.pow(0.16)
@@ -42,8 +49,8 @@ object DerivedEval {
             }
             expr.has("zone_min_bpm") -> {
                 val cfg = expr.getJSONObject("zone_min_bpm")
-                val rest = fs.double(cfg.optString("profile_rest_key", "profile.hr_rest_bpm")) ?: 60.0
-                val maxHr = fs.double(cfg.optString("profile_max_key",  "profile.hr_max_bpm")) ?: 190.0
+                val rest = readDouble(fs, cfg.optString("profile_rest_key", "profile.hr_rest_bpm"), def.maxAgeSec) ?: 60.0
+                val maxHr = readDouble(fs, cfg.optString("profile_max_key",  "profile.hr_max_bpm"), def.maxAgeSec) ?: 190.0
                 val pct  = cfg.getDouble("lower_pct")
                 val bpm = ZoneHelper.karvonenMinBpm(rest, maxHr, pct)
                 logDerived(id, bpm)
@@ -60,9 +67,9 @@ object DerivedEval {
             }
             expr.has("karvonen_ratio") -> {
                 val cfg = expr.getJSONObject("karvonen_ratio")
-                val hr    = fs.double(cfg.optString("hr_key",   "features.heart_rate")) ?: return
-                val hrRes = fs.double(cfg.optString("rest_key", "profile.hr_rest_bpm")) ?: 60.0
-                val hrMax = fs.double(cfg.optString("max_key",  "profile.hr_max_bpm"))  ?: 190.0
+                val hr = readDouble(fs, cfg.optString("hr_key", "features.heart_rate"), def.maxAgeSec) ?: return
+                val hrRes = readDouble(fs, cfg.optString("rest_key", "profile.hr_rest_bpm"), def.maxAgeSec) ?: 60.0
+                val hrMax = readDouble(fs, cfg.optString("max_key", "profile.hr_max_bpm"), def.maxAgeSec) ?: 190.0
                 val minDen = cfg.optDouble("min_den", 1.0)
                 val denom = kotlin.math.max(minDen, hrMax - hrRes)
                 val ratio = (hr - hrRes) / denom
@@ -87,7 +94,7 @@ object DerivedEval {
         }
 
         // (b) Try numeric math (div/mul/sub/add/max/min/sum/case + { "key": ... })
-        evalNumber(expr, fs)?.let { num ->
+        evalNumber(expr, fs, def.maxAgeSec)?.let { num ->
             logDerived(id, num)
             fs.putDerived(id, num, tsMs)
             return
@@ -107,15 +114,15 @@ object DerivedEval {
     }
 
 
-    private fun evalNumber(node: Any?, fs: FeatureStore): Double? {
+    private fun evalNumber(node: Any?, fs: FeatureStore, maxAgeSec: Double? = null): Double? {
         return when (node) {
             null -> null
             is Number -> node.toDouble()
             is JSONObject -> {
                 // { "key": "features.something" }
-                if (node.has("key")) return fs.double(node.getString("key"))
+                if (node.has("key")) return readDouble(fs, node.getString("key"), maxAgeSec)
 
-                fun asNum(any: Any?): Double? = evalNumber(any, fs)
+                fun asNum(any: Any?): Double? = evalNumber(any, fs, maxAgeSec)
 
                 when {
                     node.has("div") -> {
@@ -187,7 +194,7 @@ object DerivedEval {
             is JSONArray -> {
                 // Convenience: sum array if purely numeric
                 var acc = 0.0
-                for (i in 0 until node.length()) acc += (evalNumber(node.opt(i), fs) ?: return null)
+                for (i in 0 until node.length()) acc += (evalNumber(node.opt(i), fs, maxAgeSec) ?: return null)
                 acc
             }
             else -> null

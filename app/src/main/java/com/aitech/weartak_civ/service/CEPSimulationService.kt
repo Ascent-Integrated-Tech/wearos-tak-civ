@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
 import com.aitech.weartak_civ.cep.model.payloads.AccelPayload
@@ -56,6 +57,14 @@ class CEPSimulationService : Service() {
         const val ACTION_START = "com.aitech.weartak_civ.cep.sim.START"
         const val ACTION_STOP  = "com.aitech.weartak_civ.cep.sim.STOP"
 
+        /**
+         * Phase 1 test gate — flip to `true` to activate the simulation service.
+         * When false the service is registered but remains completely idle on start,
+         * so it has zero impact on production builds.  When true, [startPhase1TestLoop]
+         * runs through all P1 verification scenarios.
+         */
+        const val IN_TESTING = true
+
         fun start(ctx: Context) {
             val i = Intent(ctx, CEPSimulationService::class.java).apply { action = ACTION_START }
             if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
@@ -81,15 +90,19 @@ class CEPSimulationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-
-        if (toggleCEP){
-            when (intent?.action) {
-                ACTION_START, null -> if (!loopStarted) startLoop()
-                ACTION_STOP -> stopSelf()
-            }
+        if (!IN_TESTING) {
+            // Service is registered in the manifest but intentionally idle.
+            // Flip IN_TESTING = true in companion object to activate Phase 1 scenarios.
+            Log.d(TAG, "CEPSimulationService: IN_TESTING=false — service idle, no loop started")
+            return START_NOT_STICKY
         }
 
-        Log.d(TAG, "CEPSimulationService STARTED")
+        Log.d(TAG, "CEPSimulationService STARTED (IN_TESTING=true)")
+
+        when (intent?.action) {
+            ACTION_START, null -> if (!loopStarted) startPhase1TestLoop()
+            ACTION_STOP -> stopSelf()
+        }
 
         //TODO - ALERT SIMULATION: Uncomment to use
 //        testAlert()
@@ -152,6 +165,172 @@ class CEPSimulationService : Service() {
     }
 
 
+    /**
+     * Phase 1 test loop — runs when [IN_TESTING] is true.
+     *
+     * Exercises the five P1 scenarios in sequence and then stops.  Each scenario is
+     * designed to let you observe in logcat (tag "Simulation") that:
+     *  - P1-T1/T2/T3: hr_hrmax_rest_immediate_emergency fires at ~180s and
+     *                   hr_high_threshold_resting_alert warn fires at ~300s — both at the same
+     *                   wall-clock seconds regardless of the CEP tick rate.
+     *  - P1-T4:       the sustainedForSecWarn warn fires based on wall-clock, not tick count.
+     *  - P1-T6:       hold_down_sec=120 prevents re-fire within 120s of first fire (regression guard).
+     *
+     * To run: set [IN_TESTING] = true, build+deploy, then call [start] from any component.
+     */
+    /**
+     * Master test orchestrator — runs Phase 1 followed by Phase 2.
+     *
+     * [emitResetBurst] is called before every scenario to ensure TriggerTimer
+     * instances start from a clean (null) state regardless of what the
+     * preceding scenario left behind.
+     */
+    private fun startPhase1TestLoop() {
+        loopStarted = true
+        scope.launch {
+            // ── Phase 1: Wall-clock sustain verification ──────────────────────
+            val phase1Scenarios = listOf(
+                Scenario.P1_T1_BASELINE_1HZ,
+                Scenario.P1_T2_SUSTAIN_2HZ,
+                Scenario.P1_T3_SUSTAIN_4HZ,
+                Scenario.P1_T4_WARN_THRESHOLD,
+                Scenario.P1_T6_HOLDDOWN_REGRESSION
+            )
+            for (scenario in phase1Scenarios) {
+                // Flush any lingering TriggerTimer state from the previous scenario
+                emitResetBurst()
+
+                Log.i(TAG, "[P1] ▶ Starting: $scenario")
+                updateNotification("[P1] Running: $scenario")
+
+                simulateScenario(scenario, ageYears = 35, hrRest = 60)
+
+                Log.i(TAG, "[P1] ✓ Completed: $scenario")
+                updateNotification("[P1] Done: $scenario")
+                delay(2_000)
+            }
+            Log.i(TAG, "[P1] ✅ All Phase 1 scenarios complete")
+            updateNotification("[P1] Complete – P2 starting in 5 s")
+            delay(5_000)
+
+            // ── Phase 2: Time-based window / slope verification ───────────────
+            val phase2Scenarios = listOf(
+                Scenario.P2_T1_WINDOW_1HZ,
+                Scenario.P2_T2_WINDOW_4HZ,
+                Scenario.P2_T3_SLOPE_1HZ,
+                Scenario.P2_T4_SLOPE_4HZ
+            )
+            for (scenario in phase2Scenarios) {
+                emitResetBurst()
+
+                Log.i(TAG, "[P2] ▶ Starting: $scenario")
+                updateNotification("[P2] Running: $scenario")
+
+                simulateScenario(scenario, ageYears = 35, hrRest = 60)
+
+                Log.i(TAG, "[P2] ✓ Completed: $scenario")
+                updateNotification("[P2] Done: $scenario")
+                delay(2_000)
+            }
+            Log.i(TAG, "[P2] ✅ All Phase 2 scenarios complete")
+            updateNotification("[P2] Complete – P3 starting in 5 s")
+            delay(5_000)
+
+            // ── Phase 3: Per-feature cadence decoupling ───────────────────────
+            val phase3Scenarios = listOf(
+                Scenario.P3_T1_SLOW_FEATURE_NO_STALL,
+                Scenario.P3_T2_FAST_FEATURE_FRESH_VALUE,
+                Scenario.P3_T3_EXCEPTION_ISOLATION
+            )
+            for (scenario in phase3Scenarios) {
+                emitResetBurst()
+
+                Log.i(TAG, "[P3] ▶ Starting: $scenario")
+                updateNotification("[P3] Running: $scenario")
+
+                simulateScenario(scenario, ageYears = 35, hrRest = 60)
+
+                Log.i(TAG, "[P3] ✓ Completed: $scenario")
+                updateNotification("[P3] Done: $scenario")
+                delay(2_000)
+            }
+            Log.i(TAG, "[P3] ✅ All Phase 3 scenarios complete")
+            updateNotification("[P3] Complete – P4 starting in 5 s")
+            delay(5_000)
+
+            // ── Phase 4: Native-rate ingestion & freshness ────────────────────
+            val phase4Scenarios = listOf(
+                Scenario.P4_T1_STALE_TIMESTAMP,
+                Scenario.P4_T2_SIGNAL_GAP,
+                Scenario.P4_T3_BURST_STRESS,
+                Scenario.P4_T4_GAP_THEN_BURST,
+                Scenario.P4_T5_HIGHRATE_10HZ
+            )
+            for (scenario in phase4Scenarios) {
+                emitResetBurst()
+
+                Log.i(TAG, "[P4] ▶ Starting: $scenario")
+                updateNotification("[P4] Running: $scenario")
+
+                simulateScenario(scenario, ageYears = 35, hrRest = 60)
+
+                Log.i(TAG, "[P4] ✓ Completed: $scenario")
+                updateNotification("[P4] Done: $scenario")
+                delay(2_000)
+            }
+            Log.i(TAG, "[P4] ✅ All Phase 4 scenarios complete")
+            updateNotification("[P4] Complete – P5 starting in 3 s")
+            delay(3_000)
+
+            // ── Phase 5: 500ms rule-eval cadence verification ────────────────
+            val phase5Scenarios = listOf(
+                Scenario.P5_T1_ALERT_LATENCY_BASELINE,
+                Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET,
+                Scenario.P5_T3_NO_DOUBLE_FIRE,
+                Scenario.P5_T4_SUSTAIN_ACCURACY
+            )
+            Log.i(TAG, "[SIM] === PHASE 5 START === rule_eval_interval_ms=500")
+            for (scenario in phase5Scenarios) {
+                Log.i(TAG, "[P5] ▶ Starting: $scenario")
+                updateNotification("[P5] Running: $scenario")
+                runPhase5Scenario(scenario)
+                Log.i(TAG, "[P5] ✓ Completed: $scenario")
+                updateNotification("[P5] Done: $scenario")
+                delay(3_000)
+            }
+            Log.i(TAG, "[SIM] === PHASE 5 COMPLETE ===")
+            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 testing complete")
+            updateNotification("[ALL] P1 + P2 + P3 + P4 + P5 complete")
+        }
+    }
+
+    /**
+     * Emits 6 seconds of "safe" data (low HR + RUN activity) to force every
+     * resting-HR [TriggerTimer]'s [conditionTrueStartMs] back to null, then
+     * clears [AlertRegistry] to prevent stale alerts from prior scenarios from
+     * polluting the next [SimulationObserver].
+     *
+     * 6 iterations (up from 3) absorbs FeatureStore propagation lag that occurs
+     * after high-rate scenarios (e.g. P4-T4 STILL+HR195 at 10 Hz) where derived
+     * features may still reflect the old state for 1–2 ticks after conditions flip.
+     *
+     * Without this, sequential STILL+highHR scenarios share the same TriggerTimer
+     * instance, causing T2/T3 to inherit a pre-matured timer from T1 and fire
+     * immediately at holdDown expiry rather than starting a fresh sustain period.
+     */
+    private suspend fun emitResetBurst() {
+        Log.i(TAG, "[RESET] ↺ emitResetBurst: nulling resting-HR TriggerTimers")
+        repeat(6) {
+            CepBus.emit(CepEvent(Topics.ACTIVITY,   ActivityPayload("RUN")))
+            CepBus.emit(CepEvent(Topics.HEART_RATE, HeartRatePayload(bpm = 55.0)))
+            CepBus.emit(CepEvent(Topics.HRV,        HrvPayload(rmssd_ms = 80.0)))
+            CepBus.emit(CepEvent(Topics.OFFBODY,    OffBodyPayload(1)))
+            delay(1_000L)
+        }
+        AlertRegistry.clearAll()
+        Log.i(TAG, "[RESET] ↺ emitResetBurst: complete (AlertRegistry cleared)")
+    }
+
     private fun startLoop() {
         loopStarted = true
         scope.launch {
@@ -200,7 +379,88 @@ class CEPSimulationService : Service() {
         //ZONE5_REST_5S_EMERGENCY,
         ZONE5_EXERCISE_5MIN_EMERGENCY,
         HRMAX_REST_5S_EMERGENCY,
-        HRMAX_EXERCISE_60S_EMERGENCY
+        HRMAX_EXERCISE_60S_EMERGENCY,
+
+        // ── Phase 1: Wall-clock sustain verification ───────────────────────────
+        // P1-T1: 1 Hz baseline — HR >HRmax at rest; rule needs 120s. Must fire at ~120s.
+        P1_T1_BASELINE_1HZ,
+        // P1-T2: 2 Hz tick rate — same rule, same condition. Must still fire at ~120s wall-clock
+        //         (NOT at 60s which the old tick-count bug would produce).
+        P1_T2_SUSTAIN_2HZ,
+        // P1-T3: 4 Hz tick rate — same rule, same condition. Must fire at ~120s wall-clock
+        //         (NOT at 30s which the old tick-count bug would produce).
+        P1_T3_SUSTAIN_4HZ,
+        // P1-T4: Verify sustainedForSecWarn fires on wall-clock seconds, not tick count.
+        //         Uses Zone 3 exercise rule which has a warn threshold.
+        P1_T4_WARN_THRESHOLD,
+        // P1-T6: Verify holdDownSec still prevents re-fire after Phase 1 change (regression guard).
+        P1_T6_HOLDDOWN_REGRESSION,
+
+        // ── Phase 2: Time-based window / slope verification ───────────────────
+        // P2-T1: HRV 60s window baseline at 1 Hz.
+        //         HRV=20 for first 30 s, then HRV=80.  At t≈90 s the 60s window should
+        //         average ~50 (30 s@20 + 30 s@80).  Count-based also gives ~50 at 1 Hz
+        //         so this establishes the expected value.
+        P2_T1_WINDOW_1HZ,
+        // P2-T2: HRV 60s window discriminating test at 4 Hz simulation, CEP still at 1 Hz.
+        //         Time-based  → avg≈50 (same as P2-T1)  ✓
+        //         Count-based → tail(60*1=60 samples) = last 15 s real → avg≈80  ✗
+        P2_T2_WINDOW_4HZ,
+        // P2-T3: Skin-temp slope baseline at 1 Hz.
+        //         Cooling at −0.083 °C/s; expected slope_c_per_s_20s ≈ −0.083.
+        //         Count-based and time-based agree at 1 Hz.
+        P2_T3_SLOPE_1HZ,
+        // P2-T4: Skin-temp slope discriminating at 4 Hz simulation, CEP still at 1 Hz.
+        //         Time-based  → slope ≈ −0.083 °C/s  ✓
+        //         Count-based → n=20*1=20 samples span only 5 s → slope ≈ −0.021 °C/s  ✗
+        P2_T4_SLOPE_4HZ,
+
+        // ── Phase 3: Per-feature cadence decoupling ────────────────────────────
+        // P3-T1: A slow feature (update_interval_ms=5000 in cep_rules.json) must not stall
+        //         rule evals running every 1 s.  Alert on HR>HRmax must fire at ~10 s wall-clock
+        //         even though skin-temp feature only recomputes every 5 s.
+        //         Observe in logcat: rule evals on every second tick; no 5-s stall gap.
+        P3_T1_SLOW_FEATURE_NO_STALL,
+        // P3-T2: A feature computing at 500 ms provides a fresher value than the 1-s rule-eval
+        //         cycle.  HR rises above threshold at t≈500 ms; rule must see the elevated value
+        //         at the next 1-s rule eval.
+        //         Observe in logcat: [ASSERT][P3_T2] ALERT_FIRED elapsedSec≈11 (not 12 or more).
+        P3_T2_FAST_FEATURE_FRESH_VALUE,
+        // P3-T3: One feature compute throws (NaN injected at tick 10).  Engine must log the
+        //         exception for that feature but continue running all other features and rules.
+        //         Observe: CEP error log for the broken feature; hr_hrmax_exercise_60s_emergency
+        //         fires at the correct wall-clock second; no engine crash or stall.
+        P3_T3_EXCEPTION_ISOLATION,
+
+        // ── Phase 4: Native-rate ingestion & freshness ──────────────────────────
+        // P4-T1: Stale-timestamp smoke test — all events carry tsOffsetMs=−5 min.
+        //         Verify engine accepts old-timestamped events without crash.
+        //         HR is safe (70 bpm) → no alert expected.
+        P4_T1_STALE_TIMESTAMP,
+        // P4-T2: Signal-gap test — all sensor emissions suppressed for ticks 10–19.
+        //         Verify "[P4] ⏸ signal gap" log lines appear for each suppressed tick;
+        //         engine resumes normally after gap with no crash.
+        P4_T2_SIGNAL_GAP,
+        // P4-T3: CepBus burst stress — 20× events per sensor fired at tick 5.
+        //         Verify "[P4] ⚡ burst" log line appears; buffer (512) holds without
+        //         DROP_OLDEST; hr_hrmax_exercise_60s_emergency still fires at ~10s.
+        P4_T3_BURST_STRESS,
+        // P4-T4: Gap + burst combined — gap at ticks 5–9, burst at tick 20.
+        //         Verify both mechanics co-operate without crash; engine runs all 35 ticks.
+        P4_T4_GAP_THEN_BURST,
+        // P4-T5: 10 Hz native-rate discriminating test.
+        //         3200 ticks × 100ms = 320s real.  HR=195 STILL.
+        //         hr_hrmax_rest_immediate_emergency (sustained=180s) must fire at ~180s
+        //         wall-clock (tick ~1800), NOT at tick 180 (18s).  Same guard as P1-T3
+        //         but at 10× tick rate — the sharpest discriminating test for the
+        //         wall-clock sustain fix.
+        P4_T5_HIGHRATE_10HZ,
+
+        // ── Phase 5: 500 ms rule-eval verification ───────────────────────────
+        P5_T1_ALERT_LATENCY_BASELINE,
+        P5_T2_ALERT_LATENCY_FAST_ONSET,
+        P5_T3_NO_DOUBLE_FIRE,
+        P5_T4_SUSTAIN_ACCURACY
     }
 
     private data class ScenarioConfig(
@@ -222,6 +482,9 @@ class CEPSimulationService : Service() {
 
         //val hr: Double,
         val hrvRmssdMs: Double,
+        // Phase 2: optional HRV step change — used by P2 window discriminating tests
+        val hrvExitRmssdMs: Double? = null,   // HRV after step change
+        val hrvExitStartTick: Int? = null,    // tick index at which HRV changes
         val spo2Pct: Double,
         val ppgAmp: Float,
         val accelMagG: Double,
@@ -236,7 +499,27 @@ class CEPSimulationService : Service() {
         val hrSlopePerTick: Double = 0.0,
         val ppgSlopePerTick: Float = 0f,
         val spo2SlopePerTick: Double = 0.0,
-        val gyroPattern: ((Int) -> Float)? = null
+        val gyroPattern: ((Int) -> Float)? = null,
+        // Phase 3 / P3-T3: inject Double.NaN as HR at this tick index to trigger a
+        // feature-compute exception and verify engine continues running.
+        val injectNanAtTick: Int? = null,
+
+        // ── Phase 4 fields ────────────────────────────────────────────────────
+        // P4 / E5: tsOffsetMs — offset (ms) added to evt.ts for all events in this scenario.
+        //   Positive = future timestamp; negative = past/stale timestamp.
+        //   Used to verify that freshness guards correctly reject events whose ts is
+        //   far outside the expected max_age_sec window.
+        val tsOffsetMs: Long = 0L,
+
+        // P4 / E6: signalGapRange — (startTick inclusive, endTick exclusive).
+        //   Within this tick range all sensor emissions are suppressed (simulates dropout).
+        //   Verify that features go stale and doubleIfFresh() returns null during the gap.
+        val signalGapRange: Pair<Int, Int>? = null,
+
+        // P4 / E6: burstOnTick — at this tick index fire 20 rapid-fire events of every
+        //   sensor type to stress-test CepBus buffer headroom.  Verify no DROP_OLDEST
+        //   events are lost (monitor CepBus.events subscription count in logcat).
+        val burstOnTick: Int? = null
     )
 
     private fun scenarioConfig(s: Scenario, ageYears: Int = 35, hrRest: Int = 60): ScenarioConfig {
@@ -310,7 +593,531 @@ class CEPSimulationService : Service() {
                 skinWristC = 36.0, skinHandC = 35.0,
                 wet = false, immersion = false
             )
+
+            // ── Phase 1 Scenarios ─────────────────────────────────────────────
+            // P1-T1: 1 Hz baseline — HRMAX at rest, 320 ticks (320s real).
+            //         hr_hrmax_rest_immediate_emergency (sustained=180s) fires at ~180s.
+            //         hr_high_threshold_resting_alert warn (sustained_warn=300s) fires at ~300s.
+            //         Both must fire at the same wall-clock seconds regardless of tick rate.
+            Scenario.P1_T1_BASELINE_1HZ -> ScenarioConfig(
+                ticks = 320, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            // P1-T2: 2 Hz rate — 640 ticks × 500ms = 320s real time.
+            //         hr_hrmax_rest_immediate_emergency must fire at ~180s (tick ~360), not at tick 180 (90s).
+            //         hr_high_threshold_resting_alert warn must fire at ~300s (tick ~600), not at tick 300 (150s).
+            Scenario.P1_T2_SUSTAIN_2HZ -> ScenarioConfig(
+                ticks = 640, tickMs = 500,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            // P1-T3: 4 Hz rate — 1280 ticks × 250ms = 320s real time.
+            //         hr_hrmax_rest_immediate_emergency must fire at ~180s (tick ~720), not at tick 180 (45s).
+            //         hr_high_threshold_resting_alert warn must fire at ~300s (tick ~1200), not at tick 300 (75s).
+            Scenario.P1_T3_SUSTAIN_4HZ -> ScenarioConfig(
+                ticks = 1280, tickMs = 250,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            // P1-T4: sustained_for_sec_warn wall-clock discriminating test at 2 Hz.
+            //   HR=125 STILL: above high_threshold_bpm (120) but below HRmax (~183.5 for age 35).
+            //   ONLY hr_high_threshold_resting_alert triggers (sustained_for_sec_warn=300s).
+            //   pre-warn fires at ~300s wall-clock — NOT ~150s which a tick-count bug would produce.
+            //   AlertRegistry ASSERT: SUMMARY no_alerts_fired — pre-warns skip AlertRegistry by design
+            //     (WarnActionHandler isPreWarn=true path omits tryActivate).
+            //   Manual logcat check: grep "W/CEP.*hr_high_threshold_resting_alert" — expect at ~300s real.
+            //   640 ticks × 500ms = 320s real at 2 Hz — enough headroom to observe the 300s pre-warn.
+            Scenario.P1_T4_WARN_THRESHOLD -> ScenarioConfig(
+                ticks = 640, tickMs = 500,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 125.0,   // above high_threshold (120) but below HRmax — only warn fires
+                hrvRmssdMs = 50.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            // P1-T6: holdDownSec regression guard — hr_hrmax_rest_immediate_emergency fires at ~180s.
+            //         hold_down_sec=120 means the rule must NOT re-fire until at least t≈300s.
+            //         400 ticks at 1 Hz: observe first fire at ~180s; no re-fire before ~300s.
+            Scenario.P1_T6_HOLDDOWN_REGRESSION -> ScenarioConfig(
+                ticks = 400, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+
+            // ── Phase 2 Scenarios ─────────────────────────────────────────────
+
+            // P2-T1: HRV 60s window baseline at 1 Hz.
+            //         HRV=20 for first 30 s, then HRV=80.
+            //         At the 90 s mark the 60 s window contains 30 s@20 + 30 s@80 → avg≈50.
+            //         Count-based also gives ≈50 at 1 Hz → establishes expected value.
+            Scenario.P2_T1_WINDOW_1HZ -> ScenarioConfig(
+                ticks = 100, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 70.0,
+                hrvRmssdMs = 20.0,
+                hrvExitRmssdMs = 80.0,
+                hrvExitStartTick = 30,       // tick 30 × 1000ms = 30 s real
+                spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+
+            // P2-T2: HRV 60s window discriminating test at 4 Hz, CEP still at 1 Hz.
+            //         Time-based  → avg≈50 at t≈90 s real  ✓
+            //         Count-based → tail(60) = last 15 s → avg≈80  ✗
+            Scenario.P2_T2_WINDOW_4HZ -> ScenarioConfig(
+                ticks = 400, tickMs = 250,   // 400 × 250ms = 100 s real
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 70.0,
+                hrvRmssdMs = 20.0,
+                hrvExitRmssdMs = 80.0,
+                hrvExitStartTick = 120,      // tick 120 × 250ms = 30 s real
+                spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+
+            // P2-T3: Skin-temp slope baseline at 1 Hz.
+            //         Cooling at −0.083 °C/s → expected slope_c_per_s_20s ≈ −0.083.
+            //         Both count-based and time-based agree at 1 Hz.
+            Scenario.P2_T3_SLOPE_1HZ -> ScenarioConfig(
+                ticks = 80, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 5.0, windMps = 5.0, humidityPct = 40.0, lux = 10.0,
+                entryHr = 65.0,
+                hrvRmssdMs = 50.0, spo2Pct = 98.0, ppgAmp = 0.8f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.1f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                skinSlopePerTickC = -0.083,  // −0.083 °C/tick at 1 Hz = −0.083 °C/s
+                wet = false, immersion = false
+            )
+
+            // P2-T4: Skin-temp slope discriminating at 4 Hz, CEP still at 1 Hz.
+            //         Same cooling rate (−0.083 °C/s) but 4× faster ticks (250ms).
+            //         Time-based  → slope ≈ −0.083 °C/s  ✓
+            //         Count-based → tail(20*1=20 samples) spans only 5 s → slope ≈ −0.021 °C/s  ✗
+            Scenario.P2_T4_SLOPE_4HZ -> ScenarioConfig(
+                ticks = 320, tickMs = 250,   // 320 × 250ms = 80 s real
+                activity = "STILL", sleeping = false,
+                ambientC = 5.0, windMps = 5.0, humidityPct = 40.0, lux = 10.0,
+                entryHr = 65.0,
+                hrvRmssdMs = 50.0, spo2Pct = 98.0, ppgAmp = 0.8f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.1f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                skinSlopePerTickC = -0.083 / 4.0, // −0.083 °C/s ÷ 4 ticks/s = −0.02075 °C/tick
+                wet = false, immersion = false
+            )
+
+            // ── Phase 3 Scenarios ─────────────────────────────────────────────
+
+            // P3-T1: Slow-feature no-stall.
+            //   HR > HRmax (exercise) — hr_hrmax_exercise_60s_emergency fires at ~10 s.
+            //   features.skin_temp.hand_min_c_1m is configured with update_interval_ms=5000
+            //   in cep_rules.json.  Rule evals happen every 1 s.  Verify in logcat that:
+            //   - Alert fires at ~10 s (not delayed to next 5-s feature cycle)
+            //   - No 5-s gap in the rule-eval log lines (engine not blocked)
+            Scenario.P3_T1_SLOW_FEATURE_NO_STALL -> ScenarioConfig(
+                ticks = 30, tickMs = 1000,   // 30 s real
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,             // > HRmax exercise; hr_hrmax_exercise_60s_emergency fires at ~10 s
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+
+            // P3-T2: Fast-feature fresh value.
+            //   HR > HRmax; rule eval at 1 s; feature computing at 500 ms.
+            //   The elevated HR feature should be visible to the rule-eval loop within 1 s.
+            //   Observe: [ASSERT][P3_T2] ALERT_FIRED elapsedSec≈11 (not 12+).
+            //   ticks=30, tickMs=500 gives 15 s real; alert must fire before tick 30.
+            Scenario.P3_T2_FAST_FEATURE_FRESH_VALUE -> ScenarioConfig(
+                ticks = 30, tickMs = 500,    // 15 s real at 2 Hz tick
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+
+            // P3-T3: NaN injection + FeatureStore guard.
+            //   Double.NaN injected as HR at tick 10.
+            //   JVM NaN arithmetic does NOT throw — it propagates silently through derived
+            //   feature chains (e.g. karvonen_ratio = NaN / denominator = NaN).
+            //   FeatureStore.put() / putDerived() now REJECT NaN values and emit a W/CEP log
+            //   ("NaN rejected for key=…") instead of storing them, so the last valid value
+            //   is retained and rules continue to evaluate normally.
+            //   Verify in logcat:
+            //   - W/CEP: "[FeatureStore] NaN rejected for key=features.hr.*" appears at tick 10
+            //   - NO "Feature compute failed" error (NaN is absorbed before reaching arithmetic)
+            //   - Engine keeps running: other rules (on skin-temp, HRV etc.) continue
+            //   - [ASSERT][P3_T3] ENGINE_RUNNING_POST_EXCEPTION logged at scenario end
+            Scenario.P3_T3_EXCEPTION_ISOLATION -> ScenarioConfig(
+                ticks = 30, tickMs = 1000,
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false,
+                injectNanAtTick = 10     // HR → NaN at tick 10; exception must be isolated
+            )
+
+            // ── Phase 4 Scenarios ──────────────────────────────────────────────
+
+            // P4-T1: Stale-timestamp smoke test.
+            //   All events carry ts = now − 5 min (tsOffsetMs=−300 000).
+            //   HR is safe (70 bpm) → no alert from the CEP rule set.
+            //   Observe: engine accepts old-timestamped events without crash.
+            //   [ASSERT][P4_T1_STALE_TIMESTAMP] SUMMARY no_alerts_fired.
+            //
+            //   NOTE: This is primarily a smoke/robustness test.  Freshness guards are
+            //   wired in both FeatureStore.doubleIfFresh() and JsonLogic
+            //   (gte_key_fresh/lte_key_fresh), and at least one HR resting rule now uses
+            //   gte_key_fresh. This scenario still focuses on stale timestamp robustness.
+            Scenario.P4_T1_STALE_TIMESTAMP -> ScenarioConfig(
+                ticks = 30, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 70.0,
+                hrvRmssdMs = 50.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false,
+                tsOffsetMs = -300_000L   // 5 min in the past
+            )
+
+            // P4-T2: Signal-gap dropout test.
+            //   HR=195 STILL; ticks 10–19 (10 s) fully suppressed.
+            //   Observe: 10 × "[P4] ⏸ signal gap" log lines; engine resumes
+            //   cleanly after tick 20; no crash or stall.
+            Scenario.P4_T2_SIGNAL_GAP -> ScenarioConfig(
+                ticks = 50, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false,
+                signalGapRange = Pair(10, 20)   // ticks 10–19 suppressed (10 s dropout)
+            )
+
+            // P4-T3: CepBus burst-stress test.
+            //   HR=195 RUN → hr_hrmax_exercise_60s_emergency fires at ~10 s.
+            //   At tick 5 a 20× burst stresses the 512-entry CepBus buffer.
+            //   Observe: "[P4] ⚡ burst at tick=5"; no DROP_OLDEST loss;
+            //   alert still fires at ~10s.
+            Scenario.P4_T3_BURST_STRESS -> ScenarioConfig(
+                ticks = 30, tickMs = 1000,
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false,
+                burstOnTick = 5   // 20× burst at tick 5; buffer must absorb without loss
+            )
+
+            // P4-T4: Gap + burst combined.
+            //   Gap: ticks 5–9 suppressed.  Burst: 20× events at tick 20.
+            //   HR=195 STILL; 35 s total.
+            //   Observe: gap lines then burst line; engine runs all 35 ticks; no crash.
+            Scenario.P4_T4_GAP_THEN_BURST -> ScenarioConfig(
+                ticks = 35, tickMs = 1000,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false,
+                signalGapRange = Pair(5, 10),  // ticks 5–9 suppressed (5 s dropout)
+                burstOnTick = 20               // 20× burst at tick 20
+            )
+
+            // P4-T5: 10 Hz native-rate discriminating test.
+            //   3200 ticks × 100ms = 320s real time at 10× tick rate.
+            //   HR=195 STILL.  hr_hrmax_rest_immediate_emergency (sustained=180s) must
+            //   fire at ~180s wall-clock (≈tick 1800), NOT at tick 180 (18s).
+            //   This is the sharpest regression guard for the wall-clock sustain fix:
+            //   the old tick-count bug would fire at tick 180 = 18s real.
+            Scenario.P4_T5_HIGHRATE_10HZ -> ScenarioConfig(
+                ticks = 3200, tickMs = 100,   // 3200 × 100ms = 320s real at 10 Hz
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+
+            // ── Phase 5 Scenarios ─────────────────────────────────────────────
+            Scenario.P5_T1_ALERT_LATENCY_BASELINE -> ScenarioConfig(
+                // Note: P5_T1 is driven by runP5T1AlertLatencyBaseline(), not simulateScenario().
+                // HR=170 targets hr_zone4_rest_immediate_emergency (~84 % HRR with default profile).
+                // 13 ticks × 500 ms = 6 500 ms spans the 5-second sustain with one eval cycle margin.
+                ticks = 13, tickMs = 500,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 170.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET -> ScenarioConfig(
+                ticks = 30, tickMs = 500,
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            Scenario.P5_T3_NO_DOUBLE_FIRE -> ScenarioConfig(
+                ticks = 40, tickMs = 500,
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            Scenario.P5_T4_SUSTAIN_ACCURACY -> ScenarioConfig(
+                ticks = 380, tickMs = 500,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 125.0,
+                hrvRmssdMs = 50.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
         }
+    }
+
+    /**
+     * Runs a single Phase 5 scenario body.
+     *
+     * @param scenario Phase 5 scenario enum entry to execute.
+     */
+    private suspend fun runPhase5Scenario(scenario: Scenario) {
+        when (scenario) {
+            Scenario.P5_T1_ALERT_LATENCY_BASELINE -> runP5T1AlertLatencyBaseline()
+            Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET -> runP5T2AlertLatencyFastOnset()
+            Scenario.P5_T3_NO_DOUBLE_FIRE -> runP5T3NoDoubleFire()
+            Scenario.P5_T4_SUSTAIN_ACCURACY -> runP5T4SustainAccuracy()
+            else -> {
+                // no-op: this method is only for P5 scenarios
+            }
+        }
+    }
+
+    /**
+     * Emits the minimum signal set needed for HR-rule scenarios in Phase 5.
+     *
+     * @param activity Current activity state to publish.
+     * @param hrBpm Heart-rate bpm value to publish.
+     * @param sleep Whether sleep state is active.
+     * @param onWrist Off-body flag (1=on wrist, 0=off wrist).
+     */
+    private suspend fun emitPhase5HrSample(
+        activity: String,
+        hrBpm: Double,
+        sleep: Boolean = false,
+        onWrist: Int = 1
+    ) {
+        val ts = System.currentTimeMillis()
+        CepBus.emit(CepEvent(Topics.ACTIVITY, ActivityPayload(activity), ts = ts))
+        CepBus.emit(CepEvent(Topics.SLEEP, SleepPayload(sleep), ts = ts))
+        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(onWrist), ts = ts))
+        CepBus.emit(CepEvent(Topics.HEART_RATE, HeartRatePayload(bpm = hrBpm), ts = ts))
+    }
+
+    /**
+     * Waits for first activation of [ruleId].
+     *
+     * @param ruleId Rule id to poll in [AlertRegistry].
+     * @param timeoutMs Max wait duration in milliseconds.
+     * @param pollMs Poll cadence in milliseconds.
+     * @return Epoch-ms fire time if observed, else null on timeout.
+     */
+    private suspend fun waitForRuleActivation(ruleId: String, timeoutMs: Long, pollMs: Long): Long? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() <= deadline) {
+            if (AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                return System.currentTimeMillis()
+            }
+            delay(pollMs)
+        }
+        return null
+    }
+
+    /**
+     * P5-T1: latency baseline for a 5-second sustain rule at 500ms eval cadence.
+     *
+     * hr_zone4_rest_immediate_emergency requires hrr_percent in [80, 90).
+     * With the default profile (HRmax=190, restHR=60), HR=170 bpm yields ~84 % HRR,
+     * placing it squarely in zone 4.  Samples are emitted at 500 ms intervals for
+     * 6 500 ms (13 iterations) to span the 5-second sustain threshold with one
+     * extra eval cycle of headroom.  The assertion checks that the rule fires within
+     * one 500 ms eval cycle of the sustain being met: elapsed in [5 000, 5 600] ms.
+     */
+    private suspend fun runP5T1AlertLatencyBaseline() {
+        val ruleId = "hr_zone4_rest_immediate_emergency"
+        val sustainMs = 5_000L   // sustained_for_sec = 5 for this rule
+        emitResetBurst()
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        // 13 × 500 ms = 6 500 ms — spans the 5-second sustain plus one eval cycle of margin
+        repeat(13) {
+            emitPhase5HrSample(activity = "STILL", hrBpm = 170.0, sleep = false, onWrist = 1)
+            if (fireTime == null && AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                fireTime = System.currentTimeMillis()
+            }
+            delay(500L)
+        }
+        if (fireTime == null) {
+            Log.i("CEP", "[P5-T1] ASSERT FAIL rule=$ruleId did_not_fire_within_ms=6500")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in sustainMs..(sustainMs + 600L)
+            Log.i("CEP", "[P5-T1] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=${sustainMs}..${sustainMs + 600L}")
+        }
+        emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P5-T2: verifies 10-second sustained rule latency under 500ms rule-eval cadence.
+     *
+     * Continuously emits trigger values at 500ms and asserts first fire is near 10 seconds.
+     */
+    private suspend fun runP5T2AlertLatencyFastOnset() {
+        val ruleId = "hr_hrmax_exercise_60s_emergency"
+        emitResetBurst()
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(30) {
+            emitPhase5HrSample(activity = "RUN", hrBpm = 195.0, sleep = false, onWrist = 1)
+            repeat(5) {
+                if (fireTime == null && AlertRegistry.allActive().any { alert -> alert.ruleId == ruleId }) {
+                    fireTime = System.currentTimeMillis()
+                }
+                delay(100L)
+            }
+        }
+        if (fireTime == null) {
+            Log.i("CEP", "[P5-T2] ASSERT FAIL rule=$ruleId did_not_fire")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in 9_500L..11_500L
+            Log.i("CEP", "[P5-T2] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=9500..11500")
+        }
+        emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P5-T3: verifies a sustained condition produces exactly one activation.
+     *
+     * Uses the same trigger source as P5-T2 and counts false→true activation edges.
+     * hr_hrmax_exercise_60s_emergency has sustained_for_sec=10 and hold_down_sec=0.
+     * The observation window is (sustainedForSec + holdDownSec + 5) s = 15 s — long
+     * enough for the rule to fire once (at ~10 s) while confirming it does not fire a
+     * second time within the remaining window.
+     */
+    private suspend fun runP5T3NoDoubleFire() {
+        val ruleId = "hr_hrmax_exercise_60s_emergency"
+        val sustainedForSec = 10L   // sustained_for_sec for this rule
+        val holdDownSec     = 0L    // hold_down_sec for this rule (no hold-down configured)
+        emitResetBurst()
+        val endAt = System.currentTimeMillis() + (sustainedForSec + holdDownSec + 5L) * 1_000L
+        var wasActive = false
+        var activations = 0
+        while (System.currentTimeMillis() < endAt) {
+            emitPhase5HrSample(activity = "RUN", hrBpm = 195.0, sleep = false, onWrist = 1)
+            repeat(5) {
+                val isActiveNow = AlertRegistry.allActive().any { it.ruleId == ruleId }
+                if (isActiveNow && !wasActive) {
+                    activations += 1
+                    Log.i("CEP", "[P5-T3] activation rule=$ruleId count=$activations atMs=${System.currentTimeMillis()}")
+                }
+                wasActive = isActiveNow
+                delay(100L)
+            }
+        }
+        val pass = activations == 1
+        Log.i("CEP", "[P5-T3] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId activations=$activations expected=1 holdDownSec=$holdDownSec")
+        emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P5-T4: validates long sustain timing accuracy at 500ms rule-eval cadence.
+     *
+     * Emits resting high HR for 190 seconds and asserts fire near 180 seconds.
+     */
+    private suspend fun runP5T4SustainAccuracy() {
+        val ruleId = "hr_hrmax_rest_immediate_emergency"
+        emitResetBurst()
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(380) {
+            emitPhase5HrSample(activity = "STILL", hrBpm = 195.0, sleep = false, onWrist = 1)
+            repeat(2) {
+                if (fireTime == null && AlertRegistry.allActive().any { alert -> alert.ruleId == ruleId }) {
+                    fireTime = System.currentTimeMillis()
+                }
+                delay(200L)
+            }
+            delay(100L)
+        }
+        if (fireTime == null) {
+            Log.i("CEP", "[P5-T4] ASSERT FAIL rule=$ruleId did_not_fire")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in 175_000L..185_000L
+            Log.i("CEP", "[P5-T4] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=175000..185000")
+        }
+        emitResetBurst()
+        AlertRegistry.clearAll()
     }
 
     /*private suspend fun simulateScenario(s: Scenario, ageYears: Int = 35, hrRest: Int = 60) {
@@ -367,14 +1174,10 @@ class CEPSimulationService : Service() {
     private suspend fun simulateScenario(s: Scenario, ageYears: Int = 35, hrRest: Int = 60) {
         val cfg = scenarioConfig(s, ageYears, hrRest)
 
-        // Fixed seed keeps the simulation reproducible while satisfying S2245
-        //val rnd = SecureRandom().apply { setSeed(42L) }
-
         //SonarQube compliant
         val rnd = SecureRandom()
 
         fun jitterD(d: Double, mag: Double): Double {
-            // rnd.nextDouble() -> [0,1); map to [-mag, +mag]
             val delta = (rnd.nextDouble() * 2.0 - 1.0) * mag
             return d + delta
         }
@@ -389,26 +1192,64 @@ class CEPSimulationService : Service() {
         var hr = cfg.entryHr
         var ppg = cfg.ppgAmp
         var spo2 = cfg.spo2Pct
+        // Phase 2: mutable HRV so P2 window tests can inject a step change mid-scenario
+        var hrv = cfg.hrvRmssdMs
+
+        // Phase 3 / E1: SimulationObserver — polls AlertRegistry each tick and logs
+        // structured [ASSERT] lines for manual or scripted logcat verification.
+        val observer = SimulationObserver(s)
 
         repeat(cfg.ticks) { t ->
             val gyro = cfg.gyroPattern?.invoke(t) ?: cfg.gyroRms
 
-            CepBus.emit(CepEvent(Topics.ACTIVITY,  ActivityPayload(cfg.activity)))
-            CepBus.emit(CepEvent(Topics.OFFBODY,   OffBodyPayload(cfg.onWrist)))
-            CepBus.emit(CepEvent(Topics.SLEEP,     SleepPayload(cfg.sleeping)))
-            CepBus.emit(CepEvent(Topics.HEART_RATE,HeartRatePayload(bpm = hr)))
-            CepBus.emit(CepEvent(Topics.HRV,       HrvPayload(rmssd_ms = cfg.hrvRmssdMs)))
-            CepBus.emit(CepEvent(Topics.SPO2,      Spo2Payload(pct = spo2)))
-            CepBus.emit(CepEvent(Topics.PPG,       PpgPayload(amplitude = ppg, quality = 1.0f, wavelength = "green")))
-            CepBus.emit(CepEvent(Topics.ACCEL,     AccelPayload(magnitude_g = jitterD(cfg.accelMagG, 0.01), cadence_spm = cfg.cadenceSpm)))
-            CepBus.emit(CepEvent(Topics.GYRO,      GyroPayload(x = jitterF(0f, 0.1f), y = jitterF(0f, 0.1f), z = jitterF(0f, 0.1f), rms = gyro)))
-            CepBus.emit(CepEvent(Topics.AMBIENT,   AmbientPayload(temp_c = jitterD(cfg.ambientC, 0.2), wind_mps = jitterD(cfg.windMps, 0.2), humidity_pct = jitterD(cfg.humidityPct, 1.5))))
-            CepBus.emit(CepEvent(Topics.WIND,      WindPayload(speedMps = jitterF(cfg.windMps.toFloat(), 0.2f), directionDeg = (t * 17 % 360).toFloat())))
-            CepBus.emit(CepEvent(Topics.HUMIDITY,  HumidityPayload(relativePercent = jitterF(cfg.humidityPct.toFloat(), 1.5f))))
-            CepBus.emit(CepEvent(Topics.LIGHT,     LightPayload(lux = jitterF(cfg.lux.toFloat(), 5f), covered = cfg.covered)))
-            CepBus.emit(CepEvent(Topics.SKIN_TEMP, SkinTempPayload(c_peripheral = listOf(skinWrist, skinHand))))
-            CepBus.emit(CepEvent(Topics.IMMERSION, ImmersionPayload(wet_flag = cfg.wet, immersion_flag = cfg.immersion)))
-            CepBus.emit(CepEvent(Topics.WATER,     WaterPayload(wet = cfg.wet, temperatureC = cfg.waterTempC)))
+            // Phase 2: apply HRV step change and log the transition tick
+            if (cfg.hrvExitStartTick != null && cfg.hrvExitRmssdMs != null) {
+                if (t == cfg.hrvExitStartTick) {
+                    Log.i(TAG, "[P2] ▶ HRV step at tick=$t (~${t * cfg.tickMs / 1000} s real): " +
+                            "${cfg.hrvRmssdMs}→${cfg.hrvExitRmssdMs} ms")
+                }
+                if (t >= cfg.hrvExitStartTick) hrv = cfg.hrvExitRmssdMs
+            }
+
+            // Phase 3 / P3-T3: inject NaN at the configured tick to test exception isolation
+            val emitHr = if (cfg.injectNanAtTick != null && t == cfg.injectNanAtTick) {
+                Log.w(TAG, "[P3] ⚠ NaN injection at tick=$t for $s — expect CEP error log below")
+                Double.NaN
+            } else hr
+
+            // Phase 4 / E6: signal gap — suppress all emissions within the configured range.
+            val inGap = cfg.signalGapRange?.let { (start, end) -> t in start until end } ?: false
+            if (inGap) {
+                Log.d(TAG, "[P4] ⏸ signal gap tick=$t for $s — all sensor emissions suppressed")
+            } else {
+                // Phase 4 / E5: apply tsOffsetMs to every event so freshness guards see the offset.
+                val ts = System.currentTimeMillis() + cfg.tsOffsetMs
+
+                // Phase 4 / E6: burstOnTick — fire 20 copies of every event on the designated tick.
+                val repeatCount = if (cfg.burstOnTick != null && t == cfg.burstOnTick) {
+                    Log.i(TAG, "[P4] ⚡ burst at tick=$t for $s — emitting 20× events per sensor")
+                    20
+                } else 1
+
+                repeat(repeatCount) {
+                    CepBus.emit(CepEvent(Topics.ACTIVITY,  ActivityPayload(cfg.activity), ts = ts))
+                    CepBus.emit(CepEvent(Topics.OFFBODY,   OffBodyPayload(cfg.onWrist), ts = ts))
+                    CepBus.emit(CepEvent(Topics.SLEEP,     SleepPayload(cfg.sleeping), ts = ts))
+                    CepBus.emit(CepEvent(Topics.HEART_RATE,HeartRatePayload(bpm = emitHr), ts = ts))
+                    CepBus.emit(CepEvent(Topics.HRV,       HrvPayload(rmssd_ms = hrv), ts = ts))
+                    CepBus.emit(CepEvent(Topics.SPO2,      Spo2Payload(pct = spo2), ts = ts))
+                    CepBus.emit(CepEvent(Topics.PPG,       PpgPayload(amplitude = ppg, quality = 1.0f, wavelength = "green"), ts = ts))
+                    CepBus.emit(CepEvent(Topics.ACCEL,     AccelPayload(magnitude_g = jitterD(cfg.accelMagG, 0.01), cadence_spm = cfg.cadenceSpm), ts = ts))
+                    CepBus.emit(CepEvent(Topics.GYRO,      GyroPayload(x = jitterF(0f, 0.1f), y = jitterF(0f, 0.1f), z = jitterF(0f, 0.1f), rms = gyro), ts = ts))
+                    CepBus.emit(CepEvent(Topics.AMBIENT,   AmbientPayload(temp_c = jitterD(cfg.ambientC, 0.2), wind_mps = jitterD(cfg.windMps, 0.2), humidity_pct = jitterD(cfg.humidityPct, 1.5)), ts = ts))
+                    CepBus.emit(CepEvent(Topics.WIND,      WindPayload(speedMps = jitterF(cfg.windMps.toFloat(), 0.2f), directionDeg = (t * 17 % 360).toFloat()), ts = ts))
+                    CepBus.emit(CepEvent(Topics.HUMIDITY,  HumidityPayload(relativePercent = jitterF(cfg.humidityPct.toFloat(), 1.5f)), ts = ts))
+                    CepBus.emit(CepEvent(Topics.LIGHT,     LightPayload(lux = jitterF(cfg.lux.toFloat(), 5f), covered = cfg.covered), ts = ts))
+                    CepBus.emit(CepEvent(Topics.SKIN_TEMP, SkinTempPayload(c_peripheral = listOf(skinWrist, skinHand)), ts = ts))
+                    CepBus.emit(CepEvent(Topics.IMMERSION, ImmersionPayload(wet_flag = cfg.wet, immersion_flag = cfg.immersion), ts = ts))
+                    CepBus.emit(CepEvent(Topics.WATER,     WaterPayload(wet = cfg.wet, temperatureC = cfg.waterTempC), ts = ts))
+                }
+            }
 
             // update drifting values
             skinWrist += cfg.skinSlopePerTickC
@@ -424,7 +1265,67 @@ class CEPSimulationService : Service() {
             ppg  = (ppg + cfg.ppgSlopePerTick).coerceIn(0f, 1f)
             spo2 = (spo2 + cfg.spo2SlopePerTick).coerceIn(80.0, 100.0)
 
+            // E1: sample AlertRegistry after each tick
+            observer.sample(elapsedMs = (t + 1) * cfg.tickMs)
+
             delay(cfg.tickMs)
+        }
+
+        // E1: print scenario summary
+        observer.report()
+
+        // P3-T3 specific: confirm engine is still processing after the NaN injection
+        if (cfg.injectNanAtTick != null) {
+            Log.i(TAG, "[ASSERT][$s] ENGINE_RUNNING_POST_EXCEPTION tick=${cfg.ticks} — if you see this, exception was isolated ✓")
+        }
+    }
+
+    /**
+     * Phase 3 / E1 — Minimal SimulationObserver.
+     *
+     * Polls [AlertRegistry] after each simulated tick and emits structured `[ASSERT]`
+     * log lines.  These lines can be grepped from logcat for manual or scripted
+     * pass/fail verification without needing programmatic JUnit assertions.
+     *
+     * A full E1 implementation would also expose a callback interface for automated
+     * test assertions; this version covers the logcat-observable tier.
+     */
+    private inner class SimulationObserver(private val scenario: Scenario) {
+        private val startMs = System.currentTimeMillis()
+        // ruleId → first-fire elapsed ms
+        private val firstFireMs = mutableMapOf<String, Long>()
+        // Snapshot of alerts already active at construction — exclude these as carryover.
+        private val baselineIds: Set<String> = AlertRegistry.allActive().map { it.ruleId }.toSet()
+
+        fun sample(elapsedMs: Long) {
+            for (alert in AlertRegistry.allActive()) {
+                if (alert.ruleId in baselineIds) continue   // skip pre-existing carryover
+                if (!firstFireMs.containsKey(alert.ruleId)) {
+                    firstFireMs[alert.ruleId] = elapsedMs
+                    Log.i(TAG,
+                        "[ASSERT][$scenario] ALERT_FIRED" +
+                        " ruleId=${alert.ruleId}" +
+                        " elapsedMs=$elapsedMs" +
+                        " elapsedSec=${"%.1f".format(elapsedMs / 1000.0)}"
+                    )
+                }
+            }
+        }
+
+        fun report() {
+            val wallMs = System.currentTimeMillis() - startMs
+            if (firstFireMs.isEmpty()) {
+                Log.i(TAG, "[ASSERT][$scenario] SUMMARY no_alerts_fired wallSec=${"%.1f".format(wallMs / 1000.0)}")
+            } else {
+                for ((id, ms) in firstFireMs) {
+                    Log.i(TAG,
+                        "[ASSERT][$scenario] SUMMARY" +
+                        " ruleId=$id" +
+                        " firstFireSec=${"%.1f".format(ms / 1000.0)}" +
+                        " wallSec=${"%.1f".format(wallMs / 1000.0)}"
+                    )
+                }
+            }
         }
     }
 
