@@ -118,6 +118,8 @@
     <string name="wifi_server_connecting_location_disabled" translatable="false">Wifi, Server Connecting, Location Disabled</string>
     <string name="wifi_server_connected_location_enabled" translatable="false">Wifi, Server Connected, Location Enabled</string>
     <string name="wifi_server_connected_location_disabled" translatable="false">Wifi, Server Connected, Location Disabled</string>
+    <string name="wifi_server_connected_multicast_location_enabled" translatable="false">Wifi, Server Connected Multicast, Location Enabled</string>
+    <string name="wifi_server_connected_multicast_location_disabled" translatable="false">Wifi, Server Connected Multicast, Location Disabled</string>
     <string name="wifi_server_disconnected_location_enabled" translatable="false">Wifi, Server Disconnected, Location Enabled</string>
     <string name="wifi_server_disconnected_location_disabled" translatable="false">Wifi, Server Disconnected, Location Disabled</string>
     <string name="no_connect_server_connecting_location_enabled" translatable="false">No Connection, Server Connecting, Location Enabled</string>
@@ -641,4 +643,5 @@
     <string name="low_atm_pressure_threshold">Low Pressure Threshold (hPa)</string>
     <string name="high_atm_pressure_alert">High Pressure Alert</string>
     <string name="high_atm_pressure_threshold">High Pressure Threshold (hPa)</string>
+    <string name="server_connected_multicast">Server Connected Multicast</string>
 </resources>

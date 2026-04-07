@@ -181,4 +181,5 @@
     <string name="low_atm_pressure_threshold">Low Pressure Threshold (hPa)</string>
     <string name="high_atm_pressure_alert">High Pressure Alert</string>
     <string name="high_atm_pressure_threshold">High Pressure Threshold (hPa)</string>
+    <string name="server_connected_multicast">Server Connected Multicast</string>
 </resources>
