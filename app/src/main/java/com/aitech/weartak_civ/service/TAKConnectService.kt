@@ -199,9 +199,18 @@ class TAKConnectService: Service() {
                         !cfg.address.isNullOrBlank() && cfg.port != null
                 Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
                 if (shouldRun) {
-                    NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
+                    val started = NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
+                    if (started) {
+                        dataRepository.setMulticastPublisherRunning(true)
+                        dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
+                    } else {
+                        dataRepository.setMulticastPublisherRunning(false)
+                        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
+                    }
                 } else {
                     NetworkUtils.MulticastPublisher.stop()
+                    dataRepository.setMulticastPublisherRunning(false)
+                    dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
                 }
             }
         }

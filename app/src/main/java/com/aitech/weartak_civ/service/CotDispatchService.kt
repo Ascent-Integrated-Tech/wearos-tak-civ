@@ -60,6 +60,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -169,14 +172,16 @@ class CotDispatchService : Service() {
 
         startSendChatMessageCollector()
 
-        startAnyEndpointConnectedCollector()
+        startAnyEndpointOrMulticastConnectedCollector()
     }
 
-    private fun startAnyEndpointConnectedCollector() {
+    private fun startAnyEndpointOrMulticastConnectedCollector() {
         serviceScope.launch {
-            dataRepository.anyEndpointConnected.collect { connected ->
-                Log.i(TAG, "Any endpoint connected: $connected")
-                if (connected) {
+            combine(dataRepository.anyEndpointConnected, dataRepository.multicastPublisherRunning) {
+                anyEndpointConnected, multicastRunning ->
+                anyEndpointConnected || multicastRunning
+            }.distinctUntilChanged().collectLatest{ shouldSend ->
+                if (shouldSend) {
                     sendPendingChatMessages()
                 }
             }
@@ -229,7 +234,7 @@ class CotDispatchService : Service() {
                         return@collect
                     }
 
-                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first() || companionAppAvailable())
+                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.multicastPublisherRunning.value || companionAppAvailable())
 
                     if (endpointsToSendTo) {
                         if ((batt <= MainActivity.battWarnPercent)) {
@@ -256,8 +261,10 @@ class CotDispatchService : Service() {
                                     if (companionAppAvailable()) {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+                                    if (dataRepository.multicastPublisherRunning.value) {
+                                        sendMulticastDatagram(chatCot)
+                                    }
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
-
 
                                     sentBatteryWarnChatMsg = true
                                 }
@@ -278,6 +285,9 @@ class CotDispatchService : Service() {
                                     if (companionAppAvailable()) {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+                                    if (dataRepository.multicastPublisherRunning.value) {
+                                        sendMulticastDatagram(chatCot)
+                                    }
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
                                     sentBatteryAlertChatMsg = true
@@ -297,7 +307,7 @@ class CotDispatchService : Service() {
             dataRepository.getEnableWearTakDevMode
                 .filterNotNull()
                 .collect { enabled ->
-                    val sendToTak = TAKConnectService.isAnyTakConnected || dataRepository.getEnableMulticast.first()
+                    val sendToTak = TAKConnectService.isAnyTakConnected || dataRepository.multicastPublisherRunning.value || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED)
                     val sendToCompApp = companionAppAvailable()
                     val endpointsToSendTo = sendToTak || sendToCompApp
 
@@ -312,6 +322,9 @@ class CotDispatchService : Service() {
                         if (sendToTak) {
                             val chatCot = buildChatCotFromSnapshot(chatSnap)
                             sendDataTAKServers(chatCot, true)
+                            if (dataRepository.multicastPublisherRunning.value) {
+                                sendMulticastDatagram(chatCot)
+                            }
                             SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
                             Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
                         }
@@ -335,7 +348,7 @@ class CotDispatchService : Service() {
         // But if location is stale, we don't immediately send out but wait for fresh location
         val send = if (null == loc) true else (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
         //Log.i(TAG, "loc: ${if (null == loc) "null" else "NOT null"}; FRESH: ${(System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS}, ${(System.currentTimeMillis() - lastLocationUpdateRcvd) / 1000.0} s ago")
-        return (dataRepository.anyEndpointConnected.value && send)
+        return ((dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) && send)
     }
 
     private fun startAddManualAlertCollector() {
@@ -348,7 +361,7 @@ class CotDispatchService : Service() {
                 if (readyToSendAlertEvents()) {
                     sendAllManualAlerts(manualAlertWithState)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueManualAlertAndUpdateUI(manualAlertWithState)
@@ -442,7 +455,7 @@ class CotDispatchService : Service() {
         if (readyToSendAlertEvents()) {
             sendAllManualAlerts(manualAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value) {
+            if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                 EventBus.getDefault().post(LocationUpdateRequired())
             }
             enqueueManualAlertAndUpdateUI(manualAlertClearWithState)
@@ -475,7 +488,7 @@ class CotDispatchService : Service() {
                 if (readyToSendAlertEvents()) {
                     sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertAlertWithState)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
@@ -570,7 +583,7 @@ class CotDispatchService : Service() {
         if (readyToSendAlertEvents()) {
             sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value) {
+            if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                 EventBus.getDefault().post(LocationUpdateRequired())
             }
             enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertClearWithState)
@@ -592,7 +605,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.chatRequestSend.collect { req ->
                 Log.i(TAG, "Received req to send chat message: $req")
-                if (dataRepository.anyEndpointConnected.value) {
+                if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                     sendAllChatMessages(req)
                 } else {
                     val chatMsg = Utils.ChatMessage(message = req.message, uid = req.dstUid, callsign = req.dstChatroom, timeReceived = req.timeMillis)
@@ -628,9 +641,9 @@ class CotDispatchService : Service() {
             capRepo.enqueueChatSnapshotForBle(chatSnap)
             sent = true
         }
-        if (dataRepository.getEnableMulticast.first()) {
+        if (dataRepository.multicastPublisherRunning.value) {
             sendMulticastDatagram(chatCotXml)
-            //sent = true
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", chatCotXml))
@@ -704,7 +717,7 @@ class CotDispatchService : Service() {
                     sendMarkerDropNow(req)
                     sendPendingMarkerDrops()
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueDrop(req)
@@ -721,7 +734,7 @@ class CotDispatchService : Service() {
                     sendMarkerEditNow(req)
                     sendPendingMarkerEdits()
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueEdit(req)
@@ -734,8 +747,7 @@ class CotDispatchService : Service() {
     private fun readyToSendMarkerEvents(): Boolean {
         val loc = dataRepository.latestLocation.value
         val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
-        // TODO Senni: Check how anyEndpointConnected is set
-        return (dataRepository.anyEndpointConnected.value && (null != loc) && fresh)
+        return ((dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) && (null != loc) && fresh)
     }
 
     private fun startMarkerDropListCollector() {
@@ -1759,6 +1771,10 @@ class CotDispatchService : Service() {
             sendDataTAKServers(clearXml, true)
             sent = true
         }
+        if (dataRepository.multicastPublisherRunning.value) {
+            sendMulticastDatagram(clearXml)
+            sent = true
+        }
         if (sitxAvailable()) {
             SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(clearXml))
             sent = true
@@ -1912,9 +1928,9 @@ class CotDispatchService : Service() {
             capRepo.enqueueEmergencySnapshotForBle(snapshot)
             sent = true
         }
-        if (dataRepository.getEnableMulticast.first()) {
+        if (dataRepository.multicastPublisherRunning.value) {
             sendMulticastDatagram(xml)
-            //sent = true
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
@@ -1955,8 +1971,7 @@ class CotDispatchService : Service() {
                 capRepo.enqueuePliSnapshotForBle(snapshot)
             }
 
-            // TODO Senni: check for flag??
-            // if (dataRepository.getEnableMulticast.first()) { sendMulticastDatagram(xml) }. TODO Senni: What is the diff between
+            // if (dataRepository.getEnableMulticast.first()) { sendMulticastDatagram(xml) }.
             NetworkUtils.MulticastPublisher.send(xml) // always multicast
         }
     }
@@ -2056,8 +2071,9 @@ class CotDispatchService : Service() {
             Log.i(TAG, "$xml")
             sent = true
         }
-        if (dataRepository.getEnableMulticast.first()) {
+        if (dataRepository.multicastPublisherRunning.value) {
             sendMulticastDatagram(xml)
+            sent = true
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
