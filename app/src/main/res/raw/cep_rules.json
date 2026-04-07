@@ -7,6 +7,11 @@
     "Append all entries in `rules` to your existing rules array.",
     "If an `id` already exists in your file and you prefer our version, replace it; otherwise rename ours with a suffix."
   ],
+  "engine": {
+    "window_tick_ms": 1000,
+    "rule_eval_interval_ms": 1000,
+    "_comment": "Phase 1: window_tick_ms sets the ring-buffer resolution; rule_eval_interval_ms controls how often rules are evaluated. Both default to 1000ms (1 Hz). Decoupling them is the Phase 5 goal."
+  },
   "features": [
     {
       "type": "window_multi",
@@ -14,7 +19,8 @@
       "source": "skin_temp",
       "multi_policy": "min",
       "op": "min",
-      "window_sec": 60
+      "window_sec": 60,
+      "max_age_sec": 120
     },
     {
       "type": "derived",
@@ -48,7 +54,8 @@
       "source": "skin_temp",
       "multi_policy": "min_channel",
       "window_sec": 20,
-      "units_per_sec": "per_second"
+      "units_per_sec": "per_second",
+      "max_age_sec": 60
     },
     {
       "type": "derived",
@@ -151,7 +158,8 @@
       "id": "features.ppg.amplitude_recent_20s",
       "source": "ppg.amplitude",
       "op": "avg",
-      "window_sec": 20
+      "window_sec": 20,
+      "max_age_sec": 60
     },
     {
       "type": "derived",
@@ -210,7 +218,8 @@
       "id": "features.spo2.recent_120s",
       "source": "spo2",
       "op": "avg",
-      "window_sec": 120
+      "window_sec": 120,
+      "max_age_sec": 240
     },
     {
       "type": "window",
@@ -251,7 +260,8 @@
       "id": "features.hrv.rmssd_recent_1m",
       "source": "hrv.rmssd_ms",
       "op": "avg",
-      "window_sec": 60
+      "window_sec": 60,
+      "max_age_sec": 120
     },
     {
       "type": "derived",
@@ -1058,6 +1068,7 @@
         ]
       },
       "sustained_for_sec": 180,
+      "hold_down_sec": 120,
       "action": {
         "type": "nonelog",
         "severity": "EMERGENCY",

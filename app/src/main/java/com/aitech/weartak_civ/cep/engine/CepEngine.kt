@@ -24,7 +24,7 @@ class CepEngine(
     private val dataRepository: DataRepository
 ) {
     private val featureStore = FeatureStore()
-    private val windows = WindowStore(config.tickHz, RingConfig.default())
+    private val windows = WindowStore(RingConfig.default())
 
     @Volatile
     private var sustainOverridesMain: Map<String, Long> = emptyMap()
@@ -52,20 +52,43 @@ class CepEngine(
         scope.launch { updateSustainOverrides() }
 
         // Subscribe to the bus (no emitters yet; safe)
-        scope.launch { CepBus.events.collect { evt -> windows.ingest(evt, featureStore) } }
+        // Phase 1: pass evt.ts so WindowStore timestamps reflect sensor measurement time, not processing time
+        scope.launch { CepBus.events.collect { evt -> windows.ingest(evt, featureStore, evt.ts) } }
 
-        // Tick loop
+        // Phase 3: per-feature compute coroutines.
+        // Each feature runs in its own coroutine at its own updateIntervalMs cadence.
+        // An exception in one feature is caught and logged — it cannot crash or stall
+        // any other feature or the rule-eval loop.  The rule-eval loop always reads
+        // the last cached value from FeatureStore, regardless of when the feature last computed.
+        for (def in config.features) {
+            scope.launch {
+                while (isActive) {
+                    try {
+                        when (def) {
+                            is FeatureDef.Window      -> windows.computeWindow(def, featureStore)
+                            is FeatureDef.MultiWindow -> windows.computeMultiWindow(def, featureStore)
+                            is FeatureDef.SlopeMulti  -> windows.computeSlopeMulti(def, featureStore)
+                            is FeatureDef.Delta       -> windows.computeDelta(def, featureStore)
+                            is FeatureDef.Derived     -> DerivedEval.eval(def, featureStore)
+                        }
+                    } catch (ex: Throwable) {
+                        Log.e("CEP", "Feature compute failed for ${def.id} — isolated, engine continues", ex)
+                    }
+                    delay(def.updateIntervalMs)
+                }
+            }
+        }
+
+        // Rule evaluation loop.
+        // Runs at ruleEvalIntervalMs (from config); reads cached FeatureStore values written
+        // by the per-feature coroutines above.  No feature compute happens here.
         scope.launch {
-            val tickMs = (1000L / config.tickHz).coerceAtLeast(1L)
+            val tickMs = config.ruleEvalIntervalMs.toLong().coerceAtLeast(1L)
             while (isActive) {
-                featureStore.beginTick()         // NEW: start tracking this tick
-
-                computeFeaturesSafely()
-
-                featureStore.logDerivedTick("CEP") // NEW: print everything computed this tick
-
+                featureStore.beginTick()
+                featureStore.logDerivedTick("CEP")
                 ruleEngine.processTick()
-                checkAndClearAlerts()   // NEW
+                checkAndClearAlerts()
                 delay(tickMs)
             }
         }
@@ -151,21 +174,8 @@ class CepEngine(
         }
     }
 
-    private fun computeFeaturesSafely() {
-        for (def in config.features) {
-            try {
-                when (def) {
-                    is FeatureDef.Window      -> windows.computeWindow(def, featureStore)
-                    is FeatureDef.MultiWindow -> windows.computeMultiWindow(def, featureStore)
-                    is FeatureDef.SlopeMulti  -> windows.computeSlopeMulti(def, featureStore)
-                    is FeatureDef.Delta       -> windows.computeDelta(def, featureStore)
-                    is FeatureDef.Derived     -> DerivedEval.eval(def, featureStore)
-                }
-            } catch (ex: Throwable) {
-                Log.e("CEP", "Feature compute failed for ${def.id}", ex)
-            }
-        }
-    }
+    // Note: computeFeaturesSafely() was removed in Phase 3.
+    // Feature compute is now done by per-feature coroutines launched in start().
 
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {

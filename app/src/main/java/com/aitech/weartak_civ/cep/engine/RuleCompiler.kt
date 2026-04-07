@@ -17,6 +17,8 @@ object RuleCompiler {
             val engine = root.optJSONObject("engine")
             val tickMs = engine?.optInt("window_tick_ms", 1000) ?: 1000
             val tickHz = (1000 / tickMs).coerceAtLeast(1)
+            // Phase 1: rule_eval_interval_ms may differ from window_tick_ms (used in later phases)
+            val ruleEvalIntervalMs = engine?.optInt("rule_eval_interval_ms", tickMs) ?: tickMs
             val features = try { parseFeatures(root.optJSONArray("features")) } catch (ex: Throwable) {
                 android.util.Log.e("CEP", "Failed to parse features", ex); emptyList()
             }
@@ -25,7 +27,7 @@ object RuleCompiler {
             } catch (ex: Throwable) {
                 android.util.Log.e("CEP", "Failed to parse rules", ex); emptyList()
             }
-            CepConfig(tickHz, features, rules)
+            CepConfig(tickHz, features, rules, ruleEvalIntervalMs)
         } catch (t: Throwable) {
             android.util.Log.e("CEP", "Failed to parse CEP config", t)
             CepConfig(1, emptyList(), emptyList())
@@ -38,35 +40,47 @@ object RuleCompiler {
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val id = o.optString("id", o.optString("name"))
+            // Phase 3: per-feature compute cadence; defaults to 1000ms (legacy 1-Hz behaviour)
+            val updateIntervalMs = if (o.has("update_interval_ms") && !o.isNull("update_interval_ms"))
+                o.getLong("update_interval_ms") else 1000L
             when (o.getString("type")) {
                 "window" -> out += FeatureDef.Window(
                     id = id,
                     source = o.getString("source"),
                     op = o.optString("op", o.optString("agg", "min")),
-                    windowSec = o.getInt("window_sec")
+                    windowSec = o.getInt("window_sec"),
+                    // Phase 1: optional freshness guard parsed from JSON "max_age_sec"
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
+                    updateIntervalMs = updateIntervalMs
                 )
                 "window_multi" -> out += FeatureDef.MultiWindow(
                     id = id,
                     source = o.getString("source"),
                     multiPolicy = o.getString("multi_policy"),
                     op = o.optString("op", o.optString("agg", "min")),
-                    windowSec = o.getInt("window_sec")
+                    windowSec = o.getInt("window_sec"),
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
+                    updateIntervalMs = updateIntervalMs
                 )
                 "slope_multi" -> out += FeatureDef.SlopeMulti(
                     id = id,
                     source = o.getString("source"),
                     multiPolicy = o.getString("multi_policy"),
                     windowSec = o.getInt("window_sec"),
-                    unitsPerSec = o.optString("units_per_sec", "per_second")
+                    unitsPerSec = o.optString("units_per_sec", "per_second"),
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
+                    updateIntervalMs = updateIntervalMs
                 )
                 "delta" -> out += FeatureDef.Delta(
                     id = id,
                     source = o.getString("source"),
-                    horizonSec = o.getInt("horizon_sec")
+                    horizonSec = o.getInt("horizon_sec"),
+                    updateIntervalMs = updateIntervalMs
                 )
                 "derived", "compute", "threshold", "logic", "slope" -> out += FeatureDef.Derived(
                     id = id,
-                    expr = o.getJSONObject("expr")
+                    expr = o.getJSONObject("expr"),
+                    updateIntervalMs = updateIntervalMs
                 )
             }
         }

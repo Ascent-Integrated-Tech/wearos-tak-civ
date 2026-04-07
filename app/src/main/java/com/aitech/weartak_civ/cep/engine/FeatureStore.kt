@@ -18,6 +18,15 @@ class FeatureStore {
 
     /** RAW/Generic write (do NOT auto-log). Use this for raw inputs. */
     fun put(id: String, value: Any?, nowMs: Long = System.currentTimeMillis()) {
+        if (value == null) return   // ConcurrentHashMap rejects null values
+        if (value is Double && value.isNaN()) {
+            Log.w("CEP", "[FeatureStore] NaN rejected for key=$id — retaining last valid value")
+            return
+        }
+        if (value is Float && value.isNaN()) {
+            Log.w("CEP", "[FeatureStore] NaN rejected for key=$id — retaining last valid value")
+            return
+        }
         val k = namespacedId(id)
         kv[k] = value
         ts[k] = nowMs
@@ -30,6 +39,15 @@ class FeatureStore {
 
     /** DERIVED write (will be logged once per tick). */
     fun putDerived(id: String, value: Any?, nowMs: Long = System.currentTimeMillis()) {
+        if (value == null) return   // ConcurrentHashMap rejects null values; callers should guard upstream
+        if (value is Double && value.isNaN()) {
+            Log.w("CEP", "[FeatureStore] NaN rejected (derived) for key=$id — retaining last valid value")
+            return
+        }
+        if (value is Float && value.isNaN()) {
+            Log.w("CEP", "[FeatureStore] NaN rejected (derived) for key=$id — retaining last valid value")
+            return
+        }
         val k = namespacedId(id)
         kv[k] = value
         ts[k] = nowMs
@@ -77,6 +95,20 @@ class FeatureStore {
     fun bool(key: String): Boolean? = kv[resolve(key)] as? Boolean
     fun str(key: String): String? = kv[resolve(key)] as? String
     fun any(key: String): Any? = kv[resolve(key)]
+
+    /**
+     * Phase 4 — Freshness-aware read.
+     *
+     * Returns the Double value for [key] only if it exists AND its timestamp is within
+     * [maxAgeSec] seconds of [nowMs].  Returns null if the key is missing OR if its
+     * last-write timestamp is older than [maxAgeSec], so callers (JsonLogic operators)
+     * can treat null as "data too stale to act on".
+     */
+    fun doubleIfFresh(key: String, maxAgeSec: Double, nowMs: Long = System.currentTimeMillis()): Double? {
+        val age = ageSeconds(key, nowMs) ?: return null   // key missing → null
+        if (age > maxAgeSec) return null                   // stale → null
+        return double(key)
+    }
 
     fun snapshot(keys: List<String>): Map<String, Any?> =
         if (keys.isEmpty()) kv.toMap() else keys.associateWith { kv[resolve(it)] }

@@ -76,4 +76,9 @@ object AlertRegistry {
 
     /** Snapshot of all active alerts for the engine to inspect each tick. */
     fun allActive(): Collection<ActiveAlert> = active.values.toList()
+
+    /** Clear all active alerts (e.g., simulation isolation or production profile reset). */
+    fun clearAll() {
+        active.clear()
+    }
 }

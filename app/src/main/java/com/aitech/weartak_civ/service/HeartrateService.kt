@@ -67,9 +67,12 @@ class HeartrateService: Service() {
     private var heartRateSensor: Sensor? = null
     var permission: Boolean = false
     private var deviceWorn = false
+    // Phase 4: legacy EvictingQueue alerting path is gated. CEP engine is the sole alert consumer.
+    // hrValuesEvictingQ and generateAlerts() are retained for rollback but no longer active.
     var enableHrAlerts : Boolean = false
     var highAlertThreshold : Int = 163
     var highAlertNumSecs : Int = 30
+    // P4: queue retained for rollback only; not created or used while CEP path is active.
     var hrValuesEvictingQ : EvictingQueue<Int>? = null
     var highAlertSent : Boolean = false
     var highHrAlertUid : String = ""
@@ -127,6 +130,9 @@ class HeartrateService: Service() {
         return START_NOT_STICKY
     }
 
+    // Phase 4: createEvictingQ() is gated — not called while CEP path is active.
+    // Kept for rollback; remove this and hrValuesEvictingQ once CEP path is stable.
+    @Suppress("unused")
     private fun createEvictingQ() {
         if (highAlertNumSecs > 0) {
             hrValuesEvictingQ = EvictingQueue.create<Int>(highAlertNumSecs)
@@ -228,33 +234,20 @@ class HeartrateService: Service() {
         val msg = msgEvent.message
         if (PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED == msg) {
             enableHrAlerts = (msgEvent.addlIntInfo == 1)
-            if (enableHrAlerts) {
-                runBlocking {
-                    createEvictingQ()
-                }
-            } else {
-                hrValuesEvictingQ = null
-            }
+            // Phase 4: EvictingQueue path gated — CEP engine handles alerts. Queue stays null.
+            hrValuesEvictingQ = null
         } else if (HR_ALERT_THRESHOLDS_CHANGED == msg) {
             if (enableHrAlerts) {
-                runBlocking {
-                    val prevHighAlertNumSecs = highAlertNumSecs
-                    setDataFromDatastore()
-                    if (prevHighAlertNumSecs != highAlertNumSecs) {
-                        createEvictingQ()
-                    }
-                }
+                runBlocking { setDataFromDatastore() }
+                // Phase 4: no queue to recreate; CEP rules pick up threshold changes at next eval.
             }
         }
     }
 
     fun startSensors() {
         Log.d(TAG, "HeartrateService startSensors()")
-        if (enableHrAlerts) {
-            createEvictingQ()
-        } else {
-            hrValuesEvictingQ = null
-        }
+        // Phase 4: EvictingQueue alerting path gated. CEP engine handles all HR alerts.
+        hrValuesEvictingQ = null
 //        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         permission = checkPermissions()
