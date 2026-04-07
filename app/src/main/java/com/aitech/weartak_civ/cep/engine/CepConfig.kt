@@ -62,6 +62,8 @@ sealed interface FeatureDef {
     data class Derived(
         override val id: String,
         val expr: org.json.JSONObject,
+        // Gap 1: optional freshness guard for derived inputs.
+        val maxAgeSec: Double? = null,
         // Phase 3: per-feature compute cadence
         override val updateIntervalMs: Long = 1000L
     ): FeatureDef
@@ -105,6 +107,5 @@ data class ExitCondition(
     val exitAboveKey: String? = null,
     val hysteresis: Double = 0.0
 )
-
 
 

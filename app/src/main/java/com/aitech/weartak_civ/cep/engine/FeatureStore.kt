@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.cep.engine
 
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 // FeatureStore.kt  (patch)
 class FeatureStore {
@@ -9,8 +10,12 @@ class FeatureStore {
     private val kv = ConcurrentHashMap<String, Any?>()
     private val ts = ConcurrentHashMap<String, Long>()
 
-    // per-tick collection of newly computed (derived) features
-    private val tickDerived = mutableListOf<Pair<String, Any?>>()
+    // per-tick collection of newly computed (derived) features.
+    // CopyOnWriteArrayList: Phase 3 feature coroutines call putDerived() concurrently
+    // while the rule-eval coroutine calls beginTick()/logDerivedTick().  A plain
+    // mutableListOf() (ArrayList) is not thread-safe and corrupts under concurrent
+    // add() calls, leaving null slots that crash the joinToString destructure lambda.
+    private val tickDerived = CopyOnWriteArrayList<Pair<String, Any?>>()
 
     // If it's already a dotted path (e.g., "ambient.temp_c" or "features.hr.hrr"), don't prefix.
     fun namespacedId(id: String): String =
@@ -113,6 +118,22 @@ class FeatureStore {
     fun snapshot(keys: List<String>): Map<String, Any?> =
         if (keys.isEmpty()) kv.toMap() else keys.associateWith { kv[resolve(it)] }
 
+    /**
+     * Returns a detached snapshot of all current key-value pairs.
+     *
+     * Namespace prefixes are stripped from keys in the returned map so assertions can use
+     * clean feature ids regardless of how this store is scoped internally.
+     *
+     * @return A copied map of current key/value entries suitable for debug and tests.
+     */
+    fun debugSnapshot(): Map<String, Any?> {
+        val prefix = namespacedId("")
+        return kv.entries.associate { (k, v) ->
+            val stripped = if (k.startsWith(prefix)) k.removePrefix(prefix) else k
+            stripped to v
+        }
+    }
+
     // -------- per-tick logging --------
 
     fun beginTick() {
@@ -122,7 +143,10 @@ class FeatureStore {
     /** One compact log line with all derived writes this tick. */
     fun logDerivedTick(tag: String = "CEP") {
         if (tickDerived.isEmpty()) return
-        val body = tickDerived.joinToString { (k, v) -> "$k=$v" }
+        // Use entry.first/entry.second instead of destructuring: the destructure lambda
+        // generates a non-null parameter check that crashes if a null Pair somehow
+        // reaches the iterator (defensive, in addition to the CopyOnWriteArrayList fix).
+        val body = tickDerived.joinToString { entry -> "${entry.first}=${entry.second}" }
         //Log.i(tag, "[CEP][DERIVED] $body")
     }
 }

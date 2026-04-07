@@ -279,8 +279,28 @@ class CEPSimulationService : Service() {
                 delay(2_000)
             }
             Log.i(TAG, "[P4] ✅ All Phase 4 scenarios complete")
-            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 testing complete")
-            updateNotification("[ALL] P1 + P2 + P3 + P4 complete")
+            updateNotification("[P4] Complete – P5 starting in 3 s")
+            delay(3_000)
+
+            // ── Phase 5: 500ms rule-eval cadence verification ────────────────
+            val phase5Scenarios = listOf(
+                Scenario.P5_T1_ALERT_LATENCY_BASELINE,
+                Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET,
+                Scenario.P5_T3_NO_DOUBLE_FIRE,
+                Scenario.P5_T4_SUSTAIN_ACCURACY
+            )
+            Log.i(TAG, "[SIM] === PHASE 5 START === rule_eval_interval_ms=500")
+            for (scenario in phase5Scenarios) {
+                Log.i(TAG, "[P5] ▶ Starting: $scenario")
+                updateNotification("[P5] Running: $scenario")
+                runPhase5Scenario(scenario)
+                Log.i(TAG, "[P5] ✓ Completed: $scenario")
+                updateNotification("[P5] Done: $scenario")
+                delay(3_000)
+            }
+            Log.i(TAG, "[SIM] === PHASE 5 COMPLETE ===")
+            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 testing complete")
+            updateNotification("[ALL] P1 + P2 + P3 + P4 + P5 complete")
         }
     }
 
@@ -434,7 +454,13 @@ class CEPSimulationService : Service() {
         //         wall-clock (tick ~1800), NOT at tick 180 (18s).  Same guard as P1-T3
         //         but at 10× tick rate — the sharpest discriminating test for the
         //         wall-clock sustain fix.
-        P4_T5_HIGHRATE_10HZ
+        P4_T5_HIGHRATE_10HZ,
+
+        // ── Phase 5: 500 ms rule-eval verification ───────────────────────────
+        P5_T1_ALERT_LATENCY_BASELINE,
+        P5_T2_ALERT_LATENCY_FAST_ONSET,
+        P5_T3_NO_DOUBLE_FIRE,
+        P5_T4_SUSTAIN_ACCURACY
     }
 
     private data class ScenarioConfig(
@@ -776,12 +802,10 @@ class CEPSimulationService : Service() {
             //   Observe: engine accepts old-timestamped events without crash.
             //   [ASSERT][P4_T1_STALE_TIMESTAMP] SUMMARY no_alerts_fired.
             //
-            //   NOTE: This is a smoke/robustness test only.  The freshness guard in
-            //   FeatureStore.doubleIfFresh() and the gte_key_fresh / lte_key_fresh JsonLogic
-            //   operators are now wired up in code, but no rule in cep_rules.json uses them
-            //   yet.  Until at least one rule adopts gte_key_fresh / lte_key_fresh, stale
-            //   timestamps will not suppress an otherwise-valid alert; this scenario only
-            //   verifies that 5-minute-old event timestamps do not crash the engine.
+            //   NOTE: This is primarily a smoke/robustness test.  Freshness guards are
+            //   wired in both FeatureStore.doubleIfFresh() and JsonLogic
+            //   (gte_key_fresh/lte_key_fresh), and at least one HR resting rule now uses
+            //   gte_key_fresh. This scenario still focuses on stale timestamp robustness.
             Scenario.P4_T1_STALE_TIMESTAMP -> ScenarioConfig(
                 ticks = 30, tickMs = 1000,
                 activity = "STILL", sleeping = false,
@@ -860,7 +884,240 @@ class CEPSimulationService : Service() {
                 skinWristC = 33.0, skinHandC = 32.0,
                 wet = false, immersion = false
             )
+
+            // ── Phase 5 Scenarios ─────────────────────────────────────────────
+            Scenario.P5_T1_ALERT_LATENCY_BASELINE -> ScenarioConfig(
+                // Note: P5_T1 is driven by runP5T1AlertLatencyBaseline(), not simulateScenario().
+                // HR=170 targets hr_zone4_rest_immediate_emergency (~84 % HRR with default profile).
+                // 13 ticks × 500 ms = 6 500 ms spans the 5-second sustain with one eval cycle margin.
+                ticks = 13, tickMs = 500,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 170.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET -> ScenarioConfig(
+                ticks = 30, tickMs = 500,
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            Scenario.P5_T3_NO_DOUBLE_FIRE -> ScenarioConfig(
+                ticks = 40, tickMs = 500,
+                activity = "RUN", sleeping = false,
+                ambientC = 18.0, windMps = 1.5, humidityPct = 45.0, lux = 500.0,
+                entryHr = 195.0,
+                hrvRmssdMs = 10.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 1.0, cadenceSpm = 170.0, gyroRms = 6.0f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
+            Scenario.P5_T4_SUSTAIN_ACCURACY -> ScenarioConfig(
+                ticks = 380, tickMs = 500,
+                activity = "STILL", sleeping = false,
+                ambientC = 22.0, windMps = 0.2, humidityPct = 40.0, lux = 300.0,
+                entryHr = 125.0,
+                hrvRmssdMs = 50.0, spo2Pct = 98.0, ppgAmp = 0.9f,
+                accelMagG = 0.005, cadenceSpm = null, gyroRms = 0.2f,
+                skinWristC = 33.0, skinHandC = 32.0,
+                wet = false, immersion = false
+            )
         }
+    }
+
+    /**
+     * Runs a single Phase 5 scenario body.
+     *
+     * @param scenario Phase 5 scenario enum entry to execute.
+     */
+    private suspend fun runPhase5Scenario(scenario: Scenario) {
+        when (scenario) {
+            Scenario.P5_T1_ALERT_LATENCY_BASELINE -> runP5T1AlertLatencyBaseline()
+            Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET -> runP5T2AlertLatencyFastOnset()
+            Scenario.P5_T3_NO_DOUBLE_FIRE -> runP5T3NoDoubleFire()
+            Scenario.P5_T4_SUSTAIN_ACCURACY -> runP5T4SustainAccuracy()
+            else -> {
+                // no-op: this method is only for P5 scenarios
+            }
+        }
+    }
+
+    /**
+     * Emits the minimum signal set needed for HR-rule scenarios in Phase 5.
+     *
+     * @param activity Current activity state to publish.
+     * @param hrBpm Heart-rate bpm value to publish.
+     * @param sleep Whether sleep state is active.
+     * @param onWrist Off-body flag (1=on wrist, 0=off wrist).
+     */
+    private suspend fun emitPhase5HrSample(
+        activity: String,
+        hrBpm: Double,
+        sleep: Boolean = false,
+        onWrist: Int = 1
+    ) {
+        val ts = System.currentTimeMillis()
+        CepBus.emit(CepEvent(Topics.ACTIVITY, ActivityPayload(activity), ts = ts))
+        CepBus.emit(CepEvent(Topics.SLEEP, SleepPayload(sleep), ts = ts))
+        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(onWrist), ts = ts))
+        CepBus.emit(CepEvent(Topics.HEART_RATE, HeartRatePayload(bpm = hrBpm), ts = ts))
+    }
+
+    /**
+     * Waits for first activation of [ruleId].
+     *
+     * @param ruleId Rule id to poll in [AlertRegistry].
+     * @param timeoutMs Max wait duration in milliseconds.
+     * @param pollMs Poll cadence in milliseconds.
+     * @return Epoch-ms fire time if observed, else null on timeout.
+     */
+    private suspend fun waitForRuleActivation(ruleId: String, timeoutMs: Long, pollMs: Long): Long? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() <= deadline) {
+            if (AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                return System.currentTimeMillis()
+            }
+            delay(pollMs)
+        }
+        return null
+    }
+
+    /**
+     * P5-T1: latency baseline for a 5-second sustain rule at 500ms eval cadence.
+     *
+     * hr_zone4_rest_immediate_emergency requires hrr_percent in [80, 90).
+     * With the default profile (HRmax=190, restHR=60), HR=170 bpm yields ~84 % HRR,
+     * placing it squarely in zone 4.  Samples are emitted at 500 ms intervals for
+     * 6 500 ms (13 iterations) to span the 5-second sustain threshold with one
+     * extra eval cycle of headroom.  The assertion checks that the rule fires within
+     * one 500 ms eval cycle of the sustain being met: elapsed in [5 000, 5 600] ms.
+     */
+    private suspend fun runP5T1AlertLatencyBaseline() {
+        val ruleId = "hr_zone4_rest_immediate_emergency"
+        val sustainMs = 5_000L   // sustained_for_sec = 5 for this rule
+        emitResetBurst()
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        // 13 × 500 ms = 6 500 ms — spans the 5-second sustain plus one eval cycle of margin
+        repeat(13) {
+            emitPhase5HrSample(activity = "STILL", hrBpm = 170.0, sleep = false, onWrist = 1)
+            if (fireTime == null && AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                fireTime = System.currentTimeMillis()
+            }
+            delay(500L)
+        }
+        if (fireTime == null) {
+            Log.i("CEP", "[P5-T1] ASSERT FAIL rule=$ruleId did_not_fire_within_ms=6500")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in sustainMs..(sustainMs + 600L)
+            Log.i("CEP", "[P5-T1] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=${sustainMs}..${sustainMs + 600L}")
+        }
+        emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P5-T2: verifies 10-second sustained rule latency under 500ms rule-eval cadence.
+     *
+     * Continuously emits trigger values at 500ms and asserts first fire is near 10 seconds.
+     */
+    private suspend fun runP5T2AlertLatencyFastOnset() {
+        val ruleId = "hr_hrmax_exercise_60s_emergency"
+        emitResetBurst()
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(30) {
+            emitPhase5HrSample(activity = "RUN", hrBpm = 195.0, sleep = false, onWrist = 1)
+            repeat(5) {
+                if (fireTime == null && AlertRegistry.allActive().any { alert -> alert.ruleId == ruleId }) {
+                    fireTime = System.currentTimeMillis()
+                }
+                delay(100L)
+            }
+        }
+        if (fireTime == null) {
+            Log.i("CEP", "[P5-T2] ASSERT FAIL rule=$ruleId did_not_fire")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in 9_500L..11_500L
+            Log.i("CEP", "[P5-T2] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=9500..11500")
+        }
+        emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P5-T3: verifies a sustained condition produces exactly one activation.
+     *
+     * Uses the same trigger source as P5-T2 and counts false→true activation edges.
+     * hr_hrmax_exercise_60s_emergency has sustained_for_sec=10 and hold_down_sec=0.
+     * The observation window is (sustainedForSec + holdDownSec + 5) s = 15 s — long
+     * enough for the rule to fire once (at ~10 s) while confirming it does not fire a
+     * second time within the remaining window.
+     */
+    private suspend fun runP5T3NoDoubleFire() {
+        val ruleId = "hr_hrmax_exercise_60s_emergency"
+        val sustainedForSec = 10L   // sustained_for_sec for this rule
+        val holdDownSec     = 0L    // hold_down_sec for this rule (no hold-down configured)
+        emitResetBurst()
+        val endAt = System.currentTimeMillis() + (sustainedForSec + holdDownSec + 5L) * 1_000L
+        var wasActive = false
+        var activations = 0
+        while (System.currentTimeMillis() < endAt) {
+            emitPhase5HrSample(activity = "RUN", hrBpm = 195.0, sleep = false, onWrist = 1)
+            repeat(5) {
+                val isActiveNow = AlertRegistry.allActive().any { it.ruleId == ruleId }
+                if (isActiveNow && !wasActive) {
+                    activations += 1
+                    Log.i("CEP", "[P5-T3] activation rule=$ruleId count=$activations atMs=${System.currentTimeMillis()}")
+                }
+                wasActive = isActiveNow
+                delay(100L)
+            }
+        }
+        val pass = activations == 1
+        Log.i("CEP", "[P5-T3] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId activations=$activations expected=1 holdDownSec=$holdDownSec")
+        emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P5-T4: validates long sustain timing accuracy at 500ms rule-eval cadence.
+     *
+     * Emits resting high HR for 190 seconds and asserts fire near 180 seconds.
+     */
+    private suspend fun runP5T4SustainAccuracy() {
+        val ruleId = "hr_hrmax_rest_immediate_emergency"
+        emitResetBurst()
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(380) {
+            emitPhase5HrSample(activity = "STILL", hrBpm = 195.0, sleep = false, onWrist = 1)
+            repeat(2) {
+                if (fireTime == null && AlertRegistry.allActive().any { alert -> alert.ruleId == ruleId }) {
+                    fireTime = System.currentTimeMillis()
+                }
+                delay(200L)
+            }
+            delay(100L)
+        }
+        if (fireTime == null) {
+            Log.i("CEP", "[P5-T4] ASSERT FAIL rule=$ruleId did_not_fire")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in 175_000L..185_000L
+            Log.i("CEP", "[P5-T4] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=175000..185000")
+        }
+        emitResetBurst()
+        AlertRegistry.clearAll()
     }
 
     /*private suspend fun simulateScenario(s: Scenario, ageYears: Int = 35, hrRest: Int = 60) {

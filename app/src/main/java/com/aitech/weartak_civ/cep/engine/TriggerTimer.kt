@@ -12,6 +12,17 @@ class TriggerTimer(
     private var warnFiredThisEpisode = false
 
     /**
+     * Returns whole seconds elapsed since the condition most recently became true.
+     *
+     * This is observational only and does not mutate timer state.
+     *
+     * @param now Current epoch time in milliseconds.
+     * @return Elapsed whole seconds while condition is continuously true, or 0 when false.
+     */
+    fun elapsedSec(now: Long = System.currentTimeMillis()): Long =
+        conditionTrueStartMs?.let { (now - it) / 1000L } ?: 0L
+
+    /**
      * @param effectiveSustainSec Sustain duration in real wall-clock seconds (rate-independent).
      * @param sustainWarnSec Optional warn threshold in seconds; must be in [1, effectiveSustainSec).
      */
@@ -39,5 +50,4 @@ class TriggerTimer(
         return TickResult(warnFired = warnFired, mainFired = mainFired)
     }
 }
-
 

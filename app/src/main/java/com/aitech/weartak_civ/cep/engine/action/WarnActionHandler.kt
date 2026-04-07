@@ -8,7 +8,6 @@ import android.content.Intent
 import android.util.Log
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.UserWarnActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -49,8 +48,11 @@ class WarnActionHandler(
         val uid      = tak.rawUid
         val category = ctx.action.category ?: "CAT_HEALTH_GENERIC"
 
-        // Show UserWarnActivity only if user warning is enabled
-        val enableUserWarning = dataRepository.getEnableUserWarning.first()
+        // Show UserWarnActivity only if user warning is enabled.
+        // Use the Application-level repo so this works when MainActivity has never started
+        // (e.g. service launched headlessly during simulation or ADB testing).
+        val repo = (WearTakApplication.AppCtx.app as WearTakApplication).repo
+        val enableUserWarning = repo.getEnableUserWarning.first()
         if (enableUserWarning) {
             val appContext = WearTakApplication.AppCtx.app.applicationContext
             Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 5, timeBtwnVibesMs = 120L)

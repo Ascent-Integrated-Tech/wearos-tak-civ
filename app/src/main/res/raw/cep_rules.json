@@ -9,7 +9,7 @@
   ],
   "engine": {
     "window_tick_ms": 1000,
-    "rule_eval_interval_ms": 1000,
+    "rule_eval_interval_ms": 500,
     "_comment": "Phase 1: window_tick_ms sets the ring-buffer resolution; rule_eval_interval_ms controls how often rules are evaluated. Both default to 1000ms (1 Hz). Decoupling them is the Phase 5 goal."
   },
   "features": [
@@ -896,9 +896,10 @@
           },
           {"gte_key": ["offbody.on_wrist", 0.5]},
           {
-            "gte_keys": [
+            "gte_key_fresh": [
               "features.heart_rate",
-              "features.hr.high_threshold_bpm"
+              100,
+              5
             ]
           }
         ]
@@ -1017,7 +1018,7 @@
       },
       "sustained_for_sec": 10,
       "action": {
-        "type": "nonelog",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": ">HRmax TRIGGER (EXERCISE, \u2265100% HRR for \u22655 min)",
         "tags": [
@@ -1070,7 +1071,7 @@
       "sustained_for_sec": 180,
       "hold_down_sec": 120,
       "action": {
-        "type": "nonelog",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": ">HRmax TRIGGER (REST, \u2265100% HRR)",
         "tags": [
@@ -1674,7 +1675,7 @@
       },
       "sustained_for_sec": 5,
       "action": {
-        "type": "none",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": "HR ZONE 4 \u2014 between 80% and 90% HRR",
         "tags": [

@@ -80,6 +80,7 @@ object RuleCompiler {
                 "derived", "compute", "threshold", "logic", "slope" -> out += FeatureDef.Derived(
                     id = id,
                     expr = o.getJSONObject("expr"),
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getDouble("max_age_sec") else null,
                     updateIntervalMs = updateIntervalMs
                 )
             }
@@ -212,5 +213,4 @@ object RuleCompiler {
         return out
     }
 }
-
 
