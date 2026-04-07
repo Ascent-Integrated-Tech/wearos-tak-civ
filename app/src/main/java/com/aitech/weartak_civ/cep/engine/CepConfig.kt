@@ -3,39 +3,69 @@ package com.aitech.weartak_civ.cep.engine
 data class CepConfig(
     val tickHz: Int,
     val features: List<FeatureDef>,
-    val rules: List<RuleDef>
+    val rules: List<RuleDef>,
+    // Phase 1: explicit rule-evaluation interval (may differ from ingest tick in later phases)
+    val ruleEvalIntervalMs: Int = 1000
 )
 
 sealed interface FeatureDef {
     val id: String
+    /**
+     * Phase 3: how often this feature is recomputed (ms).
+     * Default 1000ms preserves the legacy 1-Hz behaviour.
+     * Set a larger value (e.g. 5000) for expensive or slow-changing features;
+     * set a smaller value (e.g. 500) for features that must be fresher than the
+     * rule-eval cadence.  The rule-eval loop reads the last cached value regardless
+     * of when the feature last computed.
+     */
+    val updateIntervalMs: Long
+
     data class Window(
         override val id: String,
         val source: String,
         val op: String,
-        val windowSec: Int
+        val windowSec: Int,
+        // Phase 1: optional freshness guard — feature is only emitted if source data age ≤ maxAgeSec
+        val maxAgeSec: Long? = null,
+        // Phase 3: per-feature compute cadence
+        override val updateIntervalMs: Long = 1000L
     ): FeatureDef
     data class MultiWindow(
         override val id: String,
         val source: String,
         val multiPolicy: String, // "min", "max"
         val op: String,
-        val windowSec: Int
+        val windowSec: Int,
+        // Phase 1: optional freshness guard
+        val maxAgeSec: Long? = null,
+        // Phase 3: per-feature compute cadence
+        override val updateIntervalMs: Long = 1000L
     ): FeatureDef
     data class SlopeMulti(
         override val id: String,
         val source: String,
         val multiPolicy: String, // "min_channel"
         val windowSec: Int,
-        val unitsPerSec: String // "per_second" | "per_minute"
+        val unitsPerSec: String, // "per_second" | "per_minute"
+        // Phase 1: optional freshness guard
+        val maxAgeSec: Long? = null,
+        // Phase 3: per-feature compute cadence
+        override val updateIntervalMs: Long = 1000L
     ): FeatureDef
     data class Delta(
         override val id: String,
         val source: String,
-        val horizonSec: Int
+        val horizonSec: Int,
+        // Phase 3: per-feature compute cadence
+        override val updateIntervalMs: Long = 1000L
     ): FeatureDef
     data class Derived(
         override val id: String,
-        val expr: org.json.JSONObject
+        val expr: org.json.JSONObject,
+        // Gap 1: optional freshness guard for derived inputs.
+        val maxAgeSec: Double? = null,
+        // Phase 3: per-feature compute cadence
+        override val updateIntervalMs: Long = 1000L
     ): FeatureDef
 }
 
@@ -77,6 +107,5 @@ data class ExitCondition(
     val exitAboveKey: String? = null,
     val hysteresis: Double = 0.0
 )
-
 
 

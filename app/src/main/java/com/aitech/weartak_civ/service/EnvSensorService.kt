@@ -16,11 +16,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
@@ -49,16 +46,12 @@ class EnvSensorService : Service(), SensorEventListener {
     private var lastLux: Float? = null
     private var lastHumidity: Float? = null
 
-    // emit at most 1x per second
-    private var lastEmitMs: Long = 0
-    private val minEmitIntervalMs: Long = 1000
+    // Phase 4: CEP events are now emitted at native sensor rate directly from onSensorChanged.
+    // The 1 Hz throttle below applies only to notification UI updates and logSnapshot — not CEP emission.
+    private var lastNotifMs: Long = 0
+    private val minNotifIntervalMs: Long = 1000
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var emitJob: Job? = null
-
-    // Emit cadence (ms). Keep 1000ms for now; tune later.
-    //private const val EMIT_INTERVAL_MS: Long = 1000L
-    private val EMIT_INTERVAL_MS: Long = 1000L
 
 
     override fun onCreate() {
@@ -90,8 +83,8 @@ class EnvSensorService : Service(), SensorEventListener {
         sLight?.let    { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         rHumidity?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
 
-        // Start CEP emit loop (1 Hz)
-        startEmitLoopIfNeeded()
+        // Phase 4: CEP emission is now driven by onSensorChanged at native rate.
+        // No separate emit loop needed.
 
         Log.i(TAG, "EnvSensorService started in foreground; listeners registered.")
         return START_STICKY
@@ -99,7 +92,6 @@ class EnvSensorService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         try {
-            emitJob?.cancel()
             serviceScope.cancel()
         } catch (_: Throwable) { }
         sm.unregisterListener(this)
@@ -113,22 +105,39 @@ class EnvSensorService : Service(), SensorEventListener {
 
     // ---- SensorEventListener ----
     override fun onSensorChanged(ev: SensorEvent) {
+        val now = System.currentTimeMillis()
+
+        // Phase 4: update cached value and emit to CepBus at native sensor rate.
         when (ev.sensor.type) {
             Sensor.TYPE_AMBIENT_TEMPERATURE -> lastTempC = ev.values.getOrNull(0)
             Sensor.TYPE_PRESSURE            -> lastPressureHpa = ev.values.getOrNull(0)
-            Sensor.TYPE_LIGHT               -> lastLux = ev.values.getOrNull(0)
-            Sensor.TYPE_RELATIVE_HUMIDITY   -> lastHumidity = ev.values.getOrNull(0)
+            Sensor.TYPE_LIGHT               -> {
+                lastLux = ev.values.getOrNull(0)
+                lastLux?.let { lux ->
+                    val covered = lux < 5.0f
+                    serviceScope.launch {
+                        try {
+                            CepBus.emit(CepEvent(topic = Topics.LIGHT, payload = LightPayload(lux = lux, covered = covered), ts = now))
+                        } catch (t: Throwable) { Log.e(TAG, "CEP emit light failed", t) }
+                    }
+                }
+            }
+            Sensor.TYPE_RELATIVE_HUMIDITY   -> {
+                lastHumidity = ev.values.getOrNull(0)
+                lastHumidity?.let { rh ->
+                    serviceScope.launch {
+                        try {
+                            CepBus.emit(CepEvent(topic = Topics.HUMIDITY, payload = HumidityPayload(relativePercent = rh), ts = now))
+                        } catch (t: Throwable) { Log.e(TAG, "CEP emit humidity failed", t) }
+                    }
+                }
+            }
         }
 
-        val now = System.currentTimeMillis()
-        if (now - lastEmitMs >= minEmitIntervalMs) {
-            lastEmitMs = now
+        // Throttle notification and log updates to 1 Hz — UI/logging only, not CEP emission.
+        if (now - lastNotifMs >= minNotifIntervalMs) {
+            lastNotifMs = now
             logSnapshot(now)
-            // Optionally refresh notification content text to reflect latest snapshot
-            // (kept silent/ongoing to avoid user spam)
-
-
-
             updateForegroundNotification()
         }
     }
@@ -196,43 +205,6 @@ class EnvSensorService : Service(), SensorEventListener {
         val pStr = lastPressureHpa?.let { "${round1(it)} hPa" } ?: "—"
         val lStr = lastLux?.let { "${round1(it)} lux" } ?: "—"
         //Log.d(TAG, "ts=$tsMs | ambientTemp=$tStr | pressure=$pStr | light=$lStr")
-    }
-
-    // ---- CEP emission (1 Hz) ----
-    private fun startEmitLoopIfNeeded() {
-        if (emitJob?.isActive == true) return
-        emitJob = serviceScope.launch {
-            while (isActive) {
-                emitHumidityAndLight()
-                delay(EMIT_INTERVAL_MS)
-            }
-        }
-    }
-
-    private suspend fun emitHumidityAndLight() {
-        try {
-            lastLux?.let { lux ->
-                // Rule-aligned proxy; treat very low lux as garment coverage (covered=true when lux < 5)
-                val covered = lux < 5.0f
-                CepBus.emit(
-                    CepEvent(
-                        topic = Topics.LIGHT,
-                        payload = LightPayload(lux = lux, covered = covered)
-                    )
-                )
-            }
-            lastHumidity?.let { rh ->
-                CepBus.emit(
-                    CepEvent(
-                        topic = Topics.HUMIDITY,
-                        payload = HumidityPayload(relativePercent = rh)
-                    )
-                )
-            }
-            Log.d(TAG, "CEP emit light=${lastLux} lux, humidity=${lastHumidity} %")
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed CEP emit (light/humidity)", t)
-        }
     }
 
     private fun round1(v: Float): String {

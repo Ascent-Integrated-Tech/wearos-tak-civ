@@ -58,36 +58,69 @@ object JsonLogic {
                 }
 
                 node.has("lte_key") -> {
+                    // Phase 4: null feature (missing or stale) → false, not +infinity.
                     val a = node.getJSONArray("lte_key")
-                    val x = fs.double(a.getString(0)) ?: Double.POSITIVE_INFINITY
-                    val y = a.optDouble(1, Double.POSITIVE_INFINITY) // safely read literal
+                    val x = fs.double(a.getString(0)) ?: return false
+                    val y = a.optDouble(1, Double.POSITIVE_INFINITY)
+                    x <= y
+                }
+
+                node.has("lte_key_fresh") -> {
+                    // Phase 4: like lte_key but enforces max_age_sec freshness guard.
+                    // Syntax: ["featureKey", threshold, maxAgeSec]
+                    // Returns false if feature is missing OR older than maxAgeSec.
+                    val a = node.getJSONArray("lte_key_fresh")
+                    val x = fs.doubleIfFresh(a.getString(0), a.getDouble(2)) ?: return false
+                    val y = a.optDouble(1, Double.POSITIVE_INFINITY)
                     x <= y
                 }
 
                 node.has("gte_key") -> {
+                    // Phase 4: null feature (missing or stale) → false, not -infinity.
                     val a = node.getJSONArray("gte_key")
-                    val x = fs.double(a.getString(0)) ?: Double.NEGATIVE_INFINITY
-                    val y = a.optDouble(1, Double.NEGATIVE_INFINITY) // safely read literal
+                    val x = fs.double(a.getString(0)) ?: return false
+                    val y = a.optDouble(1, Double.NEGATIVE_INFINITY)
+                    x >= y
+                }
+
+                node.has("gte_key_fresh") -> {
+                    // Phase 4: like gte_key but enforces max_age_sec freshness guard.
+                    // Syntax: ["featureKey", threshold, maxAgeSec]
+                    // Returns false if feature is missing OR older than maxAgeSec.
+                    val a = node.getJSONArray("gte_key_fresh")
+                    val x = fs.doubleIfFresh(a.getString(0), a.getDouble(2)) ?: return false
+                    val y = a.optDouble(1, Double.NEGATIVE_INFINITY)
                     x >= y
                 }
 
                 node.has("gte_keys") -> {
+                    // Phase 4: either key null → false.
                     val a = node.getJSONArray("gte_keys")
-                    val x = fs.double(a.getString(0)) ?: Double.NEGATIVE_INFINITY
-                    val y = fs.double(a.getString(1)) ?: Double.POSITIVE_INFINITY
+                    val x = fs.double(a.getString(0)) ?: return false
+                    val y = fs.double(a.getString(1)) ?: return false
                     x >= y
                 }
 
+                node.has("lte_keys") -> {
+                    // Phase 4: either key null → false.
+                    val a = node.getJSONArray("lte_keys")
+                    val x = fs.double(a.getString(0)) ?: return false
+                    val y = fs.double(a.getString(1)) ?: return false
+                    x <= y
+                }
+
                 node.has("lt_key") -> {
+                    // Phase 4: null feature → false.
                     val a = node.getJSONArray("lt_key")
-                    val x = fs.double(a.getString(0)) ?: Double.POSITIVE_INFINITY
-                    val y = a.getDouble(1)  // <-- literal
+                    val x = fs.double(a.getString(0)) ?: return false
+                    val y = a.getDouble(1)
                     x < y
                 }
                 node.has("gt_key") -> {
+                    // Phase 4: null feature → false.
                     val a = node.getJSONArray("gt_key")
-                    val x = fs.double(a.getString(0)) ?: Double.NEGATIVE_INFINITY
-                    val y = a.getDouble(1)  // <-- literal
+                    val x = fs.double(a.getString(0)) ?: return false
+                    val y = a.getDouble(1)
                     x > y
                 }
                 node.has("between") -> {

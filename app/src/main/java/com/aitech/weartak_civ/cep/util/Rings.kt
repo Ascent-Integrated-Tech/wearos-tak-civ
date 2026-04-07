@@ -49,4 +49,123 @@ class ArrayRing(private val cap: Int) {
     }
 }
 
+// ── Phase 2: timestamp-aware ring variants ────────────────────────────────────
+// Samples are stored with their wall-clock measurement timestamps so that
+// windows can be computed by real elapsed time rather than tick count.
+
+/**
+ * Ring buffer for scalar (Double) samples with per-sample timestamps.
+ *
+ * Phase 2 replacement for [DoubleRing]: switching from count-based to
+ * time-based window extraction makes CEP feature windows rate-independent.
+ */
+class TimedDoubleRing(private val cap: Int) {
+    private val values = DoubleArray(cap)
+    private val times  = LongArray(cap)
+    private var size = 0
+    private var head = 0
+
+    fun add(v: Double, tsMs: Long) {
+        values[head] = v
+        times[head]  = tsMs
+        head = (head + 1) % cap
+        if (size < cap) size++
+    }
+
+    fun lastOrNull(): Double? = if (size == 0) null else values[(head - 1 + cap) % cap]
+    fun lastTsOrNull(): Long?  = if (size == 0) null else  times[(head - 1 + cap) % cap]
+
+    /**
+     * Values whose timestamp falls in the half-open interval
+     * (nowMs - windowMs, nowMs].  Walks backwards (newest-first) and stops
+     * at the first sample older than the cutoff — valid because samples are
+     * ingested in monotonically non-decreasing timestamp order.
+     */
+    fun tailByTime(windowMs: Long, nowMs: Long): List<Double> {
+        val cutoff = nowMs - windowMs
+        val out = ArrayList<Double>()
+        for (i in 0 until size) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            if (times[idx] <= cutoff) break
+            out.add(values[idx])
+        }
+        out.reverse()
+        return out
+    }
+
+    /** Same as [tailByTime] but returns (tsMs, value) pairs. */
+    fun tailByTimePairs(windowMs: Long, nowMs: Long): List<Pair<Long, Double>> {
+        val cutoff = nowMs - windowMs
+        val out = ArrayList<Pair<Long, Double>>()
+        for (i in 0 until size) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            if (times[idx] <= cutoff) break
+            out.add(Pair(times[idx], values[idx]))
+        }
+        out.reverse()
+        return out
+    }
+
+    /**
+     * Returns the value of the most-recent sample whose timestamp is
+     * at-or-before (nowMs - horizonMs).  Used for Delta features:
+     * delta = current − value_at(nowMs − horizonSec).
+     */
+    fun getByTime(horizonMs: Long, nowMs: Long): Double? {
+        val target = nowMs - horizonMs
+        for (i in 0 until size) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            if (times[idx] <= target) return values[idx]
+        }
+        return null
+    }
+}
+
+/**
+ * Ring buffer for multi-channel (List<Double>) samples with per-sample timestamps.
+ * Phase 2 replacement for [ArrayRing].
+ */
+class TimedArrayRing(private val cap: Int) {
+    private val buf   = Array(cap) { emptyList<Double>() }
+    private val times = LongArray(cap)
+    private var size = 0
+    private var head = 0
+
+    fun add(v: List<Double>, tsMs: Long) {
+        buf[head]   = v
+        times[head] = tsMs
+        head = (head + 1) % cap
+        if (size < cap) size++
+    }
+
+    fun lastOrNull(): List<Double>? = if (size == 0) null else buf[(head - 1 + cap) % cap]
+    fun lastTsOrNull(): Long?       = if (size == 0) null else times[(head - 1 + cap) % cap]
+
+    /** Channel-lists whose timestamp falls in (nowMs - windowMs, nowMs]. */
+    fun tailByTime(windowMs: Long, nowMs: Long): List<List<Double>> {
+        val cutoff = nowMs - windowMs
+        val out = ArrayList<List<Double>>()
+        for (i in 0 until size) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            if (times[idx] <= cutoff) break
+            out.add(buf[idx])
+        }
+        out.reverse()
+        return out
+    }
+
+    /** (tsMs, channels) pairs within the window. */
+    fun tailByTimePairs(windowMs: Long, nowMs: Long): List<Pair<Long, List<Double>>> {
+        val cutoff = nowMs - windowMs
+        val out = ArrayList<Pair<Long, List<Double>>>()
+        for (i in 0 until size) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            if (times[idx] <= cutoff) break
+            out.add(Pair(times[idx], buf[idx]))
+        }
+        out.reverse()
+        return out
+    }
+}
+
 

@@ -47,8 +47,8 @@ import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
+import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
-//import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 
