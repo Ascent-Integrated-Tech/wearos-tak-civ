@@ -1528,7 +1528,7 @@ class CotDispatchService : Service() {
         return out.toString()
     }
 
-    fun finalMarkerTitle(markerTitle: String?): String {
+    private fun finalMarkerTitle(markerTitle: String?): String {
         // Marker with Time no Date.
         val calendar: Calendar = Calendar.getInstance()
         calendar.setTime(Date()) // Set the current time

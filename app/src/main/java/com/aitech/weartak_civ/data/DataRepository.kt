@@ -1307,9 +1307,6 @@ class DataRepository(private val context: Context) {
     val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
 
     // UI-facing API
-    suspend fun requestMarkerDropLocation(markerType: MarkerType, remark: String, timeMillis: Long, lat: Double, lon: Double) =
-        _markerDropRequests.emit(MarkerDropRequest(markerType, remark, timeMillis))
-
     suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long, lat: Double? = null, lon: Double? = null): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
         _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis, lat = lat, lon = lon))

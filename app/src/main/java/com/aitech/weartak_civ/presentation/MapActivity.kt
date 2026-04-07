@@ -8,8 +8,6 @@
  */
 package com.aitech.weartak_civ.presentation
 
-import android.annotation.SuppressLint
-import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.graphics.Color
 import android.os.Bundle
@@ -94,22 +92,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
-import androidx.wear.compose.navigation.SwipeDismissableNavHost
-import androidx.wear.compose.navigation.composable
-import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
-import com.aitech.weartak_civ.presentation.MapActivity.Constants.cotDispatchService
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
-import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
-import com.aitech.weartak_civ.service.CotDispatchService
-import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
@@ -128,7 +114,6 @@ class MapActivity : ComponentActivity() {
     companion object Constants {
         val TAG = "WearTAK-" + MapActivity::class.java.simpleName
         lateinit var mapActivity: MapActivity
-        lateinit var cotDispatchService: CotDispatchService
         val orange = Color(0xFFFF7700)
         val maroon = Color(0xFF7F0000)
         val purple = Color(0xFF7F007F)
@@ -251,7 +236,7 @@ fun MapApp(exitActivity: () -> Unit) {
         )
     )
     val scope = rememberCoroutineScope()
-    val markerScope = CoroutineScope(Dispatchers.IO)
+    val markerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val locationProvider = remember(scope) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
