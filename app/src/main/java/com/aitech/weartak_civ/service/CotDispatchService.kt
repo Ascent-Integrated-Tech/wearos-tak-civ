@@ -172,17 +172,19 @@ class CotDispatchService : Service() {
 
         startSendChatMessageCollector()
 
-        startAnyEndpointOrMulticastConnectedCollector()
+        startAnyEndpointConnectedCollector()
     }
 
-    private fun startAnyEndpointOrMulticastConnectedCollector() {
+    private fun startAnyEndpointConnectedCollector() {
         serviceScope.launch {
-            combine(dataRepository.anyEndpointConnected, dataRepository.multicastPublisherRunning) {
-                anyEndpointConnected, multicastRunning ->
-                anyEndpointConnected || multicastRunning
-            }.distinctUntilChanged().collectLatest{ shouldSend ->
-                if (shouldSend) {
+            dataRepository.anyEndpointConnected.collect { connected ->
+                Log.i(TAG, "Any endpoint connected: $connected")
+                if (connected) {
                     sendPendingChatMessages()
+                    sendPendingManualAlerts()
+                    sendPendingPhysioAndAutoGenAlerts()
+                    sendPendingMarkerDrops()
+                    sendPendingMarkerEdits()
                 }
             }
         }
@@ -234,7 +236,7 @@ class CotDispatchService : Service() {
                         return@collect
                     }
 
-                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || dataRepository.multicastPublisherRunning.value || companionAppAvailable())
+                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED) || dataRepository.multicastPublisherRunning.value || companionAppAvailable())
 
                     if (endpointsToSendTo) {
                         if ((batt <= MainActivity.battWarnPercent)) {
@@ -307,9 +309,11 @@ class CotDispatchService : Service() {
             dataRepository.getEnableWearTakDevMode
                 .filterNotNull()
                 .collect { enabled ->
-                    val sendToTak = TAKConnectService.isAnyTakConnected || dataRepository.multicastPublisherRunning.value || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED)
+                    val sendToTak = TAKConnectService.isAnyTakConnected || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED)
                     val sendToCompApp = companionAppAvailable()
-                    val endpointsToSendTo = sendToTak || sendToCompApp
+                    val sendOverMulticast = dataRepository.multicastPublisherRunning.value
+                    val endpointsToSendTo = sendToTak || sendToCompApp || sendOverMulticast
+
 
                     if (endpointsToSendTo && enabled) {
                         val msg = "Debug mode changed to { $enabled } on Watch: $callsign with uid: $deviceId"
@@ -319,13 +323,15 @@ class CotDispatchService : Service() {
                             message = msg
                         )
 
-                        if (sendToTak) {
+                        if (sendToTak || sendOverMulticast) {
                             val chatCot = buildChatCotFromSnapshot(chatSnap)
-                            sendDataTAKServers(chatCot, true)
-                            if (dataRepository.multicastPublisherRunning.value) {
+                            if (sendToTak) {
+                                sendDataTAKServers(chatCot, true)
+                                SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
+                            }
+                            if (sendOverMulticast) {
                                 sendMulticastDatagram(chatCot)
                             }
-                            SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
                             Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
                         }
 
@@ -348,7 +354,7 @@ class CotDispatchService : Service() {
         // But if location is stale, we don't immediately send out but wait for fresh location
         val send = if (null == loc) true else (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
         //Log.i(TAG, "loc: ${if (null == loc) "null" else "NOT null"}; FRESH: ${(System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS}, ${(System.currentTimeMillis() - lastLocationUpdateRcvd) / 1000.0} s ago")
-        return ((dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) && send)
+        return (dataRepository.anyEndpointConnected.value && send)
     }
 
     private fun startAddManualAlertCollector() {
@@ -361,7 +367,7 @@ class CotDispatchService : Service() {
                 if (readyToSendAlertEvents()) {
                     sendAllManualAlerts(manualAlertWithState)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
+                    if (dataRepository.anyEndpointConnected.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueManualAlertAndUpdateUI(manualAlertWithState)
@@ -455,7 +461,7 @@ class CotDispatchService : Service() {
         if (readyToSendAlertEvents()) {
             sendAllManualAlerts(manualAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
+            if (dataRepository.anyEndpointConnected.value) {
                 EventBus.getDefault().post(LocationUpdateRequired())
             }
             enqueueManualAlertAndUpdateUI(manualAlertClearWithState)
@@ -488,7 +494,7 @@ class CotDispatchService : Service() {
                 if (readyToSendAlertEvents()) {
                     sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertAlertWithState)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
+                    if (dataRepository.anyEndpointConnected.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
@@ -583,7 +589,7 @@ class CotDispatchService : Service() {
         if (readyToSendAlertEvents()) {
             sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
+            if (dataRepository.anyEndpointConnected.value) {
                 EventBus.getDefault().post(LocationUpdateRequired())
             }
             enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertClearWithState)
@@ -605,7 +611,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.chatRequestSend.collect { req ->
                 Log.i(TAG, "Received req to send chat message: $req")
-                if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
+                if (dataRepository.anyEndpointConnected.value) {
                     sendAllChatMessages(req)
                 } else {
                     val chatMsg = Utils.ChatMessage(message = req.message, uid = req.dstUid, callsign = req.dstChatroom, timeReceived = req.timeMillis)
@@ -713,14 +719,24 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.markerDropRequests.collect { req ->
                 Log.i(TAG, "Received drop request...")
-                if (readyToSendMarkerEvents()) {
-                    sendMarkerDropNow(req)
-                    sendPendingMarkerDrops()
-                } else {
-                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
-                        EventBus.getDefault().post(LocationUpdateRequired())
+                if (req.lat != null && req.lon != null) {
+                    Log.i(TAG, "Drop lat and lon NOT null. Sending drop request now if possible...")
+                    if (dataRepository.anyEndpointConnected.value) {
+                        sendMarkerDropNow(req)
+                    } else {
+                        enqueueDrop(req)
                     }
-                    enqueueDrop(req)
+                } else {
+                    Log.i(TAG, "Drop lat and lon null. Checking if we can send drop now...")
+                    if (readyToSendMarkerEvents()) {
+                        sendPendingMarkerDrops()
+                        sendMarkerDropNow(req)
+                    } else {
+                        if (dataRepository.anyEndpointConnected.value) {
+                            EventBus.getDefault().post(LocationUpdateRequired())
+                        }
+                        enqueueDrop(req)
+                    }
                 }
             }
         }
@@ -731,10 +747,10 @@ class CotDispatchService : Service() {
             dataRepository.markerEditRequests.collect { req ->
                 Log.i(TAG, "Received marker edit request for uid=${req.uid}")
                 if (readyToSendMarkerEvents()) {
-                    sendMarkerEditNow(req)
                     sendPendingMarkerEdits()
+                    sendMarkerEditNow(req)
                 } else {
-                    if (dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) {
+                    if (dataRepository.anyEndpointConnected.value) {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
                     enqueueEdit(req)
@@ -747,7 +763,7 @@ class CotDispatchService : Service() {
     private fun readyToSendMarkerEvents(): Boolean {
         val loc = dataRepository.latestLocation.value
         val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
-        return ((dataRepository.anyEndpointConnected.value || dataRepository.multicastPublisherRunning.value) && (null != loc) && fresh)
+        return (dataRepository.anyEndpointConnected.value && (null != loc) && fresh)
     }
 
     private fun startMarkerDropListCollector() {

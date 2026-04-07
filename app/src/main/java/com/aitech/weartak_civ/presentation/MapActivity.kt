@@ -92,6 +92,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -292,6 +293,7 @@ fun MapApp(exitActivity: () -> Unit) {
                 gestureOptions = GestureOptions.RotationLocked),
             zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
             onMapLongClick = { coordinates, offset ->
+                Utils.vibrateWatch(vibDurationMs = 100L, numberOfVibes = 1, timeBtwnVibesMs = 10L)
                 pointerOffset = offset
                 val time = System.currentTimeMillis()
 
