@@ -283,6 +283,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import java.io.File
 
 
@@ -3219,7 +3220,7 @@ fun HeartRate(context: Context) {
 }
 
 enum class Connectivity { CELL, WIFI, BLUETOOTH, AIRPLANE, NONE }
-enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
+enum class TakServer { CONNECTED, CONNECTED_MULTICAST , CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     if (networkManager == null) return Connectivity.NONE
@@ -3241,16 +3242,18 @@ fun readConnectivity(networkManager: NetworkManager?): Connectivity {
 }
 
 fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
-    if ((takConnectService == null) && (enableSitxService == false)) {
+    if ((takConnectService == null) && (enableSitxService == false) && (enableMulticastOnWifi == false)) {
         return TakServer.DISCONNECTED
     }
 
     val connected = (TAKConnectService.isAnyTakConnectedLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED)
     val connecting = (TAKConnectService.isAnyTakConnectingLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTING)
+    val connectedMulticast = dataRepository.multicastPublisherRunning.value
 
     return when {
         connected -> TakServer.CONNECTED
         connecting -> TakServer.CONNECTING
+        connectedMulticast -> TakServer.CONNECTED_MULTICAST
         else -> TakServer.DISCONNECTED
     }
 }
@@ -3277,6 +3280,7 @@ fun buildComplicationString(
     val takLabel = when (effectiveTak) {
         TakServer.CONNECTED -> getString(context, R.string.server_connected)
         TakServer.CONNECTING -> getString(context, R.string.server_connecting)
+        TakServer.CONNECTED_MULTICAST -> getString(context, R.string.server_connected_multicast)
         TakServer.DISCONNECTED -> getString(context, R.string.server_disconnected)
     }
     val locLabel = if (locationEnabled) getString(context, R.string.location_enabled) else getString(context, R.string.location_disabled)
@@ -3331,6 +3335,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
 //        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
 //        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
         val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
+        val multicastConnected by dataRepository.multicastPublisherRunning.collectAsStateWithLifecycle()
         val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
 
         val painter = when {
@@ -3346,6 +3351,8 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
                     (sitxEvent is SitxServiceEvent.Authorized) ||
                     (sitxEvent is SitxServiceEvent.SocketStatus)) ->
                 painterResource(R.drawable.tak_server_connecting)
+
+            multicastConnected -> painterResource((R.drawable.multicast_connected))
 
             else ->
                 painterResource(R.drawable.tak_server_disconnected)
@@ -3456,7 +3463,6 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
                 .size(iconSizeSmall)
 
         )
-        Log.i("Iscellconnected", cellConnected.toString())
         requestStatusIconsComplicationUpdate(mainActivity.applicationContext)
     }
 }
