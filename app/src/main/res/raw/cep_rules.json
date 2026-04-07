@@ -1271,13 +1271,13 @@
           {
             "lte_keys": [
               "features.heart_rate",
-              "thresholds.hr.low_bpm"
+              "thresholds.hr.rest_low_bpm"
             ]
           },
           {
-            "eq_key": [
+            "gte_key": [
               "offbody.on_wrist",
-              true
+              0.5
             ]
           }
         ]
@@ -1288,7 +1288,7 @@
       "action": {
         "type": "warn_log",
         "severity": "EMERGENCY",
-        "message": "LOW HR — below {thresholds.hr.low_bpm} bpm",
+        "message": "LOW HR — below {thresholds.hr.rest_low_bpm} bpm",
         "tags": [
           "hr",
           "rest",
@@ -1304,7 +1304,7 @@
           {
             "feature": "features.heart_rate",
             "exit_below": null,
-            "exit_above": "thresholds.hr.low_bpm",
+            "exit_above": "thresholds.hr.rest_low_bpm",
             "hysteresis": 2.0
           }
         ],

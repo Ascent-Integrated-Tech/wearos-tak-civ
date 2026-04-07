@@ -304,7 +304,7 @@ class CEPSimulationService : Service() {
             CepBus.emit(CepEvent(Topics.ACTIVITY,   ActivityPayload("RUN")))
             CepBus.emit(CepEvent(Topics.HEART_RATE, HeartRatePayload(bpm = 55.0)))
             CepBus.emit(CepEvent(Topics.HRV,        HrvPayload(rmssd_ms = 80.0)))
-            CepBus.emit(CepEvent(Topics.OFFBODY,    OffBodyPayload(true)))
+            CepBus.emit(CepEvent(Topics.OFFBODY,    OffBodyPayload(1)))
             delay(1_000L)
         }
         AlertRegistry.clearAll()

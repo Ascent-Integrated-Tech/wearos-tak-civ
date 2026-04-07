@@ -355,8 +355,8 @@ class DataRepository(private val context: Context) {
             enable && (state == HailLicenseStates.VALID ||
                     state == HailLicenseStates.SOFT_EXPIRED)
         }
-        .distinctUntilChanged()
-        .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
+            .distinctUntilChanged()
+            .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
 
     // ======== ======== HAIL SECTION END ======== ==========
 
@@ -506,12 +506,12 @@ class DataRepository(private val context: Context) {
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
     // TODO: Later move nonNullBatteryPercentage to ViewModel
     val nonNullBatteryPercentage: StateFlow<Int> = latestBatteryPercentage
-            .map { it ?: 100 }
-            .stateIn(
-                scope = repoScope,
-                started = SharingStarted.Eagerly,
-                initialValue = 100
-            )
+        .map { it ?: 100 }
+        .stateIn(
+            scope = repoScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 100
+        )
 
     private val _dockType = MutableStateFlow(BatteryService.DockType.NONE)
     val dockType: StateFlow<BatteryService.DockType> = _dockType
@@ -2528,7 +2528,7 @@ class DataRepository(private val context: Context) {
     }
 
 
-//    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
+    //    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
 
@@ -2613,65 +2613,6 @@ class DataRepository(private val context: Context) {
     suspend fun storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength: Int) {
         context.dataStore.edit { prefs ->
             prefs[LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH] = lowRestingHrAlertThresholdLength
-        }
-    }
-
-
-    /**
-     * Dual sustain overrides: main (sustained_for_sec) and warn (sustained_for_sec_warn) per rule id.
-     * Legacy stored JSON that is a flat Map<String, Long> is treated as main-only with empty warn.
-     */
-    data class CepSustainOverrides(
-        val main: Map<String, Long>,
-        val warn: Map<String, Long>
-    )
-
-    private val cepSustainOverridesType = object : TypeToken<Map<String, Long>>() {}.type
-
-    private fun parseCepSustainOverrides(json: String?): CepSustainOverrides {
-        if (json.isNullOrBlank()) return CepSustainOverrides(emptyMap(), emptyMap())
-        return try {
-            val el = gson.fromJson(json, com.google.gson.JsonElement::class.java) ?: return CepSustainOverrides(emptyMap(), emptyMap())
-            if (el.isJsonObject && el.asJsonObject.has("main")) {
-                val obj = el.asJsonObject
-                val main = gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("main"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap()
-                val warn = if (obj.has("warn")) gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("warn"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap() else emptyMap()
-                CepSustainOverrides(main, warn)
-            } else {
-                val flat = gson.fromJson<Map<String, Long>>(json, cepSustainOverridesType) ?: emptyMap()
-                CepSustainOverrides(flat.mapValues { (_, v) -> v.coerceAtLeast(0L) }, emptyMap())
-            }
-        } catch (e: Exception) {
-            Log.w("DataRepository", "Invalid CEP sustain overrides JSON", e)
-            CepSustainOverrides(emptyMap(), emptyMap())
-        }
-    }
-
-    val getCepSustainOverrides: Flow<CepSustainOverrides> = context.dataStore.data.map { prefs ->
-        parseCepSustainOverrides(prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON])
-    }
-
-    /** One-shot read of current sustain overrides; use when a single snapshot is needed (e.g. CEP engine load). */
-    suspend fun getCepSustainOverridesOnce(): CepSustainOverrides = getCepSustainOverrides.first()
-
-    /** Legacy: store a single map as main-only overrides (writes flat JSON). */
-    suspend fun storeCepSustainOverrides(map: Map<String, Long>) {
-        context.dataStore.edit { prefs ->
-            val sanitized = map.mapValues { (_, v) -> v.coerceAtLeast(0L) }
-            prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(sanitized)
-        }
-    }
-
-    /** Store separate main and warn sustain overrides. Writes warn-aware JSON for dual override support. */
-    suspend fun storeCepSustainOverridesDual(main: Map<String, Long>, warn: Map<String, Long>) {
-        context.dataStore.edit { prefs ->
-            val mainSanitized = main.mapValues { (_, v) -> v.coerceAtLeast(0L) }
-            val warnSanitized = warn.mapValues { (_, v) -> v.coerceAtLeast(0L) }
-            val root = com.google.gson.JsonObject().apply {
-                add("main", gson.toJsonTree(mainSanitized))
-                add("warn", gson.toJsonTree(warnSanitized))
-            }
-            prefs[CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON] = gson.toJson(root)
         }
     }
 
@@ -2988,7 +2929,7 @@ class DataRepository(private val context: Context) {
 
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
-//        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
+        //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
         private val TEAM = stringPreferencesKey("team")
         private val TEAM_NAMES = stringPreferencesKey("team_names")

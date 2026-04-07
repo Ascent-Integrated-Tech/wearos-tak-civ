@@ -363,7 +363,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import java.text.SimpleDateFormat
-import java.time.Instant
 import java.time.LocalDate
 import java.time.Year
 import java.time.ZoneId
@@ -371,6 +370,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.String
+
 
 class SettingsActivity : ComponentActivity() {
 
@@ -534,7 +534,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 callsignSettingsState,
                 stringResource(R.string.callsign),
                 stringResource(R.string.callsign),
-               "settings_screen"
+                "settings_screen"
             )
         }
         composable(
@@ -543,7 +543,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable(
             "role_category_screen/{index}",
-                    arguments = listOf(navArgument("index") { type = NavType.IntType })
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "role_category_screen index: $index")
@@ -940,7 +940,7 @@ fun WearTakCivScreenDimensions(
                     .padding(bottom = 30.dp)
                     .verticalScroll(rememberScrollState()),
 
-            horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = text,
@@ -1118,19 +1118,19 @@ fun RoleSetting (navController: NavController) {
             }
             Spacer(modifier = Modifier.height(15.dp))
         },
-    rowContent = {
-        BackButton(
-            onClick = {
-                //                roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
+        rowContent = {
+            BackButton(
+                onClick = {
+                    //                roleSettingsState.postValue(roleEntriesValuesList.lrEntries[selectedRadioIndex])
 //                Log.d(TAG, "Settings saved with role: ${roleSettingsState.value}")
-                navController.navigate("settings_screen") {
-                    popUpTo(("settings_screen")) {
-                        inclusive = true
-                    }
-                } },
-        )
-    },
-    text = stringResource(R.string.role)
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    } },
+            )
+        },
+        text = stringResource(R.string.role)
     )
 }
 
@@ -1154,25 +1154,25 @@ fun RoleCategorySetting (
                     } ?: false
 
                     SelectableChip(
-                            modifier = Modifier.fillMaxWidth(),
-                            selected = isSelected,
-                            onClick = {
-                                localSelection = categoryIndex to roleIndex
-                                onRoleSelected(categoryIndex to roleIndex)},
-                            label = {
-                                // The primary label should have a maximum 3 lines of text
-                                Text(role, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                            },
-                            enabled = true,
-                            shape =
-                                if (role == roleList.first())
-                                    RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
-                                else if (role == roleList.last())
-                                    RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
-                                else
-                                    RoundedCornerShape(0.dp)
-                        )
-                    }
+                        modifier = Modifier.fillMaxWidth(),
+                        selected = isSelected,
+                        onClick = {
+                            localSelection = categoryIndex to roleIndex
+                            onRoleSelected(categoryIndex to roleIndex)},
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(role, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                        shape =
+                            if (role == roleList.first())
+                                RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                            else if (role == roleList.last())
+                                RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                            else
+                                RoundedCornerShape(0.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(15.dp))
         },
@@ -1234,7 +1234,7 @@ fun TakServerSetting(navController: NavController) {
     WearTakCivScreenDimensions(
         columnContent = {
             LazyColumn(modifier = Modifier
-                    .height(200.dp)){
+                .height(200.dp)){
                 itemsIndexed(takServerSettingList){ index, takServerItem ->
                     var takServerChecked by remember{ mutableStateOf(takServerItem.isEnabled)}
                     Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
@@ -1589,7 +1589,7 @@ fun NewServerPage(navController: NavController) {
                             if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
                                 password.isNotBlank()) {
                                 val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
-                                        isP12Cert, username, password, "", "")
+                                    isP12Cert, username, password, "", "")
                                 runBlocking {
                                     dataRepository.addTakServerItem(takServerItem)
                                 }
@@ -2028,7 +2028,7 @@ fun OptimizeBatteryOnWifiSelectScreen(navController: NavController) {
                         .padding(top = 10.dp, bottom = 20.dp)
                 )
             }
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         },
         rowContent = {
             ConfirmCancelButtons(
@@ -2512,37 +2512,37 @@ fun StringEntryPage(
     placeholder: String,
     route: String
 ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            val textField = GenericOutlinedTextField(metricSettingState, label, placeholder)
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ConfirmCancelButtons(
-                    onClickCancel = {
-                        Log.d(TAG, "$label Settings NOT saved")
-                        navController.navigate(route) {
-                            popUpTo((route)) {
-                                inclusive = true
-                            }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val textField = GenericOutlinedTextField(metricSettingState, label, placeholder)
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "$label Settings NOT saved")
+                    navController.navigate(route) {
+                        popUpTo((route)) {
+                            inclusive = true
                         }
-                    },
-                    onClickConfirm = {
-                        metricSettingState.setValue(textField.text)
-                        Log.d(TAG, "Settings saved with $label: ${metricSettingState.value}")
-                        navController.navigate(route) {
-                            popUpTo((route)) {
-                                inclusive = true
-                            }
+                    }
+                },
+                onClickConfirm = {
+                    metricSettingState.setValue(textField.text)
+                    Log.d(TAG, "Settings saved with $label: ${metricSettingState.value}")
+                    navController.navigate(route) {
+                        popUpTo((route)) {
+                            inclusive = true
                         }
-                    })
-            }
+                    }
+                })
         }
     }
+}
 
 //Used for PhysioAlerts, Reporting Rates, and some User Metrics
 @Composable
@@ -2596,7 +2596,7 @@ fun NumericEntryPage(
                         Toast.makeText(
                             mainActivity,
                             //TODO: WEAR-272 this doesnt recognize the new string resource for it?
-                           " Value is less than minimum, please re-enter", Toast.LENGTH_LONG).show()                    } else {
+                            " Value is less than minimum, please re-enter", Toast.LENGTH_LONG).show()                    } else {
                         focusManager.clearFocus()
                     }
                 }
@@ -3149,12 +3149,12 @@ fun SitxStatusAuthorizationScreen(navController: NavController, sitxVm: SitxView
                         onClick = {
                             runBlocking {
                                 SitxServiceCommandBus.trySend(SitxServiceCommand.BeginAuth(
-                                        baseUrl = sitxRepo.baseUrl.first(),
-                                        clientId = sitxRepo.clientId.first() ?: "",
-                                        callsign = callsign,
-                                        deviceName = device_uid,
-                                        deviceId = device_uid
-                                    )
+                                    baseUrl = sitxRepo.baseUrl.first(),
+                                    clientId = sitxRepo.clientId.first() ?: "",
+                                    callsign = callsign,
+                                    deviceName = device_uid,
+                                    deviceId = device_uid
+                                )
                                 )
                             }
                         },
@@ -3475,82 +3475,82 @@ fun PhysiologicalAlertsSetting(navController: NavController) {
     Log.d(TAG, "enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState")
 
     WearTakCivScreenDimensions(
-    columnContent = {
+        columnContent = {
 
-        SettingSwitchToggleLiveData(
-            physiologicalAlertsCheckedLive,
-            { enablePhysiologicalAlertsSettingState.postValue(it) },
-            {},
-            stringResource(R.string.physiological_alerts),
-            stringResource(R.string.on_off)
-        )
+            SettingSwitchToggleLiveData(
+                physiologicalAlertsCheckedLive,
+                { enablePhysiologicalAlertsSettingState.postValue(it) },
+                {},
+                stringResource(R.string.physiological_alerts),
+                stringResource(R.string.on_off)
+            )
 
 //        DataMetricsChip("physiological_alerts_bpm_screen", stringResource(R.string.threshold_high_heart_rate), hrHighAlertBpmThresholdSettingsState.value.toString(), navController)
 //        DataMetricsChip("physiological_alerts_bpm_length_screen", stringResource(R.string.threshold_high_heart_rate_length), hrHighAlertNumSecsThresholdSettingsState.value.toString() + " seconds", navController)
-        Chip(
-            onClick = { navController.navigate("physiological_heart_rate_alerts_setting_screen") {
-                popUpTo("physiological_heart_rate_alerts_setting_screen") { inclusive = true }
-            } },
-            enabled = true,
-            label = { Text(text = "Resting Heart Rate Alerts") },
-            colors = ChipDefaults.chipColors(
-                backgroundColor = Color.DarkGray,
-                contentColor = Color.White,
-                secondaryContentColor = Color.LightGray
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 3.dp)
-        )
+            Chip(
+                onClick = { navController.navigate("physiological_heart_rate_alerts_setting_screen") {
+                    popUpTo("physiological_heart_rate_alerts_setting_screen") { inclusive = true }
+                } },
+                enabled = true,
+                label = { Text(text = "Resting Heart Rate Alerts") },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
 
-        Chip(
-            onClick = { navController.navigate("physiological_exertion_alerts_setting_screen") {
-                popUpTo("physiological_exertion_alerts_setting_screen") { inclusive = true }
-            } },
-            enabled = true,
-            label = { Text(text = "Exertion Alerts") },
-            colors = ChipDefaults.chipColors(
-                backgroundColor = Color.DarkGray,
-                contentColor = Color.White,
-                secondaryContentColor = Color.LightGray
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 3.dp)
-        )
+            Chip(
+                onClick = { navController.navigate("physiological_exertion_alerts_setting_screen") {
+                    popUpTo("physiological_exertion_alerts_setting_screen") { inclusive = true }
+                } },
+                enabled = true,
+                label = { Text(text = "Exertion Alerts") },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
-    },
-    rowContent = {
-        ConfirmCancelButtons(
-            onClickCancel = {
-                Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
-                restingHrHighAlertBpmThresholdSettingsState.setValue(restingHrHighAlertBpmThreshold)
-                highRestingHrWarningThresholdLengthSettingsState.setValue(highRestingHrWarningThresholdLength)
-                highRestingHrAlertThresholdLengthSettingsState.setValue(highRestingHrAlertThresholdLength)
-                restingHrLowAlertBpmThresholdSettingsState.setValue(restingHrLowAlertBpmThreshold)
-                lowRestingHrWarningThresholdLengthSettingsState.setValue(lowRestingHrWarningThresholdLength)
-                lowRestingHrAlertThresholdLengthSettingsState.setValue(lowRestingHrAlertThresholdLength)
-                exertionThresholdWarningSettingsState.setValue(exertionThresholdWarning)
-                exertionWarningThresholdLengthSettingsState.setValue(exertionWarningThresholdLength)
-                exertionThresholdAlertSettingsState.setValue(exertionThresholdAlert)
-                exertionAlertThresholdLengthSettingsState.setValue(exertionAlertThresholdLength)
-                navController.navigate("settings_screen") {
-                    popUpTo(("settings_screen")) {
-                        inclusive = true
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "PhysiologicalAlertsSetting Settings NOT saved")
+                    restingHrHighAlertBpmThresholdSettingsState.setValue(restingHrHighAlertBpmThreshold)
+                    highRestingHrWarningThresholdLengthSettingsState.setValue(highRestingHrWarningThresholdLength)
+                    highRestingHrAlertThresholdLengthSettingsState.setValue(highRestingHrAlertThresholdLength)
+                    restingHrLowAlertBpmThresholdSettingsState.setValue(restingHrLowAlertBpmThreshold)
+                    lowRestingHrWarningThresholdLengthSettingsState.setValue(lowRestingHrWarningThresholdLength)
+                    lowRestingHrAlertThresholdLengthSettingsState.setValue(lowRestingHrAlertThresholdLength)
+                    exertionThresholdWarningSettingsState.setValue(exertionThresholdWarning)
+                    exertionWarningThresholdLengthSettingsState.setValue(exertionWarningThresholdLength)
+                    exertionThresholdAlertSettingsState.setValue(exertionThresholdAlert)
+                    exertionAlertThresholdLengthSettingsState.setValue(exertionAlertThresholdLength)
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
                     }
-                }
-            },
-            onClickConfirm = {
-                navController.navigate("settings_screen") {
-                    popUpTo(("settings_screen")) {
-                        inclusive = true
+                },
+                onClickConfirm = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
                     }
-                }
-            })
-    },
-    text = stringResource(R.string.physiological_alerts)
-)
+                })
+        },
+        text = stringResource(R.string.physiological_alerts)
+    )
 }
 
 @Composable
@@ -3997,69 +3997,69 @@ fun PhysiologicalMetricsSetting(navController: NavController) {
     Log.d(TAG, "PhysioMetricsSetting called")
 
     WearTakCivScreenDimensions(
-    columnContent = {
-        Chip(
-            onClick = {
-                navController.navigate("physiological_metrics_medical_profile_batdok") {
-                    popUpTo("physiological_metrics_medical_profile_batdok") { inclusive = true }
-                }
-            },
-            enabled = true,
-            label = { Text(text = stringResource(R.string.medical_profile_batdok)) },
-            colors = ChipDefaults.chipColors(
-                backgroundColor = Color.DarkGray,
-                contentColor = Color.White,
-                secondaryContentColor = Color.LightGray
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 3.dp)
-        )
-
-        Chip(
-            onClick = {
-                navController.navigate("physiological_metrics_gait_tracking") {
-                    popUpTo("physiological_metrics_gait_tracking") { inclusive = true }
-                }
-            },
-            enabled = true,
-            label = { Text(text = stringResource(R.string.gait_tracking)) },
-            colors = ChipDefaults.chipColors(
-                backgroundColor = Color.DarkGray,
-                contentColor = Color.White,
-                secondaryContentColor = Color.LightGray
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 3.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-    },
-    rowContent = {
-        ConfirmCancelButtons(
-            onClickCancel = {
-                Log.d(TAG, "Physiological Settings NOT saved")
-
-                navController.navigate("settings_screen") {
-                    popUpTo(("settings_screen")) {
-                        inclusive = true
+        columnContent = {
+            Chip(
+                onClick = {
+                    navController.navigate("physiological_metrics_medical_profile_batdok") {
+                        popUpTo("physiological_metrics_medical_profile_batdok") { inclusive = true }
                     }
-                }
-            },
-            onClickConfirm = {
+                },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.medical_profile_batdok)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
 
-                Log.d(TAG, "Finished saving physio state settings")
-
-                navController.navigate("settings_screen") {
-                    popUpTo(("settings_screen")) {
-                        inclusive = true
+            Chip(
+                onClick = {
+                    navController.navigate("physiological_metrics_gait_tracking") {
+                        popUpTo("physiological_metrics_gait_tracking") { inclusive = true }
                     }
-                }
-            })
-    },
-    text = stringResource(R.string.physiological_user_metrics)
-)
+                },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.gait_tracking)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "Physiological Settings NOT saved")
+
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+
+                    Log.d(TAG, "Finished saving physio state settings")
+
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        },
+        text = stringResource(R.string.physiological_user_metrics)
+    )
 }
 @Composable
 fun PhysioMetricsMedicalProfileSetting(navController: NavController) {
@@ -4208,22 +4208,22 @@ fun DateDisplay(serverDateString: String, status: HailLicenseStates?) {
     // Parse the incoming date (pattern matches "Tue Sep 30 00:00:00 CDT 2025")
     if (serverDateString != "null") {
         val parser = SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.ENGLISH)
-    val parsedDate = parser.parse(serverDateString)!!
+        val parsedDate = parser.parse(serverDateString)!!
 
-    // Convert java.util.Date to LocalDate
-    val localDate = parsedDate.toInstant()
-        .atZone(ZoneId.systemDefault())
-        .toLocalDate()
+        // Convert java.util.Date to LocalDate
+        val localDate = parsedDate.toInstant()
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
 
-    // Format as "9/30/2025"
-    val displayDate = localDate.format(DateTimeFormatter.ofPattern("M/d/yyyy"))
+        // Format as "9/30/2025"
+        val displayDate = localDate.format(DateTimeFormatter.ofPattern("M/d/yyyy"))
 
-    // Calculate days difference
-    val today = LocalDate.now()
-    val daysDiff = ChronoUnit.DAYS.between(today, localDate)
-    val daysDisplay = "$daysDiff Days"
+        // Calculate days difference
+        val today = LocalDate.now()
+        val daysDiff = ChronoUnit.DAYS.between(today, localDate)
+        val daysDisplay = "$daysDiff Days"
 
-    // Display in Compose
+        // Display in Compose
         HailDataText(text = displayDate, true, status)
         if (status != HailLicenseStates.EXPIRED)
             HailDataText(text = daysDisplay, true, status)
@@ -4245,8 +4245,8 @@ fun HailSetting(navController: NavController) {
                 modifier = Modifier.padding(bottom = 5.dp),
                 textAlign = TextAlign.Center,
                 color = if (hailLicenseState == HailLicenseStates.SOFT_EXPIRED) Color.Yellow
-                        else if (hailLicenseState == HailLicenseStates.EXPIRED) Color.Red
-                        else Color.White
+                else if (hailLicenseState == HailLicenseStates.EXPIRED) Color.Red
+                else Color.White
             )
 
             HailDataText(hailLicenseStatusTextFromString(hailLicenseState), true, hailLicenseState)
@@ -4350,13 +4350,13 @@ fun InvalidHailScreen(navController: NavController) {
                 modifier = Modifier
                     .padding(vertical = 7.dp)
                     .align(Alignment.CenterHorizontally)
-                )
+            )
             Text(
                 text = "Enter the code on your HAIL license portal, then press Register below",
                 textAlign = TextAlign.Center,
                 fontSize = 12.sp,
                 lineHeight = 14.sp,
-                )
+            )
             Spacer(modifier = Modifier.size(5.dp))
             Row(
                 modifier = Modifier
@@ -4443,9 +4443,9 @@ fun SettingSwitchToggle(
         // unselected toggle control color to ToggleChipDefaults.switchUncheckedIconColor()
         // rather than the default.
         colors =
-        ToggleChipDefaults.toggleChipColors(
-            uncheckedToggleControlColor = ToggleChipDefaults.SwitchUncheckedIconColor
-        ),
+            ToggleChipDefaults.toggleChipColors(
+                uncheckedToggleControlColor = ToggleChipDefaults.SwitchUncheckedIconColor
+            ),
         toggleControl = {
             Switch(
                 checked = checked,
@@ -4745,47 +4745,47 @@ fun SettingsScreen(
                 "SMS Alerts",
                 stringResource(R.string.on_off)
             )
-                val focusManager = LocalFocusManager.current
+            val focusManager = LocalFocusManager.current
 
-                if (enableSmsForAlertsSettingsState.value == true) {
-                    OutlinedTextField(
-                        value = smsListTextFieldValue,
-                        onValueChange = {
-                            smsListTextFieldValue = it
-                            smsNumbersListStringSettingsState.postValue(smsListTextFieldValue.text)
-                        },
-                        modifier = Modifier.padding(5.dp),
-                        maxLines = 3,
-                        label = {
-                            Text(
-                                text = stringResource(R.string.sms_recipients),
-                                color = colors.primary,
-                                fontSize = 12.sp
-                            )
-                        },
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.sms_recipients),
-                                color = colors.primary
-                            )
-                        },
-                        textStyle = TextStyle(color = colors.primary),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                if (smsListTextFieldValue.text.contains("[A-Za-z!\"#$%&'()*./:;\\\\<=>?@^_`{|}~]".toRegex())) {
-                                    Toast.makeText(
-                                        mainActivity,
-                                        context.getString(R.string.invalid_characters),
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    focusManager.clearFocus()
-                                }
-                            }
+            if (enableSmsForAlertsSettingsState.value == true) {
+                OutlinedTextField(
+                    value = smsListTextFieldValue,
+                    onValueChange = {
+                        smsListTextFieldValue = it
+                        smsNumbersListStringSettingsState.postValue(smsListTextFieldValue.text)
+                    },
+                    modifier = Modifier.padding(5.dp),
+                    maxLines = 3,
+                    label = {
+                        Text(
+                            text = stringResource(R.string.sms_recipients),
+                            color = colors.primary,
+                            fontSize = 12.sp
                         )
+                    },
+                    placeholder = {
+                        Text(
+                            text = stringResource(R.string.sms_recipients),
+                            color = colors.primary
+                        )
+                    },
+                    textStyle = TextStyle(color = colors.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (smsListTextFieldValue.text.contains("[A-Za-z!\"#$%&'()*./:;\\\\<=>?@^_`{|}~]".toRegex())) {
+                                Toast.makeText(
+                                    mainActivity,
+                                    context.getString(R.string.invalid_characters),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                focusManager.clearFocus()
+                            }
+                        }
                     )
-                }
+                )
+            }
 
             SettingSwitchToggleLiveData(
                 batteryAlertsCheckedLive,
@@ -4794,7 +4794,7 @@ fun SettingsScreen(
                 stringResource(R.string.battery_alerts),
                 stringResource(R.string.on_off)
             )
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = stringResource(R.string.physiological_settings),
@@ -4851,8 +4851,8 @@ fun SettingsScreen(
                     //hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThresholdState.value)
                     //hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThresholdState.value)
                     navController.navigate("physiological_alerts_setting_screen") {
-                    popUpTo("physiological_alerts_setting_screen") { inclusive = true }
-                } },
+                        popUpTo("physiological_alerts_setting_screen") { inclusive = true }
+                    } },
                 enabled = true,
                 label = { Text(text = stringResource(R.string.physiological_alerts)) },
                 colors = ChipDefaults.chipColors(
@@ -4866,31 +4866,31 @@ fun SettingsScreen(
             )
 
             Chip(
-                    onClick = {
-                        birthYearSettingsState.postValue(birthYearState.value)
-                        heightFeetSettingsState.postValue(heightFeetState.value)
-                        heightInchesSettingsState.postValue(heightInchesState.value)
-                        weightSettingsState.postValue(weightState.value)
-                        sexSettingsState.postValue(sexState.value)
-                        bloodTypeSettingsState.postValue(bloodTypeState.value)
-                        allergyListSettingsState.postValue(allergyListState.value)
-                        userTypeSettingsState.postValue(userTypeState.value)
-                        restingHeartRateSettingsState.postValue(restingHeartRateState.value)
+                onClick = {
+                    birthYearSettingsState.postValue(birthYearState.value)
+                    heightFeetSettingsState.postValue(heightFeetState.value)
+                    heightInchesSettingsState.postValue(heightInchesState.value)
+                    weightSettingsState.postValue(weightState.value)
+                    sexSettingsState.postValue(sexState.value)
+                    bloodTypeSettingsState.postValue(bloodTypeState.value)
+                    allergyListSettingsState.postValue(allergyListState.value)
+                    userTypeSettingsState.postValue(userTypeState.value)
+                    restingHeartRateSettingsState.postValue(restingHeartRateState.value)
 
-                        navController.navigate("physiological_metrics_setting_screen") {
-                            popUpTo("physiological_metrics_setting_screen") { inclusive = true }
-                        } },
-                    enabled = true,
-                    label = { Text(text = stringResource(R.string.physiological_user_metrics)) },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 3.dp)
-                )
+                    navController.navigate("physiological_metrics_setting_screen") {
+                        popUpTo("physiological_metrics_setting_screen") { inclusive = true }
+                    } },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.physiological_user_metrics)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 3.dp)
+            )
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -4925,7 +4925,7 @@ fun SettingsScreen(
 
                     settingsActivity.finish()
                     context.startActivity(Intent(context, MainActivity::class.java))
-                                },
+                },
                 onClickConfirm = {
                     var settingsChanged: Boolean = false
                     var callsignChanged: Boolean = false
@@ -5417,361 +5417,326 @@ fun SettingsScreen(
                         requestPhysioStatusAndAlertingComplicationUpdate(context)
                     }
 
-                     if (settingsChanged) {
-                         CoroutineScope(Dispatchers.Main).launch {
-                             if (callsignChanged) {
-                                 Log.d(TAG, "Storing Callsign ($callsign)")
-                                 dataRepository.storeCallsign(callsign)
-                             }
-                             if (teamChanged) {
-                                 Log.d(TAG, "Storing Team ($team)")
-                                 dataRepository.storeTeam(team)
-                             }
-                             if (roleChanged) {
-                                 Log.d(TAG, "Storing Role ($role)")
-                                 dataRepository.storeRole(role)
-                                 dataRepository.storeRoleCategory(category)
-                             }
-                             if (categoryChanged) {
-                                 Log.d(TAG, "Category Changed. Storing Category & Role ($role)")
-                                 dataRepository.storeRole(role)
-                                 dataRepository.storeRoleCategory(category)
-                             }
+                    if (settingsChanged) {
+                        CoroutineScope(Dispatchers.Main).launch {
+                            if (callsignChanged) {
+                                Log.d(TAG, "Storing Callsign ($callsign)")
+                                dataRepository.storeCallsign(callsign)
+                            }
+                            if (teamChanged) {
+                                Log.d(TAG, "Storing Team ($team)")
+                                dataRepository.storeTeam(team)
+                            }
+                            if (roleChanged) {
+                                Log.d(TAG, "Storing Role ($role)")
+                                dataRepository.storeRole(role)
+                                dataRepository.storeRoleCategory(category)
+                            }
+                            if (categoryChanged) {
+                                Log.d(TAG, "Category Changed. Storing Category & Role ($role)")
+                                dataRepository.storeRole(role)
+                                dataRepository.storeRoleCategory(category)
+                            }
 //                                    if(licenseChanged) {
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
-                             if (birthYearChanged) {
-                                 Log.d(TAG, "Storing Birth Year ($birthYearValue)")
-                                 dataRepository.storeYearOfBirth(birthYearValue)
-                             }
-                             if (heightFeetChanged) {
-                                 Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
-                                 dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
-                             }
-                             if (heightInchesChanged) {
-                                 Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
-                                 dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
-                             }
-                             if (weightChanged) {
-                                 Log.d(TAG, "Storing Weight ($weightValue)")
-                                 dataRepository.storePhysiologicalMetricWeight(weightValue)
-                             }
-                             if (sexChanged) {
-                                 Log.d(TAG, "Storing Sex ($sexValue)")
-                                 dataRepository.storePhysiologicalMetricSex(sexValue)
-                             }
-                             if (bloodTypeChanged) {
-                                 Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
-                                 dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
-                             }
-                             if (allergiesChanged) {
-                                 Log.d(TAG, "Storing Allergy List ($allergyList)")
-                                 dataRepository.storePhysiologicalMetricAllergyList(allergyList)
-                             }
-                             if (userTypeChanged) {
-                                 Log.d(TAG, "Storing User Type ($userTypeValue)")
-                                 dataRepository.storePhysiologicalMetricUserType(userTypeValue)
-                             }
-                             if (restingHeartRateChanged) {
-                                 Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
-                                 dataRepository.storeRestingHeartRate(restingHeartRate)
-                             }
-                             if (uniformWaistSizeChanged) {
-                                 Log.d(TAG, "Storing Uniform Waist Size ($uniformWaistSize)")
-                                 dataRepository.storePhysiologicalMetricUniformWaistSize(uniformWaistSize)
-                             }
-                             if (strideLengthChanged) {
-                                 Log.d(TAG, "Storing Stride Length ($strideLength)")
-                                 dataRepository.storePhysiologicalMetricStrideLength(strideLength)
-                             }
-                             if (uniformPantsLengthChanged) {
-                                 Log.d(TAG, "Storing Uniform Pants Length ($uniformPantsLength)")
-                                 dataRepository.storePhysiologicalMetricUniformPantsLength(uniformPantsLength)
-                             }
-                             if (loadoutWeightChanged) {
-                                 Log.d(TAG, "Storing Loadout Weight ($loadoutWeight)")
-                                 dataRepository.storePhysiologicalMetricLoadoutWeight(loadoutWeight)
-                             }
-                             if (dynamicReportingChanged){
-                                 dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy)
-                             }
-                             if (constantReportingIntervalChanged){
-                                 dataRepository.storeConstantReportingInterval(constantReportingInterval)
-                             }
-                             if (stationaryReportingIntervalChanged){
-                                 dataRepository.storeStationaryReportingInterval(stationaryReportingInterval)
-                             }
-                             if (onFootReportingIntervalChanged){
-                                 dataRepository.storeOnFootReportingInterval(onFootReportingInterval)
-                             }
-                             if (vehicleReportingIntervalChanged){
-                                 dataRepository.storeVehicleReportingInterval(vehicleReportingInterval)
-                             }
-                             if (whileAlertingReportingIntervalChanged){
-                                 dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingInterval)
-                             }
-                             if (saveBattOnWifiChanged) {
-                                  Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
-                                  runBlocking {
-                                      dataRepository.storeEnableWifiBatteryOptimization(
-                                          enableWifiBatteryOptimization
-                                      )
-                                      dataRepository.storeEnableAllWifiBatteryOptimization(
-                                          enableAllWifiBatteryOptimization
-                                      )
-                                      dataRepository.storeWifiSsidList(wifiSsidList)
-                                  }
-                                  EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
-                             }
-                             if (takServerListChanged) {
-                                 Log.d(TAG, "Storing updated TAK Server List: $takServerList")
-                                 dataRepository.storeTakServerList(takServerList)
-                             }
+                            if (birthYearChanged) {
+                                Log.d(TAG, "Storing Birth Year ($birthYearValue)")
+                                dataRepository.storeYearOfBirth(birthYearValue)
+                            }
+                            if (heightFeetChanged) {
+                                Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
+                                dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
+                            }
+                            if (heightInchesChanged) {
+                                Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
+                                dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
+                            }
+                            if (weightChanged) {
+                                Log.d(TAG, "Storing Weight ($weightValue)")
+                                dataRepository.storePhysiologicalMetricWeight(weightValue)
+                            }
+                            if (sexChanged) {
+                                Log.d(TAG, "Storing Sex ($sexValue)")
+                                dataRepository.storePhysiologicalMetricSex(sexValue)
+                            }
+                            if (bloodTypeChanged) {
+                                Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
+                                dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
+                            }
+                            if (allergiesChanged) {
+                                Log.d(TAG, "Storing Allergy List ($allergyList)")
+                                dataRepository.storePhysiologicalMetricAllergyList(allergyList)
+                            }
+                            if (userTypeChanged) {
+                                Log.d(TAG, "Storing User Type ($userTypeValue)")
+                                dataRepository.storePhysiologicalMetricUserType(userTypeValue)
+                            }
+                            if (restingHeartRateChanged) {
+                                Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
+                                dataRepository.storeRestingHeartRate(restingHeartRate)
+                            }
+                            if (uniformWaistSizeChanged) {
+                                Log.d(TAG, "Storing Uniform Waist Size ($uniformWaistSize)")
+                                dataRepository.storePhysiologicalMetricUniformWaistSize(uniformWaistSize)
+                            }
+                            if (strideLengthChanged) {
+                                Log.d(TAG, "Storing Stride Length ($strideLength)")
+                                dataRepository.storePhysiologicalMetricStrideLength(strideLength)
+                            }
+                            if (uniformPantsLengthChanged) {
+                                Log.d(TAG, "Storing Uniform Pants Length ($uniformPantsLength)")
+                                dataRepository.storePhysiologicalMetricUniformPantsLength(uniformPantsLength)
+                            }
+                            if (loadoutWeightChanged) {
+                                Log.d(TAG, "Storing Loadout Weight ($loadoutWeight)")
+                                dataRepository.storePhysiologicalMetricLoadoutWeight(loadoutWeight)
+                            }
+                            if (dynamicReportingChanged){
+                                dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy)
+                            }
+                            if (constantReportingIntervalChanged){
+                                dataRepository.storeConstantReportingInterval(constantReportingInterval)
+                            }
+                            if (stationaryReportingIntervalChanged){
+                                dataRepository.storeStationaryReportingInterval(stationaryReportingInterval)
+                            }
+                            if (onFootReportingIntervalChanged){
+                                dataRepository.storeOnFootReportingInterval(onFootReportingInterval)
+                            }
+                            if (vehicleReportingIntervalChanged){
+                                dataRepository.storeVehicleReportingInterval(vehicleReportingInterval)
+                            }
+                            if (whileAlertingReportingIntervalChanged){
+                                dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingInterval)
+                            }
+                            if (saveBattOnWifiChanged) {
+                                Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
+                                runBlocking {
+                                    dataRepository.storeEnableWifiBatteryOptimization(
+                                        enableWifiBatteryOptimization
+                                    )
+                                    dataRepository.storeEnableAllWifiBatteryOptimization(
+                                        enableAllWifiBatteryOptimization
+                                    )
+                                    dataRepository.storeWifiSsidList(wifiSsidList)
+                                }
+                                EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+                            }
+                            if (takServerListChanged) {
+                                Log.d(TAG, "Storing updated TAK Server List: $takServerList")
+                                dataRepository.storeTakServerList(takServerList)
+                            }
 
-                             if(enableMulticastChanged){
-                                 Log.d(TAG, "Storing updated Enable Multicast: $enableMulticastOnWifi")
-                                 dataRepository.storeEnableMulticast(enableMulticastOnWifi)
-                             }
-                             if (multicastAddressChanged) {
-                                 Log.d(TAG, "Storing updated Multicast Address: $multicastAddress")
-                                 dataRepository.storeMulticastAddress(multicastAddress)
-                             }
-                             if (multicastOutputProtocolChanged) {
-                                 Log.d(TAG, "Storing updated Multicast Output Protocol: $multicastProtocol")
-                                 dataRepository.storeMulticastProtocol(multicastProtocol)
-                             }
-                             if (multicastServerPortChanged) {
-                                 Log.d(TAG, "Storing updated Multicast Server Port: $multicastPort")
-                                 dataRepository.storeMulticastPort(multicastPort)
-                             }
-                             if (enableTabletCommandChanged){
-                                 Log.d(TAG, "Storing updated Enable Tablet Command: $enableTabletCommandEndpoint")
-                                 dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint)
-                             }
-                             if (tabletCommandEndpointChanged) {
-                                 Log.d(TAG, "Storing updated Tablet Command Endpoint: $tabletCommandEndpoint")
-                                 dataRepository.storeTabletCommandEndpoint(tabletCommandEndpoint)
-                             }
-                             if (tabletCommandAPIKeyChanged) {
-                                 Log.d(TAG, "Storing updated Tablet Command API Key: $tabletCommandApikey")
-                                 dataRepository.storeTabletCommandApikey(tabletCommandApikey)
-                             }
-                             if (enableEsriChanged){
-                                 Log.d(TAG, "Storing updated Enable Esri: $enableEsriEndpoint")
-                                 dataRepository.storeEnableEsriEndpoint(enableEsriEndpoint)
-                             }
-                             if (esriEndpointChanged) {
-                                 Log.d(TAG, "Storing updated ESRI Endpoint: $esriEndpoint")
-                                 dataRepository.storeEsriEndpoint(esriEndpoint)
-                             }
-                             if (locationCheckedChanged) {
-                                 Log.d(TAG, "Storing enableLocationService $enableLocationService")
-                                 dataRepository.storeEnableLocationService(enableLocationService)
-                             }
-                             if (dittoCheckedChanged) {
-                                 Log.d(TAG, "Storing enableDittoService $enableDittoService")
-                                 dataRepository.storeEnableDittoService(enableDittoService)
-                             }
-                             if (sitxCheckedChanged) {
-                                 Log.d(TAG, "Storing enableSitxService $enableSitxService")
-                                 dataRepository.storeEnableSitxService(enableSitxService)
-                             }
-                             if (sitxUrlChanged) {
-                                 Log.d(TAG, "Storing Sitx URL: $sitxTakUrl")
-                                 sitxRepo.setBaseUrl(sitxTakUrl)
-                                 // TODO Senni: Need to restart the device authorization
-                             }
-                             if (sitxClientIdChanged) {
-                                 Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
-                                 sitxRepo.setClientId(sitxTakClientId)
-                                 // TODO Senni: Need to restart the device authorization
-                             }
-                             if (companionAppCheckedChanged) {
-                                 Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
-                                 dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
-                             }
-                             if (chatCheckedChanged) {
-                                 Log.d(TAG, "Storing enableChatService $enableChatService")
-                                 dataRepository.storeEnableChatService(enableChatService)
-                             }
-                             if (immersionAlertsChanged) {
-                                 Log.d(TAG, "Storing enableImmersionAlerts $enableImmersionAlerts")
-                                 dataRepository.storeEnableImmersionAlerts(enableImmersionAlerts)
-                             }
-                             if (lowPressureAlertChanged) {
-                                 Log.d(TAG, "Storing enableLowAtmPressureAlert $enableLowAtmPressureAlert")
-                                 dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlert)
-                             }
-                             if (lowPressureAlertThresholdChanged) {
-                                 Log.d(TAG, "Storing lowAtmPressureAlertThreshold $lowAtmPressureAlertThreshold")
-                                 dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThreshold)
-                             }
-                             if (highPressureAlertChanged) {
-                                 Log.d(TAG, "Storing enableHighAtmPressureAlert $enableHighAtmPressureAlert")
-                                 dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlert)
-                             }
-                             if (highPressureAlertThresholdChanged) {
-                                 Log.d(TAG, "Storing highAtmPressureAlertThreshold $highAtmPressureAlertThreshold")
-                                 dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
-                             }
-                             if (onnxGunDetectChanged) {
-                                 Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
-                                 dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
-                             }
-                             if (batteryAlertsCheckedChanged) {
-                                 Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
-                                 dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
-                             }
-                             if (bloodhoundCompassCheckedChanged) {
-                                 Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
-                                 dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
-                             }
-                             if (hailCheckedChanged) {
-                                 Log.d(TAG, "Storing enableHailService $enableHailService")
-                                 dataRepository.storeEnableHailService(enableHailService)
-                             }
-                             if (batdokCheckedChanged) {
-                                 Log.d(TAG, "Storing enableBatdokCot $enableBatdokCot")
-                                 dataRepository.storeEnableBatdokCot(enableBatdokCot)
-                             }
-                             if (smsAlertsCheckedChanged) {
-                                 Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
-                                 dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
-                             }
-                             if (smsNumbersChanged){
-                                 val smsNumbersListConversion: List<DataRepository.SmsNumber> =
-                                        smsNumbersListString.split(",")
-                                            .map { it.trim() } // Trim whitespace from each SSID
-                                            .filter { it.isNotEmpty() } // Remove any empty values
-                                            .map { DataRepository.SmsNumber(it) }
-                                 Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
+                            if(enableMulticastChanged){
+                                Log.d(TAG, "Storing updated Enable Multicast: $enableMulticastOnWifi")
+                                dataRepository.storeEnableMulticast(enableMulticastOnWifi)
+                            }
+                            if (multicastAddressChanged) {
+                                Log.d(TAG, "Storing updated Multicast Address: $multicastAddress")
+                                dataRepository.storeMulticastAddress(multicastAddress)
+                            }
+                            if (multicastOutputProtocolChanged) {
+                                Log.d(TAG, "Storing updated Multicast Output Protocol: $multicastProtocol")
+                                dataRepository.storeMulticastProtocol(multicastProtocol)
+                            }
+                            if (multicastServerPortChanged) {
+                                Log.d(TAG, "Storing updated Multicast Server Port: $multicastPort")
+                                dataRepository.storeMulticastPort(multicastPort)
+                            }
+                            if (enableTabletCommandChanged){
+                                Log.d(TAG, "Storing updated Enable Tablet Command: $enableTabletCommandEndpoint")
+                                dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint)
+                            }
+                            if (tabletCommandEndpointChanged) {
+                                Log.d(TAG, "Storing updated Tablet Command Endpoint: $tabletCommandEndpoint")
+                                dataRepository.storeTabletCommandEndpoint(tabletCommandEndpoint)
+                            }
+                            if (tabletCommandAPIKeyChanged) {
+                                Log.d(TAG, "Storing updated Tablet Command API Key: $tabletCommandApikey")
+                                dataRepository.storeTabletCommandApikey(tabletCommandApikey)
+                            }
+                            if (enableEsriChanged){
+                                Log.d(TAG, "Storing updated Enable Esri: $enableEsriEndpoint")
+                                dataRepository.storeEnableEsriEndpoint(enableEsriEndpoint)
+                            }
+                            if (esriEndpointChanged) {
+                                Log.d(TAG, "Storing updated ESRI Endpoint: $esriEndpoint")
+                                dataRepository.storeEsriEndpoint(esriEndpoint)
+                            }
+                            if (locationCheckedChanged) {
+                                Log.d(TAG, "Storing enableLocationService $enableLocationService")
+                                dataRepository.storeEnableLocationService(enableLocationService)
+                            }
+                            if (dittoCheckedChanged) {
+                                Log.d(TAG, "Storing enableDittoService $enableDittoService")
+                                dataRepository.storeEnableDittoService(enableDittoService)
+                            }
+                            if (sitxCheckedChanged) {
+                                Log.d(TAG, "Storing enableSitxService $enableSitxService")
+                                dataRepository.storeEnableSitxService(enableSitxService)
+                            }
+                            if (sitxUrlChanged) {
+                                Log.d(TAG, "Storing Sitx URL: $sitxTakUrl")
+                                sitxRepo.setBaseUrl(sitxTakUrl)
+                                // TODO Senni: Need to restart the device authorization
+                            }
+                            if (sitxClientIdChanged) {
+                                Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
+                                sitxRepo.setClientId(sitxTakClientId)
+                                // TODO Senni: Need to restart the device authorization
+                            }
+                            if (companionAppCheckedChanged) {
+                                Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
+                                dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
+                            }
+                            if (chatCheckedChanged) {
+                                Log.d(TAG, "Storing enableChatService $enableChatService")
+                                dataRepository.storeEnableChatService(enableChatService)
+                            }
+                            if (immersionAlertsChanged) {
+                                Log.d(TAG, "Storing enableImmersionAlerts $enableImmersionAlerts")
+                                dataRepository.storeEnableImmersionAlerts(enableImmersionAlerts)
+                            }
+                            if (lowPressureAlertChanged) {
+                                Log.d(TAG, "Storing enableLowAtmPressureAlert $enableLowAtmPressureAlert")
+                                dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlert)
+                            }
+                            if (lowPressureAlertThresholdChanged) {
+                                Log.d(TAG, "Storing lowAtmPressureAlertThreshold $lowAtmPressureAlertThreshold")
+                                dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThreshold)
+                            }
+                            if (highPressureAlertChanged) {
+                                Log.d(TAG, "Storing enableHighAtmPressureAlert $enableHighAtmPressureAlert")
+                                dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlert)
+                            }
+                            if (highPressureAlertThresholdChanged) {
+                                Log.d(TAG, "Storing highAtmPressureAlertThreshold $highAtmPressureAlertThreshold")
+                                dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
+                            }
+                            if (onnxGunDetectChanged) {
+                                Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
+                                dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
+                            }
+                            if (batteryAlertsCheckedChanged) {
+                                Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
+                                dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
+                            }
+                            if (bloodhoundCompassCheckedChanged) {
+                                Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
+                                dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
+                            }
+                            if (hailCheckedChanged) {
+                                Log.d(TAG, "Storing enableHailService $enableHailService")
+                                dataRepository.storeEnableHailService(enableHailService)
+                            }
+                            if (batdokCheckedChanged) {
+                                Log.d(TAG, "Storing enableBatdokCot $enableBatdokCot")
+                                dataRepository.storeEnableBatdokCot(enableBatdokCot)
+                            }
+                            if (smsAlertsCheckedChanged) {
+                                Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
+                                dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
+                            }
+                            if (smsNumbersChanged){
+                                val smsNumbersListConversion: List<DataRepository.SmsNumber> =
+                                    smsNumbersListString.split(",")
+                                        .map { it.trim() } // Trim whitespace from each SSID
+                                        .filter { it.isNotEmpty() } // Remove any empty values
+                                        .map { DataRepository.SmsNumber(it) }
+                                Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
 
-                                 dataRepository.storeSmsNumbersList(smsNumbersListConversion)
-                                 smsNumbersList = smsNumbersListConversion
-                             }
+                                dataRepository.storeSmsNumbersList(smsNumbersListConversion)
+                                smsNumbersList = smsNumbersListConversion
+                            }
 
-                             if (physioCheckedChanged) {
-                                 Log.d(TAG, "Storing enablePhysiologicalServices $enablePhysiologicalServices")
-                                 dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServices)
-                             }
+                            if (physioCheckedChanged) {
+                                Log.d(TAG, "Storing enablePhysiologicalServices $enablePhysiologicalServices")
+                                dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServices)
+                            }
 
-                             if (physiologicalAlertsCheckedChanged) {
-                                 Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
-                                 dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
-                                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
-                             }
+                            if (physiologicalAlertsCheckedChanged) {
+                                Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
+                                dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
+                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                            }
 
-                             if (restingHeartRateHighThresholdChanged) {
-                                 Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
-                                 dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
-                             }
-                             if (highRestingHrWarningThresholdLengthChanged) {
-                                 Log.d(TAG, "Storing highRestingHrWarningThresholdLength $highRestingHrWarningThresholdLength")
-                                 dataRepository.storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLength)
-                             }
-                             if (highRestingHrAlertThresholdLengthChanged) {
-                                 Log.d(TAG, "Storing highRestingHrAlertThresholdLength $highRestingHrAlertThresholdLength")
-                                 dataRepository.storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLength)
-                             }
-                             if (restingHeartRateLowThresholdChanged) {
-                                 Log.d(TAG, "Storing hrHighAlertBpmThreshold $restingHrLowAlertBpmThreshold")
-                                 dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold)
-                             }
-                             if (lowRestingHrWarningThresholdLengthChanged) {
-                                 Log.d(TAG, "Storing lowRestingHrWarningThresholdLength $lowRestingHrWarningThresholdLength")
-                                 dataRepository.storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLength)
-                             }
-                             if (lowRestingHrAlertThresholdLengthChanged) {
-                                 Log.d(TAG, "Storing lowRestingHrAlertThresholdLength $lowRestingHrAlertThresholdLength")
-                                 dataRepository.storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength)
-                             }
-                             if (exertionWarningThresholdChanged) {
-                                 Log.d(TAG, "Storing exertionThresholdWarning $exertionThresholdWarning")
-                                 dataRepository.storeExertionThresholdWarning(exertionThresholdWarning)
-                                 CepProvider.getOrCreateEngine(context).updateHrrProfile()
-                             }
-                             if (exertionWarningThresholdLengthChanged) {
-                                 Log.d(TAG, "Storing exertionWarningThresholdLength $exertionWarningThresholdLength")
-                                 dataRepository.storeExertionWarningThresholdLength(exertionWarningThresholdLength)
-                             }
-                             if (exertionAlertThresholdChanged) {
-                                 Log.d(TAG, "Storing exertionThresholdAlert $exertionThresholdAlert")
-                                 dataRepository.storeExertionThresholdAlert(exertionThresholdAlert)
-                                 CepProvider.getOrCreateEngine(context).updateHrrProfile()
-                             }
+                            if (restingHeartRateHighThresholdChanged) {
+                                Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
+                                dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
+                            }
+                            if (highRestingHrWarningThresholdLengthChanged) {
+                                Log.d(TAG, "Storing highRestingHrWarningThresholdLength $highRestingHrWarningThresholdLength")
+                                dataRepository.storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLength)
+                            }
+                            if (highRestingHrAlertThresholdLengthChanged) {
+                                Log.d(TAG, "Storing highRestingHrAlertThresholdLength $highRestingHrAlertThresholdLength")
+                                dataRepository.storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLength)
+                            }
+                            if (restingHeartRateLowThresholdChanged) {
+                                Log.d(TAG, "Storing hrHighAlertBpmThreshold $restingHrLowAlertBpmThreshold")
+                                dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold)
+                            }
+                            if (lowRestingHrWarningThresholdLengthChanged) {
+                                Log.d(TAG, "Storing lowRestingHrWarningThresholdLength $lowRestingHrWarningThresholdLength")
+                                dataRepository.storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLength)
+                            }
+                            if (lowRestingHrAlertThresholdLengthChanged) {
+                                Log.d(TAG, "Storing lowRestingHrAlertThresholdLength $lowRestingHrAlertThresholdLength")
+                                dataRepository.storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength)
+                            }
+                            if (exertionWarningThresholdChanged) {
+                                Log.d(TAG, "Storing exertionThresholdWarning $exertionThresholdWarning")
+                                dataRepository.storeExertionThresholdWarning(exertionThresholdWarning)
+                            }
+                            if (exertionWarningThresholdLengthChanged) {
+                                Log.d(TAG, "Storing exertionWarningThresholdLength $exertionWarningThresholdLength")
+                                dataRepository.storeExertionWarningThresholdLength(exertionWarningThresholdLength)
+                            }
+                            if (exertionAlertThresholdChanged) {
+                                Log.d(TAG, "Storing exertionThresholdAlert $exertionThresholdAlert")
+                                dataRepository.storeExertionThresholdAlert(exertionThresholdAlert)
+                            }
+                            if (exertionAlertThresholdLengthChanged) {
+                                Log.d(TAG, "Storing exertionAlertThresholdLength $exertionAlertThresholdLength")
+                                dataRepository.storeExertionAlertThresholdLength(exertionAlertThresholdLength)
+                            }
 
-                             if (highRestingHrWarningThresholdLengthChanged ||
-                                 highRestingHrAlertThresholdLengthChanged ||
-                                 lowRestingHrWarningThresholdLengthChanged ||
-                                 lowRestingHrAlertThresholdLengthChanged ||
-                                 exertionWarningThresholdLengthChanged ||
-                                 exertionAlertThresholdLengthChanged) {
-                                 val mainMap = mapOf(
-                                     "hr_high_threshold_resting_alert" to (highRestingHrAlertThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_rest_brady_10min_emergency" to (lowRestingHrAlertThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_zone4_exercise_10min_emergency" to (exertionWarningThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_zone5_exercise_5min_emergency" to (exertionAlertThresholdLength * 60L).coerceAtLeast(0L)
-                                 )
-                                 val warnMap = mapOf(
-                                     "hr_high_threshold_resting_alert" to (highRestingHrWarningThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_rest_brady_10min_emergency" to (lowRestingHrWarningThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_zone4_exercise_10min_emergency" to (exertionWarningThresholdLength * 60L).coerceAtLeast(0L),
-                                     "hr_zone5_exercise_5min_emergency" to (exertionWarningThresholdLength * 60L).coerceAtLeast(0L)
-                                 )
-                                 dataRepository.storeCepSustainOverridesDual(mainMap, warnMap)
-                                 CepProvider.getOrCreateEngine(context).updateSustainOverrides()
-                             }
-
-                             if (physiologicalAlertsBpmThresholdCheckedChanged) {
-                                 Log.d(
-                                     TAG,
-                                     "Storing hrHighAlertBpmThreshold $hrHighAlertBpmThreshold"
-                                 )
-                                 dataRepository.storeHrHighAlertBpmThreshold(hrHighAlertBpmThreshold)
-
-                                 //Updating the hrProfile in the CEP
-                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
-                             }
-                             if (exertionAlertThresholdLengthChanged) {
-                                 Log.d(TAG, "Storing exertionAlertThresholdLength $exertionAlertThresholdLength")
-                                 dataRepository.storeExertionAlertThresholdLength(exertionAlertThresholdLength)
-                             }
-
-                             if (restingHeartRateChanged ||
-                                 restingHeartRateHighThresholdChanged ||
-                                 highRestingHrWarningThresholdLengthChanged ||
-                                 highRestingHrAlertThresholdLengthChanged ||
-                                 restingHeartRateLowThresholdChanged ||
-                                 lowRestingHrWarningThresholdLengthChanged ||
-                                 lowRestingHrAlertThresholdLengthChanged ||
-                                 exertionWarningThresholdChanged ||
-                                 exertionWarningThresholdLengthChanged ||
-                                 exertionAlertThresholdChanged ||
-                                 exertionAlertThresholdLengthChanged) {
-                                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
-                             }
-                             if (restingHeartRateChanged ||
-                                 restingHeartRateHighThresholdChanged ||
-                                 highRestingHrWarningThresholdLengthChanged ||
-                                 highRestingHrAlertThresholdLengthChanged ||
-                                 restingHeartRateLowThresholdChanged ||
-                                 lowRestingHrWarningThresholdLengthChanged ||
-                                 lowRestingHrAlertThresholdLengthChanged) {
-                                 CepProvider.getOrCreateEngine(context).updateHrProfile()
-                             }
-                             if (exertionWarningThresholdChanged || exertionAlertThresholdChanged) {
-                                 CepProvider.getOrCreateEngine(context).updateHrrProfile()
-                             }
-                             if (highRestingHrWarningThresholdLengthChanged ||
-                                 highRestingHrAlertThresholdLengthChanged ||
-                                 lowRestingHrWarningThresholdLengthChanged ||
-                                 lowRestingHrAlertThresholdLengthChanged ||
-                                 exertionWarningThresholdLengthChanged ||
-                                 exertionAlertThresholdLengthChanged) {
-                                 mainActivity.updateCepSustainOverridesMap()
-                                 CepProvider.getOrCreateEngine(context).updateSustainOverrides()
-                             }
+                            if (restingHeartRateChanged ||
+                                restingHeartRateHighThresholdChanged ||
+                                highRestingHrWarningThresholdLengthChanged ||
+                                highRestingHrAlertThresholdLengthChanged ||
+                                restingHeartRateLowThresholdChanged ||
+                                lowRestingHrWarningThresholdLengthChanged ||
+                                lowRestingHrAlertThresholdLengthChanged ||
+                                exertionWarningThresholdChanged ||
+                                exertionWarningThresholdLengthChanged ||
+                                exertionAlertThresholdChanged ||
+                                exertionAlertThresholdLengthChanged) {
+                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(HR_ALERT_THRESHOLDS_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                            }
+                            if (restingHeartRateChanged ||
+                                restingHeartRateHighThresholdChanged ||
+                                highRestingHrWarningThresholdLengthChanged ||
+                                highRestingHrAlertThresholdLengthChanged ||
+                                restingHeartRateLowThresholdChanged ||
+                                lowRestingHrWarningThresholdLengthChanged ||
+                                lowRestingHrAlertThresholdLengthChanged) {
+                                CepProvider.getOrCreateEngine(context).updateHrProfile()
+                            }
+                            if (exertionWarningThresholdChanged || exertionAlertThresholdChanged) {
+                                CepProvider.getOrCreateEngine(context).updateHrrProfile()
+                            }
+                            if (highRestingHrWarningThresholdLengthChanged ||
+                                highRestingHrAlertThresholdLengthChanged ||
+                                lowRestingHrWarningThresholdLengthChanged ||
+                                lowRestingHrAlertThresholdLengthChanged ||
+                                exertionWarningThresholdLengthChanged ||
+                                exertionAlertThresholdLengthChanged) {
+                                mainActivity.updateCepSustainOverridesMap()
+                                CepProvider.getOrCreateEngine(context).updateSustainOverrides()
+                            }
                             Log.d(TAG, "Finished saving settings")
                         }
                     } else {
