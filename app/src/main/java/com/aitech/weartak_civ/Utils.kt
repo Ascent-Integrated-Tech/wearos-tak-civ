@@ -74,6 +74,7 @@ import java.util.Locale
 import java.util.TimeZone
 import java.lang.reflect.Method
 import dalvik.system.PathClassLoader
+import mil.nga.mgrs.MGRS
 
 object Utils {
     private const val TAG = "WearTAK-Utils"
@@ -449,6 +450,12 @@ object Utils {
             }
         }
     }
+
+    fun latLonToMgrs(lat: Double, lon: Double): String {
+        val mgrs = MGRS.from(lon, lat)
+        return mgrs.coordinate() // 1-meter precision
+    }
+
     fun writeToLogFileLocation(logFile: File?, data: String) {
         if (null == logFile) {
             return
