@@ -17,16 +17,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -90,7 +96,13 @@ import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.Utils
@@ -99,6 +111,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.aitech.weartak_civ.Utils.latLonToMgrs
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.const
@@ -243,6 +256,27 @@ fun MapApp(exitActivity: () -> Unit) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
     val userLocationState = rememberUserLocationState(locationProvider)
+    var showPopup by remember { mutableStateOf(false) }
+    val projection = cameraState.projection
+    val puckScreenOffset: DpOffset? = remember(
+        locationFlow,
+        projection,
+        cameraState.position
+    ) {
+        val loc = locationFlow
+        val proj = projection
+
+        if (loc != null && proj != null) {
+            proj.screenLocationFromPosition(
+                Position(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude
+                )
+            )
+        } else {
+            null
+        }
+    }
     val droppedMarkerListSetting by dataRepository
         .droppedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
@@ -351,7 +385,34 @@ fun MapApp(exitActivity: () -> Unit) {
                                 "Brown" -> brown
                                 else -> Color.Unspecified
                             }
-                    )
+                    ),
+                    onClick = {
+                        scope.launch {
+                            val current = cameraState.position
+
+                            cameraState.animateTo(
+                                CameraPosition(
+                                    target = Position(
+                                        latitude = lat,
+                                        longitude = lon
+                                    ),
+                                    zoom = current.zoom,
+                                    bearing = current.bearing,
+                                    tilt = current.tilt,
+
+                                    // More right padding pushes the target visually left
+                                    padding = PaddingValues(
+                                        start = 0.dp,
+                                        top = 0.dp,
+                                        end = 84.dp,
+                                        bottom = 30.dp
+                                    )
+                                )
+                            )
+
+                            showPopup = true
+                        }
+                    }
                 )
             }
             MarkersOnMap(
@@ -373,10 +434,23 @@ fun MapApp(exitActivity: () -> Unit) {
                 camera = cameraState
             )
         }
+        if (showPopup && puckScreenOffset != null) {
+           PopupBox(
+               showPopup = showPopup,
+                anchor = puckScreenOffset,
+               lat = lat,
+               lon = lon,
+                onClickOutside = { showPopup = false }
+            )
+        }
+//        PopupBox(showPopup = showPopup, onClickOutside = {showPopup = false})
+
         Image(
             painter = painterResource(R.drawable.north_arrow),
             contentDescription = "North Arrow",
-            modifier = Modifier.align(Alignment.TopCenter).size(40.dp),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .size(40.dp),
             alignment = Alignment.TopCenter
         )
         val current = cameraState.position
@@ -388,7 +462,9 @@ fun MapApp(exitActivity: () -> Unit) {
 
             ScaleBar(
                 cameraState.metersPerDpAtTarget,
-                modifier = Modifier.align(Alignment.TopCenter).width(100.dp),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .width(100.dp),
                 color = colors.primary,
                 textStyle = MaterialTheme.typography.bodySmall,
                 barWidth = 1.dp
@@ -478,6 +554,58 @@ fun MapApp(exitActivity: () -> Unit) {
 //                }
 //                Log.d(TAG, "zoom = $nextZoom") }
 //        )
+    }
+}
+@Composable
+fun PopupBox(
+    anchor: DpOffset,
+    showPopup: Boolean,
+    lat: Double,
+    lon: Double,
+    onClickOutside: () -> Unit,
+){
+    val density = LocalDensity.current
+
+    if (showPopup) {
+        // full screen background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(10F),
+            contentAlignment = Alignment.Center
+        ) {
+            // popup
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = with(density) {
+                    IntOffset(
+                        x = (anchor.x + 12.dp).roundToPx(), // move popup to the right
+                        y = anchor.y.roundToPx()
+                    )
+                },
+                properties = PopupProperties(
+                    excludeFromSystemGesture = true,
+                ),
+                // to dismiss on click outside
+                onDismissRequest = { onClickOutside() }
+            ) {
+                Box(
+                    Modifier
+                        .wrapContentSize()
+                        .background(Color.Black.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column (modifier = Modifier.padding(5.dp)){
+                        Text(
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            lineHeight = 10.sp,
+                            text = "Lat: $lat\nLon: $lon\n\n${latLonToMgrs(lat, lon)}")
+                    }
+                }
+            }
+        }
     }
 }
 @Composable
@@ -620,5 +748,5 @@ fun MapUi(
 @Preview(widthDp = 192, heightDp = 192, showBackground = true)
 @Composable
 fun MyAppPreview() {
-//    MapUi()
+    PopupBox(showPopup = true, anchor = DpOffset.Unspecified, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
 }
