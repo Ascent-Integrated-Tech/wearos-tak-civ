@@ -895,6 +895,7 @@ class DataRepository(private val context: Context) {
         val uid: String,
         val markerType: MarkerType,
         val title: String,
+        val remark: String,
         val iconSetPath: String?,
         val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
@@ -932,6 +933,7 @@ class DataRepository(private val context: Context) {
             uid = req.uid.ifEmpty { UUID.randomUUID().toString() },
             markerType = req.markerType,
             title = req.title,
+            remark = req.remark,
             iconSetPath = req.markerType.icon,
             loc = loc,
             time = timeSnapshot,
@@ -1176,6 +1178,7 @@ class DataRepository(private val context: Context) {
         val uid: String,
         val markerType: String,
         val title: String,
+        val remark: String,
         val timeDropped: Long,
         val location: LocationSnapshot?
     )
@@ -1284,6 +1287,7 @@ class DataRepository(private val context: Context) {
     data class MarkerDropRequest(
         val markerType: MarkerType,
         val title: String,
+        val remark: String,
         val timeMillis: Long,
         val uid: String = "",
         val lat: Double? = null,
@@ -1294,6 +1298,7 @@ class DataRepository(private val context: Context) {
         val uid: String,
         val markerType: MarkerType,
         val title: String,
+        val remark: String,
         val timeMillis: Long
     )
 
@@ -1307,9 +1312,9 @@ class DataRepository(private val context: Context) {
     val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
 
     // UI-facing API
-    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long, lat: Double? = null, lon: Double? = null): Boolean {
+    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, remark: String, timeMillis: Long, lat: Double? = null, lon: Double? = null): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis, lat = lat, lon = lon))
+        _markerDropRequests.emit(MarkerDropRequest(parsed, title, remark, timeMillis, lat = lat, lon = lon))
         return true
     }
 
@@ -1334,6 +1339,20 @@ class DataRepository(private val context: Context) {
             list.map { marker ->
                 if (marker.uid == uid) {
                     marker.copy(title = title).also { updatedMarker = it }
+                } else {
+                    marker
+                }
+            }
+        }
+        emitMarkerEditRequest(updatedMarker)
+    }
+
+    fun requestChangeMarkerRemark(uid: String, remark: String) {
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) {
+                    marker.copy(remark = remark).also { updatedMarker = it }
                 } else {
                     marker
                 }
@@ -1369,6 +1388,7 @@ class DataRepository(private val context: Context) {
                 uid = marker.uid,
                 markerType = markerType,
                 title = marker.title,
+                remark = marker.remark,
                 timeMillis = System.currentTimeMillis()
             )
         )

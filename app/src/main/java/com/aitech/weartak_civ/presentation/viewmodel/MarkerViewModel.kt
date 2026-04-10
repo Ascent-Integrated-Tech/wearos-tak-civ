@@ -40,6 +40,9 @@ class MarkerViewModel : ViewModel() {
      fun requestChangeMarkerTitle(uid: String, title: String){
         dataRepository.requestChangeMarkerTitle(uid, title)
     }
+    fun requestChangeMarkerRemark(uid: String, remark: String){
+        dataRepository.requestChangeMarkerRemark(uid, remark)
+    }
     fun requestChangeMarkerType(uid: String, type: String){
         dataRepository.requestChangeMarkerType(uid, type)
     }
@@ -52,7 +55,7 @@ class MarkerViewModel : ViewModel() {
     suspend fun requestClearLast(){
         dataRepository.requestClearLast()
     }
-    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long){
-        dataRepository.requestMarkerDrop(markerTypeRaw, title, timeMillis)
+    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, remark: String, timeMillis: Long){
+        dataRepository.requestMarkerDrop(markerTypeRaw, title, remark, timeMillis)
     }
 }
