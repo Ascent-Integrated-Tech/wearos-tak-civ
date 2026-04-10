@@ -1562,6 +1562,7 @@ class CotDispatchService : Service() {
         val uid         = ms?.uid
         val markerType  = ms?.markerType?.type
         val markerTitle = ms?.title
+        val markerRemark = ms?.remark
         val battery     = ms?.system?.batteryPercent
 
         val startTime   = ms?.time?.startCot
@@ -1591,7 +1592,7 @@ class CotDispatchService : Service() {
                 <link uid="$linkUid" production_time="$startTime" type="a-f-G-U-C" parent_callsign="$callsign" relation="p-p"/>
                 <color argb="-1"/>
                 <usericon iconsetpath="$iconSetPath"/>
-                <remarks></remarks> 
+                <remarks>$markerRemark</remarks> 
                 <contact callsign="$markerTitleCallsignOrCustom"/>
             </detail>
         </event>
@@ -2127,7 +2128,7 @@ class CotDispatchService : Service() {
         val markerTitleCallsignOrCustom = finalMarkerTitle(snapshot.title)
 
         dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = markerTitleCallsignOrCustom, timeDropped = req.timeMillis, location = snapshot.loc)
+            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = markerTitleCallsignOrCustom, remark = req.remark, timeDropped = req.timeMillis, location = snapshot.loc)
         )
     }
 
@@ -2136,6 +2137,7 @@ class CotDispatchService : Service() {
             DataRepository.MarkerDropRequest(
                 markerType = req.markerType,
                 title = req.title,
+                remark = req.remark,
                 timeMillis = req.timeMillis,
                 uid = req.uid
             )

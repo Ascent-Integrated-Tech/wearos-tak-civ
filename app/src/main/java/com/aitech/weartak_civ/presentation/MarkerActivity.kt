@@ -110,6 +110,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -138,6 +139,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.TAG
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerRemarkSettingsState
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerTitleSettingsState
 import com.aitech.weartak_civ.presentation.viewmodel.MarkerViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -156,6 +158,8 @@ class MarkerActivity : ComponentActivity() {
         var markerType: String = "a-u-G"
         const val TAG = "WearTAK-MarkerActivity"
         var markerTitleSettingsState = MutableLiveData<String>("")
+        var markerRemarkSettingsState = MutableLiveData<String>("")
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -856,13 +860,18 @@ fun DropMarkerConfirmationDialog(
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(5.dp))
-                    var textField = GenericOutlinedTextField(
+                    var textFieldTitle = GenericOutlinedTextField(
                         markerTitleSettingsState,
                         "Optional Title",
                         ""
                     )
                     Spacer(modifier = Modifier.height(5.dp))
-
+                    var textFieldRemark = GenericOutlinedTextField(
+                        markerRemarkSettingsState,
+                        "Optional Remark",
+                        ""
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -883,11 +892,12 @@ fun DropMarkerConfirmationDialog(
                             onClick = {
                                 shouldShowDialog.value = false
                                 isConfirmed.value = true
-                                markerTitleSettingsState.value = textField.text
+                                markerTitleSettingsState.value = textFieldTitle.text
+                                markerRemarkSettingsState.value = textFieldRemark.text
                                 val time = System.currentTimeMillis()
                                 markerScope.launch {
                                     viewModel.requestMarkerDrop(markerType,
-                                        textField.text, time)
+                                        textFieldTitle.text, textFieldRemark.text, time)
                                 }
                                 Log.d(TAG, "${markerTitleSettingsState.value}")
                                 confirmFunction()
@@ -1011,6 +1021,7 @@ fun EditSelectedMarker(
     var locationLat by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lat ?: 0.0) }
     var locationLon by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lon ?: 0.0) }
     val markerType = droppedMarkerListSetting.getOrNull(index)?.markerType.orEmpty()
+    var remark by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.remark.orEmpty()) }
     val time = droppedMarkerListSetting.getOrNull(index)?.timeDropped ?: 0L
     WearTAKCIVTheme {
         Box(
@@ -1057,6 +1068,17 @@ fun EditSelectedMarker(
                         .align(Alignment.CenterHorizontally)
                         .padding(bottom = 5.dp)
                 )
+                if (remark.isNotEmpty()) {
+                    Text(
+                        text = "Remark: $remark",
+                        fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(bottom = 5.dp)
+                    )
+                }
                 Text(
                     text = "$locationLat, $locationLon",
                     fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
@@ -1070,6 +1092,19 @@ fun EditSelectedMarker(
                     onClick = { navController.navigate("edit_marker_title/$index")},
                     enabled = true,
                     label = { androidx.wear.compose.material.Text(text = "Change Title") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                )
+                Chip(
+                    onClick = { navController.navigate("edit_marker_remark/$index")},
+                    enabled = true,
+                    label = { androidx.wear.compose.material.Text(text = if (remark.isNotEmpty()) "Change Remark" else "Add Remark") },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
@@ -1115,13 +1150,13 @@ fun EditSelectedMarker(
                 Chip(
                     onClick = { showDeleteMarkerDialog.value = true },
                     enabled = true,
-                    label = { androidx.wear.compose.material.Text(text = "Delete Marker") },
+                    label = { androidx.wear.compose.material.Text(textAlign = TextAlign.Center, text = "Delete Marker") },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.Red,
                         contentColor = Color.White
                     ),
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxWidth(.7f)
                         .padding(bottom = 10.dp)
                 )
             }
@@ -1137,16 +1172,19 @@ fun EditSelectedMarker(
 }
 
 @Composable
-fun MarkerTitleSetting(
+fun MarkerTitleRemarkSetting(
     navController: NavController,
     index: Int,
+    string: String,
+    remarkOrTitle: String,
     droppedMarkerListSetting: List<DataRepository.DroppedMarker>,
     viewModel: MarkerViewModel) {
 
-    var title by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.title.orEmpty()) }
+    var item by remember { mutableStateOf(string) }
+
     val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
 
-    var newTitle by remember {mutableStateOf(title)}
+    var newItem by remember {mutableStateOf(item)}
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1156,23 +1194,27 @@ fun MarkerTitleSetting(
         contentAlignment = Alignment.Center
     ) {
         GenericOutlinedTextField1(
-            value = title,
+            value = item,
             onValueChange = { newText ->
-                newTitle = newText},
-            label = "Title",
-            placeholder = "Enter a title"
+                newItem = newText},
+            label = if (remarkOrTitle == "remark") "Remark" else "Title",
+            placeholder = if (remarkOrTitle == "remark") "Enter a remark" else "Enter a title"
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             ConfirmCancelButtons(
                 onClickCancel = {
-                    Log.i(TAG, "Callsign Settings NOT saved")
+                    Log.i(TAG, "Title or Remark NOT saved")
                     navController.popBackStack()
                 },
                 onClickConfirm = {
-                    if (title != newTitle) {
-                        viewModel.requestChangeMarkerTitle(uid, newTitle)
+                    if (item != newItem) {
+                        if (remarkOrTitle == "title") {
+                            viewModel.requestChangeMarkerTitle(uid, newItem)
+                        } else if (remarkOrTitle == "remark"){
+                            viewModel.requestChangeMarkerRemark(uid, newItem)
+                        }
                     }
-                    Log.i(TAG, "Settings saved with marker title: $newTitle")
+                    Log.i(TAG, "Settings saved with marker title or remark: $newItem")
                     navController.popBackStack()
                 })
         }
@@ -1382,6 +1424,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             )
 //            MarkerSelectionScreen(exitActivity = {exitActivity()}, shouldShowConfirm, navController)
             markerTitleSettingsState.value = ""
+            markerRemarkSettingsState.value = ""
 
             DropMarkerConfirmationDialog(
                 viewModel = viewModel,
@@ -1418,18 +1461,31 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                         },
                         {
                             Spacer(modifier = Modifier.height(10.dp))
-                            if (markerTitleSettingsState.value.isNullOrEmpty()) {
-                                Text(
+                            when {
+                                markerTitleSettingsState.value.isNullOrEmpty() && markerRemarkSettingsState.value.isNullOrEmpty() ->
+                                    Text(
                                     text = "$markerType Marker Dropped",
                                     textAlign = TextAlign.Center,
                                     color = Color.White
                                 )
-                            } else {
-                                Text(
-                                    text = "Dropped $markerType: ${markerTitleSettingsState.value}",
-                                    textAlign = TextAlign.Center,
-                                    color = Color.White
-                                )
+                                !markerTitleSettingsState.value.isNullOrEmpty() && markerRemarkSettingsState.value.isNullOrEmpty() ->
+                                    Text(
+                                        text = "Dropped $markerType: ${markerTitleSettingsState.value}",
+                                        textAlign = TextAlign.Center,
+                                        color = Color.White
+                                    )
+                                markerTitleSettingsState.value.isNullOrEmpty() && !markerRemarkSettingsState.value.isNullOrEmpty() ->
+                                    Text(
+                                        text = "Dropped $markerType\nRemark: ${markerRemarkSettingsState.value}",
+                                        textAlign = TextAlign.Center,
+                                        color = Color.White
+                                    )
+                                else ->
+                                    Text(
+                                        text = "Dropped $markerType: ${markerTitleSettingsState.value}\nRemark: ${markerRemarkSettingsState.value}",
+                                        textAlign = TextAlign.Center,
+                                        color = Color.White
+                                    )
                             }
                         }
                     )
@@ -1537,6 +1593,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                 context,
                 {
                     markerTitleSettingsState.value = ""
+                    markerRemarkSettingsState.value = ""
                     exitActivity()
                     context.startActivity(Intent(context, MainActivity::class.java))
                 },
@@ -1678,9 +1735,33 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             arguments = listOf(navArgument("index") { type = NavType.IntType })
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
+            val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
+
             Log.i(TAG, "edit_marker_title index: $index")
-            MarkerTitleSetting(navController, index, droppedMarkerListSetting, viewModel)
+            MarkerTitleRemarkSetting(
+                navController = navController,
+                index = index,
+                droppedMarkerListSetting.getOrNull(index)?.title.orEmpty(),
+                "title",
+                droppedMarkerListSetting,
+                viewModel
+            )
+
         }
+        composable(
+            "edit_marker_remark/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.i(TAG, "edit_marker_remark index: $index")
+            MarkerTitleRemarkSetting(
+                navController = navController,
+                index = index,
+                droppedMarkerListSetting.getOrNull(index)?.remark.orEmpty(),
+                "remark",
+                droppedMarkerListSetting,
+                viewModel
+            )        }
         composable(
             "edit_marker_type/{index}",
             arguments = listOf(navArgument("index") { type = NavType.IntType })
@@ -1779,14 +1860,6 @@ fun PreviewDroppedMarkerList() {
         onSecondaryActionClick = {}
     )
 }
-
-//@Preview(widthDp = 192, heightDp = 500)
-//@Composable
-//fun DroppedMarkerPreview() {
-//    val successBoolean = remember { mutableStateOf(true) }
-//    val shouldShowConfirm = remember { mutableStateOf(true) }
-//    DroppedMarkerSetting(rememberSwipeDismissableNavController(), successBoolean, shouldShowConfirm)
-//}
 
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable

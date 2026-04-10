@@ -342,6 +342,7 @@ fun MapApp(exitActivity: () -> Unit) {
                         dataRepository.requestMarkerDrop(
                             MarkerActivity.markerType,
                             "",
+                            "",
                             time,
                             lat = coordinates.latitude,
                             lon = coordinates.longitude,
