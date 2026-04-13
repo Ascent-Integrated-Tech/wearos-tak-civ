@@ -1777,24 +1777,28 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                     markerType = "a-f-G"
                     showTypeChangeConfirm.value = true
                     viewModel.requestChangeMarkerType(uid, markerType)
+                    MarkerActivity.Constants.markerType = markerType
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
                 },
                 onClickBottomButton = {
                     markerType = "a-u-G"
                     showTypeChangeConfirm.value = true
                     viewModel.requestChangeMarkerType(uid, markerType)
+                    MarkerActivity.Constants.markerType = markerType
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
                 },
                 onClickLeftButton = {
                     markerType = "a-n-G"
                     showTypeChangeConfirm.value = true
                     viewModel.requestChangeMarkerType(uid, markerType)
+                    MarkerActivity.Constants.markerType = markerType
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
                 },
                 onClickTopButton = {
                     markerType = "a-h-G"
                     showTypeChangeConfirm.value = true
                     viewModel.requestChangeMarkerType(uid, markerType)
+                    MarkerActivity.Constants.markerType = markerType
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Change request for $markerType ...")
                 },
                 longPressBoolean = false,
