@@ -135,6 +135,7 @@ import com.aitech.weartak_civ.MARKER_FRIENDLY
 import com.aitech.weartak_civ.MARKER_HOSTILE
 import com.aitech.weartak_civ.MARKER_NEUTRAL
 import com.aitech.weartak_civ.MARKER_UNKNOWN
+import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
@@ -1011,6 +1012,7 @@ fun SuccessfulCotSentCheck(
 fun EditSelectedMarker(
     navController: NavController,
     index: Int,
+    viewModel: MarkerViewModel,
     droppedMarkerListSetting: List<DataRepository.DroppedMarker>,
     showLocationChangeDialog: MutableState<Boolean>,
     showDeleteMarkerDialog: MutableState<Boolean>,
@@ -1023,6 +1025,8 @@ fun EditSelectedMarker(
     val markerType = droppedMarkerListSetting.getOrNull(index)?.markerType.orEmpty()
     var remark by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.remark.orEmpty()) }
     val time = droppedMarkerListSetting.getOrNull(index)?.timeDropped ?: 0L
+    val markerVectorFlow = remember(index) { viewModel.markerVectorUi(index) }
+    val markerVectorUi by markerVectorFlow.collectAsStateWithLifecycle()
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -1079,15 +1083,13 @@ fun EditSelectedMarker(
                             .padding(bottom = 5.dp)
                     )
                 }
-                Text(
-                    text = "$locationLat, $locationLon",
-                    fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
-                    textAlign = TextAlign.Center,
-                    color = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(bottom = 15.dp)
+                MarkerBearingDistance(
+                    distance = markerVectorUi?.distance,
+                    lat = locationLat,
+                    lon = locationLon,
+                    orientation = markerVectorUi?.orientation ?: 0F
                 )
+                Spacer(modifier = Modifier.height(10.dp))
                 Chip(
                     onClick = { navController.navigate("edit_marker_title/$index")},
                     enabled = true,
@@ -1167,6 +1169,70 @@ fun EditSelectedMarker(
 //                        navController.popBackStack()
                     })
             }
+        }
+    }
+}
+
+@Composable
+fun MarkerBearingDistance(
+    distance: Double?,
+    lat: Double,
+    lon: Double,
+    orientation: Float
+) {
+    val distanceText = distance?.let { String.format("%.2f", it) + stringResource(R.string.km) } ?: "--" + stringResource(R.string.km)
+    val orientationText = String.format("%.1f", orientation)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+    ){
+        Column(
+            modifier = Modifier.fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ){
+            RotatingArrowIcon(
+                degrees = orientation,
+                color = Color.White,
+                modifier = Modifier.size(ChipDefaults.IconSize)
+            )
+            androidx.wear.compose.material.Text(
+                text = orientationText,
+                fontSize = 13.sp,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.LightGray,
+                fontWeight = FontWeight.Normal
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(){
+            androidx.wear.compose.material.Text(
+                text = distanceText,
+                fontSize = 16.sp,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold
+            )
+            androidx.wear.compose.material.Text(
+                text = "$lat",
+                fontSize = 11.sp,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.LightGray,
+                fontWeight = FontWeight.Normal
+            )
+            androidx.wear.compose.material.Text(
+                text = "$lon",
+                fontSize = 11.sp,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.LightGray,
+                fontWeight = FontWeight.Normal
+            )
+            androidx.wear.compose.material.Text(
+                text = latLonToMgrs(lat, lon),
+                fontSize = 11.sp,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.LightGray,
+                fontWeight = FontWeight.Normal
+            )
         }
     }
 }
@@ -1630,6 +1696,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             EditSelectedMarker(
                 navController,
                 index,
+                viewModel,
                 droppedMarkerListSetting,
                 showLocationChangeDialog,
                 shouldShowClearMarkerDialog,

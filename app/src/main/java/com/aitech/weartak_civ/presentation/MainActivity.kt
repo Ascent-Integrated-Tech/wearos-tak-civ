@@ -3572,8 +3572,7 @@ fun bloodhoundActiveComplication(): Int {
 
 @Composable
 fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
-    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
-    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
     val activeTarget = activeItem?.target ?: ""
@@ -3999,5 +3998,4 @@ public fun Modifier.unswipeable() =
             state = DraggableState {}
         )
     )
-
 

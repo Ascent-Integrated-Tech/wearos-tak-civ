@@ -50,9 +50,10 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
-        val bhRepo = (applicationContext as WearTakApplication).bhRepo
+        val app = applicationContext as WearTakApplication
+        val bhRepo = app.bhRepo
         val active = bhRepo.activeBhItemUi.value
-        val northBearing = bhRepo.azimuthTrueDegSmoothed.value
+        val northBearing = app.repo.azimuthTrueDegSmoothed.value
         val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
         val needleOrientation = active?.orientation ?: properNorthBearing
 
