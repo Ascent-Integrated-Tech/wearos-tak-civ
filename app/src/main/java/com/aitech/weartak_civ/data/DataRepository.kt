@@ -115,9 +115,11 @@ import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
+import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.update
 import java.time.Year
 import java.util.EnumMap
@@ -514,6 +516,61 @@ class DataRepository(private val context: Context) {
 
     private val _latestLocation = MutableStateFlow<Location?>(null)
     val latestLocation: StateFlow<Location?> = _latestLocation
+
+    private val _useGpsCogAsHeading = MutableStateFlow(false)
+    val useGpsCogAsHeading: StateFlow<Boolean> = _useGpsCogAsHeading
+
+    private val _magAzTrueDeg = MutableStateFlow<Double?>(null)
+    val magAzTrueDeg: StateFlow<Double?> = _magAzTrueDeg
+
+    fun setUseGpsCogAsHeading(enabled: Boolean) {
+        _useGpsCogAsHeading.value = enabled
+    }
+
+    fun updateMagAzimuthTrue(angleTrueDeg: Double?) {
+        _magAzTrueDeg.value = angleTrueDeg?.let(LocationVectorCalculator::normalize0to360)
+    }
+
+    val autoUseGps: StateFlow<Boolean> =
+        latestLocation
+            .map { loc -> loc != null && loc.hasSpeed() && loc.speed > 1.5f && loc.hasBearing() }
+            .stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val gpsCogTrueDeg: StateFlow<Double?> =
+        latestLocation
+            .map { loc ->
+                if (loc != null && loc.hasBearing() && loc.hasSpeed() && loc.speed > 1.5f) {
+                    LocationVectorCalculator.normalize0to360(loc.bearing.toDouble())
+                } else {
+                    null
+                }
+            }
+            .stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val useGpsHeadingFinal: StateFlow<Boolean> =
+        combine(useGpsCogAsHeading, autoUseGps) { manual, auto ->
+            if (manual) true else auto
+        }.stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val azimuthTrueDeg: StateFlow<Double?> =
+        combine(useGpsHeadingFinal, gpsCogTrueDeg, magAzTrueDeg) { useGps, gps, mag ->
+            LocationVectorCalculator.fuseHeading(
+                useGpsHeading = useGps,
+                gpsCogTrueDeg = gps,
+                magAzTrueDeg = mag
+            )
+        }.stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val azimuthTrueDegSmoothed: StateFlow<Double?> =
+        azimuthTrueDeg
+            .scan<Double?, Double?>(null) { prev, curr ->
+                when {
+                    prev == null -> curr
+                    curr == null -> null
+                    else -> LocationVectorCalculator.smoothAngle(prev, curr, alpha = 0.15)
+                }
+            }
+            .stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
