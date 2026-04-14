@@ -71,7 +71,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonColors
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -213,6 +212,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
@@ -264,7 +264,9 @@ import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.OnnxRepository
+import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
+import com.aitech.weartak_civ.presentation.audio.AudioDetectionPromptHost
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
@@ -311,6 +313,8 @@ class MainActivity : ComponentActivity() {
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
         var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
+        var enableOnnxUasServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_UAS)
+        var enableOnnxUasService : Boolean = DEFAULT_ENABLE_ONNX_UAS
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -914,6 +918,7 @@ class MainActivity : ComponentActivity() {
             bloodhoundProximityRadiusMeters = dataRepository.getBloodhoundProximityRadiusMeters.first()
             bloodhoundProximityIntensity = dataRepository.getBloodhoundProximityIntensity.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
+            enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
             highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
@@ -1392,6 +1397,7 @@ class MainActivity : ComponentActivity() {
         bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
 
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
+        enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)
@@ -2719,88 +2725,11 @@ fun MainScreen(
             OnnxRepository(context.applicationContext)
         }
     }
-
-    val shouldShowGunshotDialog = remember { mutableStateOf(false) }
-    val pendingGunshot          = remember { mutableStateOf<OnnxRepository.OnnxGunshotEvent?>(null) }
-    val gunshotShownAtMs        = remember { mutableStateOf(0L) }
-    val uiReceivedAtEl = remember { mutableStateOf(0L) }
-
-    val GUNSHOT_PROMPT_TIMEOUT = 15_000L
-
-    // Collect Gunshot events from Onnx & trigger gunshot dialog.
-    LaunchedEffect(Unit) {
-        Log.i(TAG, "MainScreen: starting gunshotEvents collector")
-
-        onnxRepo.gunshotEvents.collect { event ->
-            val recvEl = SystemClock.elapsedRealtime()
-            uiReceivedAtEl.value = recvEl
-
-            Log.i(
-                TAG,
-                "GS_UI_RECEIVE uid=${event.uid} conf=${"%.4f".format(event.confidence)} " +
-                        "inferEndEl=${event.inferEndElapsedMs} uiRecvEl=$recvEl " +
-                        "inferToUiMs=${event.inferEndElapsedMs?.let { recvEl - it }}"
-            )
-
-            pendingGunshot.value = event
-            gunshotShownAtMs.value = SystemClock.elapsedRealtime()
-            shouldShowGunshotDialog.value = true
-
-            Utils.vibrateWatch(vibDurationMs = 150, numberOfVibes = 2, timeBtwnVibesMs = 120)
-        }
-    }
-
-    fun finishPrompt(
-        eventUid: String,
-        label: OnnxRepository.GunshotUserLabel
-    ) {
-        val event = pendingGunshot.value
-        if (event == null) {
-            Log.w(TAG, "GS_UI_FINISH uid=$eventUid label=$label ignored (no pending)")
-            return
-        }
-        if (event.uid != eventUid) {
-            Log.w(TAG, "GS_UI_FINISH uid=$eventUid label=$label ignored (pending=${event.uid})")
-            return
-        }
-
-        val nowEl = SystemClock.elapsedRealtime()
-        val nowWall = System.currentTimeMillis()
-        val latencyMs = nowEl - gunshotShownAtMs.value
-
-        Log.i(TAG, "GS_UI_FINISH uid=$eventUid label=$label uiLatencyMs=$latencyMs")
-
-        onnxRepo.tryEmitGunshotFeedback(
-            OnnxRepository.GunshotFeedback(
-                eventUid = eventUid,
-                label = label,
-                respondedAtMs = nowWall,
-                responseLatencyMs = nowEl - gunshotShownAtMs.value
-            )
-        )
-
-        shouldShowGunshotDialog.value = false
-        pendingGunshot.value = null
-    }
-
-    /* Start a Timeout for each Gunshot Dialog.
-    	•	If user answered → timeout does nothing
-	    •	If new gunshot event replaced old → timeout does nothing
-	    •	If user never answers → timeout triggers and is logged for that event
-	    •	Only the correct UID finishes
-     */
-    LaunchedEffect(pendingGunshot.value?.uid) {
-        val event = pendingGunshot.value ?: return@LaunchedEffect
-        val uid = event.uid
-
-        delay(GUNSHOT_PROMPT_TIMEOUT)
-
-        val stillSame =
-            shouldShowGunshotDialog.value &&
-                    pendingGunshot.value?.uid == uid
-
-        if (stillSame) {
-            finishPrompt(uid, OnnxRepository.GunshotUserLabel.TIMEOUT)
+    val uasRepo = remember(context.applicationContext) {
+        try {
+            (context.applicationContext as WearTakApplication).uasOnnxRepo
+        } catch (_: Throwable) {
+            UasOnnxRepository(context.applicationContext)
         }
     }
 
@@ -2923,92 +2852,25 @@ fun MainScreen(
                 TroubleshootingIcons(sitxVm)
 
                 TimeWithSecondsAware(context)
+
+                AudioDetectionPromptHost(
+                    logTag = TAG,
+                    logPrefix = "GS",
+                    promptText = "Was that a gunshot?",
+                    events = onnxRepo.gunshotEvents,
+                    emitFeedback = onnxRepo::tryEmitGunshotFeedback
+                )
+
+                AudioDetectionPromptHost(
+                    logTag = TAG,
+                    logPrefix = "UAS",
+                    promptText = "Was that a UAS?",
+                    events = uasRepo.uasEvents,
+                    emitFeedback = uasRepo::tryEmitUasFeedback
+                )
             }
         }
     }
-
-    // Should we prompt the user about a gunshot event?
-    val lastDialogUid = remember { mutableStateOf<String?>(null) }
-
-    val event = pendingGunshot.value
-
-    if (shouldShowGunshotDialog.value && event != null) {
-
-        if (lastDialogUid.value != event.uid) {
-            lastDialogUid.value = event.uid
-            Log.i(
-                TAG,
-                "GS_UI_DIALOG_SHOW uid=${event.uid} " +
-                        "uiRecvToShowMs=${SystemClock.elapsedRealtime() - uiReceivedAtEl.value}"
-            )
-        }
-
-        GunshotFeedbackDialog(
-            shouldShowDialog = shouldShowGunshotDialog,
-            event = event,
-            onLabel = { label ->
-                finishPrompt(event.uid, label)
-            }
-        )
-    }
-}
-
-@Composable
-fun GunshotFeedbackDialog(
-    shouldShowDialog: MutableState<Boolean>,
-    event: OnnxRepository.OnnxGunshotEvent,
-    onLabel: (OnnxRepository.GunshotUserLabel) -> Unit
-) {
-    if (!shouldShowDialog.value) return
-
-    Log.i(TAG, "DIALOG_COMPOSE uid=${event.uid} show=${shouldShowDialog.value}")
-    val confPercent = kotlin.math.round(event.confidence * 100f)
-
-    AlertDialog(
-        containerColor = colors.background,
-        modifier = Modifier.fillMaxSize(),
-        onDismissRequest = {
-            onLabel(OnnxRepository.GunshotUserLabel.UNKNOWN)
-            shouldShowDialog.value = false
-        },
-        icon = {
-            Icon(
-                Icons.Default.Warning,
-                modifier = Modifier.size(25.dp),
-                contentDescription = null,
-                tint = Color.LightGray
-            )
-        },
-        text = {
-            Text(
-                "Was that a gunshot?\nScore: ${"%.0f".format(confPercent)}%",
-                textAlign = TextAlign.Center,
-                fontSize = 14.sp
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onLabel(OnnxRepository.GunshotUserLabel.YES)
-                    shouldShowDialog.value = false
-                },
-                modifier = Modifier.fillMaxWidth(0.45f),
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Green)
-            ) { Text("YES", color = Color.Black) }
-        },
-        dismissButton = {
-            Button(
-                onClick = {
-                    onLabel(OnnxRepository.GunshotUserLabel.NO)
-                    shouldShowDialog.value = false
-                },
-                modifier = Modifier.fillMaxWidth(0.45f),
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
-            ) { Text("NO") }
-        }
-    )
 }
 
 @Composable

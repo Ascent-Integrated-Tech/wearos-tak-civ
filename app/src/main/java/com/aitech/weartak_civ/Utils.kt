@@ -34,6 +34,8 @@ import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
+import com.aitech.weartak_civ.data.audio.AudioDetectionUserLabel
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.data.model.LatLon
@@ -487,22 +489,24 @@ object Utils {
         (WearTakApplication.AppCtx.app as WearTakApplication).repo
     }
 
-    suspend fun logGunshotFeedback(
+    suspend fun logAudioDetectionFeedback(
         context: Context,
-        event: OnnxRepository.OnnxGunshotEvent,
-        label: OnnxRepository.GunshotUserLabel,
+        event: AudioDetectionEvent,
+        label: AudioDetectionUserLabel,
         respondedAtMs: Long,
         responseLatencyMs: Long,
+        debugDirName: String,
         extra: Map<String, Any?> = emptyMap()
     ) {
-        val dir = File(context.filesDir, "gunshot_debug").apply { mkdirs() }
-        val logFile = File(dir, "gunshot_feedback.jsonl")
+        val dir = File(context.filesDir, debugDirName).apply { mkdirs() }
+        val logFile = File(dir, "${event.detectorKey}_feedback.jsonl")
         val sl = repo.snapshotLocation()
         val ss = repo.snapshotSystem()
 
         val obj = org.json.JSONObject().apply {
             put("uid", event.uid)
             put("eventTimestamp", event.timestamp)
+            put("detectorKey", event.detectorKey)
             put("confidence", event.confidence)
             put("label", label.name)
             put("respondedAtMs", respondedAtMs)

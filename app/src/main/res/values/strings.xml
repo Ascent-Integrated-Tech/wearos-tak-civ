@@ -22,6 +22,7 @@
     <string name="ditto">Ditto</string>
     <string name="companion_app" translatable="false">Companion Plugin</string>
     <string name="gunshot_detection" translatable="false">Gunshot Detect</string>
+    <string name="uas_detection" translatable="false">UAS Detect</string>
     <string name="version">Version %1$s</string>
     <string name="tak_servers">TAK Servers</string>
     <string name="edit_server">Edit Server</string>
