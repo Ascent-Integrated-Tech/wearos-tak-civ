@@ -1181,7 +1181,7 @@ class DataRepository(private val context: Context) {
         val remark: String,
         val timeDropped: Long,
         val location: LocationSnapshot?,
-        val enqueuedToBeSent: Boolean = false, // TODO WEAR-473: Make this by default true??
+        val enqueuedToBeSent: Boolean = true, // TODO WEAR-473: Make this by default true??
         val waitingForUpdatedLocation: Boolean = false // TODO WEAR-473: What should be the default??
     )
 

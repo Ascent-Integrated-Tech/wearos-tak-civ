@@ -92,16 +92,19 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -509,6 +512,7 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
                     SwipeableMarkerChip(
                         droppedMarker.markerType,
                         droppedMarker.title,
+                        droppedMarker.enqueuedToBeSent,
                         droppedMarker.timeDropped,
                         onPrimaryActionClick = {
                             Log.d(Constants.TAG, "Request clear for marker uid=${droppedMarker.uid}")
@@ -568,13 +572,13 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
 fun SwipeableMarkerChip(
     markerType: String,
     markerTitle: String,
+    enQueuedToBeSent: Boolean,
     timeStamp: Long,
     onPrimaryActionClick: () -> Unit,
     onSecondaryActionClick: () -> Unit
 ) {
     val revealState = rememberRevealState()
     val scope = rememberCoroutineScope()
-
     SwipeToRevealChip(
         revealState = revealState,
         modifier =
@@ -617,14 +621,26 @@ fun SwipeableMarkerChip(
                     markerIconFromString(markerType),
                     contentDescription = "",
                     tint = Color.Unspecified,
-                    modifier = Modifier.size(30.dp)
+                    modifier =
+                        if (enQueuedToBeSent)
+                            Modifier.size(30.dp).alpha(.5F)
+                    else
+                            Modifier.size(30.dp)
                 )
             },
-            colors = ChipDefaults.chipColors(
-                backgroundColor = Color.DarkGray,
-                contentColor = Color.White,
-                secondaryContentColor = Color.LightGray
-            ),
+            colors = if (enQueuedToBeSent) {
+                ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray.copy(alpha = .5F),
+                    contentColor = Color.White.copy(alpha = .5F),
+                    secondaryContentColor = Color.LightGray.copy(alpha = .5F)
+                )
+            } else {
+                ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                )
+            },
             label = {
                 Column {
                 Text(
@@ -634,7 +650,7 @@ fun SwipeableMarkerChip(
                     overflow = TextOverflow.Ellipsis,
 //                    modifier = Modifier
 //                        .align(Alignment.CenterVertically),
-                    color = Color.White,
+                    color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
                     fontWeight = FontWeight.SemiBold
                 )
                 if (markerTitle.isNotEmpty()) {
@@ -645,14 +661,14 @@ fun SwipeableMarkerChip(
                         overflow = TextOverflow.Ellipsis,
 //                        modifier = Modifier
 //                            .align(Alignment.CenterVertically),
-                        color = Color.White,
+                        color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
                         fontWeight = FontWeight.Normal
                     )
                 }
             }
             },
             secondaryLabel = {
-                Text(utcToHoursMinutesSeconds(timeStamp), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+                Text(utcToHoursMinutesSeconds(timeStamp), maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,)
             },
             enabled = true,
             onClick = { scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)} },
@@ -1021,6 +1037,7 @@ fun EditSelectedMarker(
     var locationLat by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lat ?: 0.0) }
     var locationLon by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lon ?: 0.0) }
     val markerType = droppedMarkerListSetting.getOrNull(index)?.markerType.orEmpty()
+    val enQueuedToBeSent = droppedMarkerListSetting.getOrNull(index)?.enqueuedToBeSent
     var remark by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.remark.orEmpty()) }
     val time = droppedMarkerListSetting.getOrNull(index)?.timeDropped ?: 0L
     WearTAKCIVTheme {
@@ -1059,6 +1076,18 @@ fun EditSelectedMarker(
                         .padding(top = 10.dp, bottom = 5.dp)
                         .align(Alignment.CenterHorizontally)
                 )
+                if (enQueuedToBeSent == true) {
+                    Text(
+                        text = "Queued to be sent",
+                        fontSize = if ("text".length!! < 20) 14.sp else 12.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        fontStyle = FontStyle.Italic,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(bottom = 5.dp)
+                    )
+                }
                 Text(
                     text = "${markerTextFromString(markerType)} | ${utcToHoursMinutesSeconds(time)}",
                     fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
@@ -1859,6 +1888,7 @@ fun PreviewDroppedMarkerList() {
     SwipeableMarkerChip(
         "a-h-G",
         "I am a remarkable marker",
+        true,
         1752686500,
         onPrimaryActionClick = {},
         onSecondaryActionClick = {}
