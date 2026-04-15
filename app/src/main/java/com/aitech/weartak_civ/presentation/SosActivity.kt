@@ -13,6 +13,7 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -41,7 +42,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +85,7 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.collections.List
 
@@ -319,9 +320,9 @@ fun SuccessDialogActivity(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = if (isAlerting.value == true)
-                                    "Alert will cancel when reconnected"
+                                    "Cancel Alert will be sent when reconnected"
                                 else
-                                    "Alert will send when reconnected",
+                                    "Alert will be sent when reconnected",
                         textAlign = TextAlign.Center,
                     )
 
@@ -348,6 +349,30 @@ fun manualAlertOrClearRequest(isAlerting: Boolean){
     }
 }
 
+@Composable
+private fun SuccessfulCotSentCheck(
+    shouldShowConfirm: MutableState<Boolean>,
+    anyEndpointConnected: Boolean?,
+    context: Context,
+    exitActivity: () -> Unit,
+    successBoolean: MutableState<Boolean>,
+    location: Location?,
+    locationChecked: Boolean,
+    dialog: @Composable () -> Unit,
+    successFunction: () -> Unit
+){
+    if (shouldShowConfirm.value) {
+        successBoolean.value = locationChecked && (anyEndpointConnected == true)
+        LaunchedEffect(Unit) {
+            delay(1000) // Delay for 5 seconds
+            shouldShowConfirm.value = false // Dismiss the dialog
+            exitActivity()
+            successFunction()
+//            context.startActivity(Intent(context, MainActivity::class.java))
+        }
+        dialog()
+    }
+}
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable

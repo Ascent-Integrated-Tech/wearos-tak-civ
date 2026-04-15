@@ -184,18 +184,17 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
         val publishableWifi: Network? =
             if (isWifi) {
                 // Prefer the specific callback's network *if* it's Wi-Fi.
-                val n = when {
+                var n = when {
                     network != null && cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> network
                     else -> null
                 }
 
-                /*
+
                 // Fallback: find any Wi-Fi network if the callback didn't include one.
-                n ?: cm.allNetworks.firstOrNull { n2 ->
+                n = n ?: cm.allNetworks.firstOrNull { n2 ->
                     cm.getNetworkCapabilities(n2)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
                 }
 
-                 */
                 n
             } else {
                 null

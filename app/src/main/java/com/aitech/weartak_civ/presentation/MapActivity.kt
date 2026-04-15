@@ -112,8 +112,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
+import org.maplibre.android.style.expressions.Expression.switchCase
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
+import org.maplibre.compose.expressions.dsl.asBoolean
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
@@ -121,7 +123,9 @@ import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
+import org.maplibre.compose.expressions.dsl.condition
 import org.maplibre.compose.expressions.dsl.offset
+import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
 
 class MapActivity : ComponentActivity() {
@@ -172,7 +176,8 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
                             "title" to JsonPrimitive(m.title),
-                            "markerType" to JsonPrimitive(m.markerType)
+                            "markerType" to JsonPrimitive(m.markerType),
+                            "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent)
                         )
                     )
                 )
@@ -185,7 +190,8 @@ data class MapMarkerItem(
     val markerType: String,
     val title: String,
     val lat: Double,
-    val lon: Double
+    val lon: Double,
+    val enQueuedToBeSent: Boolean
 )
 
 @Composable
@@ -210,6 +216,18 @@ fun MarkersOnMap(
             source = source,
             filter = eq(get("markerType").asString(),const(markerType), c),
             iconImage = image(iconRes),
+//            iconColor = switchCase(
+//                eq(get("enQueuedToBeSent"), const(true)),
+//                const(Color.Unspecified.copy(alpha = 0.8f),
+//                const(Color.Black)
+//            )),
+            iconOpacity = switch(
+                condition(
+                    get("enQueuedToBeSent").asBoolean(),
+                    const(.5F)
+                ),
+                fallback = const(1F)
+            ),
             iconAllowOverlap = const(true),
             iconIgnorePlacement = const(true),
             textAllowOverlap = const(true),
@@ -290,10 +308,11 @@ fun MapApp(exitActivity: () -> Unit) {
                     val location = marker.location ?: return@mapNotNull null
                     MapMarkerItem(
                         uid = marker.uid,
-                        markerType = marker.markerType,
+                        markerType = marker.markerType.type,
                         title = marker.title,
                         lat = location.lat,
-                        lon = location.lon
+                        lon = location.lon,
+                        marker.enqueuedToBeSent
                     )
                 }
             )
@@ -309,7 +328,8 @@ fun MapApp(exitActivity: () -> Unit) {
                         markerType = marker.markerType,
                         title = marker.title,
                         lat = location.lat,
-                        lon = location.lon
+                        lon = location.lon,
+                        false
                     )
                 }
             )
@@ -353,11 +373,11 @@ fun MapApp(exitActivity: () -> Unit) {
                         Log.e(TAG, "requestMarkerDrop failed", e)
                     }
                 }
-                if (!anyEndpointConnected) {
-                    Toast.makeText(
-                        mainActivity,
-                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
-                }
+//                if (!anyEndpointConnected) {
+//                    Toast.makeText(
+//                        mainActivity,
+//                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
+//                }
                 ClickResult.Pass
             }
 

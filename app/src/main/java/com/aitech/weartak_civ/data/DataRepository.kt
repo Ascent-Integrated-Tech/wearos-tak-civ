@@ -892,35 +892,33 @@ class DataRepository(private val context: Context) {
     }
 
     data class MarkerSnapshot(
+        val cotType: MarkerCotType,
         val uid: String,
         val markerType: MarkerType,
         val title: String,
         val remark: String,
         val iconSetPath: String?,
+        val enqueuedToBeSent: Boolean,
+        val waitingForUpdatedLocation: Boolean,
         val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
         val physio: PhysioSnapshot?,
         val system: SystemSnapshot
     )
 
-    suspend fun snapshotMarker(req: MarkerDropRequest): MarkerSnapshot? {
-        val lat = req.lat
-        val lon = req.lon
-        val loc = if (lat == null || lon == null) {
-            _droppedMarkerList.value.firstOrNull { it.uid == req.uid }?.location
-                ?: snapshotLocation() ?: return null
+    suspend fun snapshotMarkerLocation(uid: String, lat: Double?, lon: Double?, timeMillis: Long): LocationSnapshot? {
+        return if (lat == null || lon == null) {
+            _droppedMarkerList.value.firstOrNull { it.uid == uid }?.location
+                ?: snapshotLocation()
         } else {
-            LocationSnapshot(
-                timeMillis = req.timeMillis,
-                lat = lat,
-                lon = lon,
-                hae = 0.0,
-                ce = 0.0f,
-                le = 0.0f,
-                course = 0.0f,
-                speed = 0.0f
+            LocationSnapshot(timeMillis = timeMillis, lat = lat, lon = lon,
+                hae = 0.0, ce = 0.0f, le = 0.0f, course = 0.0f, speed = 0.0f
             )
         }
+    }
+
+    suspend fun snapshotMarker(item: DroppedMarker): MarkerSnapshot {
+        val loc = item.location
         val timeSnapshot = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
             staleOffset = Utils.TimeOffset(years = 1)
@@ -930,11 +928,14 @@ class DataRepository(private val context: Context) {
         val systemSnapshot = snapshotSystem()
 
         return MarkerSnapshot(
-            uid = req.uid.ifEmpty { UUID.randomUUID().toString() },
-            markerType = req.markerType,
-            title = req.title,
-            remark = req.remark,
-            iconSetPath = req.markerType.icon,
+            cotType = item.cotType,
+            uid = item.uid.ifEmpty { UUID.randomUUID().toString() },
+            markerType = item.markerType,
+            title = item.title,
+            remark = item.remark,
+            iconSetPath = item.markerType.icon,
+            enqueuedToBeSent = item.enqueuedToBeSent,
+            waitingForUpdatedLocation = item.waitingForUpdatedLocation,
             loc = loc,
             time = timeSnapshot,
             physio = physioSnapshot,
@@ -1172,15 +1173,21 @@ class DataRepository(private val context: Context) {
         _clearPhysioAndAutoGenAlert.emit(ClearRequest.All)
     }
 
+    enum class MarkerCotType {
+        DROP, EDIT, CLEAR
+    }
 
     // Backend-only use for markers
     data class DroppedMarker(
+        val cotType: MarkerCotType,
         val uid: String,
-        val markerType: String,
+        val markerType: MarkerType,
         val title: String,
         val remark: String,
         val timeDropped: Long,
-        val location: LocationSnapshot?
+        val location: LocationSnapshot?,
+        val enqueuedToBeSent: Boolean,
+        val waitingForUpdatedLocation: Boolean
     )
 
     data class ReceivedMarker(
@@ -1199,6 +1206,24 @@ class DataRepository(private val context: Context) {
     // Backend-only mutators (UI never calls these)
     suspend fun appendDroppedMarker(item: DroppedMarker) {
         _droppedMarkerList.emit(_droppedMarkerList.value + item)
+    }
+
+    suspend fun changeDroppedMarkerCotTypeStatusByUid(uid: String, cotType: MarkerCotType, enqueuedToBeSent: Boolean, waitingForUpdatedLocation: Boolean) {
+        val updatedMarkers = _droppedMarkerList.value.map {
+            if (it.uid == uid) {
+                it.copy(cotType = cotType, enqueuedToBeSent = enqueuedToBeSent, waitingForUpdatedLocation = waitingForUpdatedLocation)
+            } else { it }
+        }
+        _droppedMarkerList.emit(updatedMarkers)
+    }
+
+    suspend fun changeDroppedMarkerCotTypeByUid(uid: String, cotType: MarkerCotType) {
+        val updatedMarkers = _droppedMarkerList.value.map {
+            if (it.uid == uid) {
+                it.copy(cotType = cotType)
+            } else { it }
+        }
+        _droppedMarkerList.emit(updatedMarkers)
     }
 
     suspend fun removeMarkerByUid(uid: String) {
@@ -1299,6 +1324,7 @@ class DataRepository(private val context: Context) {
         val markerType: MarkerType,
         val title: String,
         val remark: String,
+        val updateLocation: Boolean = false,
         val timeMillis: Long
     )
 
@@ -1323,28 +1349,28 @@ class DataRepository(private val context: Context) {
         var updatedMarker: DroppedMarker? = null
         _droppedMarkerList.update { list ->
             list.map { marker ->
-                if (marker.uid == uid) {
-                    marker.copy(location = loc).also { updatedMarker = it }
+                if ((marker.uid == uid) && (marker.cotType != MarkerCotType.CLEAR)) {
+                    marker.copy(cotType = MarkerCotType.EDIT, location = loc, enqueuedToBeSent = true, waitingForUpdatedLocation = true).also { updatedMarker = it }
                 } else {
                     marker
                 }
             }
         }
-        emitMarkerEditRequest(updatedMarker)
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
     }
 
     fun requestChangeMarkerTitle(uid: String, title: String) {
         var updatedMarker: DroppedMarker? = null
         _droppedMarkerList.update { list ->
             list.map { marker ->
-                if (marker.uid == uid) {
-                    marker.copy(title = title).also { updatedMarker = it }
+                if ((marker.uid == uid) && (marker.cotType != MarkerCotType.CLEAR)) {
+                    marker.copy(cotType = MarkerCotType.EDIT, enqueuedToBeSent = true, title = title).also { updatedMarker = it }
                 } else {
                     marker
                 }
             }
         }
-        emitMarkerEditRequest(updatedMarker)
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
     }
 
     fun requestChangeMarkerRemark(uid: String, remark: String) {
@@ -1352,32 +1378,36 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.update { list ->
             list.map { marker ->
                 if (marker.uid == uid) {
-                    marker.copy(remark = remark).also { updatedMarker = it }
+                    if (marker.cotType != MarkerCotType.CLEAR) {
+                        marker.copy(cotType = MarkerCotType.EDIT, enqueuedToBeSent = true, remark = remark).also { updatedMarker = it }
+                    } else { marker }
                 } else {
                     marker
                 }
             }
         }
-        emitMarkerEditRequest(updatedMarker)
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
     }
 
-      fun requestChangeMarkerType(uid: String, type: String) {
+    fun requestChangeMarkerType(uid: String, type: MarkerType) {
         var updatedMarker: DroppedMarker? = null
         _droppedMarkerList.update { list ->
             list.map { marker ->
                 if (marker.uid == uid) {
-                    marker.copy(markerType = type).also { updatedMarker = it }
+                    if (marker.cotType != MarkerCotType.CLEAR) {
+                        marker.copy(cotType = MarkerCotType.EDIT, enqueuedToBeSent = true, markerType = type).also { updatedMarker = it }
+                    } else { marker }
                 } else {
                     marker
                 }
             }
         }
-        emitMarkerEditRequest(updatedMarker)
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
     }
 
     private fun emitMarkerEditRequest(marker: DroppedMarker?) {
         if (marker == null) return
-        val markerType = MarkerType.parse(marker.markerType)
+        val markerType = MarkerType.parse(marker.markerType.type)
         if (markerType == null) {
             Log.w(TAG, "Skipping marker edit send request, unknown marker type: ${marker.markerType}")
             return
@@ -1389,6 +1419,7 @@ class DataRepository(private val context: Context) {
                 markerType = markerType,
                 title = marker.title,
                 remark = marker.remark,
+                updateLocation = marker.waitingForUpdatedLocation,
                 timeMillis = System.currentTimeMillis()
             )
         )
