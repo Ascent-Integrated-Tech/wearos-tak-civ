@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
 package com.aitech.weartak_civ.service
 
 import android.app.NotificationManager
@@ -5,6 +14,14 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_BASIC
+import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
+import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
+import com.aitech.weartak_civ.FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELECTION
+import com.aitech.weartak_civ.Utils
 import java.util.concurrent.atomic.AtomicBoolean
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -16,17 +33,27 @@ import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import com.aitech.weartak_civ.provider.TargetVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 
 class BloodhoundService: Service() {
 
     private val scope  = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var enableBloodhoundProximityVibration = DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
+    private var bloodhoundProximityRadiusMeters = DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+    private var bloodhoundProximityIntensity = DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+    private var proximityAlertActiveUid: String? = null
+    private var proximityAlertFiredForActiveUid = false
+    private var proximityAlertJob: Job? = null
+
     private val repo by lazy {
         try {
             (applicationContext as WearTakApplication).repo
@@ -59,6 +86,7 @@ class BloodhoundService: Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "BloodhoundService onDestroy()")
+        cancelActiveProximityAlert()
         isRunning.set(false)
         scope.coroutineContext.cancel()
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -85,9 +113,35 @@ class BloodhoundService: Service() {
 //        collectBloodMapFlow()
         collectBloodEventFlow()
         collectAzimuthFlow()
+        collectProximitySettings()
         collectAckReqFlow()
         collectActivationReqFlow()
         collectInPosReqFlow()
+    }
+
+    private fun collectProximitySettings() {
+        scope.launch {
+            repo.getEnableBloodhoundProximityVibration.collect { enabled ->
+                enableBloodhoundProximityVibration = enabled
+                if (!enabled) {
+                    cancelProximityAlertLoop()
+                }
+                evaluateActiveTargetProximity()
+            }
+        }
+        scope.launch {
+            repo.getBloodhoundProximityRadiusMeters.collect { radiusMeters ->
+                bloodhoundProximityRadiusMeters = radiusMeters.coerceAtLeast(0)
+                evaluateActiveTargetProximity()
+            }
+        }
+        scope.launch {
+            repo.getBloodhoundProximityIntensity.collect { intensity ->
+                bloodhoundProximityIntensity = intensity
+                cancelProximityAlertLoop()
+                evaluateActiveTargetProximity()
+            }
+        }
     }
 
     private fun collectAzimuthFlow() {
@@ -99,6 +153,7 @@ class BloodhoundService: Service() {
                         updateCompassAngle(item.uid, item.vector.bearing, azimuth)
                     }
                 }
+                evaluateActiveTargetProximity()
             }
         }
     }
@@ -156,6 +211,8 @@ class BloodhoundService: Service() {
                     when (result) {
                         ActivationResult.FIRST_ACK,
                         ActivationResult.SWITCH_ONLY -> {
+                            resetProximityAlertState(item?.uid)
+                            evaluateActiveTargetProximity()
                             sendBloodhoundReply(item, "Roger: Bloodhounding to")
                             //openIssuerChat(item)
                             repo.sendBloodhoundUiCommand(DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen)
@@ -175,6 +232,7 @@ class BloodhoundService: Service() {
             bhRepo.requestInPosition.collect { uid ->
                 if (uid.isNotBlank()) {
                     val item = bhRepo.setInPos(uid)
+                    resetProximityAlertState()
                     //repo.removeReceivedMarkerByUid(uid)
                     sendBloodhoundReply(item, "In Position at")
                     //openIssuerChat(item)
@@ -212,6 +270,90 @@ class BloodhoundService: Service() {
 
     private var previousVectors = mutableMapOf<String, TargetVector>()
 
+    private fun cancelProximityAlertLoop() {
+        proximityAlertJob?.cancel()
+        proximityAlertJob = null
+        Utils.cancelWatchVibration()
+    }
+
+    private fun cancelActiveProximityAlert() {
+        cancelProximityAlertLoop()
+        proximityAlertActiveUid = null
+        proximityAlertFiredForActiveUid = false
+    }
+
+    private fun resetProximityAlertState(activeUid: String? = null) {
+        cancelProximityAlertLoop()
+        proximityAlertActiveUid = activeUid
+        proximityAlertFiredForActiveUid = false
+    }
+
+    private fun activeBloodhoundIntensity(): String {
+        return if (FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELECTION) {
+            bloodhoundProximityIntensity
+        } else {
+            BLOODHOUND_PROXIMITY_INTENSITY_BASIC
+        }
+    }
+
+    private fun startProximityAlert() {
+        val activeUid = proximityAlertActiveUid ?: return
+        proximityAlertFiredForActiveUid = true
+        cancelProximityAlertLoop()
+
+        val burstDurationMs = (3 * 150L) + (2 * 120L)
+        val gapBetweenBurstsMs = 1500L
+
+        proximityAlertJob = scope.launch {
+            when (activeBloodhoundIntensity()) {
+                BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED -> {
+                    repeat(3) { index ->
+                        Utils.vibrateWatch(vibDurationMs = 150L, numberOfVibes = 3, timeBtwnVibesMs = 120L)
+                        if (index < 2) {
+                            delay(burstDurationMs + gapBetweenBurstsMs)
+                        }
+                    }
+                }
+                BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT -> {
+                    while (isActive && proximityAlertActiveUid == activeUid) {
+                        Utils.vibrateWatch(vibDurationMs = 150L, numberOfVibes = 3, timeBtwnVibesMs = 120L)
+                        delay(burstDurationMs + gapBetweenBurstsMs)
+                    }
+                }
+                else -> {
+                    Utils.vibrateWatch(vibDurationMs = 150L, numberOfVibes = 3, timeBtwnVibesMs = 120L)
+                }
+            }
+        }
+    }
+
+    private fun evaluateActiveTargetProximity() {
+        if (currLoc == null) return
+
+        val activeUid = bhRepo.activeUid.value ?: run {
+            resetProximityAlertState()
+            return
+        }
+        val activeItem = bhRepo.bloodhoundMap.value[activeUid] ?: run {
+            resetProximityAlertState()
+            return
+        }
+
+        if (proximityAlertActiveUid != activeUid) {
+            resetProximityAlertState(activeUid)
+        }
+        if (!enableBloodhoundProximityVibration || proximityAlertFiredForActiveUid) return
+
+        val distanceMeters = activeItem.vector.distance?.times(1000.0) ?: return
+        if (distanceMeters <= bloodhoundProximityRadiusMeters.toDouble()) {
+            startProximityAlert()
+            Log.i(
+                TAG,
+                "Bloodhound proximity alert fired uid=$activeUid distanceMeters=$distanceMeters radiusMeters=$bloodhoundProximityRadiusMeters intensity=${activeBloodhoundIntensity()}"
+            )
+        }
+    }
+
     private fun updateVectors() {
         scope.launch {
             val map = bhRepo.bloodhoundMap.value
@@ -233,6 +375,7 @@ class BloodhoundService: Service() {
 
             // Save current vectors for next comparison
             previousVectors = map.values.associateBy({ it.uid }, { it.vector }).toMutableMap()
+            evaluateActiveTargetProximity()
         }
     }
 

@@ -43,7 +43,10 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
@@ -719,6 +722,36 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableBloodhoundCompassService(enableBloodhoundService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_BLOODHOUND_COMPASS_SERVICE] = enableBloodhoundService
+        }
+    }
+
+    val getEnableBloodhoundProximityVibration: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BLOODHOUND_PROXIMITY_VIBRATION] ?: DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
+    }
+
+    suspend fun storeEnableBloodhoundProximityVibration(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BLOODHOUND_PROXIMITY_VIBRATION] = enabled
+        }
+    }
+
+    val getBloodhoundProximityRadiusMeters: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[BLOODHOUND_PROXIMITY_RADIUS_METERS] ?: DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+    }
+
+    suspend fun storeBloodhoundProximityRadiusMeters(radiusMeters: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[BLOODHOUND_PROXIMITY_RADIUS_METERS] = radiusMeters
+        }
+    }
+
+    val getBloodhoundProximityIntensity: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[BLOODHOUND_PROXIMITY_INTENSITY] ?: DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+    }
+
+    suspend fun storeBloodhoundProximityIntensity(intensity: String) {
+        context.dataStore.edit { prefs ->
+            prefs[BLOODHOUND_PROXIMITY_INTENSITY] = intensity
         }
     }
 
@@ -3112,6 +3145,9 @@ class DataRepository(private val context: Context) {
         private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
+        private val ENABLE_BLOODHOUND_PROXIMITY_VIBRATION = booleanPreferencesKey("enable_bloodhound_proximity_vibration")
+        private val BLOODHOUND_PROXIMITY_RADIUS_METERS = intPreferencesKey("bloodhound_proximity_radius_meters")
+        private val BLOODHOUND_PROXIMITY_INTENSITY = stringPreferencesKey("bloodhound_proximity_intensity")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")

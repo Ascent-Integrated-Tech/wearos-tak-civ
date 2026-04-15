@@ -80,6 +80,16 @@
         <item>@string/user_type_entry_opposing_force_detainee</item>
         <item>@string/user_type_entry_child</item>
     </string-array>
+    <string-array name="bloodhound_proximity_intensity_entries">
+        <item>@string/bloodhound_proximity_intensity_basic</item>
+        <item>@string/bloodhound_proximity_intensity_escalated</item>
+        <item>@string/bloodhound_proximity_intensity_persistent</item>
+    </string-array>
+    <string-array name="bloodhound_proximity_intensity_entry_values">
+        <item>basic</item>
+        <item>escalated</item>
+        <item>persistent</item>
+    </string-array>
     <string-array name="select_data_endpoints_entries">
         <item>@string/select_data_endpoint_tak</item>
         <item>@string/select_data_endpoint_esri</item>
