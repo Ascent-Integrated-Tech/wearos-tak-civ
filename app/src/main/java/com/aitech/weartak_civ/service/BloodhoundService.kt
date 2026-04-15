@@ -12,6 +12,7 @@ package com.aitech.weartak_civ.service
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.location.Location
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_BASIC
@@ -53,6 +54,7 @@ class BloodhoundService: Service() {
     private var proximityAlertActiveUid: String? = null
     private var proximityAlertFiredForActiveUid = false
     private var proximityAlertJob: Job? = null
+    private var currLoc: Location? = null
 
     private val repo by lazy {
         try {
@@ -102,8 +104,11 @@ class BloodhoundService: Service() {
     private fun collectLocation() {
         scope.launch {
             repo.latestLocation.collect { loc ->
-                if (loc != null && bhRepo.bloodhoundMap.value.isNotEmpty()) {
-                    updateVectors()
+                if (loc != null) {
+                    currLoc = loc
+                    if (bhRepo.bloodhoundMap.value.isNotEmpty()) {
+                        updateVectors()
+                    }
                 }
             }
         }
