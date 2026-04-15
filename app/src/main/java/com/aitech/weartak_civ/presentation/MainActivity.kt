@@ -197,7 +197,10 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
@@ -321,6 +324,12 @@ class MainActivity : ComponentActivity() {
         var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_COMPANION_APP_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
         var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE)
+        var enableBloodhoundProximityVibration: Boolean = DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
+        var enableBloodhoundProximityVibrationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION)
+        var bloodhoundProximityRadiusMeters: Int = DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+        var bloodhoundProximityRadiusMetersSettingsState = MutableLiveData<Int>(DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS)
+        var bloodhoundProximityIntensity: String = DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+        var bloodhoundProximityIntensitySettingsState = MutableLiveData<String>(DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY)
         var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_CHAT_SERVICE)
         var enableBatteryAlerts: Boolean = DEFAULT_ENABLE_BATTERY_ALERTS
@@ -901,6 +910,9 @@ class MainActivity : ComponentActivity() {
             enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
+            enableBloodhoundProximityVibration = dataRepository.getEnableBloodhoundProximityVibration.first()
+            bloodhoundProximityRadiusMeters = dataRepository.getBloodhoundProximityRadiusMeters.first()
+            bloodhoundProximityIntensity = dataRepository.getBloodhoundProximityIntensity.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
@@ -1095,6 +1107,10 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Selected Physio Metric:", selectedPhysioMetric)}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Bloodhound:", enableBloodhoundCompassService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Bloodhound Proximity Vibration:", enableBloodhoundProximityVibration.toString())}
+                    ${String.format("%-25s %-30s", "Bloodhound Proximity Radius (m):", bloodhoundProximityRadiusMeters.toString())}
+                    ${String.format("%-25s %-30s", "Bloodhound Proximity Vibration Intensity:", bloodhoundProximityIntensity)}
                     ${String.format("%-25s %-30s", "Enable Immersion Alerts:", enableImmersionAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Low Atm Pressure Alert:", enableLowAtmPressureAlert.toString())}
                     ${String.format("%-25s %-30s", "Low Atm Pressure Alert Threshold (hPa):", lowAtmPressureAlertThreshold.toString())}
@@ -1371,6 +1387,9 @@ class MainActivity : ComponentActivity() {
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
         enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+        enableBloodhoundProximityVibrationSettingsState.postValue(enableBloodhoundProximityVibration)
+        bloodhoundProximityRadiusMetersSettingsState.postValue(bloodhoundProximityRadiusMeters)
+        bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
 
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
         enableHailServiceSettingsState.postValue(enableHailService)
@@ -1752,6 +1771,9 @@ class MainActivity : ComponentActivity() {
         val enableChatServiceConfigUpdate =
             appRestrictions.getBoolean("chat_service_enabled", enableChatService)
         val enableBloodhoundCompassConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_compass", enableBloodhoundCompassService)
+        val enableBloodhoundProximityVibrationConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_proximity_vibration", enableBloodhoundProximityVibration)
+        val bloodhoundProximityRadiusMetersConfigUpdate = appRestrictions.getInt("bloodhound_proximity_radius_meters", bloodhoundProximityRadiusMeters)
+        val bloodhoundProximityIntensityConfigUpdate = appRestrictions.getString("bloodhound_proximity_intensity", bloodhoundProximityIntensity) ?: bloodhoundProximityIntensity
         val enableBleBeaconServiceConfigUpdate =
             appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
@@ -2136,6 +2158,9 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThresholdConfigUpdate)
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
             dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassConfigUpdate)
+            dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibrationConfigUpdate)
+            dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMetersConfigUpdate)
+            dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensityConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeEnableSitxService(enableSitxServiceConfigUpdate)
             dataRepository.storeEnableBatdokCot(enableBatdokCotConfigUpdate)
@@ -2297,6 +2322,27 @@ class MainActivity : ComponentActivity() {
                 enableBloodhoundCompassService = enableBloodhoundCompassConfigUpdate
                 Log.d(TAG, "enableBloodhoundCompassService=$enableBloodhoundCompassService")
                 if (!calledOnCreate) dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
+            }
+            if (enableBloodhoundProximityVibrationConfigUpdate != enableBloodhoundProximityVibration) {
+                enableBloodhoundProximityVibration = enableBloodhoundProximityVibrationConfigUpdate
+                Log.d(TAG, "enableBloodhoundProximityVibration=$enableBloodhoundProximityVibration")
+                if (!calledOnCreate) {
+                    dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibration)
+                }
+            }
+            if (bloodhoundProximityRadiusMetersConfigUpdate != bloodhoundProximityRadiusMeters) {
+                bloodhoundProximityRadiusMeters = bloodhoundProximityRadiusMetersConfigUpdate
+                Log.d(TAG, "bloodhoundProximityRadiusMeters=$bloodhoundProximityRadiusMeters")
+                if (!calledOnCreate) {
+                    dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMeters)
+                }
+            }
+            if (bloodhoundProximityIntensityConfigUpdate != bloodhoundProximityIntensity) {
+                bloodhoundProximityIntensity = bloodhoundProximityIntensityConfigUpdate
+                Log.d(TAG, "bloodhoundProximityIntensity=$bloodhoundProximityIntensity")
+                if (!calledOnCreate) {
+                    dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensity)
+                }
             }
             enableHailService = enableHailServiceConfigUpdate
             enableSitxService = enableSitxServiceConfigUpdate
@@ -3616,8 +3662,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                 .align(Alignment.CenterVertically)
                 .size(35.dp)
                 .graphicsLayer {
-                    rotationZ =
-                        needleOrientation.toFloat()
+                    rotationZ = needleOrientation.toFloat()
                 }
         )
         Column (
@@ -3998,4 +4043,3 @@ public fun Modifier.unswipeable() =
             state = DraggableState {}
         )
     )
-
