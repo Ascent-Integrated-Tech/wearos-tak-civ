@@ -34,6 +34,7 @@ import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.data.model.LatLon
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -1049,7 +1050,7 @@ object Utils {
              * Start strict and widen later as needed.
              */
             fun isMarkerType(typeStr: String): Boolean {
-                val types = listOf("a-f-G","a-h-G","a-u-G","a-n-G","b-m-p-s-p-i")
+                val types = listOf(MarkerType.FRIENDLY.type,MarkerType.UNKNOWN.type,MarkerType.HOSTILE.type,MarkerType.NEUTRAL.type,"b-m-p-s-p-i") // TODO: Do we want to add "b-m-p-s-p-i" to MarkerType
 //                val isMarker = types.contains(typeStr)
 //                if (!isMarker) {
 //                    Log.i(TAG, "Marker not suspected: \n $typeStr")

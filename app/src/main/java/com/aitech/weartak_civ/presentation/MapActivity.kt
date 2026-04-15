@@ -95,6 +95,7 @@ import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
@@ -104,6 +105,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aitech.weartak_civ.MARKER_FRIENDLY
+import com.aitech.weartak_civ.MARKER_HOSTILE
+import com.aitech.weartak_civ.MARKER_NEUTRAL
+import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
@@ -112,8 +117,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.DataRepository.MarkerType
+import org.maplibre.android.style.expressions.Expression.switchCase
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
+import org.maplibre.compose.expressions.dsl.asBoolean
+import org.maplibre.compose.expressions.dsl.asNumber
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
@@ -121,7 +131,9 @@ import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
+import org.maplibre.compose.expressions.dsl.condition
 import org.maplibre.compose.expressions.dsl.offset
+import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
 
 class MapActivity : ComponentActivity() {
@@ -167,13 +179,14 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
         FeatureCollection(
             features = markers.map { m ->
                 Feature(
-                    geometry = Point(coordinates = Position(m.lon, m.lat)),
+                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
                             "title" to JsonPrimitive(m.title),
-                            "markerType" to JsonPrimitive(m.markerType)
-                        )
+                            "markerType" to JsonPrimitive(m.markerType),
+                            "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
+                            "cotType" to JsonPrimitive(m.cotType.name))
                     )
                 )
             }
@@ -184,10 +197,28 @@ data class MapMarkerItem(
     val uid: String,
     val markerType: String,
     val title: String,
-    val lat: Double,
-    val lon: Double
+    val lat: Double?,
+    val lon: Double?,
+    val enQueuedToBeSent: Boolean,
+    val cotType: DataRepository.MarkerCotType
 )
-
+@Composable
+fun grayMarkerIconFromString(markerType: String): Painter {
+    val painter: Painter = when (markerType) {
+        MARKER_UNKNOWN -> painterResource(R.drawable.unknown_gray)
+        MarkerType.UNKNOWN.type -> painterResource(R.drawable.unknown_gray)
+        MARKER_FRIENDLY -> painterResource(R.drawable.friendly_gray)
+        MarkerType.FRIENDLY.type -> painterResource(R.drawable.friendly_gray)
+        MARKER_HOSTILE -> painterResource(R.drawable.hostile_gray)
+        MarkerType.HOSTILE.type -> painterResource(R.drawable.hostile_gray)
+        MARKER_NEUTRAL -> painterResource(R.drawable.neutral_gray)
+        MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral_gray)
+        "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
+        else ->  //TODO: Change to error icon
+            painterResource(R.drawable.unknown_gray)
+    }
+    return painter
+}
 @Composable
 fun MarkersOnMap(
     markers: List<MapMarkerItem>,
@@ -205,11 +236,26 @@ fun MarkersOnMap(
 
     typeGroups.forEach { (markerType, group) ->
         val iconRes = markerIconFromString(markerType)
+        val iconResGray = grayMarkerIconFromString(markerType)
         SymbolLayer(
             id = group.first().uid,
             source = source,
             filter = eq(get("markerType").asString(),const(markerType), c),
-            iconImage = image(iconRes),
+            iconImage =
+                switch(
+                    condition(
+                        eq(get("cotType").asString(), const("CLEAR"), c),
+                        image(iconResGray)
+                    ),
+                    fallback = image(iconRes)
+                ),
+            iconOpacity = switch(
+                condition(
+                    get("enQueuedToBeSent").asBoolean(),
+                    const(.5F)
+                ),
+                fallback = const(1F)
+            ),
             iconAllowOverlap = const(true),
             iconIgnorePlacement = const(true),
             textAllowOverlap = const(true),
@@ -286,14 +332,15 @@ fun MapApp(exitActivity: () -> Unit) {
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
-                droppedMarkerListSetting.mapNotNull { marker ->
-                    val location = marker.location ?: return@mapNotNull null
+                droppedMarkerListSetting.map { marker ->
                     MapMarkerItem(
                         uid = marker.uid,
-                        markerType = marker.markerType,
+                        markerType = marker.markerType.type,
                         title = marker.title,
-                        lat = location.lat,
-                        lon = location.lon
+                        lat = marker.location?.lat,
+                        lon = marker.location?.lon,
+                        marker.enqueuedToBeSent,
+                        marker.cotType
                     )
                 }
             )
@@ -309,7 +356,11 @@ fun MapApp(exitActivity: () -> Unit) {
                         markerType = marker.markerType,
                         title = marker.title,
                         lat = location.lat,
-                        lon = location.lon
+                        lon = location.lon,
+                        false,
+                        //TODO: Is this okay to have here?
+                        DataRepository.MarkerCotType.DROP
+
                     )
                 }
             )
@@ -353,11 +404,11 @@ fun MapApp(exitActivity: () -> Unit) {
                         Log.e(TAG, "requestMarkerDrop failed", e)
                     }
                 }
-                if (!anyEndpointConnected) {
-                    Toast.makeText(
-                        mainActivity,
-                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
-                }
+//                if (!anyEndpointConnected) {
+//                    Toast.makeText(
+//                        mainActivity,
+//                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
+//                }
                 ClickResult.Pass
             }
 
@@ -417,16 +468,18 @@ fun MapApp(exitActivity: () -> Unit) {
                 )
             }
             MarkersOnMap(
-                markers = droppedMapMarkers,
+                markers = droppedMapMarkers.filter{ (null != it.lat) && (null != it.lon) },
                 onMarkerClick = { id, title ->
                     val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
-                    Log.d(TAG, "Index from map: $index")
-                    val intent = Intent(context, MarkerActivity::class.java).apply {
-                        putExtra("marker_index", index)
-                        putExtra("start_route", "edit_marker_screen/$index")
-                        putExtra("from_maps", true)
+                    if (droppedMapMarkers.get(index).cotType != DataRepository.MarkerCotType.CLEAR) {
+                        Log.d(TAG, "Index from map: $index")
+                        val intent = Intent(context, MarkerActivity::class.java).apply {
+                            putExtra("marker_index", index)
+                            putExtra("start_route", "edit_marker_screen/$index")
+                            putExtra("from_maps", true)
+                        }
+                        context.startActivity(intent)
                     }
-                    context.startActivity(intent)
                 },
                 cameraState
             )

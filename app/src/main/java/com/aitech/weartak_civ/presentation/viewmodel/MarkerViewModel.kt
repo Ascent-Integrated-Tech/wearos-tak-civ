@@ -102,7 +102,7 @@ class MarkerViewModel : ViewModel() {
         dataRepository.requestChangeMarkerRemark(uid, remark)
     }
 
-    fun requestChangeMarkerType(uid: String, type: String) {
+    fun requestChangeMarkerType(uid: String, type: DataRepository.MarkerType){
         dataRepository.requestChangeMarkerType(uid, type)
     }
 
