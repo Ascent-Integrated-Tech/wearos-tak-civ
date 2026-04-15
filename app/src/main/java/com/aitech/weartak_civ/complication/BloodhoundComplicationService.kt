@@ -4,11 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Matrix
 import android.graphics.Paint
 import androidx.annotation.DrawableRes
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.core.graphics.drawable.IconCompat
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationText
@@ -23,13 +20,11 @@ import androidx.wear.watchface.complications.datasource.SuspendingComplicationDa
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.bloodhoundActiveComplication
-import com.aitech.weartak_civ.service.HeartrateService.Companion.hr
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
@@ -54,6 +49,12 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
         val bhRepo = app.bhRepo
         val active = bhRepo.activeBhItemUi.value
         val northBearing = app.repo.azimuthTrueDegSmoothed.value
+        val activeDistanceText = DistanceFormatter
+            .format(active?.distance)
+            .text(
+                metersLabel = getString(R.string.m),
+                kilometersLabel = getString(R.string.km)
+            )
         val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
         val needleOrientation = active?.orientation ?: properNorthBearing
 
@@ -64,7 +65,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
             true -> return when (enableBloodhoundCompassServiceSettingsState.value) {
                 true -> return when (active != null) {
                     true -> createComplicationData(
-                        text = active.distance.toString() + " km",
+                        text = activeDistanceText,
                         contentDescription = getString(R.string.watch_callsign),
                         icon = R.drawable.compass_1,
                         image = bloodhoundActiveComplication(),
