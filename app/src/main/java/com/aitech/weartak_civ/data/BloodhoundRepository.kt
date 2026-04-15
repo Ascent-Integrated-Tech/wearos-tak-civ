@@ -142,8 +142,7 @@ class BloodhoundRepository(private val context: Context) {
     // --- UI Adapter function
     //  - backend domain item -> frontend UI model item (Utils.BloodhoundItem)
     private fun BloodhoundItem.toUi(isActive: Boolean): Utils.BloodhoundItem {
-        val distKm = this.vector.distance
-        val distKmRounded = distKm?.round(2) ?: 0.0
+        val distKm = this.vector.distance ?: 0.0
         val needle = this.compass.targetBearingDeg ?: 0.0
 
 //        val eventMs = Utils.toMillis(bhEvent.timeIssued) ?: System.currentTimeMillis()
@@ -154,7 +153,7 @@ class BloodhoundRepository(private val context: Context) {
             uid = this.uid,
             callsign = this.originLabel ?: "Unknown sender",
             timeReceived = eventMs,
-            distance = distKmRounded,
+            distance = distKm,
             orientation = needle.round(1).toFloat(),
             bloodhounding = isActive,
             acknowledged = this.state.acknowledged

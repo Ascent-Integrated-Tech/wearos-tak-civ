@@ -287,6 +287,7 @@ import kotlinx.coroutines.launch
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
+import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import java.io.File
 
 
@@ -3622,6 +3623,12 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
     val activeTarget = activeItem?.target ?: ""
+    val activeDistanceText = DistanceFormatter
+        .format(activeItem?.distance)
+        .text(
+            metersLabel = stringResource(R.string.m),
+            kilometersLabel = stringResource(R.string.km)
+        )
     val hasUnreadBloodhound by dataRepository.hasUnreadBloodhounds.collectAsState() // monitor the number of unread messages
 
     requestBloodhoundComplicationUpdate(context)
@@ -3678,7 +3685,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                     )
 
                         Text(
-                            text = activeItem.distance.toString() + " km",
+                            text = activeDistanceText,
                             fontSize = 15.sp,
                             overflow = TextOverflow.Ellipsis,
                             fontWeight = FontWeight.SemiBold,

@@ -20,7 +20,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +35,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,7 +82,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
-import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
@@ -92,6 +89,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -353,6 +351,12 @@ fun BloodhoundChip(
     directionDegrees: Float,
     onClick: () -> Unit
 ) {
+    val distanceText = DistanceFormatter
+        .format(distance)
+        .text(
+            metersLabel = stringResource(R.string.m),
+            kilometersLabel = stringResource(R.string.km)
+        )
     val gradientColors = listOf(
         colors.surface
             .copy(alpha = 0f)
@@ -400,7 +404,7 @@ fun BloodhoundChip(
             )
         },
         secondaryLabel = {
-            Text(text = "$distance" + stringResource(R.string.km),
+            Text(text = distanceText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = Color.White,
@@ -581,6 +585,12 @@ fun DetailedBloodhoundInfo(
     timeReceived: String,
     orientation: Float
 ) {
+    val distanceText = DistanceFormatter
+        .format(distance)
+        .text(
+            metersLabel = stringResource(R.string.m),
+            kilometersLabel = stringResource(R.string.km)
+        )
     Row(
         verticalAlignment = Alignment.CenterVertically
     ){
@@ -605,7 +615,7 @@ fun DetailedBloodhoundInfo(
         Spacer(modifier = Modifier.width(10.dp))
         Column(){
             Text(
-                text = distance.toString() + stringResource(R.string.km),
+                text = distanceText,
                 fontSize = 18.sp,
                 overflow = TextOverflow.Ellipsis,
                 color = Color.White,
