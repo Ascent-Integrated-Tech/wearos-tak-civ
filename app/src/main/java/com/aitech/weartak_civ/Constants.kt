@@ -24,6 +24,8 @@ const val DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD: Int = 2000
 const val DEFAULT_ENABLE_DITTO_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_COMPANION_APP_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE: Boolean = true
+const val DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION: Boolean = true
+const val DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS: Int = 50
 const val DEFAULT_ENABLE_CHAT_SERVICE: Boolean = true
 const val DEFAULT_ENABLE_AUDIO_CAP_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_ONNX_GUNSHOT: Boolean = false
@@ -94,6 +96,12 @@ const val DESC_HIGH_EXERTION_ALERT = "HIGH Exertion"
 
 const val CAT_FALL_DETECTED = "Fall Detected"
 const val DESC_GOOGLE_SDK_FALL_DETECTED = "Hard fall detected with no motion for 30 seconds"
+
+const val BLOODHOUND_PROXIMITY_INTENSITY_BASIC = "basic"
+const val BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED = "escalated"
+const val BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT = "persistent"
+const val FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELECTION: Boolean = true
+const val DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY: String = BLOODHOUND_PROXIMITY_INTENSITY_BASIC
 
 // TODO Senni: This should be an enum in MarkerActivity.kt. No other service/activity uses this??
 const val MARKER_HOSTILE = "Hostile"

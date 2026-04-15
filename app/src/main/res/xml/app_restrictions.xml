@@ -138,6 +138,26 @@
         android:title="@string/enable_bloodhound_compass"
         android:description="@string/enable_bloodhound_compass_desc"
         android:defaultValue="@string/enable_bloodhound_compass_default" />
+    <restriction
+        android:key="enable_bloodhound_proximity_vibration"
+        android:restrictionType="bool"
+        android:title="@string/enable_bloodhound_proximity_vibration_title"
+        android:description="@string/enable_bloodhound_proximity_vibration_description"
+        android:defaultValue="@string/enable_bloodhound_proximity_vibration_default" />
+    <restriction
+        android:key="bloodhound_proximity_radius_meters"
+        android:restrictionType="integer"
+        android:title="@string/bloodhound_proximity_radius_title"
+        android:description="@string/bloodhound_proximity_radius_description"
+        android:defaultValue="@string/bloodhound_proximity_radius_default" />
+    <restriction
+        android:key="bloodhound_proximity_intensity"
+        android:restrictionType="choice"
+        android:title="@string/bloodhound_proximity_intensity_title"
+        android:description="@string/bloodhound_proximity_intensity_description"
+        android:entries="@array/bloodhound_proximity_intensity_entries"
+        android:entryValues="@array/bloodhound_proximity_intensity_entry_values"
+        android:defaultValue="@string/bloodhound_proximity_intensity_default" />
 
     <restriction
         android:key="chat_service_enabled"

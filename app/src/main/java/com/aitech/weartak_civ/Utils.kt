@@ -451,6 +451,19 @@ object Utils {
         }
     }
 
+    fun cancelWatchVibration() {
+        val ctx = WearTakApplication.AppCtx.app.applicationContext
+
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = ctx.getSystemService(VibratorManager::class.java)
+            vm?.defaultVibrator
+        } else {
+            ctx.getSystemService(Vibrator::class.java)
+        }
+
+        vibrator?.cancel()
+    }
+
     fun latLonToMgrs(lat: Double, lon: Double): String {
         val mgrs = MGRS.from(lon, lat)
         return mgrs.coordinate() // 1-meter precision

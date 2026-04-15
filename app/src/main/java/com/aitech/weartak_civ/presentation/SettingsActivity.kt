@@ -139,6 +139,10 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_BASIC
+import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
+import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
+import com.aitech.weartak_civ.FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELECTION
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.data.DataRepository
@@ -262,6 +266,12 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryA
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundProximityVibration
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityIntensity
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityIntensitySettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityRadiusMeters
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityRadiusMetersSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityVibrationSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeight
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightState
@@ -383,6 +393,11 @@ class SettingsActivity : ComponentActivity() {
         val bloodTypeOptionsList : List<String> = listOf("N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
         val allergiesOptionsList : List<String> = listOf("N/A", "Antibiotics", "Anti-Inflammatory (Ibuprofen)", "Antiseizure", "Aspirin", "Insulin", "Muscle Relaxers", "Sulfa Drugs")
         val userTypeOptionsList : List<String> = listOf("N/A", "Child", "Coalition Civilian", "Coalition Military", "Non-Coalition Civilian", "Non-Coalition Military", "Opposing Force Detainee")
+        val bloodhoundIntensityOptions: List<String> = listOf(
+            BLOODHOUND_PROXIMITY_INTENSITY_BASIC,
+            BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED,
+            BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
+        )
         const val LABEL_WARNING_LENGTH = "Warning Length"
         const val LABEL_ALERT_LENGTH = "Alert Length"
         const val UNIT_MINUTES = " minutes"
@@ -416,6 +431,54 @@ suspend fun refreshTakServerSettings() {
     constantReportingIntervalSettingsState.postValue(constantReportingInterval)
 }
 
+private data class BloodhoundSettingsValues(
+    val proximityVibrationEnabled: Boolean,
+    val proximityRadiusMeters: Int,
+    val proximityIntensity: String
+)
+
+private data class BloodhoundSettingsChanges(
+    val proximityVibrationChanged: Boolean,
+    val proximityRadiusChanged: Boolean,
+    val proximityIntensityChanged: Boolean
+) {
+    val anyChanged: Boolean
+        get() = proximityVibrationChanged || proximityRadiusChanged || proximityIntensityChanged
+}
+
+private fun currentBloodhoundSettingsValues() = BloodhoundSettingsValues(
+    proximityVibrationEnabled = enableBloodhoundProximityVibration,
+    proximityRadiusMeters = bloodhoundProximityRadiusMeters,
+    proximityIntensity = bloodhoundProximityIntensity
+)
+
+private fun stagedBloodhoundSettingsValues() = BloodhoundSettingsValues(
+    proximityVibrationEnabled = bloodhoundProximityVibrationSettingsState.value ?: enableBloodhoundProximityVibration,
+    proximityRadiusMeters = bloodhoundProximityRadiusMetersSettingsState.value ?: bloodhoundProximityRadiusMeters,
+    proximityIntensity = bloodhoundProximityIntensitySettingsState.value ?: bloodhoundProximityIntensity
+)
+
+private fun postBloodhoundSettingsValues(values: BloodhoundSettingsValues) {
+    bloodhoundProximityVibrationSettingsState.postValue(values.proximityVibrationEnabled)
+    bloodhoundProximityRadiusMetersSettingsState.postValue(values.proximityRadiusMeters)
+    bloodhoundProximityIntensitySettingsState.postValue(values.proximityIntensity)
+}
+
+private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
+    val stagedValues = stagedBloodhoundSettingsValues()
+    val changes = BloodhoundSettingsChanges(
+        proximityVibrationChanged = enableBloodhoundProximityVibration != stagedValues.proximityVibrationEnabled,
+        proximityRadiusChanged = bloodhoundProximityRadiusMeters != stagedValues.proximityRadiusMeters,
+        proximityIntensityChanged = bloodhoundProximityIntensity != stagedValues.proximityIntensity
+    )
+
+    enableBloodhoundProximityVibration = stagedValues.proximityVibrationEnabled
+    bloodhoundProximityRadiusMeters = stagedValues.proximityRadiusMeters
+    bloodhoundProximityIntensity = stagedValues.proximityIntensity
+
+    return changes
+}
+
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
@@ -433,6 +496,7 @@ fun loadSettingsValues(){
     enableHailServiceSettingsState.postValue(enableHailService)
     enableBatdokCotSettingsState.postValue(enableBatdokCot)
     enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+    postBloodhoundSettingsValues(currentBloodhoundSettingsValues())
     callsignSettingsState.postValue(callsign)
     teamSettingsState.postValue(team)
     categorySettingsState.postValue(category)
@@ -722,6 +786,26 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "atm_pressure_alerts_screen") {
             AtmPressureAlertSettings(navController)
+        }
+        composable(
+            "bloodhound_settings_screen") {
+            BloodhoundSettings(navController)
+        }
+        composable(
+            "bloodhound_proximity_radius_screen") {
+            NumericEntryPage(
+                navController,
+                bloodhoundProximityRadiusMetersSettingsState,
+                100000,
+                1,
+                stringResource(R.string.bloodhound_proximity_radius),
+                context,
+                "bloodhound_settings_screen"
+            )
+        }
+        composable(
+            "bloodhound_proximity_intensity_screen") {
+            BloodhoundIntensitySetting(navController)
         }
         composable(
             "low_atm_pressure_threshold_screen") {
@@ -2862,6 +2946,15 @@ fun enableDisableFromBoolean(boolean: Boolean?): String {
 }
 
 @Composable
+fun bloodhoundIntensityText(intensity: String?): String {
+    return when (intensity) {
+        BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED -> stringResource(R.string.bloodhound_proximity_intensity_escalated)
+        BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT -> stringResource(R.string.bloodhound_proximity_intensity_persistent)
+        else -> stringResource(R.string.bloodhound_proximity_intensity_basic)
+    }
+}
+
+@Composable
 fun AtmPressureAlertSettings(navController: NavController) {
     Log.i(TAG, "AtmPressureAlertSettings called")
     val lowAtmPressureAlertCheckedLive by enableLowAtmPressureAlertSettingsState.observeAsState()
@@ -2914,6 +3007,151 @@ fun AtmPressureAlertSettings(navController: NavController) {
         text = stringResource(R.string.atm_pressure_alerts)
     )
 }
+
+@Composable
+fun BloodhoundSettings(navController: NavController) {
+    val bloodhoundProximityVibrationCheckedLive by bloodhoundProximityVibrationSettingsState.observeAsState()
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            SettingSwitchToggleLiveData(
+                bloodhoundProximityVibrationCheckedLive,
+                { bloodhoundProximityVibrationSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.bloodhound_proximity_vibration),
+                stringResource(R.string.on_off)
+            )
+            DataMetricsChip(
+                "bloodhound_proximity_radius_screen",
+                stringResource(R.string.bloodhound_proximity_radius),
+                "${bloodhoundProximityRadiusMetersSettingsState.value} m",
+                navController
+            )
+            if (FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELECTION) {
+                DataMetricsChip(
+                    "bloodhound_proximity_intensity_screen",
+                    stringResource(R.string.bloodhound_proximity_intensity),
+                    bloodhoundIntensityText(bloodhoundProximityIntensitySettingsState.value),
+                    navController
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    postBloodhoundSettingsValues(currentBloodhoundSettingsValues())
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
+        },
+        text = stringResource(R.string.bloodhound_settings)
+    )
+}
+
+@Composable
+fun BloodhoundIntensitySetting(navController: NavController) {
+    val options = remember { SettingsActivity.bloodhoundIntensityOptions }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(top = 20.dp, bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val index = findRadioIndex(bloodhoundProximityIntensitySettingsState.value, options)
+        var selectedRadioIndex by remember { mutableStateOf(index) }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.bloodhound_proximity_intensity),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(vertical = 10.dp, horizontal = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            options.forEachIndexed { index, option ->
+                SelectableChip(
+                    modifier = Modifier.fillMaxWidth(),
+                    selected = index == selectedRadioIndex,
+                    onClick = { selectedRadioIndex = index },
+                    label = {
+                        Text(
+                            bloodhoundIntensityText(option),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    secondaryLabel = {
+                        Text(
+                            when (option) {
+                                BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED -> stringResource(R.string.bloodhound_proximity_intensity_escalated_desc)
+                                BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT -> stringResource(R.string.bloodhound_proximity_intensity_persistent_desc)
+                                else -> stringResource(R.string.bloodhound_proximity_intensity_basic_desc)
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    enabled = true,
+                    shape =
+                        if (option == options.first()) {
+                            RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                        } else if (option == options.last()) {
+                            RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                        } else {
+                            RoundedCornerShape(0.dp)
+                        }
+                )
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+        }
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    navController.navigate("bloodhound_settings_screen") {
+                        popUpTo(("bloodhound_settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    bloodhoundProximityIntensitySettingsState.setValue(options[selectedRadioIndex])
+                    navController.navigate("bloodhound_settings_screen") {
+                        popUpTo(("bloodhound_settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
+        }
+    }
+}
+
 @Composable
 fun ManageOutputsSetting(navController: NavController) {
     Log.d(TAG, "ManageOutputsSetting called")
@@ -3687,6 +3925,39 @@ fun DataMetricsChip(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+fun BloodhoundServiceSettingsToggleChip(
+    checkedLive: Boolean?,
+    onCheckedChange: (Boolean) -> Unit,
+    title: String,
+    description: String,
+    detailsEnabled: Boolean,
+    onDetailsClick: () -> Unit
+) {
+    SplitToggleChip(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+        secondaryLabel = { Text(description, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        checked = checkedLive == true,
+        toggleControl = {
+            Switch(
+                checked = checkedLive == true,
+                onCheckedChange = null,
+                enabled = true,
+            )
+        },
+        onCheckedChange = onCheckedChange,
+        enabled = true,
+        onClick = {
+            if (detailsEnabled) {
+                onDetailsClick()
+            }
+        }
     )
 }
 
@@ -4696,12 +4967,21 @@ fun SettingsScreen(
                 stringResource(R.string.service_on_off)
             )
 
-            SettingSwitchToggleLiveData(
+            BloodhoundServiceSettingsToggleChip(
                 bloodhoundCompassCheckedLive,
                 { enableBloodhoundCompassServiceSettingsState.postValue(it) },
-                {},
                 "Bloodhound & Compass",
-                stringResource(R.string.service_on_off)
+                if (bloodhoundCompassCheckedLive == true) {
+                    "Settings →"
+                } else {
+                    stringResource(R.string.service_on_off)
+                },
+                detailsEnabled = bloodhoundCompassCheckedLive == true,
+                onDetailsClick = {
+                    navController.navigate("bloodhound_settings_screen") {
+                        popUpTo("bloodhound_settings_screen") { inclusive = true }
+                    }
+                }
             )
             SettingSwitchToggleLiveData(
                 immersionAlertsCheckedLive,
@@ -4949,6 +5229,9 @@ fun SettingsScreen(
                     var onnxGunDetectChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
+                    var bloodhoundProximityVibrationChanged: Boolean = false
+                    var bloodhoundProximityRadiusChanged: Boolean = false
+                    var bloodhoundProximityIntensityChanged: Boolean = false
                     var dynamicReportingChanged: Boolean = false
                     var constantReportingIntervalChanged: Boolean = false
                     var stationaryReportingIntervalChanged: Boolean = false
@@ -5099,6 +5382,16 @@ fun SettingsScreen(
                             enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
                         }
                     }
+                    val bloodhoundSettingsChanges = applyStagedBloodhoundSettingsValues()
+                    if (bloodhoundSettingsChanges.anyChanged) {
+                        settingsChanged = true
+                    }
+                    bloodhoundProximityVibrationChanged =
+                        bloodhoundSettingsChanges.proximityVibrationChanged
+                    bloodhoundProximityRadiusChanged =
+                        bloodhoundSettingsChanges.proximityRadiusChanged
+                    bloodhoundProximityIntensityChanged =
+                        bloodhoundSettingsChanges.proximityIntensityChanged
 
                     if (enableDynamicReportingStrategy != enableDynamicReportingStrategySettingsState.value) {
                         settingsChanged = true; dynamicReportingChanged = true
@@ -5626,6 +5919,18 @@ fun SettingsScreen(
                              if (bloodhoundCompassCheckedChanged) {
                                  Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
                                  dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
+                             }
+                             if (bloodhoundProximityVibrationChanged) {
+                                 Log.d(TAG, "Storing enableBloodhoundProximityVibration $enableBloodhoundProximityVibration")
+                                 dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibration)
+                             }
+                             if (bloodhoundProximityRadiusChanged) {
+                                 Log.d(TAG, "Storing bloodhoundProximityRadiusMeters $bloodhoundProximityRadiusMeters")
+                                 dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMeters)
+                             }
+                             if (bloodhoundProximityIntensityChanged) {
+                                 Log.d(TAG, "Storing bloodhoundProximityIntensity $bloodhoundProximityIntensity")
+                                 dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensity)
                              }
                              if (hailCheckedChanged) {
                                  Log.d(TAG, "Storing enableHailService $enableHailService")
