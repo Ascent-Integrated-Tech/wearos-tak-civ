@@ -1180,7 +1180,9 @@ class DataRepository(private val context: Context) {
         val title: String,
         val remark: String,
         val timeDropped: Long,
-        val location: LocationSnapshot?
+        val location: LocationSnapshot?,
+        val enqueuedToBeSent: Boolean = false, // TODO WEAR-473: Make this by default true??
+        val waitingForUpdatedLocation: Boolean = false // TODO WEAR-473: What should be the default??
     )
 
     data class ReceivedMarker(
@@ -1324,7 +1326,7 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.update { list ->
             list.map { marker ->
                 if (marker.uid == uid) {
-                    marker.copy(location = loc).also { updatedMarker = it }
+                    marker.copy(location = loc, waitingForUpdatedLocation = true).also { updatedMarker = it }
                 } else {
                     marker
                 }
@@ -1338,7 +1340,7 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.update { list ->
             list.map { marker ->
                 if (marker.uid == uid) {
-                    marker.copy(title = title).also { updatedMarker = it }
+                    marker.copy(title = title, waitingForUpdatedLocation = false).also { updatedMarker = it }
                 } else {
                     marker
                 }
@@ -1352,7 +1354,7 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.update { list ->
             list.map { marker ->
                 if (marker.uid == uid) {
-                    marker.copy(remark = remark).also { updatedMarker = it }
+                    marker.copy(remark = remark, waitingForUpdatedLocation = false).also { updatedMarker = it }
                 } else {
                     marker
                 }
@@ -1366,7 +1368,7 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.update { list ->
             list.map { marker ->
                 if (marker.uid == uid) {
-                    marker.copy(markerType = type).also { updatedMarker = it }
+                    marker.copy(markerType = type, waitingForUpdatedLocation = false).also { updatedMarker = it }
                 } else {
                     marker
                 }
