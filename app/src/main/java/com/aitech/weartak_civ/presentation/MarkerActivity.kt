@@ -139,6 +139,7 @@ import com.aitech.weartak_civ.MARKER_HOSTILE
 import com.aitech.weartak_civ.MARKER_NEUTRAL
 import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.DataRepository.MarkerCotType
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
@@ -469,7 +470,7 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
                     }
                     Button(
                         modifier = Modifier.padding(7.dp),
-                        enabled = droppedMarkerListSetting.isNotEmpty(),
+                        enabled = (droppedMarkerListSetting.isNotEmpty() && droppedMarkerListSetting.all { it.cotType != MarkerCotType.CLEAR }),
                         onClick = {
                             removeMarker.value = false
                             shouldShowDialog.value = true
@@ -513,6 +514,7 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
                     SwipeableMarkerChip(
                         droppedMarker.markerType.type,
                         droppedMarker.title,
+                        droppedMarker.cotType,
                         droppedMarker.enqueuedToBeSent,
                         droppedMarker.timeDropped,
                         onPrimaryActionClick = {
@@ -526,7 +528,7 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
                         },
                     )
                 }
-                if (droppedMarkerListSetting.isNotEmpty()) {
+                if (droppedMarkerListSetting.isNotEmpty() && droppedMarkerListSetting.all { it.cotType != MarkerCotType.CLEAR }) {
                     item {
                         Chip(
                             onClick = {
@@ -573,6 +575,7 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
 fun SwipeableMarkerChip(
     markerType: String,
     markerTitle: String,
+    cotType: MarkerCotType,
     enQueuedToBeSent: Boolean,
     timeStamp: Long,
     onPrimaryActionClick: () -> Unit,
@@ -580,10 +583,10 @@ fun SwipeableMarkerChip(
 ) {
     val revealState = rememberRevealState()
     val scope = rememberCoroutineScope()
-    SwipeToRevealChip(
-        revealState = revealState,
-        modifier =
-            Modifier
+    if (cotType != MarkerCotType.CLEAR) {
+        SwipeToRevealChip(
+            revealState = revealState,
+            modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
                     // Use custom actions to make the primary and secondary actions accessible
@@ -598,81 +601,147 @@ fun SwipeableMarkerChip(
                         }
                     )
                 },
-        primaryAction = {
-            SwipeToRevealPrimaryAction(
-                revealState = revealState,
-                icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
-                label = { androidx.wear.compose.material.Text(stringResource(R.string.delete)) },
-                onClick = { onPrimaryActionClick(); scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)}}
+            primaryAction = {
+                SwipeToRevealPrimaryAction(
+                    revealState = revealState,
+                    icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
+                    label = { androidx.wear.compose.material.Text(stringResource(R.string.delete)) },
+                    onClick = {
+                        onPrimaryActionClick()
+                    }
+                )
+            },
+            secondaryAction = {
+
+                SwipeToRevealSecondaryAction(
+                    revealState = revealState,
+                    onClick = { onSecondaryActionClick() }
+                ) {
+                    Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
+                }
+            },
+            onFullSwipe = { onPrimaryActionClick() }
+        ) {
+            Chip(
+                enabled = true,
+                icon = {
+                    Icon(
+                        markerIconFromString(markerType),
+                        contentDescription = "",
+                        tint = Color.Unspecified,
+                        modifier =
+                            if (enQueuedToBeSent)
+                                Modifier
+                                    .size(30.dp)
+                                    .alpha(.5F)
+                            else
+                                Modifier.size(30.dp)
+                    )
+                },
+                colors = if (enQueuedToBeSent) {
+                    ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray.copy(alpha = .5F),
+                        contentColor = Color.White.copy(alpha = .5F),
+                        secondaryContentColor = Color.LightGray.copy(alpha = .5F)
+                    )
+                } else {
+                    ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    )
+                },
+                label = {
+                    Column {
+                        Text(
+                            text =
+                                markerTitle,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+//                    modifier = Modifier
+//                        .align(Alignment.CenterVertically),
+                            color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (markerTitle.isNotEmpty()) {
+                            Text(
+                                text = markerTextFromString(markerType),
+                                maxLines = 2,
+                                fontSize = 12.sp,
+                                overflow = TextOverflow.Ellipsis,
+//                        modifier = Modifier
+//                            .align(Alignment.CenterVertically),
+                                color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
+                    }
+                },
+                secondaryLabel = {
+                    Text(
+                        utcToHoursMinutesSeconds(timeStamp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
+                    )
+                },
+                onClick = { scope.launch { revealState.animateTo(targetValue = RevealValue.RightRevealing) } },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
             )
-        },
-        secondaryAction = {
-            SwipeToRevealSecondaryAction(
-                revealState = revealState,
-                onClick = { onSecondaryActionClick() }
-            ) {
-                Icon(SwipeToRevealDefaults.MoreOptions, "More Options")
-            }
-        },
-        onFullSwipe = {onPrimaryActionClick() }
-    ) {
+        }
+    } else {
         Chip(
+            enabled = false,
             icon = {
                 Icon(
                     markerIconFromString(markerType),
                     contentDescription = "",
-                    tint = Color.Unspecified,
-                    modifier =
-                        if (enQueuedToBeSent)
-                            Modifier.size(30.dp).alpha(.5F)
-                    else
-                            Modifier.size(30.dp)
+                    tint = Color.Gray,
+                    modifier = Modifier.size(30.dp)
                 )
             },
-            colors = if (enQueuedToBeSent) {
-                ChipDefaults.chipColors(
-                    backgroundColor = Color.DarkGray.copy(alpha = .5F),
-                    contentColor = Color.White.copy(alpha = .5F),
-                    secondaryContentColor = Color.LightGray.copy(alpha = .5F)
-                )
-            } else {
-                ChipDefaults.chipColors(
+            colors = ChipDefaults.chipColors(
                     backgroundColor = Color.DarkGray,
                     contentColor = Color.White,
                     secondaryContentColor = Color.LightGray
-                )
-            },
+                ),
             label = {
                 Column {
-                Text(
-                    text =
-                        markerTitle,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    Text(
+                        text =
+                            markerTitle,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
 //                    modifier = Modifier
 //                        .align(Alignment.CenterVertically),
-                    color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (markerTitle.isNotEmpty()) {
-                    Text(
-                        text = markerTextFromString(markerType),
-                        maxLines = 2,
-                        fontSize = 12.sp,
-                        overflow = TextOverflow.Ellipsis,
+                        color = Color.White.copy(alpha = .5F),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (markerTitle.isNotEmpty()) {
+                        Text(
+                            text = markerTextFromString(markerType),
+                            maxLines = 2,
+                            fontSize = 12.sp,
+                            overflow = TextOverflow.Ellipsis,
 //                        modifier = Modifier
 //                            .align(Alignment.CenterVertically),
-                        color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
-                        fontWeight = FontWeight.Normal
-                    )
+                            color = Color.White.copy(alpha = .5F),
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 }
-            }
             },
             secondaryLabel = {
-                Text(utcToHoursMinutesSeconds(timeStamp), maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,)
+                Text(
+                    utcToHoursMinutesSeconds(timeStamp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White.copy(alpha = .5F),
+                )
             },
-            enabled = true,
-            onClick = { scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealing)} },
+            onClick = {  },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 3.dp)
@@ -1538,7 +1607,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                 removeMarker
             )
 
-            if (droppedMarkerListSetting.isNotEmpty()) {
+            if (droppedMarkerListSetting.isNotEmpty() ) {
                 ClearMarkerConfirmationDialog(
                     shouldShowClearLastDialog,
                     "Clear Last Marker?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType.type)}: ${droppedMarkerListSetting.last().title}\n\r" + utcToHoursMinutesSeconds(
@@ -1752,11 +1821,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                     )
                 },
                 {
-                    if (successBoolean.value && fromMaps) {
                         exitActivity()
-                    } else if (successBoolean.value && !fromMaps) {
-                        navController.navigate("dropped_marker_screen")
-                    }
                 }
             )
         }
@@ -1889,6 +1954,7 @@ fun PreviewDroppedMarkerList() {
     SwipeableMarkerChip(
         "a-h-G",
         "I am a remarkable marker",
+        MarkerCotType.CLEAR,
         true,
         1752686500,
         onPrimaryActionClick = {},
