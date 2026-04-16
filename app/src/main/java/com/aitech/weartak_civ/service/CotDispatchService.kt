@@ -17,6 +17,7 @@ import android.location.Location
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
@@ -60,9 +61,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -100,10 +98,8 @@ class CotDispatchService : Service() {
 
     private var iconSetPath: String = ""
     private var markerType: String = ""
-    // TODO Senni: should MarkerSnapshot be nullable below
-    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.MarkerSnapshot?>()
-    private val pendingMarkerDropQueue = ArrayDeque<DataRepository.MarkerDropRequest>()
-    private val pendingMarkerEditQueue = ArrayDeque<DataRepository.MarkerEditRequest>()
+    private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.DroppedMarker>()
+    private val pendingMarkerCotList = mutableListOf<DataRepository.DroppedMarker>()
 
     private val pendingChatMsgQueue = ArrayDeque<Utils.ChatMessage>()
 
@@ -180,11 +176,11 @@ class CotDispatchService : Service() {
             dataRepository.anyEndpointConnected.collect { connected ->
                 Log.i(TAG, "Any endpoint connected: $connected")
                 if (connected) {
+                    EventBus.getDefault().post(LocationUpdateRequired())
                     sendPendingChatMessages()
                     sendPendingManualAlerts()
                     sendPendingPhysioAndAutoGenAlerts()
-                    sendPendingMarkerDrops()
-                    sendPendingMarkerEdits()
+                    sendPendingMarkerCots()
                 }
             }
         }
@@ -719,23 +715,22 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.markerDropRequests.collect { req ->
                 Log.i(TAG, "Received drop request...")
-                if (req.lat != null && req.lon != null) {
-                    Log.i(TAG, "Drop lat and lon NOT null. Sending drop request now if possible...")
-                    if (dataRepository.anyEndpointConnected.value) {
-                        sendMarkerDropNow(req)
-                    } else {
-                        enqueueDrop(req)
-                    }
+                val waitingForUpdatedLocation = if ((null != req.lat) && (null != req.lon)) false else !isLocationFresh()
+                val droppedMarker = DataRepository.DroppedMarker(cotType = DataRepository.MarkerCotType.DROP, uid = req.uid.ifEmpty{ UUID.randomUUID().toString() }, markerType = req.markerType,
+                    title = finalMarkerTitle(req.title), remark = req.remark, timeDropped = req.timeMillis,
+                    location = dataRepository.snapshotMarkerLocation(req.uid, req.lat, req.lon, req.timeMillis), enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
+
+                enqueueMarkerDrop(droppedMarker)
+                markerDropMap[droppedMarker.uid] = droppedMarker
+                dataRepository.appendDroppedMarker(droppedMarker)
+
+                if (waitingForUpdatedLocation) {
+                    Log.i(TAG, "Drop lat(${req.lat}) and lon(${req.lon}) is null or location is stale. En-queued marker drop...")
+                    EventBus.getDefault().post(LocationUpdateRequired())
                 } else {
-                    Log.i(TAG, "Drop lat and lon null. Checking if we can send drop now...")
-                    if (readyToSendMarkerEvents()) {
-                        sendPendingMarkerDrops()
-                        sendMarkerDropNow(req)
-                    } else {
-                        if (dataRepository.anyEndpointConnected.value) {
-                            EventBus.getDefault().post(LocationUpdateRequired())
-                        }
-                        enqueueDrop(req)
+                    Log.i(TAG, "Drop lat(${req.lat}) and lon(${req.lon}) NOT null or location is fresh. Trying to send marker drop request now if possible...")
+                    if (dataRepository.anyEndpointConnected.value) {
+                        sendPendingMarkerCots()
                     }
                 }
             }
@@ -746,14 +741,28 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.markerEditRequests.collect { req ->
                 Log.i(TAG, "Received marker edit request for uid=${req.uid}")
-                if (readyToSendMarkerEvents()) {
-                    sendPendingMarkerEdits()
-                    sendMarkerEditNow(req)
+                val markerDrop = markerDropMap[req.uid]
+                if (null == markerDrop) {
+                    Log.w(TAG, "Cannot find marker drop for uid=${req.uid}. Ignoring this...")
+                } else if (markerDrop.cotType == DataRepository.MarkerCotType.CLEAR) {
+                    Log.w(TAG, "Cannot edit a marker that has already scheduled to be cleared. Ignoring this...")
                 } else {
-                    if (dataRepository.anyEndpointConnected.value) {
+                    val waitingForUpdatedLocation = req.updateLocation || markerDrop.waitingForUpdatedLocation
+                    val editedMarkerDrop = markerDrop.copy(cotType = DataRepository.MarkerCotType.EDIT, markerType = req.markerType, title = finalMarkerTitle(req.title),
+                        remark = req.remark, timeDropped = req.timeMillis, location = markerDrop.location,
+                        enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
+                    enqueueMarkerEdit(editedMarkerDrop)
+                    markerDropMap[req.uid] = editedMarkerDrop
+                    // No need to update dataRepository._droppedMarkerList: This change has already been done
+                    if (waitingForUpdatedLocation) {
+                        Log.i(TAG, "Marker Edit updateLocation(=${req.updateLocation}) is true or previously waitingForUpdatedLocation(=${markerDrop.waitingForUpdatedLocation}) is true. En-queued marker edit...")
                         EventBus.getDefault().post(LocationUpdateRequired())
+                    } else {
+                        Log.i(TAG, "Marker edit waitingForUpdatedLocation is false. Trying to send edit marker request now if possible...")
+                        if (dataRepository.anyEndpointConnected.value) {
+                            sendPendingMarkerCots()
+                        }
                     }
-                    enqueueEdit(req)
                 }
             }
         }
@@ -761,9 +770,13 @@ class CotDispatchService : Service() {
 
     // TODO: I think we can only send the marker cot message once we have established connection and sent atleast one PLI message. The queue doesn't seem to flush and send to server on reconnects. Needs more work. MVP works.
     private fun readyToSendMarkerEvents(): Boolean {
+        return (dataRepository.anyEndpointConnected.value && isLocationFresh())
+    }
+
+    private fun isLocationFresh(): Boolean {
         val loc = dataRepository.latestLocation.value
         val fresh = (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
-        return (dataRepository.anyEndpointConnected.value && (null != loc) && fresh)
+        return (null != loc) && fresh
     }
 
     private fun startMarkerDropListCollector() {
@@ -780,10 +793,7 @@ class CotDispatchService : Service() {
         } else {
             Log.v(TAG, "Dropped Marker List updated (${list.size} items):")
             list.forEachIndexed { index, marker ->
-                Log.v(
-                    TAG,
-                    "[$index] uid=${marker.uid}, type=${marker.markerType}, time=${marker.timeDropped}"
-                )
+                Log.v(TAG, "[$index] cot=${marker.cotType} (locUpdate=${marker.waitingForUpdatedLocation}, q=${marker.enqueuedToBeSent}) : ${marker.timeDropped}, uid=${marker.uid}, type=${marker.markerType}, time=${marker.timeDropped}, title=${marker.title}, remark=${marker.remark}, loc=(${marker.location?.lat ?: "null"}, ${marker.location?.lon ?: "null"})")
             }
         }
     }
@@ -791,6 +801,7 @@ class CotDispatchService : Service() {
     private fun startMarkerClearCollector() {
         serviceScope.launch {
             dataRepository.clearMarkerRequests.collect { req ->
+                Log.i(TAG, "Received req to clear marker: $req")
                 when (req) {
                     is DataRepository.ClearRequest.Specific -> handleClearMarkerUid(req.uid)
                     DataRepository.ClearRequest.Last -> {
@@ -1769,9 +1780,34 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun handleClearMarkerUid(uid: String) {
-        val snapshot = markerDropMap[uid]  // may be null for very old markers
+        val markerDrop = markerDropMap[uid]
         // TODO: How do we inject clearing via stale time flip?
-        if (snapshot == null) return
+        if (null == markerDrop) {
+            Log.w(TAG, "Cannot obtain marker drop for uid=$uid. Ignoring...")
+            return
+        }
+        val editedMarkerDrop =
+            markerDrop.copy(cotType = DataRepository.MarkerCotType.CLEAR, enqueuedToBeSent = true, waitingForUpdatedLocation = false)
+        val updatedList = pendingMarkerCotList.map { item ->
+            if ((item.cotType != DataRepository.MarkerCotType.CLEAR) && (item.uid == uid) && item.waitingForUpdatedLocation) {
+                Log.i(TAG, "Changing Marker Status for [$uid] of cotType ${item.cotType} with waitingForUpdatedLocation set to false")
+                item.copy(enqueuedToBeSent = true, waitingForUpdatedLocation = false)
+            } else {
+                item
+            }
+        }.toMutableList()
+        pendingMarkerCotList.clear()
+        pendingMarkerCotList.addAll(updatedList)
+        enqueueMarkerClear(editedMarkerDrop)
+        markerDropMap[uid] = editedMarkerDrop
+        dataRepository.changeDroppedMarkerCotTypeStatusByUid(uid = uid, cotType = DataRepository.MarkerCotType.CLEAR, enqueuedToBeSent = true, waitingForUpdatedLocation = false)
+
+        if (dataRepository.anyEndpointConnected.value) {
+            sendPendingMarkerCots()
+        }
+    }
+
+    private suspend fun sendMarkerClearNow(snapshot: DataRepository.MarkerSnapshot): Boolean {
         val staleSnapshot = makeMarkerSnapshotStale(snapshot)
         val clearXml = buildClearMarkerCotMessage(staleSnapshot)
 
@@ -1796,11 +1832,8 @@ class CotDispatchService : Service() {
             SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(clearXml))
             sent = true
         }
-        if (!sent) return
-
-        Log.i(TAG, "Clearing Marker Drop [ $uid ] of type ${snapshot?.markerType?.type}")
-        dataRepository.removeMarkerByUid(uid)
-        markerDropMap.remove(uid)
+        Log.i(TAG, "sendMarkerClearNow with result $sent")
+        return sent
     }
 
     private suspend fun handleClearMarkerAll() {
@@ -2033,49 +2066,90 @@ class CotDispatchService : Service() {
             }
         }
 
-        if (pendingMarkerDropQueue.isNotEmpty() && readyToSendMarkerEvents()) {
+        if (pendingMarkerCotList.isNotEmpty()) {
             serviceScope.launch {
-                sendPendingMarkerDrops()
-            }
-        }
-
-        if (pendingMarkerEditQueue.isNotEmpty() && readyToSendMarkerEvents()) {
-            serviceScope.launch {
-                sendPendingMarkerEdits()
+                sendPendingMarkerCots()
             }
         }
 
         buildAndSendPhysioLocationCotMsg()
     }
 
-    private fun enqueueDrop(req: DataRepository.MarkerDropRequest) {
-        Log.i(TAG, "===> adding to the marker drop queue ...")
-        pendingMarkerDropQueue.addLast(req)
+    private fun enqueueMarkerDrop(marker: DataRepository.DroppedMarker) {
+        Log.i(TAG, "===> Adding to marker cot list: Marker Drop for uid=${marker.uid}")
+        pendingMarkerCotList.add(marker.copy(cotType = DataRepository.MarkerCotType.DROP))
     }
 
-    private fun enqueueEdit(req: DataRepository.MarkerEditRequest) {
-        Log.i(TAG, "===> adding marker edit for uid=${req.uid} to queue ...")
-        pendingMarkerEditQueue.addLast(req)
+    private fun enqueueMarkerEdit(req: DataRepository.DroppedMarker) {
+        Log.i(TAG, "===> Adding to marker cot list: Marker Edit for uid=${req.uid}")
+        pendingMarkerCotList.add(req)
     }
 
-    private fun sendPendingMarkerDrops() {
-        serviceScope.launch {
-            while (pendingMarkerDropQueue.isNotEmpty()) {
-                Log.i(TAG, "===> removing ${pendingMarkerDropQueue.first().markerType} from time ${(pendingMarkerDropQueue.first().timeMillis)}...")
-                val req = pendingMarkerDropQueue.removeFirst()
-                sendMarkerDropNow(req)
+    private fun enqueueMarkerClear(req: DataRepository.DroppedMarker) {
+        Log.i(TAG, "===> Adding to marker cot list: Clear Marker for uid=${req.uid}")
+        pendingMarkerCotList.add(req)
+    }
+
+    private suspend fun sendPendingMarkerCots(): Boolean {
+        var sentAllReadyToSend = true
+        val queueSize = pendingMarkerCotList.size
+        Log.i(TAG, "pendingMarkerDropQueue.size=$queueSize")
+        val newPendingMarkerDropList = mutableListOf<DataRepository.DroppedMarker>()
+        val isLocationFresh = isLocationFresh()
+        for ((i, item) in pendingMarkerCotList.withIndex()) {
+            val cotType = item.cotType
+            var marker = item
+            Log.i(TAG, "sendPendingMarkerCots: Looking at element $i ($cotType): time ${marker.timeDropped}, uid=${marker.uid} type=${marker.markerType}, title=${marker.title}, remark=${marker.remark}, loc=(${marker.location?.lat ?: "null"}, ${marker.location?.lon ?: "null"})")
+
+            if (marker.waitingForUpdatedLocation) {
+                if (isLocationFresh) {
+                    Log.i(TAG, "sendPendingMarkerCots: waitingForUpdatedLocation is true but location is fresh. Updating...")
+                    marker = marker.copy(location = dataRepository.snapshotLocation(), waitingForUpdatedLocation = false)
+                    dataRepository.changeDroppedMarkerLocationByUid(marker.uid, marker.location)
+                } else {
+                    Log.i(TAG, "sendPendingMarkerCots: waitingForUpdatedLocation is true and location is stale. Skipping...")
+                    newPendingMarkerDropList.add(item)
+                }
+            }
+            // Now recheck waitingForUpdatedLocation for this marker as we might have changed this in the previous check
+            if (!marker.waitingForUpdatedLocation) {
+                if (cotType == DataRepository.MarkerCotType.CLEAR) {
+                    if (sendMarkerClearNow(dataRepository.snapshotMarker(marker))) {
+                        dataRepository.removeMarkerByUid(marker.uid)
+                        markerDropMap.remove(marker.uid)
+                    } else {
+                        markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = true)
+                        dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid, cotType = DataRepository.MarkerCotType.CLEAR,
+                            enqueuedToBeSent = true, waitingForUpdatedLocation = false)
+                        sentAllReadyToSend = false
+                        newPendingMarkerDropList.add(item)
+                    }
+                } else {
+                    if (sendMarkerDropNow(marker)) {
+                        Log.i(TAG, "sendPendingMarkerCots: sendMarkerDropNow returned true. Removing....")
+                        markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = false)
+                        dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid,
+                            cotType = marker.cotType,
+                            enqueuedToBeSent = false,
+                            waitingForUpdatedLocation = false
+                        )
+                    } else {
+                        Log.i(TAG, "sendPendingMarkerCots: sendMarkerDropNow returned false. Skipping....")
+                        markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = true)
+                        dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid,
+                            cotType = marker.cotType,
+                            enqueuedToBeSent = true,
+                            waitingForUpdatedLocation = false
+                        )
+                        sentAllReadyToSend = false
+                        newPendingMarkerDropList.add(item)
+                    }
+                }
             }
         }
-    }
-
-    private fun sendPendingMarkerEdits() {
-        serviceScope.launch {
-            while (pendingMarkerEditQueue.isNotEmpty()) {
-                val req = pendingMarkerEditQueue.removeFirst()
-                Log.i(TAG, "===> removing marker edit request for uid=${req.uid} from queue ...")
-                sendMarkerEditNow(req)
-            }
-        }
+        pendingMarkerCotList.clear()
+        pendingMarkerCotList.addAll(newPendingMarkerDropList)
+        return sentAllReadyToSend
     }
 
     private suspend fun dispatchMarkerSnapshot(snapshot: DataRepository.MarkerSnapshot?, xml: String): Boolean {
@@ -2104,56 +2178,28 @@ class CotDispatchService : Service() {
             SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
             sent = true
         }
-
+        Log.i(TAG, "dispatchMarkerSnapshot: sent=$sent")
         return sent
     }
 
-    private suspend fun sendMarkerDropNow(req: DataRepository.MarkerDropRequest) {
-
-        val snapshot = dataRepository.snapshotMarker(req)
-        if (snapshot == null) {
-            Log.w(TAG, "Skipping marker drop send; no location snapshot available")
-            return
+    private suspend fun sendMarkerDropNow(marker: DataRepository.DroppedMarker): Boolean {
+        val editedMarker = if (marker.location == null) {
+            // Use latest location, else send to 0, 0
+            Log.w(TAG, "sendMarkerDropNow called with null location; Setting to current location or lat=0, lon=0")
+            val locationSnapshot = if (null != dataRepository.latestLocation.value) {
+                dataRepository.snapshotLocation()
+            } else {
+                DataRepository.LocationSnapshot(timeMillis = System.currentTimeMillis(),
+                    lat = 0.0, lon = 0.0, hae = 0.0, ce = 0.0f, le = 0.0f, course = 0.0f, speed = 0.0f)
+            }
+            marker.copy(location = locationSnapshot)
+        } else {
+            marker
         }
-
-        Log.i(TAG, "sendDropNow::markerType:: = [ ${snapshot.markerType.type} ]")
+        Log.i(TAG, "sendMarkerDropNow::markerType:: = [ ${marker.markerType.type} ]")
+        val snapshot = dataRepository.snapshotMarker(marker)
         val xml = buildMarkerCotMessage(snapshot)
-        val sent = dispatchMarkerSnapshot(snapshot, xml)
-        if (!sent) return  // don’t reflect in UI until actually sent/meshed
-
-        markerDropMap[snapshot.uid] = snapshot
-
-        Log.i(TAG, "=== ===> sending marker type ${snapshot.markerType.type} with uid = [ ${snapshot.uid} ] ")
-
-        val markerTitleCallsignOrCustom = finalMarkerTitle(snapshot.title)
-
-        dataRepository.appendDroppedMarker(
-            DataRepository.DroppedMarker(uid = snapshot.uid, markerType = snapshot.markerType.type, title = markerTitleCallsignOrCustom, remark = req.remark, timeDropped = req.timeMillis, location = snapshot.loc)
-        )
-    }
-
-    private suspend fun sendMarkerEditNow(req: DataRepository.MarkerEditRequest) {
-        val snapshot = dataRepository.snapshotMarker(
-            DataRepository.MarkerDropRequest(
-                markerType = req.markerType,
-                title = req.title,
-                remark = req.remark,
-                timeMillis = req.timeMillis,
-                uid = req.uid
-            )
-        )
-
-        if (snapshot == null) {
-            Log.w(TAG, "Skipping marker edit send for uid=${req.uid}; no location snapshot available")
-            return
-        }
-
-        val xml = buildMarkerCotMessage(snapshot)
-        val sent = dispatchMarkerSnapshot(snapshot, xml)
-        if (!sent) return
-
-        markerDropMap[req.uid] = snapshot
-        Log.i(TAG, "=== ===> sent marker edit for uid=[${req.uid}] type=[${snapshot.markerType.type}]")
+        return dispatchMarkerSnapshot(snapshot, xml)
     }
 
     // This method will be called when a MessageEvent is posted (in the UI thread for Toast)
