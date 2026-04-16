@@ -2,6 +2,7 @@
   "version": 8,
   "name": "TAK Maps - Wear Topo Full (No Glyphs/Sprites)",
   "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+
   "sources": {
     "tak-maps": {
       "type": "vector",
@@ -10,8 +11,26 @@
       ],
       "minzoom": 0,
       "maxzoom": 14
+    },
+
+    "hillshade": {
+      "type": "raster",
+      "tiles": [
+        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 256
+    },
+
+    "contours": {
+      "type": "vector",
+      "tiles": [
+        "https://demotiles.maplibre.org/tiles/terrain/{z}/{x}/{y}.pbf"
+      ]
     }
   },
+
   "layers": [
     {
       "id": "background",
@@ -28,6 +47,36 @@
       "paint": {
         "fill-color": "#0f2a3a",
         "fill-opacity": 1.0
+      }
+    },
+    {
+      "id": "water-lines",
+      "type": "line",
+      "source": "tak-maps",
+      "source-layer": "waterway",
+      "paint": {
+        "line-color": "#4fc3f7",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5, 0.5,
+          10, 1.5,
+          14, 3
+        ],
+        "line-opacity": 0.9
+      }
+    },
+
+    {
+      "id": "contours",
+      "type": "line",
+      "source": "contours",
+      "source-layer": "contours",
+      "paint": {
+        "line-color": "#ff0000",
+        "line-width": 2,
+        "line-opacity": 1
       }
     },
     {
@@ -94,6 +143,15 @@
         "fill-opacity": 1.0
       }
     },
+    {
+      "id": "hillshade",
+      "type": "raster",
+      "source": "hillshade",
+      "paint": {
+        "raster-opacity": 0.35
+      }
+    },
+
     {
       "id": "boundary",
       "type": "line",
