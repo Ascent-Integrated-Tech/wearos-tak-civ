@@ -55,6 +55,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_USER_WARNING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -1713,6 +1714,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableOnnxUasService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_ONNX_UAS_SERVICE] ?: DEFAULT_ENABLE_ONNX_UAS
+    }
+
+    suspend fun storeEnableOnnxUasService(enableOnnxUas: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_ONNX_UAS_SERVICE] = enableOnnxUas
+        }
+    }
+
     private val _almightyReportingIntervalSecs =
         MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
 
@@ -3011,6 +3022,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
         private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
+        private val ENABLE_ONNX_UAS_SERVICE = booleanPreferencesKey("enable_onnx_uas_service")
 
         private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")

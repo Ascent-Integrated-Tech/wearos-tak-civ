@@ -210,6 +210,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
@@ -261,6 +262,7 @@ import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.OnnxRepository
+import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
@@ -308,6 +310,8 @@ class MainActivity : ComponentActivity() {
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
         var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
+        var enableOnnxUasServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_UAS)
+        var enableOnnxUasService : Boolean = DEFAULT_ENABLE_ONNX_UAS
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -902,6 +906,7 @@ class MainActivity : ComponentActivity() {
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
+            enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
             highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
@@ -1373,6 +1378,7 @@ class MainActivity : ComponentActivity() {
         enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
 
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
+        enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)
@@ -2673,13 +2679,25 @@ fun MainScreen(
             OnnxRepository(context.applicationContext)
         }
     }
+    val uasRepo = remember(context.applicationContext) {
+        try {
+            (context.applicationContext as WearTakApplication).uasOnnxRepo
+        } catch (_: Throwable) {
+            UasOnnxRepository(context.applicationContext)
+        }
+    }
 
     val shouldShowGunshotDialog = remember { mutableStateOf(false) }
     val pendingGunshot          = remember { mutableStateOf<OnnxRepository.OnnxGunshotEvent?>(null) }
     val gunshotShownAtMs        = remember { mutableStateOf(0L) }
     val uiReceivedAtEl = remember { mutableStateOf(0L) }
+    val shouldShowUasDialog = remember { mutableStateOf(false) }
+    val pendingUas = remember { mutableStateOf<UasOnnxRepository.UasOnnxEvent?>(null) }
+    val uasShownAtMs = remember { mutableStateOf(0L) }
+    val uasUiReceivedAtEl = remember { mutableStateOf(0L) }
 
     val GUNSHOT_PROMPT_TIMEOUT = 15_000L
+    val UAS_PROMPT_TIMEOUT = 15_000L
 
     // Collect Gunshot events from Onnx & trigger gunshot dialog.
     LaunchedEffect(Unit) {
@@ -2699,6 +2717,28 @@ fun MainScreen(
             pendingGunshot.value = event
             gunshotShownAtMs.value = SystemClock.elapsedRealtime()
             shouldShowGunshotDialog.value = true
+
+            Utils.vibrateWatch(vibDurationMs = 150, numberOfVibes = 2, timeBtwnVibesMs = 120)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        Log.i(TAG, "MainScreen: starting uasEvents collector")
+
+        uasRepo.uasEvents.collect { event ->
+            val recvEl = SystemClock.elapsedRealtime()
+            uasUiReceivedAtEl.value = recvEl
+
+            Log.i(
+                TAG,
+                "UAS_UI_RECEIVE uid=${event.uid} conf=${"%.4f".format(event.confidence)} " +
+                    "inferEndEl=${event.inferEndElapsedMs} uiRecvEl=$recvEl " +
+                    "inferToUiMs=${event.inferEndElapsedMs?.let { recvEl - it }}"
+            )
+
+            pendingUas.value = event
+            uasShownAtMs.value = SystemClock.elapsedRealtime()
+            shouldShowUasDialog.value = true
 
             Utils.vibrateWatch(vibDurationMs = 150, numberOfVibes = 2, timeBtwnVibesMs = 120)
         }
@@ -2737,6 +2777,39 @@ fun MainScreen(
         pendingGunshot.value = null
     }
 
+    fun finishUasPrompt(
+        eventUid: String,
+        label: UasOnnxRepository.UasUserLabel
+    ) {
+        val event = pendingUas.value
+        if (event == null) {
+            Log.w(TAG, "UAS_UI_FINISH uid=$eventUid label=$label ignored (no pending)")
+            return
+        }
+        if (event.uid != eventUid) {
+            Log.w(TAG, "UAS_UI_FINISH uid=$eventUid label=$label ignored (pending=${event.uid})")
+            return
+        }
+
+        val nowEl = SystemClock.elapsedRealtime()
+        val nowWall = System.currentTimeMillis()
+        val latencyMs = nowEl - uasShownAtMs.value
+
+        Log.i(TAG, "UAS_UI_FINISH uid=$eventUid label=$label uiLatencyMs=$latencyMs")
+
+        uasRepo.tryEmitUasFeedback(
+            UasOnnxRepository.UasFeedback(
+                eventUid = eventUid,
+                label = label,
+                respondedAtMs = nowWall,
+                responseLatencyMs = nowEl - uasShownAtMs.value
+            )
+        )
+
+        shouldShowUasDialog.value = false
+        pendingUas.value = null
+    }
+
     /* Start a Timeout for each Gunshot Dialog.
     	•	If user answered → timeout does nothing
 	    •	If new gunshot event replaced old → timeout does nothing
@@ -2755,6 +2828,21 @@ fun MainScreen(
 
         if (stillSame) {
             finishPrompt(uid, OnnxRepository.GunshotUserLabel.TIMEOUT)
+        }
+    }
+
+    LaunchedEffect(pendingUas.value?.uid) {
+        val event = pendingUas.value ?: return@LaunchedEffect
+        val uid = event.uid
+
+        delay(UAS_PROMPT_TIMEOUT)
+
+        val stillSame =
+            shouldShowUasDialog.value &&
+                pendingUas.value?.uid == uid
+
+        if (stillSame) {
+            finishUasPrompt(uid, UasOnnxRepository.UasUserLabel.TIMEOUT)
         }
     }
 
@@ -2883,8 +2971,10 @@ fun MainScreen(
 
     // Should we prompt the user about a gunshot event?
     val lastDialogUid = remember { mutableStateOf<String?>(null) }
+    val lastUasDialogUid = remember { mutableStateOf<String?>(null) }
 
     val event = pendingGunshot.value
+    val uasEvent = pendingUas.value
 
     if (shouldShowGunshotDialog.value && event != null) {
 
@@ -2902,6 +2992,26 @@ fun MainScreen(
             event = event,
             onLabel = { label ->
                 finishPrompt(event.uid, label)
+            }
+        )
+    }
+
+    if (shouldShowUasDialog.value && uasEvent != null) {
+
+        if (lastUasDialogUid.value != uasEvent.uid) {
+            lastUasDialogUid.value = uasEvent.uid
+            Log.i(
+                TAG,
+                "UAS_UI_DIALOG_SHOW uid=${uasEvent.uid} " +
+                    "uiRecvToShowMs=${SystemClock.elapsedRealtime() - uasUiReceivedAtEl.value}"
+            )
+        }
+
+        UasFeedbackDialog(
+            shouldShowDialog = shouldShowUasDialog,
+            event = uasEvent,
+            onLabel = { label ->
+                finishUasPrompt(uasEvent.uid, label)
             }
         )
     }
@@ -2955,6 +3065,64 @@ fun GunshotFeedbackDialog(
             Button(
                 onClick = {
                     onLabel(OnnxRepository.GunshotUserLabel.NO)
+                    shouldShowDialog.value = false
+                },
+                modifier = Modifier.fillMaxWidth(0.45f),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+            ) { Text("NO") }
+        }
+    )
+}
+
+@Composable
+fun UasFeedbackDialog(
+    shouldShowDialog: MutableState<Boolean>,
+    event: UasOnnxRepository.UasOnnxEvent,
+    onLabel: (UasOnnxRepository.UasUserLabel) -> Unit
+) {
+    if (!shouldShowDialog.value) return
+
+    Log.i(TAG, "UAS_DIALOG_COMPOSE uid=${event.uid} show=${shouldShowDialog.value}")
+    val confPercent = kotlin.math.round(event.confidence * 100f)
+
+    AlertDialog(
+        containerColor = colors.background,
+        modifier = Modifier.fillMaxSize(),
+        onDismissRequest = {
+            onLabel(UasOnnxRepository.UasUserLabel.UNKNOWN)
+            shouldShowDialog.value = false
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                modifier = Modifier.size(25.dp),
+                contentDescription = null,
+                tint = Color.LightGray
+            )
+        },
+        text = {
+            Text(
+                "Was that a UAS?\nScore: ${"%.0f".format(confPercent)}%",
+                textAlign = TextAlign.Center,
+                fontSize = 14.sp
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onLabel(UasOnnxRepository.UasUserLabel.YES)
+                    shouldShowDialog.value = false
+                },
+                modifier = Modifier.fillMaxWidth(0.45f),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Green)
+            ) { Text("YES", color = Color.Black) }
+        },
+        dismissButton = {
+            Button(
+                onClick = {
+                    onLabel(UasOnnxRepository.UasUserLabel.NO)
                     shouldShowDialog.value = false
                 },
                 modifier = Modifier.fillMaxWidth(0.45f),
@@ -3999,5 +4167,3 @@ public fun Modifier.unswipeable() =
             state = DraggableState {}
         )
     )
-
-

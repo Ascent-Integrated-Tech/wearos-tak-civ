@@ -86,8 +86,14 @@ class ServiceConfiguration(
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
         ServiceType.GEOFENCE  -> dataRepository.getEnableGeofenceService.distinctUntilChanged()
         ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
-        ServiceType.AUDIO_CAP -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()  //TODO: if other audio
+        ServiceType.AUDIO_CAP -> combine(
+            dataRepository.getEnableOnnxGunshotService.distinctUntilChanged(),
+            dataRepository.getEnableOnnxUasService.distinctUntilChanged()
+        ) { gunshotOn, uasOn ->
+            gunshotOn || uasOn
+        }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
+        ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
@@ -159,6 +165,9 @@ class ServiceConfiguration(
             android.Manifest.permission.RECORD_AUDIO
         )
         ServiceType.ONNX_GUNSHOT -> listOf(
+            android.Manifest.permission.RECORD_AUDIO
+        )
+        ServiceType.ONNX_UAS -> listOf(
             android.Manifest.permission.RECORD_AUDIO
         )
 

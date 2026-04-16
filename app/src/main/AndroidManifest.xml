@@ -371,6 +371,12 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
+        <service
+            android:name=".service.UasOnnxService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false" />
 <!--        TODO - ALERT SIMULATION: Uncomment to use-->
 <!--        <service-->
 <!--            android:name=".service.CEPSimulationService"-->

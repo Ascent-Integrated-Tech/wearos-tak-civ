@@ -35,6 +35,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.data.OnnxRepository
+import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.model.LatLon
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -533,6 +534,59 @@ object Utils {
         }
 
         // IMPORTANT: writeToLogFileLocation already adds timestamp + newline
+        writeToLogFileLocation(logFile, obj.toString())
+    }
+
+    suspend fun logUasFeedback(
+        context: Context,
+        event: UasOnnxRepository.UasOnnxEvent,
+        label: UasOnnxRepository.UasUserLabel,
+        respondedAtMs: Long,
+        responseLatencyMs: Long,
+        extra: Map<String, Any?> = emptyMap()
+    ) {
+        val dir = File(context.filesDir, "uas_debug").apply { mkdirs() }
+        val logFile = File(dir, "uas_feedback.jsonl")
+        val sl = repo.snapshotLocation()
+        val ss = repo.snapshotSystem()
+
+        val obj = org.json.JSONObject().apply {
+            put("uid", event.uid)
+            put("eventTimestamp", event.timestamp)
+            put("confidence", event.confidence)
+            put("label", label.name)
+            put("respondedAtMs", respondedAtMs)
+            put("responseLatencyMs", responseLatencyMs)
+            put("triggerPcmPath", event.triggerPcmPath)
+            put("audioSessionId", event.chunkRef.sessionId)
+            put("audioSeq", event.chunkRef.seq)
+            put("audioChunkTimestampMs", event.chunkRef.timestampMs)
+            put("sampleRateHz", event.chunkRef.sampleRateHz)
+            put("micSource", event.audioSource)
+            put("manufacturer", android.os.Build.MANUFACTURER)
+            put("model", android.os.Build.MODEL)
+            put("sdkInt", android.os.Build.VERSION.SDK_INT)
+            put("wearTakVersion", ss.wearTakVersion)
+            put("callsign", ss.callsign)
+            put("deviceId", ss.deviceId)
+
+            sl?.let {
+                put("lat", it.lat)
+                put("lon", it.lon)
+                put("hae", it.hae)
+                put("ce", it.ce)
+            }
+
+            put("isWorn", ss.systemStates.isWorn)
+            put("charging", ss.systemStates.charging)
+            put("bat", ss.batteryPercent)
+            put("latestActRec", repo.latestActivityRecognized.value)
+
+            val extrasObj = org.json.JSONObject()
+            for ((k, v) in extra) extrasObj.put(k, v)
+            put("extra", extrasObj)
+        }
+
         writeToLogFileLocation(logFile, obj.toString())
     }
 
