@@ -241,7 +241,7 @@ class PressureService : Service() {
 
             // Emit to CEP bus so sample-window features (SampleWindow, SampleDelta, SampleSlope)
             // can compute over the pressure ring in FeatureStore.
-            /*val cepEvt = CepEvent(
+            val cepEvt = CepEvent(
                 topic = Topics.PRESSURE,
                 payload = PressurePayload(
                     hpa = reading.pressure,
@@ -253,8 +253,9 @@ class PressureService : Service() {
             )
             if (!CepBus.tryEmit(cepEvt)) {
                 serviceScope.launch { CepBus.emit(cepEvt) }
-            }*/
+            }
 
+            /*
             val history = dataRepository.pressureHistory.value
             val now = reading.timestamp
 
@@ -325,6 +326,8 @@ class PressureService : Service() {
             }
             handleSubmergeDetection(history, now)
             generateLowHighPressureAlerts(history, now)
+
+             */
 
 
             // debug logging for verification
