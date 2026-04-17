@@ -47,6 +47,7 @@ class UasOnnxService : BaseAudioDetectionService() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
 
         private val SPEC = AudioDetectionSpec(
+            detectorKey = "uas",
             assetName = "falcon-bin.onnx",
             threshold = 0.5f,
             debugDirName = "uas_debug",

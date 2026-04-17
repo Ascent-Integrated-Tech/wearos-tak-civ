@@ -243,11 +243,13 @@ class AudioCaptureService : Service() {
 
                     if (readShorts > 0) {
                         // 1) Emit to repo as samples (copy only the valid portion)
+                        val nowEl = SystemClock.elapsedRealtime()
                         val now = System.currentTimeMillis()
                         val chunk = AudioCaptureRepository.AudioPcmChunk(
                             sessionId = sessionId,
                             seq = seq++,
                             timestampMs = now,
+                            timestampElMs = nowEl,
                             sampleRateHz = SAMPLE_RATE_HZ,
                             channels = 1,
                             samples = shortBuf.copyOf(readShorts)

@@ -47,6 +47,7 @@ class OnnxService : BaseAudioDetectionService() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
 
         private val SPEC = AudioDetectionSpec(
+            detectorKey = "gunshot",
             assetName = "dart_bin_20260225.onnx",
             threshold = 0.5f,
             debugDirName = "gunshot_debug",

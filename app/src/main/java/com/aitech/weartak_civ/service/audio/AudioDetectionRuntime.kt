@@ -24,6 +24,7 @@ import kotlin.concurrent.withLock
 import kotlin.math.min
 
 data class AudioDetectionSpec(
+    val detectorKey: String,
     val assetName: String,
     val threshold: Float,
     val debugDirName: String,
@@ -38,8 +39,10 @@ data class AudioDetectionSpec(
 )
 
 data class AudioDetectionInferenceResult(
+    val inferenceSucceeded: Boolean,
     val detected: Boolean,
-    val confidence: Float
+    val confidence: Float?,
+    val errorMessage: String? = null
 )
 
 data class AudioDetectionTrigger(
@@ -67,6 +70,7 @@ class AudioDetectionRuntime(
     private val lock = ReentrantLock()
     private val ring = ShortRingBuffer(spec.windowSamples)
     private val pcmWriteGate = kotlinx.coroutines.sync.Semaphore(1)
+    private val metricsLogger = AudioDetectionMetricsLogger(context, spec)
 
     private var lastInferEl = 0L
     private var lastSeq: Long? = null
@@ -108,23 +112,32 @@ class AudioDetectionRuntime(
             val windowPcm = ring.snapshot() ?: return@collect
 
             val inferStart = SystemClock.elapsedRealtime()
-            val detection = runDetectorOnPcm16(windowPcm, chunk.sampleRateHz) ?: return@collect
+            val cpuStartMs = AudioDetectionMetricsLogger.currentProcessCpuTimeMs()
+            val detection = runDetectorOnPcm16(windowPcm, chunk.sampleRateHz)
+            val cpuEndMs = AudioDetectionMetricsLogger.currentProcessCpuTimeMs()
             val inferEnd = SystemClock.elapsedRealtime()
             lastInferEl = inferEnd
 
             val inferMs = inferEnd - inferStart
             val audioAgeMs = nowEl - chunk.timestampElMs
+            val audioSource = audioRepo.audioSource.toString()
+            val shouldTrigger = detection.detected && (nowEl - lastTriggerMs) > spec.triggerCooldownMs
+            val cooldownSuppressed = detection.detected && !shouldTrigger
+            var triggerUid: String? = null
+            var triggerPcmPath: String? = null
 
-            if (detection.detected && (nowEl - lastTriggerMs) > spec.triggerCooldownMs) {
+            if (shouldTrigger) {
                 lastTriggerMs = nowEl
 
                 val dir = File(context.filesDir, spec.debugDirName).apply { mkdirs() }
                 val uid = UUID.randomUUID().toString()
                 val windowFile = File(dir, "$uid.pcm")
+                triggerUid = uid
+                triggerPcmPath = windowFile.absolutePath
 
                 Log.i(
                     spec.logTag,
-                    "${spec.triggerPrefix}_TRIGGER uid=$uid conf=${"%.4f".format(detection.confidence)} " +
+                    "${spec.triggerPrefix}_TRIGGER uid=$uid conf=${"%.4f".format(detection.confidence ?: 0f)} " +
                         "chunkSeq=${chunk.seq} readSamples=${chunk.samples.size} sr=${chunk.sampleRateHz} " +
                         "audioToDetectWallMs=$audioAgeMs inferMs=$inferMs"
                 )
@@ -132,10 +145,10 @@ class AudioDetectionRuntime(
                 onTrigger(
                     AudioDetectionTrigger(
                         uid = uid,
-                        confidence = detection.confidence,
+                        confidence = detection.confidence ?: 0f,
                         pcmChunk = chunk,
-                        triggerPcmPath = windowFile.absolutePath,
-                        audioSource = audioRepo.audioSource.toString(),
+                        triggerPcmPath = triggerPcmPath,
+                        audioSource = audioSource,
                         inferStart = inferStart,
                         inferEnd = inferEnd
                     )
@@ -144,6 +157,20 @@ class AudioDetectionRuntime(
                 val windowCopy = windowPcm.copyOf()
                 launchPcmWrite(uid, windowFile, windowCopy)
             }
+
+            metricsLogger.logInferenceWindow(
+                chunk = chunk,
+                inferStartElapsedMs = inferStart,
+                inferEndElapsedMs = inferEnd,
+                inference = detection,
+                audioSource = audioSource,
+                triggerUid = triggerUid,
+                triggerPcmPath = triggerPcmPath,
+                triggered = shouldTrigger,
+                cooldownSuppressed = cooldownSuppressed,
+                cpuStartMs = cpuStartMs,
+                cpuEndMs = cpuEndMs
+            )
         }
     }
 
@@ -209,12 +236,17 @@ class AudioDetectionRuntime(
         }
     }
 
-    private fun runDetectorOnPcm16(audioPcm: ShortArray, sampleRateHz: Int): AudioDetectionInferenceResult? {
+    private fun runDetectorOnPcm16(audioPcm: ShortArray, sampleRateHz: Int): AudioDetectionInferenceResult {
         val session = detectorSession
 
         if (!detectorLoaded || session == null) {
             Log.e(spec.logTag, "Detector model not loaded")
-            return null
+            return AudioDetectionInferenceResult(
+                inferenceSucceeded = false,
+                detected = false,
+                confidence = null,
+                errorMessage = "Detector model not loaded"
+            )
         }
 
         val floatData = pcm16ToFloat(audioPcm)
@@ -223,12 +255,18 @@ class AudioDetectionRuntime(
         return try {
             val score = lock.withLock { runModelScalar(session, modelInput) }
             AudioDetectionInferenceResult(
+                inferenceSucceeded = true,
                 detected = score >= spec.threshold,
                 confidence = score
             )
         } catch (t: Throwable) {
             Log.e(spec.logTag, "Detector inference error", t)
-            null
+            AudioDetectionInferenceResult(
+                inferenceSucceeded = false,
+                detected = false,
+                confidence = null,
+                errorMessage = t.message ?: t.javaClass.simpleName
+            )
         }
     }
 
