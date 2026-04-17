@@ -6,10 +6,14 @@ import android.os.Process
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
-import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
+import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.round
 
 class AudioDetectionMetricsLogger(
@@ -17,6 +21,9 @@ class AudioDetectionMetricsLogger(
     private val spec: AudioDetectionSpec
 ) {
     private val appContext = context.applicationContext
+    private val debugRootDir by lazy { File(appContext.filesDir, spec.debugDirName).apply { mkdirs() } }
+    private val sessionId by lazy { buildSessionId() }
+    private val sessionDir by lazy { File(debugRootDir, "session_$sessionId").apply { mkdirs() } }
 
     private val repo by lazy {
         try {
@@ -26,8 +33,20 @@ class AudioDetectionMetricsLogger(
         }
     }
 
+    private var sessionMetadataWritten = false
+    private var currentMetricsSegmentIndex = 0
+    private var currentMetricsFile: File? = null
+    private var currentMetricsWriter: BufferedWriter? = null
+    private var currentMetricsBytes = 0L
+    private var cachedSystemSnapshot: DataRepository.SystemSnapshot? = null
+    private var cachedSystemSnapshotAtMs = 0L
+
     suspend fun logInferenceWindow(
         chunk: AudioCaptureRepository.AudioPcmChunk,
+        streamSegmentIndex: Int,
+        windowIndex: Long,
+        windowStartSample: Long,
+        windowEndSample: Long,
         inferStartElapsedMs: Long,
         inferEndElapsedMs: Long,
         inference: AudioDetectionInferenceResult,
@@ -39,9 +58,9 @@ class AudioDetectionMetricsLogger(
         cpuStartMs: Long,
         cpuEndMs: Long
     ) {
-        val dir = File(appContext.filesDir, spec.debugDirName).apply { mkdirs() }
-        val logFile = File(dir, "${spec.detectorKey}_inference_metrics.jsonl")
-        val system = repo.snapshotSystem()
+        val system = snapshotSystemCached()
+        ensureSessionDirectory()
+        ensureSessionMetadata(system)
 
         val inferDurationMs = (inferEndElapsedMs - inferStartElapsedMs).coerceAtLeast(0L)
         val chunkToInferLatencyMs = (inferStartElapsedMs - chunk.timestampElMs).coerceAtLeast(0L)
@@ -54,15 +73,12 @@ class AudioDetectionMetricsLogger(
             }
 
         val obj = JSONObject().apply {
+            put("metricsSessionId", sessionId)
             put("recordedAtMs", System.currentTimeMillis())
-            put("detectorKey", spec.detectorKey)
-            put("modelAssetName", spec.assetName)
-            put("threshold", spec.threshold.toDouble())
-            put("targetSampleRateHz", spec.targetSr)
-            put("targetSamples", spec.targetSamples)
-            put("windowSamples", spec.windowSamples)
-            put("hopMs", spec.hopMs)
-            put("triggerCooldownMs", spec.triggerCooldownMs)
+            put("streamSegmentIndex", streamSegmentIndex)
+            put("windowIndex", windowIndex)
+            put("windowStartSample", windowStartSample)
+            put("windowEndSample", windowEndSample)
 
             put("audioSessionId", chunk.sessionId)
             put("audioSeq", chunk.seq)
@@ -91,15 +107,7 @@ class AudioDetectionMetricsLogger(
             put("processCpuEndMs", cpuEndMs)
             put("processCpuDeltaMs", cpuDeltaMs)
             putNullable("processCpuUtilizationPct", cpuUtilizationPct)
-            putNullable("cpuSamplesPct", null)
-            putNullable("cpuPeakPct", null)
 
-            put("manufacturer", Build.MANUFACTURER)
-            put("model", Build.MODEL)
-            put("sdkInt", Build.VERSION.SDK_INT)
-            put("wearTakVersion", system.wearTakVersion)
-            put("callsign", system.callsign)
-            put("deviceId", system.deviceId)
             putNullable("batteryPercent", system.batteryPercent)
             put("charging", system.systemStates.charging)
             put("dockType", system.systemStates.dockType.name)
@@ -108,26 +116,173 @@ class AudioDetectionMetricsLogger(
             put("actualReportIntervalSecs", system.systemStates.actualReportInterval)
         }
 
-        appendJsonLine(logFile, obj)
+        appendMetricsLine(obj.toString() + "\n")
     }
 
-    private fun appendJsonLine(file: File, obj: JSONObject) {
-        FileWriter(file, true).use { writer ->
-            writer.write(obj.toString())
-            writer.write("\n")
+    @Synchronized
+    fun triggerPcmFile(uid: String): File {
+        ensureSessionDirectory()
+        return File(sessionDir, "$uid.pcm")
+    }
+
+    @Synchronized
+    fun onTriggerPcmSaved() {
+        enforceBudget(
+            root = debugRootDir,
+            maxBytes = spec.triggerPcmDirMaxBytes,
+            protected = emptySet()
+        ) { it.extension.equals("pcm", ignoreCase = true) }
+    }
+
+    @Synchronized
+    fun close() {
+        currentMetricsWriter?.flush()
+        currentMetricsWriter?.close()
+        currentMetricsWriter = null
+        currentMetricsFile = null
+        currentMetricsBytes = 0L
+    }
+
+    private suspend fun snapshotSystemCached(): DataRepository.SystemSnapshot {
+        val now = System.currentTimeMillis()
+        val cached = cachedSystemSnapshot
+        if (cached != null && now - cachedSystemSnapshotAtMs < SYSTEM_SNAPSHOT_CACHE_MS) {
+            return cached
+        }
+
+        return repo.snapshotSystem().also {
+            cachedSystemSnapshot = it
+            cachedSystemSnapshotAtMs = now
+        }
+    }
+
+    @Synchronized
+    private fun ensureSessionDirectory() {
+        if (!sessionDir.exists()) {
+            sessionDir.mkdirs()
+        }
+    }
+
+    private fun ensureSessionMetadata(system: DataRepository.SystemSnapshot) {
+        if (sessionMetadataWritten) return
+
+        val metadataFile = File(sessionDir, "session.json")
+        val overlapPct = round((1.0 - spec.hopSamples.toDouble() / spec.windowSamples.toDouble()) * 1000.0) / 10.0
+        val obj = JSONObject().apply {
+            put("metricsSessionId", sessionId)
+            put("createdAtMs", System.currentTimeMillis())
+            put("detectorKey", spec.detectorKey)
+            put("modelAssetName", spec.assetName)
+            put("threshold", spec.threshold.toDouble())
+            put("targetSampleRateHz", spec.targetSr)
+            put("targetSamples", spec.targetSamples)
+            put("windowSamples", spec.windowSamples)
+            put("hopSamples", spec.hopSamples)
+            put("hopMs", (spec.hopSamples.toLong() * 1000L) / spec.targetSr)
+            put("overlapPercent", overlapPct)
+            put("triggerCooldownMs", spec.triggerCooldownMs)
+            put("metricsSegmentMaxBytes", spec.metricsSegmentMaxBytes)
+            put("metricsDirMaxBytes", spec.metricsDirMaxBytes)
+            put("triggerPcmDirMaxBytes", spec.triggerPcmDirMaxBytes)
+
+            put("manufacturer", Build.MANUFACTURER)
+            put("model", Build.MODEL)
+            put("sdkInt", Build.VERSION.SDK_INT)
+            put("wearTakVersion", system.wearTakVersion)
+            put("callsign", system.callsign)
+            put("deviceId", system.deviceId)
+        }
+
+        metadataFile.writeText(obj.toString(2), StandardCharsets.UTF_8)
+        sessionMetadataWritten = true
+    }
+
+    @Synchronized
+    private fun appendMetricsLine(line: String) {
+        val lineBytes = line.toByteArray(StandardCharsets.UTF_8).size.toLong()
+        ensureMetricsWriter(lineBytes)
+        currentMetricsWriter?.write(line)
+        currentMetricsWriter?.flush()
+        currentMetricsBytes += lineBytes
+
+        enforceBudget(
+            root = debugRootDir,
+            maxBytes = spec.metricsDirMaxBytes,
+            protected = setOfNotNull(currentMetricsFile)
+        ) {
+            it.name.startsWith("${spec.detectorKey}_inference_metrics-") &&
+                it.extension.equals("jsonl", ignoreCase = true)
+        }
+    }
+
+    @Synchronized
+    private fun ensureMetricsWriter(nextLineBytes: Long) {
+        if (currentMetricsWriter == null) {
+            rotateMetricsSegment()
+            return
+        }
+
+        if (currentMetricsBytes + nextLineBytes > spec.metricsSegmentMaxBytes) {
+            rotateMetricsSegment()
+        }
+    }
+
+    @Synchronized
+    private fun rotateMetricsSegment() {
+        currentMetricsWriter?.flush()
+        currentMetricsWriter?.close()
+
+        val file = File(
+            sessionDir,
+            "${spec.detectorKey}_inference_metrics-${currentMetricsSegmentIndex.toString().padStart(4, '0')}.jsonl"
+        )
+        currentMetricsSegmentIndex += 1
+        currentMetricsFile = file
+        currentMetricsWriter = BufferedWriter(FileWriter(file, true))
+        currentMetricsBytes = file.length()
+    }
+
+    private fun enforceBudget(
+        root: File,
+        maxBytes: Long,
+        protected: Set<File>,
+        predicate: (File) -> Boolean
+    ) {
+        if (maxBytes <= 0L) return
+
+        val files = root.walkTopDown()
+            .filter { it.isFile && predicate(it) }
+            .sortedBy { it.lastModified() }
+            .toList()
+
+        var totalBytes = files.sumOf { it.length() }
+        if (totalBytes <= maxBytes) return
+
+        for (file in files) {
+            if (file in protected) continue
+            if (totalBytes <= maxBytes) break
+
+            val fileBytes = file.length()
+            if (file.delete()) {
+                totalBytes -= fileBytes
+            }
         }
     }
 
     private fun JSONObject.putNullable(key: String, value: Any?) {
-        when (value) {
-            null -> put(key, JSONObject.NULL)
-            is FloatArray -> put(key, JSONArray(value.map { it.toDouble() }))
-            is DoubleArray -> put(key, JSONArray(value.toList()))
-            else -> put(key, value)
+        if (value == null) {
+            put(key, JSONObject.NULL)
+        } else {
+            put(key, value)
         }
     }
 
+    private fun buildSessionId(): String =
+        SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+
     companion object {
+        private const val SYSTEM_SNAPSHOT_CACHE_MS = 1000L
+
         fun currentProcessCpuTimeMs(): Long = Process.getElapsedCpuTime()
     }
 }
