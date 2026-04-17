@@ -12,6 +12,10 @@ import android.util.Log
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.Topics
+import com.aitech.weartak_civ.cep.model.payloads.PressurePayload
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -56,6 +60,12 @@ class PressureService : Service() {
     private var shallowDunkUid: String? = null
     private var submergeUid: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * Monotonically increasing sample counter. Reset to 0 on service creation so
+     * downstream CEP consumers can detect service restarts (new sampleIndex < previous).
+     */
+    private var sampleIndex = 0L
 
     private var enableImmersionAlerts: Boolean = false
     private var enableLowAtmPressureAlert: Boolean = false
@@ -228,6 +238,22 @@ class PressureService : Service() {
             runBlocking {
                 dataRepository.storeLatestPressure(reading)
             }
+
+            // Emit to CEP bus so sample-window features (SampleWindow, SampleDelta, SampleSlope)
+            // can compute over the pressure ring in FeatureStore.
+            /*val cepEvt = CepEvent(
+                topic = Topics.PRESSURE,
+                payload = PressurePayload(
+                    hpa = reading.pressure,
+                    accuracy = accuracyVal,
+                    sampleIndex = sampleIndex++,
+                    sourceId = "baro_0"
+                ),
+                ts = reading.timestamp
+            )
+            if (!CepBus.tryEmit(cepEvt)) {
+                serviceScope.launch { CepBus.emit(cepEvt) }
+            }*/
 
             val history = dataRepository.pressureHistory.value
             val now = reading.timestamp

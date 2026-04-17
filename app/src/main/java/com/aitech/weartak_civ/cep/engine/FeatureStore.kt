@@ -57,6 +57,7 @@ class FeatureStore {
         kv[k] = value
         ts[k] = nowMs
         tickDerived.add(k to value)
+        if (k.startsWith("features.pressure.")) Log.d("CEP_P6", "[DERIVED] $k=$value")
     }
 
     /** Clear a key (useful to invalidate stale signals). */
@@ -69,13 +70,14 @@ class FeatureStore {
         val v = kv[id] ?: return null
 
         return when (v) {
-            is Double -> v
-            is Float  -> v.toDouble()
-            is Int    -> v.toDouble()
-            is Long   -> v.toDouble()
-            is Number -> v.toDouble()
-            is String -> v.toDoubleOrNull()
-            else      -> null
+            is Double  -> v
+            is Float   -> v.toDouble()
+            is Int     -> v.toDouble()
+            is Long    -> v.toDouble()
+            is Number  -> v.toDouble()
+            is String  -> v.toDoubleOrNull()
+            is Boolean -> if (v) 1.0 else 0.0   // same Boolean-coercion as double()
+            else       -> null
         }
     }
 
@@ -96,7 +98,13 @@ class FeatureStore {
         return if (kv.containsKey(noPrefix)) noPrefix else key
     }
 
-    fun double(key: String): Double? = (kv[resolve(key)] as? Number)?.toDouble()
+    fun double(key: String): Double? {
+        return when (val v = kv[resolve(key)]) {
+            is Number  -> v.toDouble()
+            is Boolean -> if (v) 1.0 else 0.0   // derived bool features stored as Boolean; gte_key/lte_key need a Double
+            else       -> null
+        }
+    }
     fun bool(key: String): Boolean? = kv[resolve(key)] as? Boolean
     fun str(key: String): String? = kv[resolve(key)] as? String
     fun any(key: String): Any? = kv[resolve(key)]

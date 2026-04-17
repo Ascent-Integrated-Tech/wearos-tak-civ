@@ -39,6 +39,10 @@ class RuleEngine(
             } */
 
             val cond = JsonLogic.eval(r.condition, fs)
+            if (r.id.startsWith("pressure_")) {
+                val timer = compiledTimers[r.id]
+                Log.d("CEP_P6", "[RULE] id=${r.id} cond=$cond elapsedSec=${timer?.elapsedSec(now)}")
+            }
             val base = r.sustainedForSec
             val effMain = if (r.allowSustainOverride) {
                 overridesMain[r.id]?.coerceAtLeast(0L) ?: base
@@ -62,6 +66,9 @@ class RuleEngine(
                 r.id.contains("features.hr.exertion_warning_active")) {
                 Log.i("CEP", "cond=$cond, effMain=$effMain, effWarn=$effWarn, result=$result")
             } */
+            if (r.id.startsWith("pressure_") && (result.warnFired || result.mainFired)) {
+                Log.d("CEP_P6", "[RULE] id=${r.id} FIRED warnFired=${result.warnFired} mainFired=${result.mainFired}")
+            }
             if (!result.warnFired && !result.mainFired) return@forEach
 
             val snapshot = fs.snapshot(r.snapshotKeys)
