@@ -34,8 +34,9 @@ import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
+import com.aitech.weartak_civ.data.audio.AudioDetectionUserLabel
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
-import com.aitech.weartak_civ.data.OnnxRepository
 import com.aitech.weartak_civ.data.model.LatLon
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -483,42 +484,52 @@ object Utils {
         }
     }
 
+    fun appendJsonLine(logFile: File?, json: String) {
+        if (logFile == null) {
+            return
+        }
+        try {
+            FileWriter(logFile, true).use { writer ->
+                writer.write(json)
+                writer.write("\n")
+            }
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to append json line: ${e.message}", e)
+        }
+    }
+
     private val repo by lazy {
         (WearTakApplication.AppCtx.app as WearTakApplication).repo
     }
 
-    suspend fun logGunshotFeedback(
+    suspend fun logAudioDetectionFeedback(
         context: Context,
-        event: OnnxRepository.OnnxGunshotEvent,
-        label: OnnxRepository.GunshotUserLabel,
+        event: AudioDetectionEvent,
+        label: AudioDetectionUserLabel,
         respondedAtMs: Long,
         responseLatencyMs: Long,
+        debugDirName: String,
         extra: Map<String, Any?> = emptyMap()
     ) {
-        val dir = File(context.filesDir, "gunshot_debug").apply { mkdirs() }
-        val logFile = File(dir, "gunshot_feedback.jsonl")
+        val dir = File(context.filesDir, debugDirName).apply { mkdirs() }
+        val logFile = File(dir, "${event.detectorKey}_feedback.jsonl")
         val sl = repo.snapshotLocation()
         val ss = repo.snapshotSystem()
 
         val obj = org.json.JSONObject().apply {
             put("uid", event.uid)
             put("eventTimestamp", event.timestamp)
+            put("detectorKey", event.detectorKey)
             put("confidence", event.confidence)
             put("label", label.name)
             put("respondedAtMs", respondedAtMs)
             put("responseLatencyMs", responseLatencyMs)
-
             put("triggerPcmPath", event.triggerPcmPath)
-
-            // If you're using Option A (chunkRef)
             put("audioSessionId", event.chunkRef.sessionId)
             put("audioSeq", event.chunkRef.seq)
             put("audioChunkTimestampMs", event.chunkRef.timestampMs)
             put("sampleRateHz", event.chunkRef.sampleRateHz)
-
             put("micSource", event.audioSource)
-
-            // device info
             put("manufacturer", android.os.Build.MANUFACTURER)
             put("model", android.os.Build.MODEL)
             put("sdkInt", android.os.Build.VERSION.SDK_INT)
@@ -526,7 +537,6 @@ object Utils {
             put("callsign", ss.callsign)
             put("deviceId", ss.deviceId)
 
-            // location
             sl?.let {
                 put("lat", it.lat)
                 put("lon", it.lon)
@@ -534,20 +544,17 @@ object Utils {
                 put("ce", it.ce)
             }
 
-            // state information
             put("isWorn", ss.systemStates.isWorn)
             put("charging", ss.systemStates.charging)
             put("bat", ss.batteryPercent)
-            put("latestActRec",repo.latestActivityRecognized.value)
+            put("latestActRec", repo.latestActivityRecognized.value)
 
-            // optional extras
             val extrasObj = org.json.JSONObject()
             for ((k, v) in extra) extrasObj.put(k, v)
             put("extra", extrasObj)
         }
 
-        // IMPORTANT: writeToLogFileLocation already adds timestamp + newline
-        writeToLogFileLocation(logFile, obj.toString())
+        appendJsonLine(logFile, obj.toString())
     }
 
     fun jitteredLatLon(lat: Double, lon: Double, maxJitterM: Double): Pair<Double, Double> {

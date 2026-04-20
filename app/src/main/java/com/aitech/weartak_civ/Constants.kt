@@ -34,6 +34,7 @@ const val DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY: String = BLOODHOUND_PROXIMITY_
 const val DEFAULT_ENABLE_CHAT_SERVICE: Boolean = true
 const val DEFAULT_ENABLE_AUDIO_CAP_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_ONNX_GUNSHOT: Boolean = false
+const val DEFAULT_ENABLE_ONNX_UAS: Boolean = false
 const val DEFAULT_ENABLE_BATTERY_ALERTS: Boolean = false
 const val DEFAULT_ENABLE_HAIL_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_GEOFENCE_SERVICE: Boolean = false

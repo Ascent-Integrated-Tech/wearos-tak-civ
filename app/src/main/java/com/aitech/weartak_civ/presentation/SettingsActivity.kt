@@ -318,6 +318,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxServ
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxUasService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxUasServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
@@ -481,6 +483,7 @@ private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
+    enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
     enableChatServiceSettingsState.postValue(enableChatService)
     enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
@@ -4789,6 +4792,7 @@ fun SettingsScreen(
     val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     val onnxGunshotDetectCheckedLive by enableOnnxGunshotServiceSettingsState.observeAsState()
+    val onnxUasDetectCheckedLive by enableOnnxUasServiceSettingsState.observeAsState()
     val wearTakDevModeEnabled by dataRepository.getEnableWearTakDevMode
         .collectAsStateWithLifecycle(initialValue = false)
 
@@ -5015,6 +5019,13 @@ fun SettingsScreen(
                     stringResource(R.string.gunshot_detection),
                     stringResource(R.string.service_on_off)
                 )
+                SettingSwitchToggleLiveData(
+                    onnxUasDetectCheckedLive,
+                    { enableOnnxUasServiceSettingsState.postValue(it) },
+                    {},
+                    stringResource(R.string.uas_detection),
+                    stringResource(R.string.service_on_off)
+                )
             }
 
             SettingSwitchToggleLiveData(
@@ -5226,6 +5237,7 @@ fun SettingsScreen(
                     var highPressureAlertChanged = false
                     var highPressureAlertThresholdChanged = false
                     var onnxGunDetectChanged: Boolean = false
+                    var onnxUasDetectChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
                     var bloodhoundProximityVibrationChanged: Boolean = false
@@ -5627,6 +5639,14 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (enableOnnxUasService != enableOnnxUasServiceSettingsState.value) {
+                        settingsChanged = true; onnxUasDetectChanged = true
+                        enableOnnxUasService = enableOnnxUasServiceSettingsState.value ?: enableOnnxUasService
+                        runBlocking {
+                            enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
+                        }
+                    }
+
                     if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
                         settingsChanged = true; batteryAlertsCheckedChanged = true
                         enableBatteryAlerts = enableBatteryAlertsSettingsState.value
@@ -5910,6 +5930,10 @@ fun SettingsScreen(
                              if (onnxGunDetectChanged) {
                                  Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
                                  dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
+                             }
+                             if (onnxUasDetectChanged) {
+                                 Log.d(TAG, "Storing enableOnnxUasService $enableOnnxUasService")
+                                 dataRepository.storeEnableOnnxUasService(enableOnnxUasService)
                              }
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
