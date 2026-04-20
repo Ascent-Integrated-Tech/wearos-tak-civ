@@ -76,8 +76,9 @@ class LocationService : Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 //val currTime = System.currentTimeMillis()
                 dataRepository.storeLatestLocation(location)
+                //Log.i(TAG, "oneShotLocationCallback: onLocationResult $location")
                 //val logStr = "oneShotLocationCallback onLocationResult (prev: ${(currTime-oneShotPrevLocationUpdateTime)}): $location"
-                //Log.d(TAG, logStr)
+                //Log.i(TAG, logStr)
                 //writeToLogFileLocation(logFile, logStr)
                 //oneShotPrevLocationUpdateTime = currTime
                 EventBus.getDefault().post(LocationRcvd())
@@ -274,11 +275,11 @@ class LocationService : Service() {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
                 dataRepository.storeLatestLocation(location)
-                //Log.d(TAG, "Received location update: $location")
+                //Log.i(TAG, "Received location update: $location")
                 //writeToLogFileLocation(logFile, "Received location update: $location")
                 //val currTime = System.currentTimeMillis()
                 //val logStr = "periodicLocationCallback: Received location update (prev: ${(currTime-prevLocationUpdateTime)}): $location"
-                //Log.d(TAG, logStr)
+                //Log.i(TAG, logStr)
                 //writeToLogFileLocation(logFile, logStr)
                 //prevLocationUpdateTime = currTime
 
