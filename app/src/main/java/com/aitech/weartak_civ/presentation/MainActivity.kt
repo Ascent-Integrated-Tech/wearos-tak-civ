@@ -2431,8 +2431,9 @@ class MainActivity : ComponentActivity() {
                 Handler(Looper.getMainLooper()).postDelayed({ runBlocking {
                     CepProvider.getOrCreateEngine(context).updateHrProfile()
                     CepProvider.getOrCreateEngine(context).updateHrrProfile()
-                    CepProvider.getOrCreateEngine(context).updateSustainOverrides() }
-                }, EVENT_SEND_DELAY_MS)
+                    CepProvider.getOrCreateEngine(context).updateSustainOverrides()
+                    CepProvider.getOrCreateEngine(context).updatePressureProfile()
+                } }, EVENT_SEND_DELAY_MS)
 
             }
             if (uniformWaistSize != physiologicalMetricsUniformWaistSizeConfigUpdate) {
