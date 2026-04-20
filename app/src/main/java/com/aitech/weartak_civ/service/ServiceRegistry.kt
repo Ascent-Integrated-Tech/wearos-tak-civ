@@ -44,7 +44,8 @@ class ServiceRegistry() {
         ServiceType.BLOOD_HOUND to BloodhoundService::class.java,
         ServiceType.COMPANION_APP to CompanionAppService::class.java,
         ServiceType.AUDIO_CAP to AudioCaptureService::class.java,
-        ServiceType.ONNX_GUNSHOT to OnnxService::class.java,
+        ServiceType.ONNX_GUNSHOT to GunshotOnnxService::class.java,
+        ServiceType.ONNX_UAS to UasOnnxService::class.java,
         //TODO - ALERT SIMULATION: Uncomment to use
 //        ServiceType.CEP_SIMULATION to CEPSimulationService::class.java
     )
@@ -72,7 +73,8 @@ class ServiceRegistry() {
         ServiceType.BLOOD_HOUND to BloodhoundService.isRunning,
         ServiceType.COMPANION_APP to CompanionAppService.isRunning,
         ServiceType.AUDIO_CAP to AudioCaptureService.isRunning,
-        ServiceType.ONNX_GUNSHOT to OnnxService.isRunning,
+        ServiceType.ONNX_GUNSHOT to GunshotOnnxService.isRunning,
+        ServiceType.ONNX_UAS to UasOnnxService.isRunning,
         //TODO - ALERT SIMULATION: Uncomment to use
 //        ServiceType.CEP_SIMULATION to CEPSimulationService.isRunning
     )

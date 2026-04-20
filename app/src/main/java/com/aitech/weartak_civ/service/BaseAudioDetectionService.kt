@@ -1,0 +1,105 @@
+/*
+ * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
+package com.aitech.weartak_civ.service
+
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Intent
+import android.os.IBinder
+import android.util.Log
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.AudioCaptureRepository
+import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
+import com.aitech.weartak_civ.data.audio.AudioDetectionFeedback
+import com.aitech.weartak_civ.service.audio.AudioDetectionRuntime
+import com.aitech.weartak_civ.service.audio.AudioDetectionSpec
+import com.aitech.weartak_civ.service.audio.AudioDetectionTrigger
+import com.aitech.weartak_civ.service.audio.collectAudioDetectionFeedback
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+
+abstract class BaseAudioDetectionService : Service() {
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    protected val scope: CoroutineScope = CoroutineScope(Dispatchers.IO)
+
+    protected val audioRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).audioRepo
+        } catch (_: Throwable) {
+            AudioCaptureRepository(applicationContext)
+        }
+    }
+
+    protected abstract val logTag: String
+    protected abstract val notificationId: Int
+    protected abstract val runningFlag: AtomicBoolean
+    protected abstract val spec: AudioDetectionSpec
+    protected abstract val feedbackFlow: Flow<AudioDetectionFeedback>
+    protected abstract val runtime: AudioDetectionRuntime
+
+    private var feedbackJob: Job? = null
+
+    protected fun createRuntime(onTrigger: suspend (AudioDetectionTrigger) -> Unit): AudioDetectionRuntime =
+        AudioDetectionRuntime(
+            context = applicationContext,
+            spec = spec,
+            scope = scope,
+            audioRepo = audioRepo,
+            pcmFlow = audioRepo.getPcmChunks,
+            onTrigger = onTrigger
+        )
+
+    protected abstract fun getEventFromUid(uid: String): AudioDetectionEvent?
+
+    protected abstract suspend fun logFeedback(
+        event: AudioDetectionEvent,
+        feedback: AudioDetectionFeedback
+    )
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(logTag, "${javaClass.simpleName} onCreate()")
+        runningFlag.set(true)
+        startForegroundServiceCompat(notificationId, importance = NotificationManager.IMPORTANCE_LOW)
+        runtime.start()
+        feedbackJob = scope.launch {
+            collectAudioDetectionFeedback(
+                logTag = logTag,
+                feedbackPrefix = spec.feedbackPrefix,
+                feedbackFlow = feedbackFlow,
+                getEventFromUid = ::getEventFromUid,
+                logFeedback = ::logFeedback
+            )
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(logTag, "${javaClass.simpleName} onStartCommand()")
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        runningFlag.set(false)
+        feedbackJob?.cancel()
+        runtime.shutdown()
+        scope.cancel()
+        stopForeground(STOP_FOREGROUND_DETACH)
+        super.onDestroy()
+        Log.d(logTag, "${javaClass.simpleName} onDestroy()")
+    }
+}
