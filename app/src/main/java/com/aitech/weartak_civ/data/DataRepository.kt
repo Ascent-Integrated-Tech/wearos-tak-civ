@@ -2748,7 +2748,7 @@ class DataRepository(private val context: Context) {
     }
 
 
-    //    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
+    // private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
 
@@ -3149,7 +3149,7 @@ class DataRepository(private val context: Context) {
 
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
-        //        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
+        // private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
         private val TEAM = stringPreferencesKey("team")
         private val TEAM_NAMES = stringPreferencesKey("team_names")

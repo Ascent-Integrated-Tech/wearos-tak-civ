@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
@@ -41,14 +42,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.random.Random
 
 class CEPSimulationService : Service() {
 
     companion object {
         val isRunning = AtomicBoolean(false)
 
-        val TAG = "Simulation"
+        val TAG = "WearTAK-CEPSimulationService"
 
         private const val NOTIF_ID = 8123
         private const val NOTIF_CHANNEL_ID = "cep_sim_channel"
@@ -56,14 +56,6 @@ class CEPSimulationService : Service() {
 
         const val ACTION_START = "com.aitech.weartak_civ.cep.sim.START"
         const val ACTION_STOP  = "com.aitech.weartak_civ.cep.sim.STOP"
-
-        /**
-         * Phase 1 test gate — flip to `true` to activate the simulation service.
-         * When false the service is registered but remains completely idle on start,
-         * so it has zero impact on production builds.  When true, [startPhase1TestLoop]
-         * runs through all P1 verification scenarios.
-         */
-        const val IN_TESTING = true
 
         fun start(ctx: Context) {
             val i = Intent(ctx, CEPSimulationService::class.java).apply { action = ACTION_START }
@@ -74,6 +66,16 @@ class CEPSimulationService : Service() {
             ctx.startService(i)
         }
     }
+
+    /**
+     * Phase 1 test gate — flip to `true` to activate the simulation service.
+     * When false the service is registered but remains completely idle on start,
+     * so it has zero impact on production builds.  When true, [startPhase1TestLoop]
+     * runs through all P1 verification scenarios.
+     */
+    val enableCepSimulation = BuildConfig.CEP_SIMULATION
+    val enableTestAlerts = BuildConfig.CEP_TEST_ALERTS
+
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Default + job)
@@ -90,22 +92,27 @@ class CEPSimulationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!IN_TESTING) {
+        if (!enableCepSimulation) {
             // Service is registered in the manifest but intentionally idle.
             // Flip IN_TESTING = true in companion object to activate Phase 1 scenarios.
-            Log.d(TAG, "CEPSimulationService: IN_TESTING=false — service idle, no loop started")
+            Log.d(TAG, "CEPSimulationService idle - no loop started (CEP_SIMULATION=false)")
             return START_NOT_STICKY
         }
 
-        Log.d(TAG, "CEPSimulationService STARTED (IN_TESTING=true)")
+        Log.d(TAG, "CEPSimulationService enabled (CEP_SIMULATION=true)")
 
         when (intent?.action) {
             ACTION_START, null -> if (!loopStarted) startPhase1TestLoop()
             ACTION_STOP -> stopSelf()
         }
 
-        //TODO - ALERT SIMULATION: Uncomment to use
-//        testAlert()
+        //TODO - ALERT SIMULATION: Uncomment to use and set flag -PCEP_SIMULATION=true and -PCEP_TEST_ALERTS=true
+        if (enableTestAlerts) {
+            Log.d(TAG, "CEP_TEST_ALERTS=true")
+            testAlert()
+        } else {
+            Log.d(TAG, "CEP_TEST_ALERTS=false: No test alerts will be generated")
+        }
 
         return START_STICKY
     }
@@ -137,7 +144,7 @@ class CEPSimulationService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e("CEPSim", "Vibration failed: ${e.message}")
+            Log.e(TAG, "Vibration failed: ${e.message}")
         }
 
         // --- Simple notification ---
@@ -166,7 +173,7 @@ class CEPSimulationService : Service() {
 
 
     /**
-     * Phase 1 test loop — runs when [IN_TESTING] is true.
+     * Phase 1 test loop — runs when [enableCepSimulation] is true.
      *
      * Exercises the five P1 scenarios in sequence and then stops.  Each scenario is
      * designed to let you observe in logcat (tag "Simulation") that:
@@ -176,7 +183,7 @@ class CEPSimulationService : Service() {
      *  - P1-T4:       the sustainedForSecWarn warn fires based on wall-clock, not tick count.
      *  - P1-T6:       hold_down_sec=120 prevents re-fire within 120s of first fire (regression guard).
      *
-     * To run: set [IN_TESTING] = true, build+deploy, then call [start] from any component.
+     * To run: set [enableCepSimulation] = true, build+deploy, then call [start] from any component.
      */
     /**
      * Master test orchestrator — runs Phase 1 followed by Phase 2.

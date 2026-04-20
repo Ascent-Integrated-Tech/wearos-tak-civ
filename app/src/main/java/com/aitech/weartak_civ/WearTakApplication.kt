@@ -55,7 +55,7 @@ class WearTakApplication : Application() {
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
 
     companion object {
-        val TAG = "WearTAK-Applicaton"
+        val TAG = "WearTAK-Application"
     }
 
     override fun onCreate() {

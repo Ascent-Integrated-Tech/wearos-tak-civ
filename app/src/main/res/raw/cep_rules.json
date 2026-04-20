@@ -898,14 +898,13 @@
           {
             "gte_key_fresh": [
               "features.heart_rate",
-              100,
+              "features.hr.high_threshold_bpm",
               5
             ]
           }
         ]
       },
       "sustained_for_sec": 600,
-      "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
         "type": "log",
@@ -1018,7 +1017,7 @@
       },
       "sustained_for_sec": 10,
       "action": {
-        "type": "log",
+        "type": "nonelog",
         "severity": "EMERGENCY",
         "message": ">HRmax TRIGGER (EXERCISE, \u2265100% HRR for \u22655 min)",
         "tags": [
@@ -1071,7 +1070,7 @@
       "sustained_for_sec": 180,
       "hold_down_sec": 120,
       "action": {
-        "type": "log",
+        "type": "nonelog",
         "severity": "EMERGENCY",
         "message": ">HRmax TRIGGER (REST, \u2265100% HRR)",
         "tags": [
@@ -1287,7 +1286,7 @@
       "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
-        "type": "warn_log",
+        "type": "none_warn_log",
         "severity": "EMERGENCY",
         "message": "LOW HR — below {thresholds.hr.rest_low_bpm} bpm",
         "tags": [
@@ -1632,7 +1631,7 @@
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
       "action": {
-        "type": "warn",
+        "type": "nonewarn",
         "severity": "EMERGENCY",
         "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
         "isTak": false,
@@ -1675,7 +1674,7 @@
       },
       "sustained_for_sec": 5,
       "action": {
-        "type": "log",
+        "type": "nonelog",
         "severity": "EMERGENCY",
         "message": "HR ZONE 4 \u2014 between 80% and 90% HRR",
         "tags": [
@@ -1714,7 +1713,7 @@
       "sustained_for_sec": 120,
       "allow_sustain_override": true,
       "action": {
-        "type": "none",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
         "category": "CAT_HR_EMERGENCY",
@@ -1751,7 +1750,7 @@
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "nonelog",
         "severity": "EMERGENCY",
         "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
         "monitor": [
