@@ -925,10 +925,8 @@ class ReactiveServiceManager : Service() {
         AUDIO_CAP(true, isKnoxMgdService = false),
         ONNX_GUNSHOT(true, isKnoxMgdService = false, dependencies = listOf(AUDIO_CAP)),
         ONNX_UAS(true, isKnoxMgdService = false, dependencies = listOf(AUDIO_CAP)),
-        COMPANION_APP(isForegroundService = true, isKnoxMgdService = false);
-        //TODO - ALERT SIMULATION: Uncomment to use
-//        CEP_SIMULATION(isForegroundService = true, isKnoxMgdService = false);
-
+        COMPANION_APP(isForegroundService = true, isKnoxMgdService = false),
+        CEP_SIMULATION(isForegroundService = true, isKnoxMgdService = false);
 
         val conflictsWith: List<ServiceType>
             get() = when (this) {

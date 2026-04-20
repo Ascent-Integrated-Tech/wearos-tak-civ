@@ -67,16 +67,7 @@ class HeartrateService: Service() {
     private var heartRateSensor: Sensor? = null
     var permission: Boolean = false
     private var deviceWorn = false
-    // Phase 4: legacy EvictingQueue alerting path is gated. CEP engine is the sole alert consumer.
-    // hrValuesEvictingQ and generateAlerts() are retained for rollback but no longer active.
-    var enableHrAlerts : Boolean = false
-    var highAlertThreshold : Int = 163
-    var highAlertNumSecs : Int = 30
-    // P4: queue retained for rollback only; not created or used while CEP path is active.
-    var hrValuesEvictingQ : EvictingQueue<Int>? = null
-    var highAlertSent : Boolean = false
-    var highHrAlertUid : String = ""
-    var lowAlertThreshold : Int = 40
+
     private var offWristHrClearJob: Job? = null
 
     private var userAge: Int? = null
@@ -113,7 +104,6 @@ class HeartrateService: Service() {
         deviceWorn = sharedRepository.latestIsDeviceWorn.value
 
         CoroutineScope(Dispatchers.Main).launch {
-            setDataFromDatastore()
             if (deviceWorn) {
                 startSensors()
             }
@@ -128,22 +118,6 @@ class HeartrateService: Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "HeartrateService onStartCommand()")
         return START_NOT_STICKY
-    }
-
-    // Phase 4: createEvictingQ() is gated — not called while CEP path is active.
-    // Kept for rollback; remove this and hrValuesEvictingQ once CEP path is stable.
-    @Suppress("unused")
-    private fun createEvictingQ() {
-        if (highAlertNumSecs > 0) {
-            hrValuesEvictingQ = EvictingQueue.create<Int>(highAlertNumSecs)
-            Log.d(TAG, "HeartrateService createEvictingQ(): maxsize=${highAlertNumSecs}, currsize=${hrValuesEvictingQ?.size}")
-        }
-    }
-
-    suspend private fun setDataFromDatastore() {
-        enableHrAlerts = sharedRepository.getEnablePhysiologicalAlerts.first()
-        highAlertThreshold = sharedRepository.getHrHighAlertBpmThreshold.first()
-        highAlertNumSecs = sharedRepository.getHrHighAlertNumSecsThreshold.first()
     }
 
     override fun onDestroy() {
@@ -229,26 +203,8 @@ class HeartrateService: Service() {
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onMessageEvent(msgEvent: MessageEvent) {
-        val msg = msgEvent.message
-        if (PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED == msg) {
-            enableHrAlerts = (msgEvent.addlIntInfo == 1)
-            // Phase 4: EvictingQueue path gated — CEP engine handles alerts. Queue stays null.
-            hrValuesEvictingQ = null
-        } else if (HR_ALERT_THRESHOLDS_CHANGED == msg) {
-            if (enableHrAlerts) {
-                runBlocking { setDataFromDatastore() }
-                // Phase 4: no queue to recreate; CEP rules pick up threshold changes at next eval.
-            }
-        }
-    }
-
     fun startSensors() {
         Log.d(TAG, "HeartrateService startSensors()")
-        // Phase 4: EvictingQueue alerting path gated. CEP engine handles all HR alerts.
-        hrValuesEvictingQ = null
-//        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         permission = checkPermissions()
         if (null != heartRateSensor) {
@@ -262,7 +218,6 @@ class HeartrateService: Service() {
     fun stopSensors() {
         Log.d(TAG, "HeartrateService stopSensors()")
         sensorManager.unregisterListener(sensorEventListener)
-        hrValuesEvictingQ = null
     }
 
     private val sensorEventListener = object : SensorEventListener {
@@ -273,45 +228,6 @@ class HeartrateService: Service() {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
             Log.d(TAG, "onAccuracyChanged called w/ accuracy: $accuracy")
             accuracyVal = accuracy
-        }
-
-        @Synchronized
-        fun generateAlerts() {
-            if (enableHrAlerts) {
-                hrValuesEvictingQ?.add(localHr)
-                if ((hrValuesEvictingQ?.size ?: 0) == highAlertNumSecs) {
-                    //Log.d(TAG, "hrValuesEvictingQ has size ${hrValuesEvictingQ?.size}, ${hrValuesEvictingQ.toString()}")
-                    //Log.d(TAG, "${(hrValuesEvictingQ?.filter { it >= highAlertThreshold })?.size ?: 0}")
-                    val numAboveThreshold = (hrValuesEvictingQ?.filter { it >= highAlertThreshold })?.size ?: 0
-                    if (numAboveThreshold >= highAlertNumSecs) {
-                        //Log.i(TAG, "All values >= $highAlertThreshold")
-                        if (!highAlertSent) {
-                            scope.launch {
-                                val hrAlertDesc = "$DESC_HIGH_HEART_RATE_ALERT: Heartrate above $highAlertThreshold bpm for $highAlertNumSecs seconds"
-                                Log.d(TAG, "Sending alert: ($CAT_PHYSIOLOGICAL_ALERT: $hrAlertDesc)")
-                                highHrAlertUid = UUID.randomUUID().toString()
-                                val timeMillis = System.currentTimeMillis()
-                                sharedRepository.addPhysioAndAutoGenAlertRequest(highHrAlertUid, CAT_PHYSIOLOGICAL_ALERT, hrAlertDesc, 1, true, timeMillis)
-                                sharedRepository.addPhysioAlertToFront(Utils.PhysioAlert(com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT, Utils.AlertChipState.Emergency, timeMillis, ""))
-                                requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
-                                highAlertSent = true
-                            }
-                        }
-                    } else {
-                        if (highAlertSent) {
-                            if (numAboveThreshold == 0) {
-                                scope.launch {
-                                    Log.d(TAG, "Sending clear high heart rate alert for uid=$highHrAlertUid")
-                                    sharedRepository.clearPhysioAndAutoGenAlertRequestUid(highHrAlertUid)
-                                    sharedRepository.removePhysioAlerts(com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT)
-                                    requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
-                                    highAlertSent = false
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         override fun onSensorChanged(event: SensorEvent) {
@@ -353,7 +269,6 @@ class HeartrateService: Service() {
 
                 hr = localHr
                 //Log.d(TAG, "Obtained heartrate: $hr")
-                //generateAlerts()
 
                 val currTime = System.currentTimeMillis()
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.actualReportingIntervalSecs * 1000L)) {
@@ -364,27 +279,6 @@ class HeartrateService: Service() {
 //                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
                         sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
                     }
-
-//                    if (stickyEvent == null) {
-//                        if (hr > highAlertThreshold) {
-//                            emergency = "HIGH HEART RATE"
-//                            EventBus.getDefault().postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
-//                        } else if (hr < lowAlertThreshold) {
-//                            emergency = "LOW HEART RATE"
-//                            EventBus.getDefault().postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
-//                        }
-//                    } else {
-//                        if (hr > highAlertThreshold && emergency != "HIGH HEART RATE") {
-//                            emergency = "HIGH HEART RATE"
-//                            EventBus.getDefault()
-//                                .postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
-//                        } else if (hr < lowAlertThreshold && emergency != "LOW HEART RATE") {
-//                            emergency = "LOW HEART RATE"
-//                            EventBus.getDefault()
-//                                .postSticky(MessageEvent(SEND_EMERGENCY_MESSAGE))
-//                        }
-//                        Log.d(TAG, stickyEvent.message)
-//                    }
                 }
             }
         }
@@ -398,7 +292,7 @@ class HeartrateService: Service() {
         private val TAG = "WearTAK-" + HeartrateService::class.java.simpleName
         private const val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
         private const val OFF_WRIST_HR_ALERT_CLEAR_DELAY_MS = 10_000L
-        private const val SAMPLING_PERIOD_US = 2_000_000   // Every 2 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
+        private const val SAMPLING_PERIOD_US = 1_000_000   // Every 1 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
         private val HR_ALERT_CATEGORIES = setOf(
             "CAT_HR_LOW",
             "CAT_HR_REST_BRADY",
