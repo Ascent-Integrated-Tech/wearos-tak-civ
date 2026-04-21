@@ -14,9 +14,11 @@ class LogActionHandler(
     override val type: String = "log"
 
     override suspend fun handle(ctx: TriggerContext) {
+        /*
         if (ctx.ruleId.startsWith("pressure_")) {
             Log.d("CEP_P6", "[ACTION] rule=${ctx.ruleId} entered isTak=${ctx.action.isTak} snapshot=${ctx.snapshot}")
         }
+         */
         val prefix = "[CEP][${ctx.action.severity}][${ctx.ruleId}]"
         val expandedMessage = expandMessage(ctx.action.message.ifEmpty { "Triggered" }, ctx.snapshot)
         val body = "$expandedMessage tags=${ctx.action.tags} | snapshot=${ctx.snapshot}"
@@ -42,9 +44,10 @@ class LogActionHandler(
                 exitLogic     = tak.exitLogic,
                 exitSustainSec = tak.sustainSec
             )
+            /*
             if (ctx.ruleId.startsWith("pressure_")) {
                 Log.d("CEP_P6", "[ACTION] rule=${ctx.ruleId} tryActivate=$isFirstActivation uid=${tak.rawUid}")
-            }
+            } */
             if (!isFirstActivation) {
                 Log.i("CEP", "[AlertRegistry] Suppressing duplicate alert for rule=${ctx.ruleId}")
                 return

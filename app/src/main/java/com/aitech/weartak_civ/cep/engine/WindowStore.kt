@@ -188,7 +188,7 @@ class WindowStore(private val ringConfig: RingConfig) {
                 ring.add(p.hpa.toDouble(), tsMs)
                 fs.put(Topics.PRESSURE, p.hpa.toDouble(), tsMs)
                 fs.put("pressure.accuracy", p.accuracy.toDouble(), tsMs)
-                Log.d("CEP_P6", "[INGEST] hpa=${p.hpa} ts=$tsMs ringSize=${ring.size}")
+                //Log.d("CEP_P6", "[INGEST] hpa=${p.hpa} ts=$tsMs ringSize=${ring.size}")
             }
         }
     }
@@ -341,27 +341,27 @@ class WindowStore(private val ringConfig: RingConfig) {
     fun clearRing(topic: String) { num.remove(topic) }
 
     fun computeSampleWindow(def: FeatureDef.SampleWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
-        val isPressure = def.source == Topics.PRESSURE
+        //val isPressure = def.source == Topics.PRESSURE
         val ring = num[def.source] ?: run {
-            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
             return
         }
 
         // Freshness guard: newest sample must be within maxAgeSec of now
         if (def.maxAgeSec != null) {
             val lastTs = ring.lastTsOrNull() ?: run {
-                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
                 return
             }
             if ((tsMs - lastTs) / 1000L > def.maxAgeSec) {
-                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
                 return
             }
         }
 
         val window = ring.tailByCount(def.sampleCount)
         if (window.size < def.minSamples) {
-            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=insufficient have=${window.size} need=${def.minSamples} ringSize=${ring.size}")
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=insufficient have=${window.size} need=${def.minSamples} ringSize=${ring.size}")
             return
         }
 
@@ -376,7 +376,7 @@ class WindowStore(private val ringConfig: RingConfig) {
             else       -> null
         }
         v?.let {
-            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} value=$it")
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} value=$it")
             fs.putDerived(def.id, it, tsMs)
         }
     }
@@ -388,34 +388,34 @@ class WindowStore(private val ringConfig: RingConfig) {
      * [horizonSamples] samples older.  Writes nothing if insufficient history.
      */
     fun computeSampleDelta(def: FeatureDef.SampleDelta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
-        val isPressure = def.source == Topics.PRESSURE
+        //val isPressure = def.source == Topics.PRESSURE
         val ring = num[def.source] ?: run {
-            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
             return
         }
 
         // Freshness guard on the newest sample
         if (def.maxAgeSec != null) {
             val lastTs = ring.lastTsOrNull() ?: run {
-                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
                 return
             }
             if ((tsMs - lastTs) / 1000L > def.maxAgeSec) {
-                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
                 return
             }
         }
 
         val now  = ring.getByCount(0) ?: run {
-            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_newest ringSize=${ring.size}")
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_newest ringSize=${ring.size}")
             return
         }
         val back = ring.getByCount(def.horizonSamples) ?: run {
-            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_back ringSize=${ring.size} need=${def.horizonSamples + 1}")
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_back ringSize=${ring.size} need=${def.horizonSamples + 1}")
             return
         }
         val delta = now - back
-        if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} now=$now back=$back delta=$delta")
+        //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} now=$now back=$back delta=$delta")
         fs.putDerived(def.id, delta, tsMs)
     }
 

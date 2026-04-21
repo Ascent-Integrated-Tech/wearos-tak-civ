@@ -57,7 +57,7 @@ class FeatureStore {
         kv[k] = value
         ts[k] = nowMs
         tickDerived.add(k to value)
-        if (k.startsWith("features.pressure.")) Log.d("CEP_P6", "[DERIVED] $k=$value")
+        //if (k.startsWith("features.pressure.")) Log.d("CEP_P6", "[DERIVED] $k=$value")
     }
 
     /** Clear a key (useful to invalidate stale signals). */
