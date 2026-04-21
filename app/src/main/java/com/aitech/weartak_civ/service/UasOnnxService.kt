@@ -9,14 +9,17 @@
 
 package com.aitech.weartak_civ.service
 
+import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
 import com.aitech.weartak_civ.data.audio.AudioDetectionFeedback
 import com.aitech.weartak_civ.service.audio.AudioDetectionRuntime
 import com.aitech.weartak_civ.service.audio.AudioDetectionSpec
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicBoolean
 
 class UasOnnxService : BaseAudioDetectionService() {
@@ -28,6 +31,13 @@ class UasOnnxService : BaseAudioDetectionService() {
             UasOnnxRepository(applicationContext)
         }
     }
+    private val dataRepository by lazy {
+        try {
+            (applicationContext as WearTakApplication).repo
+        } catch (_: Throwable) {
+            DataRepository(applicationContext)
+        }
+    }
 
     override val logTag: String = TAG
     override val notificationId: Int = NOTIFICATION_ID
@@ -35,6 +45,8 @@ class UasOnnxService : BaseAudioDetectionService() {
     override val spec: AudioDetectionSpec = SPEC
     override val feedbackFlow: Flow<AudioDetectionFeedback>
         get() = uasRepo.uasFeedback
+    override val thresholdFlow: Flow<Float>
+        get() = dataRepository.getOnnxUasTriggerThresholdPercent.map { it.coerceIn(0, 100) / 100f }
     override val runtime: AudioDetectionRuntime by lazy {
         createRuntime { trigger ->
             val event = uasRepo.createUasEvent(
@@ -70,8 +82,9 @@ class UasOnnxService : BaseAudioDetectionService() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
 
         private val SPEC = AudioDetectionSpec(
+            detectorKey = "uas",
             assetName = "falcon-bin.onnx",
-            threshold = 0.5f,
+            threshold = DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT / 100f,
             debugDirName = "uas_debug",
             logTag = TAG,
             triggerPrefix = "UAS",

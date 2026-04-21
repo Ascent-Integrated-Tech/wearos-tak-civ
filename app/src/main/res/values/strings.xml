@@ -23,6 +23,10 @@
     <string name="companion_app" translatable="false">Companion Plugin</string>
     <string name="gunshot_detection" translatable="false">Gunshot Detect</string>
     <string name="uas_detection" translatable="false">UAS Detect</string>
+    <string name="audio_detection_trigger_threshold">Trigger Threshold</string>
+    <string name="gunshot_trigger_threshold">Gunshot Trigger Threshold</string>
+    <string name="uas_trigger_threshold">UAS Trigger Threshold</string>
+    <string name="threshold_percent_format"  translatable="false">%1$d%%</string>
     <string name="version">Version %1$s</string>
     <string name="tak_servers">TAK Servers</string>
     <string name="edit_server">Edit Server</string>

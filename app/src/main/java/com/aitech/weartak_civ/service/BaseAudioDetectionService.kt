@@ -50,9 +50,12 @@ abstract class BaseAudioDetectionService : Service() {
     protected abstract val runningFlag: AtomicBoolean
     protected abstract val spec: AudioDetectionSpec
     protected abstract val feedbackFlow: Flow<AudioDetectionFeedback>
+    protected abstract val thresholdFlow: Flow<Float>
     protected abstract val runtime: AudioDetectionRuntime
 
     private var feedbackJob: Job? = null
+    private var thresholdJob: Job? = null
+    @Volatile private var currentTriggerThreshold: Float = 0f
 
     protected fun createRuntime(onTrigger: suspend (AudioDetectionTrigger) -> Unit): AudioDetectionRuntime =
         AudioDetectionRuntime(
@@ -61,6 +64,7 @@ abstract class BaseAudioDetectionService : Service() {
             scope = scope,
             audioRepo = audioRepo,
             pcmFlow = audioRepo.getPcmChunks,
+            thresholdProvider = { currentTriggerThreshold },
             onTrigger = onTrigger
         )
 
@@ -75,7 +79,13 @@ abstract class BaseAudioDetectionService : Service() {
         super.onCreate()
         Log.d(logTag, "${javaClass.simpleName} onCreate()")
         runningFlag.set(true)
+        currentTriggerThreshold = spec.threshold
         startForegroundServiceCompat(notificationId, importance = NotificationManager.IMPORTANCE_LOW)
+        thresholdJob = scope.launch {
+            thresholdFlow.collect { threshold ->
+                currentTriggerThreshold = threshold
+            }
+        }
         runtime.start()
         feedbackJob = scope.launch {
             collectAudioDetectionFeedback(
@@ -95,6 +105,7 @@ abstract class BaseAudioDetectionService : Service() {
 
     override fun onDestroy() {
         runningFlag.set(false)
+        thresholdJob?.cancel()
         feedbackJob?.cancel()
         runtime.shutdown()
         scope.cancel()

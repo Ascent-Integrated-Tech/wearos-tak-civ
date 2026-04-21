@@ -59,6 +59,8 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
+import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_USER_WARNING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -1844,6 +1846,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getOnnxGunshotTriggerThresholdPercent: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT] ?: DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+    }
+
+    suspend fun storeOnnxGunshotTriggerThresholdPercent(thresholdPercent: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT] = thresholdPercent
+        }
+    }
+
     val getEnableOnnxUasService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ONNX_UAS_SERVICE] ?: DEFAULT_ENABLE_ONNX_UAS
     }
@@ -1851,6 +1863,16 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableOnnxUasService(enableOnnxUas: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_ONNX_UAS_SERVICE] = enableOnnxUas
+        }
+    }
+
+    val getOnnxUasTriggerThresholdPercent: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[ONNX_UAS_TRIGGER_THRESHOLD_PERCENT] ?: DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
+    }
+
+    suspend fun storeOnnxUasTriggerThresholdPercent(thresholdPercent: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[ONNX_UAS_TRIGGER_THRESHOLD_PERCENT] = thresholdPercent
         }
     }
 
@@ -3153,6 +3175,8 @@ class DataRepository(private val context: Context) {
         private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
         private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
         private val ENABLE_ONNX_UAS_SERVICE = booleanPreferencesKey("enable_onnx_uas_service")
+        private val ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_gunshot_trigger_threshold_percent")
+        private val ONNX_UAS_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_uas_trigger_threshold_percent")
 
         private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
