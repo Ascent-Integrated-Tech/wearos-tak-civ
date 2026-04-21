@@ -377,7 +377,8 @@ class MainActivity : ComponentActivity() {
 
         var enableCellularService: Boolean = true
         var isConnected : Boolean = true
-        lateinit var dataRepository: DataRepository
+        val dataRepository: DataRepository
+            get() = WearTakApplication.instance.repo
         lateinit var bhRepo: BloodhoundRepository
         lateinit var sitxRepo: SitxSecretsRepository
 
@@ -1218,7 +1219,7 @@ class MainActivity : ComponentActivity() {
         device_uid = "WEAROS_" + Settings.Secure.getString(this.getContentResolver(), Settings.Secure.ANDROID_ID)
 
         val context = mainActivity.applicationContext
-        dataRepository = (context.applicationContext as WearTakApplication).repo
+        // dataRepository is now a computed property delegating to WearTakApplication.instance.repo
         bhRepo = (context.applicationContext as WearTakApplication).bhRepo
         sitxRepo = (context.applicationContext as WearTakApplication).sitxRepo
 

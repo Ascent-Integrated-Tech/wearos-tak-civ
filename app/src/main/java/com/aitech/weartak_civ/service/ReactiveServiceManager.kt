@@ -902,7 +902,7 @@ class ReactiveServiceManager : Service() {
         val isNotRunnable: Boolean = false,  // PHYSIO is virtual, we can't start custom access, hail isn't a runnable a service
     ) {
         TAK_CONNECT(true, isKnoxMgdService = false),
-        CHAT(true, dependencies = listOf(TAK_CONNECT), isKnoxMgdService = true),
+        CHAT(true, isKnoxMgdService = true),
         COT_DISPATCH(true, isKnoxMgdService = false),
         REPORTING_INTERVAL(true, isKnoxMgdService = false),
         SITX_SERVICE(true, isKnoxMgdService = true),

@@ -56,10 +56,12 @@ class WearTakApplication : Application() {
 
     companion object {
         val TAG = "WearTAK-Applicaton"
+        lateinit var instance: WearTakApplication; private set
     }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)

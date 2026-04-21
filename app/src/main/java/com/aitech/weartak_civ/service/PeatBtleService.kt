@@ -30,25 +30,12 @@ import com.aitech.weartak_civ.data.PeatBtleRepository
 import com.aitech.weartak_civ.events.PeatCannedMessageEvent
 import com.aitech.weartak_civ.events.PeatDocumentEvent
 import com.aitech.weartak_civ.events.TakChatEvent
+import com.aitech.weartak_civ.peat.CannedMessageCodec
 import com.aitech.weartak_civ.peat.CotPeatTranslator
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import android.util.Base64
-import uniffi.peat_lite_android.CannedMessageAckEventData
-import uniffi.peat_lite_android.CannedMessageEventData
-import uniffi.peat_lite_android.CannedMessageType
-import uniffi.peat_lite_android.cannedMessageAckEventAddAck
-import uniffi.peat_lite_android.cannedMessageAckEventAckCount
-import uniffi.peat_lite_android.cannedMessageAckEventHasAcked
-import uniffi.peat_lite_android.cannedMessageAckEventMerge
-import uniffi.peat_lite_android.cannedMessageMarker
-import uniffi.peat_lite_android.cannedMessageShortName
-import uniffi.peat_lite_android.createCannedMessageAckEvent
-import uniffi.peat_lite_android.createCannedMessageEvent
-import uniffi.peat_lite_android.decodeCannedMessageAckEvent
-import uniffi.peat_lite_android.decodeCannedMessageEvent
-import uniffi.peat_lite_android.encodeCannedMessageAckEvent
-import uniffi.peat_lite_android.encodeCannedMessageEvent
+// uniffi.peat_lite_android imports removed — using local CannedMessageCodec instead
 import com.defenseunicorns.peat.PeatBtle
 import com.defenseunicorns.peat.PeatChat
 import com.defenseunicorns.peat.PeatDocument
@@ -96,6 +83,7 @@ class PeatBtleService : Service(), PeatMeshListener {
     // Configurable TTL for canned message documents (observed from DataRepository)
     @Volatile
     private var cannedMessageTtlMs: Long = 5 * 60 * 1000L  // Default 5 minutes, updated from settings
+
 
     override fun onCreate() {
         super.onCreate()
@@ -507,13 +495,8 @@ class PeatBtleService : Service(), PeatMeshListener {
      * Called when raw decrypted data is received from a peer.
      * This is the peat-lite interface - app handles message parsing directly.
      */
-    // Canned message document storage: (sourceNode, timestamp) -> latest document with ACKs
-    // Key is (sourceNode, timestamp) since that uniquely identifies a message for CRDT merge
-    private val cannedMessageDocs = mutableMapOf<Pair<Long, Long>, CannedMessageAckEventData>()
-    private val cannedMessageStoredAt = mutableMapOf<Pair<Long, Long>, Long>()  // When doc was stored
-
-    // Track which messages we've already processed (to avoid duplicate UI updates)
-    private val processedCannedMessages = mutableSetOf<Pair<Long, Long>>()
+    // Track received canned message timestamps for dedup and TTL cleanup
+    private val cannedMessageStoredAt = mutableMapOf<Pair<Long, Long>, Long>()
 
     /**
      * Observe canned message TTL setting for dynamic updates without restart.
@@ -541,29 +524,67 @@ class PeatBtleService : Service(), PeatMeshListener {
 
         if (expiredKeys.isNotEmpty()) {
             expiredKeys.forEach { key ->
-                cannedMessageDocs.remove(key)
                 cannedMessageStoredAt.remove(key)
-                processedCannedMessages.remove(key)
             }
-            Log.d(TAG, "[CANNED] Cleaned up ${expiredKeys.size} expired message docs (TTL: ${cannedMessageTtlMs/1000}s)")
+            Log.d(TAG, "[CANNED] Cleaned up ${expiredKeys.size} expired message entries (TTL: ${cannedMessageTtlMs/1000}s)")
         }
     }
 
     /**
      * Poll for CannedMessages from delta sync.
-     * NOTE: Rust-side delta sync API (getAllCannedMessages) not yet available in peat-btle.
-     * CannedMessages are currently handled via broadcastBytes/onDecryptedData path.
+     * Queries the Rust mesh document registry for all stored CannedMessages
+     * and dispatches new ones to the chat UI.
      */
     private fun pollCannedMessagesFromDeltaSync() {
-        // No-op: Rust delta sync API not yet available in peat-btle.
-        // CannedMessages flow through broadcastBytes → onDecryptedData instead.
+        val mesh = peatBtle?.mesh ?: return
+        val messages = mesh.getAllCannedMessages()
+        val docCount = mesh.appDocumentCount()
+        if (docCount > 0u || messages.isNotEmpty()) {
+            Log.d(TAG, "[CANNED-POLL] appDocumentCount=$docCount, getAllCannedMessages=${messages.size}")
+        }
+        val myNodeId = peatBtle?.nodeId ?: 0L
+        for (msg in messages) {
+            val key = Pair(msg.sourceNode.toLong(), msg.timestamp.toLong())
+            // Skip messages from self — don't echo our own alerts back as chat
+            if (msg.sourceNode.toLong() == myNodeId) continue
+            // Only process if we haven't seen this message before
+            if (!cannedMessageStoredAt.containsKey(key)) {
+                cannedMessageStoredAt[key] = System.currentTimeMillis()
+                val senderCallsign = peatBtle?.getCachedCallsign(msg.sourceNode.toLong())
+                Log.i(TAG, "[CANNED-RX] ${msg.messageName} from ${String.format("%08X", msg.sourceNode.toLong())} (acks=${msg.ackCount})")
+                ChatService.addPeatCannedMessageStatic(
+                    msg.sourceNode.toLong(),
+                    msg.messageName,
+                    msg.messageCode.toInt(),
+                    msg.timestamp.toLong(),
+                    senderCallsign
+                )
+            }
+        }
     }
 
     override fun onDecryptedData(peer: PeatPeer?, data: ByteArray) {
-        // CannedMessages now flow through delta sync only (0xB2/0xC0 documents)
-        // No longer handling raw 0xAF broadcasts here - use pollCannedMessagesFromDeltaSync()
-        if (data.isNotEmpty()) {
-            Log.v(TAG, "[DECRYPTED] Received ${data.size} bytes, marker=0x${String.format("%02X", data[0])}")
+        if (data.isEmpty()) return
+        Log.v(TAG, "[DECRYPTED] Received ${data.size} bytes, marker=0x${String.format("%02X", data[0])}")
+
+        // Handle 0xAF CannedMessage broadcasts (immediate display only)
+        // Document storage happens via Rust delta sync — don't duplicate-store here
+        if (data[0] == CannedMessageCodec.MARKER) {
+            val event = CannedMessageCodec.decode(data) ?: return
+            // Skip messages from self — don't echo our own messages back as chat
+            val myNodeId = peatBtle?.nodeId ?: 0L
+            if (event.sourceNode == myNodeId) return
+            val key = Pair(event.sourceNode, event.timestamp)
+            if (!cannedMessageStoredAt.containsKey(key)) {
+                cannedMessageStoredAt[key] = System.currentTimeMillis()
+                val label = com.aitech.weartak_civ.peat.CannedMessageType.fromCode(event.messageCode)?.label
+                    ?: "Unknown (0x${String.format("%02X", event.messageCode)})"
+                val senderCallsign = peer?.lastDocument?.callsign()
+                Log.i(TAG, "[CANNED-RX] $label from ${String.format("%08X", event.sourceNode)}")
+                ChatService.addPeatCannedMessageStatic(
+                    event.sourceNode, label, event.messageCode, event.timestamp, senderCallsign
+                )
+            }
         }
     }
 
@@ -666,12 +687,17 @@ class PeatBtleService : Service(), PeatMeshListener {
             )
 
             // Send sync event with location and vitals
+            // Preserve EMERGENCY state + description during position updates
+            val isInEmergency = peatBtleRepository.emergencyState.value.isActive
+            val eventType = if (isInEmergency) PeatEventType.EMERGENCY else PeatEventType.NONE
+            val eventDesc = if (isInEmergency) (btle.localPeripheral?.lastEvent?.description ?: "") else ""
             btle.sendEvent(
-                eventType = PeatEventType.NONE,
+                eventType = eventType,
                 location = peatLocation,
                 callsign = callsign,
                 battery = battery,
-                heartRate = heartRate
+                heartRate = heartRate,
+                eventDescription = eventDesc
             )
 
             peatBtleRepository.recordDocumentSent(64) // Approximate size
@@ -709,11 +735,12 @@ class PeatBtleService : Service(), PeatMeshListener {
     }
 
     /**
-     * Handle PeatCannedMessageEvent - sends tactical canned messages via mesh.
-     * Uses peat-lite CannedMessageAckEvent format for proper CRDT ACK tracking.
+     * Handle PeatCannedMessageEvent - stores canned message in mesh document registry
+     * for reliable delta sync delivery to all peers.
      */
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onPeatCannedMessage(evt: PeatCannedMessageEvent) {
+        Log.i(TAG, "[CANNED-EVT] Received PeatCannedMessageEvent: code=0x${evt.messageCode.toString(16)}, target=${String.format("%08X", evt.targetNode)}, origTs=${evt.originalTimestamp}")
         val btle = peatBtle ?: run {
             Log.w(TAG, "[CANNED] PeatBtle not initialized, ignoring canned message")
             return
@@ -721,108 +748,58 @@ class PeatBtleService : Service(), PeatMeshListener {
 
         ioScope.launch {
             try {
-                // Convert message code to CannedMessageType
-                val messageType = uniffi.peat_lite_android.cannedMessageFromCode(evt.messageCode.toUByte())
-                    ?: run {
-                        Log.w(TAG, "[CANNED-TX] Unknown message code: ${evt.messageCode}")
-                        return@launch
-                    }
-
-                val label = cannedMessageShortName(messageType)
+                val mesh = btle.mesh ?: run {
+                    Log.w(TAG, "[CANNED-TX] Mesh not available")
+                    return@launch
+                }
                 val myNodeId = btle.nodeId
                 val timestamp = System.currentTimeMillis()
 
-                // Check if this is an ACK response to an existing message
-                val isAckResponse = messageType == CannedMessageType.ACK ||
-                        messageType == CannedMessageType.ACK_WILCO ||
-                        messageType == CannedMessageType.ACK_NEGATIVE ||
-                        messageType == CannedMessageType.ACK_SAY_AGAIN
+                // ACK messages (0x00-0x03) with a target and originalTimestamp → ack existing document
+                val isAck = evt.messageCode <= 0x03 && evt.targetNode != 0L && evt.originalTimestamp != 0L
+                Log.i(TAG, "[CANNED-TX] isAck=$isAck (code=${evt.messageCode}, target=${evt.targetNode}, origTs=${evt.originalTimestamp})")
+                if (isAck) {
+                    val ackCount = mesh.ackCannedMessage(
+                        evt.targetNode.toUInt(),
+                        evt.originalTimestamp.toULong(),
+                        myNodeId.toUInt(),
+                        timestamp.toULong()
+                    )
+                    Log.i(TAG, "[CANNED-TX] ACK added to message from ${String.format("%08X", evt.targetNode)}, total ACKs: $ackCount")
+                } else {
+                    val label = com.aitech.weartak_civ.peat.CannedMessageType.fromCode(evt.messageCode)?.label
+                        ?: "Code 0x${evt.messageCode.toString(16).uppercase()}"
 
-                if (isAckResponse && evt.targetNode != 0L) {
-                    // ACK to a specific message - use originalTimestamp if provided, otherwise find latest
-                    val docKey = if (evt.originalTimestamp != 0L) {
-                        Pair(evt.targetNode, evt.originalTimestamp)
-                    } else {
-                        // Try to find in Kotlin cache first, then in Rust
-                        findLatestMessageFromNode(evt.targetNode)
-                            ?: findLatestMessageFromRust(evt.targetNode)
-                    }
-                    if (docKey != null) {
-                        Log.i(TAG, "[CANNED-TX] Adding ACK to message from ${String.format("%08X", evt.targetNode)} (timestamp=${docKey.second})")
+                    Log.i(TAG, "[CANNED-TX] Storing $label (0x${evt.messageCode.toString(16).uppercase()}) to ${if (evt.targetNode == 0L) "broadcast" else String.format("%08X", evt.targetNode)}")
 
-                        // Update Kotlin-side cache and broadcast
-                        val existingDoc = cannedMessageDocs[docKey]
-                        if (existingDoc != null) {
-                            val updatedDoc = cannedMessageAckEventAddAck(
-                                existingDoc,
-                                myNodeId.toUInt(),
-                                timestamp.toULong()
-                            )
-                            cannedMessageDocs[docKey] = updatedDoc
-                            cannedMessageStoredAt[docKey] = System.currentTimeMillis()
+                    val stored = mesh.storeCannedMessage(
+                        evt.messageCode.toUByte(),
+                        myNodeId.toUInt(),
+                        evt.targetNode.toUInt(),
+                        timestamp.toULong()
+                    )
 
-                            val ackCount = cannedMessageAckEventAckCount(updatedDoc)
-                            Log.i(TAG, "[CANNED-TX] ACK recorded locally, total ACKs: $ackCount")
-
-                            // Update UI with new ACK count
-                            ChatService.updatePeatAckCountStatic(docKey.first, docKey.second, ackCount.toInt())
-                        }
-                        return@launch
-                    }
-                    Log.w(TAG, "[CANNED-TX] No existing message found for ACK")
-                    return@launch
+                    Log.i(TAG, "[CANNED-TX] $label stored in mesh (stored=$stored), will sync via delta")
                 }
 
-                // New message: create fresh CannedMessageAckEvent and store in Rust for delta sync
-                Log.i(TAG, "[CANNED-TX] Creating $label (0x${evt.messageCode.toString(16).uppercase()}) to ${if (evt.targetNode == 0L) "broadcast" else String.format("%08X", evt.targetNode)}")
-
-                val event = createCannedMessageAckEvent(
-                    message = messageType,
-                    sourceNode = myNodeId.toUInt(),
-                    targetNode = evt.targetNode.toUInt(),
-                    timestamp = timestamp.toULong(),
-                    sequence = 0u
-                )
-
-                // Store in Kotlin cache
-                val docKey = Pair(myNodeId, timestamp)
-                cannedMessageDocs[docKey] = event
-                cannedMessageStoredAt[docKey] = System.currentTimeMillis()
-                processedCannedMessages.add(docKey)
-
-                // Broadcast to mesh peers
-                val encoded = encodeCannedMessageAckEvent(event)
-                btle.broadcastBytes(encoded)
-                peatBtleRepository.recordDocumentSent(encoded.size)
-                Log.i(TAG, "[CANNED-TX] $label broadcast to mesh (${encoded.size} bytes)")
-
             } catch (e: Exception) {
-                Log.e(TAG, "[CANNED-TX] Failed to send canned message: ${e.message}", e)
+                Log.e(TAG, "[CANNED-TX] Failed to store canned message: ${e.message}", e)
             }
         }
     }
 
     /**
-     * Find the most recent message from a specific node in Kotlin cache.
-     * Used when ACKing a message from a peer.
+     * Find the most recent message from a specific node in local cache.
      */
     private fun findLatestMessageFromNode(nodeId: Long): Pair<Long, Long>? {
-        return cannedMessageDocs.keys
+        return cannedMessageStoredAt.keys
             .filter { it.first == nodeId }
             .maxByOrNull { it.second }
     }
 
     /**
-     * Find the most recent message from a specific node in Rust storage.
-     * Used when the message came via delta sync and isn't in Kotlin cache.
-     */
-    private fun findLatestMessageFromRust(nodeId: Long): Pair<Long, Long>? {
-        return null  // Rust delta sync API not yet available in peat-btle
-    }
-
-    /**
      * Send an ACK in response to receiving a CannedMessage from a peer.
-     * Uses the new CRDT ACK approach which embeds the ACK in the message document itself.
+     * Uses mesh document registry — ACK is stored and synced via delta.
      */
     private fun sendCannedMessageAck(targetNode: Long, originalTimestamp: Long) {
         val btle = peatBtle ?: run {
@@ -832,36 +809,19 @@ class PeatBtleService : Service(), PeatMeshListener {
 
         ioScope.launch {
             try {
-                val myNodeId = btle.nodeId
-                val docKey = Pair(targetNode, originalTimestamp)
-                val existingDoc = cannedMessageDocs[docKey]
-
-                if (existingDoc != null) {
-                    Log.i(TAG, "[ACK-TX] Adding ACK to message ${String.format("%08X", targetNode)}:$originalTimestamp")
-
-                    // Add our ACK to the document
-                    val updatedDoc = cannedMessageAckEventAddAck(
-                        existingDoc,
-                        myNodeId.toUInt(),
-                        System.currentTimeMillis().toULong()
-                    )
-                    cannedMessageDocs[docKey] = updatedDoc
-                    cannedMessageStoredAt[docKey] = System.currentTimeMillis()
-
-                    // Encode and broadcast the updated document
-                    val encoded = encodeCannedMessageAckEvent(updatedDoc)
-                    btle.broadcastBytes(encoded)
-                    peatBtleRepository.recordDocumentSent(encoded.size)
-
-                    val ackCount = cannedMessageAckEventAckCount(updatedDoc)
-                    Log.i(TAG, "[ACK-TX] Sent ACK (${encoded.size} bytes), total ACKs: $ackCount")
-                } else {
-                    Log.w(TAG, "[ACK-TX] No stored document for ${String.format("%08X", targetNode)}:$originalTimestamp, using legacy ACK")
-                    // Fallback: send via PeatBtle sendEvent (legacy path)
-                    btle.sendEvent(PeatEventType.ACK)
+                val mesh = btle.mesh ?: run {
+                    Log.w(TAG, "[ACK] Mesh not available")
+                    return@launch
                 }
+                val ackCount = mesh.ackCannedMessage(
+                    targetNode.toUInt(),
+                    originalTimestamp.toULong(),
+                    btle.nodeId.toUInt(),
+                    System.currentTimeMillis().toULong()
+                )
+                Log.i(TAG, "[ACK-TX] ACKed message from ${String.format("%08X", targetNode)}, total ACKs: $ackCount")
             } catch (e: Exception) {
-                Log.e(TAG, "[ACK-TX] Failed to send ACK: ${e.message}", e)
+                Log.e(TAG, "[ACK-TX] Failed to ACK: ${e.message}", e)
             }
         }
     }
@@ -886,8 +846,11 @@ class PeatBtleService : Service(), PeatMeshListener {
                 peatBtleRepository.recordDocumentSent(64)
                 Log.i(TAG, "Emergency CANCELLED broadcast sent")
             } else {
-                // Send emergency event via PeatBtle
-                btle.sendEvent(PeatEventType.EMERGENCY)
+                // Extract emergency type from CoT XML (e.g., "Injury", "Gunshot")
+                val emergencyType = Regex("emergency\\s+type=['\"]([^'\"]+)['\"]")
+                    .find(cotXml)?.groupValues?.get(1) ?: ""
+                // Send emergency event with description via PeatBtle
+                btle.sendEvent(PeatEventType.EMERGENCY, eventDescription = emergencyType)
                 val nodeId = btle.nodeId
                 peatBtleRepository.setEmergencyState(
                     PeatBtleRepository.EmergencyState(

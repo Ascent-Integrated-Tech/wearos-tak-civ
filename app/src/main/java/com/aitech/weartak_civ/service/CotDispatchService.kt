@@ -257,6 +257,9 @@ class CotDispatchService : Service() {
                                     if (companionAppAvailable()) {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
+                                    if (PeatBtleService.isRunning.get()) {
+                                        EventBus.getDefault().post(PeatDocumentEvent("chat", chatCot))
+                                    }
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
 
@@ -278,6 +281,9 @@ class CotDispatchService : Service() {
                                     sendDataTAKServers(chatCot, true)
                                     if (companionAppAvailable()) {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
+                                    }
+                                    if (PeatBtleService.isRunning.get()) {
+                                        EventBus.getDefault().post(PeatDocumentEvent("chat", chatCot))
                                     }
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
@@ -319,6 +325,11 @@ class CotDispatchService : Service() {
 
                         if (sendToCompApp) {
                             capRepo.enqueueChatSnapshotForBle(chatSnap)
+                        }
+
+                        if (PeatBtleService.isRunning.get()) {
+                            val chatCot = buildChatCotFromSnapshot(chatSnap)
+                            EventBus.getDefault().post(PeatDocumentEvent("chat", chatCot))
                         }
                     }
                 }
@@ -635,6 +646,10 @@ class CotDispatchService : Service() {
         }
         if (DittoService.isRunning.get()) {
             EventBus.getDefault().post(DittoDocumentEvent("mapitem", chatCotXml))
+            sent = true
+        }
+        if (PeatBtleService.isRunning.get()) {
+            EventBus.getDefault().post(PeatDocumentEvent("chat", chatCotXml))
             sent = true
         }
         if (TAKConnectService.isAnyTakConnected) {

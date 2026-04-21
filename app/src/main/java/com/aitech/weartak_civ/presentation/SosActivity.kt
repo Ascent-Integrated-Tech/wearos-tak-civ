@@ -357,6 +357,9 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     val shouldShowConfirm = remember { mutableStateOf(false) }
     isAlertingLiveData.observeAsState()
     val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle(initialValue = false)
+    // Peat BLE mesh counts as a connected endpoint for SOS — emergency broadcasts
+    // work via BLE even when no TAK server or companion app is connected
+    val peatBtleActive = com.aitech.weartak_civ.service.PeatBtleService.isRunning.get()
 //    val anyEndpointConnected = connectedEndpoints.isNotEmpty()
 
     val location = dataRepository.latestLocation.value
@@ -412,7 +415,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isConfirmed,
                 isAlertingLiveData,
                 {
-                    successBoolean.value = (locationEnabled && anyEndpointConnected)
+                    successBoolean.value = (locationEnabled && (anyEndpointConnected || peatBtleActive))
                     if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)}
                 },
                 {exitActivity()}

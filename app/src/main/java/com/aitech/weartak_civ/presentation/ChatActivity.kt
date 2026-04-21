@@ -504,14 +504,15 @@ fun ChatScreenDetailed(
                             Spacer(modifier = Modifier.width(5.dp))
                             IconButton(
                                 onClick = {
+                                    Log.i(TAG, "[SEND] Send button clicked: replyMessage='${replyMessage.trim()}', roomId=$roomId, roomTitle=$chatRoomTitle")
                                     if (replyMessage.trim().isNotEmpty()) {
-                                        // TODO: Do we want to add success dialog box?
-                                        // I think no, as this is ATAK behavior and we will send it once any endpoint gets connected.
-                                        // It might be good to have an enqueuedToBeSent flag
+                                        Log.i(TAG, "[SEND] Dispatching chat: roomId=$roomId, title=$chatRoomTitle, msg=${replyMessage.trim()}")
                                         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
                                             dataRepository.requestChatMessageSendFromUI(roomId?: "", chatRoomTitle, replyMessage.trim(), System.currentTimeMillis())
                                             reply.value = ""
                                         }
+                                    } else {
+                                        Log.w(TAG, "[SEND] Reply message is empty, not sending")
                                     }
                                 },
                                 modifier = Modifier
@@ -553,11 +554,15 @@ fun ChatScreenDetailed(
                                     val nodeIdHex = roomId.removePrefix("peat-")
                                     val targetNode = nodeIdHex.toLongOrNull(16) ?: 0L
                                     if (targetNode != 0L) {
+                                        // Get the timestamp of the last message for CRDT ACK lookup
+                                        val lastMsg = messageList.lastOrNull()
+                                        val origTimestamp = lastMsg?.timeReceived ?: 0L
+                                        Log.i(TAG, "[CANNED-ACK] Posting ACK: targetNode=$nodeIdHex, origTimestamp=$origTimestamp, lastMsg=${lastMsg?.message}")
                                         EventBus.getDefault().post(PeatCannedMessageEvent(
-                                            messageCode = 0x00,  // ACK
-                                            targetNode = targetNode
+                                            messageCode = 0x00,
+                                            targetNode = targetNode,
+                                            originalTimestamp = origTimestamp
                                         ))
-                                        Log.i(TAG, "[CANNED-ACK] ACK sent to $nodeIdHex")
                                         android.widget.Toast.makeText(context, "ACK sent", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         Log.w(TAG, "[CANNED-ACK] Invalid node ID in room: $roomId")
