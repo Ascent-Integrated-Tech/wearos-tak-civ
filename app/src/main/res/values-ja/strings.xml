@@ -194,4 +194,7 @@
     <string name="bloodhound_proximity_intensity_escalated_desc">Three sets of three quick vibrations</string>
     <string name="bloodhound_proximity_intensity_persistent">Until In Position</string>
     <string name="bloodhound_proximity_intensity_persistent_desc">Repeats until you click NPOS</string>
+	<string name="audio_detection_trigger_threshold">Trigger Threshold</string>
+    <string name="gunshot_trigger_threshold">Gunshot Trigger Threshold</string>
+    <string name="uas_trigger_threshold">UAS Trigger Threshold</string>
 </resources>

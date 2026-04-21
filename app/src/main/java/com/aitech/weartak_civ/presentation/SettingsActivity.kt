@@ -137,6 +137,8 @@ import androidx.wear.compose.material.rememberPickerState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_BASIC
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
@@ -320,6 +322,10 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGuns
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxUasService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxUasServiceSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onnxGunshotTriggerThresholdPercent
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onnxGunshotTriggerThresholdPercentSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onnxUasTriggerThresholdPercent
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.onnxUasTriggerThresholdPercentSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpointSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.esriEndpoint
@@ -830,6 +836,30 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 stringResource(R.string.high_atm_pressure_threshold),
                 context,
                 "atm_pressure_alerts_screen")
+        }
+        composable(
+            "gunshot_detection_threshold_screen") {
+            NumericEntryPage(
+                navController,
+                onnxGunshotTriggerThresholdPercentSettingsState,
+                100,
+                0,
+                stringResource(R.string.gunshot_trigger_threshold),
+                context,
+                "settings_screen"
+            )
+        }
+        composable(
+            "uas_detection_threshold_screen") {
+            NumericEntryPage(
+                navController,
+                onnxUasTriggerThresholdPercentSettingsState,
+                100,
+                0,
+                stringResource(R.string.uas_trigger_threshold),
+                context,
+                "settings_screen"
+            )
         }
 
         composable(
@@ -3931,7 +3961,7 @@ fun DataMetricsChip(
 }
 
 @Composable
-fun BloodhoundServiceSettingsToggleChip(
+fun SettingsToggleWithClickOnEnabledChip(
     checkedLive: Boolean?,
     onCheckedChange: (Boolean) -> Unit,
     title: String,
@@ -4970,7 +5000,7 @@ fun SettingsScreen(
                 stringResource(R.string.service_on_off)
             )
 
-            BloodhoundServiceSettingsToggleChip(
+            SettingsToggleWithClickOnEnabledChip(
                 bloodhoundCompassCheckedLive,
                 { enableBloodhoundCompassServiceSettingsState.postValue(it) },
                 "Bloodhound & Compass",
@@ -5012,19 +5042,37 @@ fun SettingsScreen(
             )
 
             if (wearTakDevModeEnabled) {
-                SettingSwitchToggleLiveData(
+                SettingsToggleWithClickOnEnabledChip(
                     onnxGunshotDetectCheckedLive,
                     { enableOnnxGunshotServiceSettingsState.postValue(it) },
-                    {},
                     stringResource(R.string.gunshot_detection),
-                    stringResource(R.string.service_on_off)
+                    stringResource(R.string.audio_detection_trigger_threshold) + " " +
+                        stringResource(
+                            R.string.threshold_percent_format,
+                            onnxGunshotTriggerThresholdPercentSettingsState.value ?: DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+                        ),
+                    detailsEnabled = true,
+                    onDetailsClick = {
+                        navController.navigate("gunshot_detection_threshold_screen") {
+                            popUpTo("gunshot_detection_threshold_screen") { inclusive = true }
+                        }
+                    }
                 )
-                SettingSwitchToggleLiveData(
+                SettingsToggleWithClickOnEnabledChip(
                     onnxUasDetectCheckedLive,
                     { enableOnnxUasServiceSettingsState.postValue(it) },
-                    {},
                     stringResource(R.string.uas_detection),
-                    stringResource(R.string.service_on_off)
+                    stringResource(R.string.audio_detection_trigger_threshold) + " " +
+                        stringResource(
+                            R.string.threshold_percent_format,
+                            onnxUasTriggerThresholdPercentSettingsState.value ?: DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
+                        ),
+                    detailsEnabled = true,
+                    onDetailsClick = {
+                        navController.navigate("uas_detection_threshold_screen") {
+                            popUpTo("uas_detection_threshold_screen") { inclusive = true }
+                        }
+                    }
                 )
             }
 
@@ -5237,7 +5285,9 @@ fun SettingsScreen(
                     var highPressureAlertChanged = false
                     var highPressureAlertThresholdChanged = false
                     var onnxGunDetectChanged: Boolean = false
+                    var onnxGunThresholdChanged: Boolean = false
                     var onnxUasDetectChanged: Boolean = false
+                    var onnxUasThresholdChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
                     var bloodhoundProximityVibrationChanged: Boolean = false
@@ -5638,12 +5688,28 @@ fun SettingsScreen(
                             enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
                         }
                     }
+                    if (onnxGunshotTriggerThresholdPercent != onnxGunshotTriggerThresholdPercentSettingsState.value) {
+                        settingsChanged = true; onnxGunThresholdChanged = true
+                        onnxGunshotTriggerThresholdPercent =
+                            onnxGunshotTriggerThresholdPercentSettingsState.value ?: onnxGunshotTriggerThresholdPercent
+                        runBlocking {
+                            onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
+                        }
+                    }
 
                     if (enableOnnxUasService != enableOnnxUasServiceSettingsState.value) {
                         settingsChanged = true; onnxUasDetectChanged = true
                         enableOnnxUasService = enableOnnxUasServiceSettingsState.value ?: enableOnnxUasService
                         runBlocking {
                             enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
+                        }
+                    }
+                    if (onnxUasTriggerThresholdPercent != onnxUasTriggerThresholdPercentSettingsState.value) {
+                        settingsChanged = true; onnxUasThresholdChanged = true
+                        onnxUasTriggerThresholdPercent =
+                            onnxUasTriggerThresholdPercentSettingsState.value ?: onnxUasTriggerThresholdPercent
+                        runBlocking {
+                            onnxUasTriggerThresholdPercentSettingsState.postValue(onnxUasTriggerThresholdPercent)
                         }
                     }
 
@@ -5927,9 +5993,17 @@ fun SettingsScreen(
                                  Log.d(TAG, "Storing highAtmPressureAlertThreshold $highAtmPressureAlertThreshold")
                                  dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
                              }
+                             if (onnxGunThresholdChanged) {
+                                 Log.d(TAG, "Storing onnxGunshotTriggerThresholdPercent $onnxGunshotTriggerThresholdPercent")
+                                 dataRepository.storeOnnxGunshotTriggerThresholdPercent(onnxGunshotTriggerThresholdPercent)
+                             }
                              if (onnxGunDetectChanged) {
                                  Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
                                  dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
+                             }
+                             if (onnxUasThresholdChanged) {
+                                 Log.d(TAG, "Storing onnxUasTriggerThresholdPercent $onnxUasTriggerThresholdPercent")
+                                 dataRepository.storeOnnxUasTriggerThresholdPercent(onnxUasTriggerThresholdPercent)
                              }
                              if (onnxUasDetectChanged) {
                                  Log.d(TAG, "Storing enableOnnxUasService $enableOnnxUasService")

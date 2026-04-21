@@ -9,14 +9,17 @@
 
 package com.aitech.weartak_civ.service
 
+import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.GunshotOnnxRepository
 import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
 import com.aitech.weartak_civ.data.audio.AudioDetectionFeedback
 import com.aitech.weartak_civ.service.audio.AudioDetectionRuntime
 import com.aitech.weartak_civ.service.audio.AudioDetectionSpec
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GunshotOnnxService : BaseAudioDetectionService() {
@@ -28,6 +31,13 @@ class GunshotOnnxService : BaseAudioDetectionService() {
             GunshotOnnxRepository(applicationContext)
         }
     }
+    private val dataRepository by lazy {
+        try {
+            (applicationContext as WearTakApplication).repo
+        } catch (_: Throwable) {
+            DataRepository(applicationContext)
+        }
+    }
 
     override val logTag: String = TAG
     override val notificationId: Int = NOTIFICATION_ID
@@ -35,6 +45,8 @@ class GunshotOnnxService : BaseAudioDetectionService() {
     override val spec: AudioDetectionSpec = SPEC
     override val feedbackFlow: Flow<AudioDetectionFeedback>
         get() = gunshotRepo.gunshotFeedback
+    override val thresholdFlow: Flow<Float>
+        get() = dataRepository.getOnnxGunshotTriggerThresholdPercent.map { it.coerceIn(0, 100) / 100f }
     override val runtime: AudioDetectionRuntime by lazy {
         createRuntime { trigger ->
             val event = gunshotRepo.createGunshotEvent(
@@ -70,8 +82,9 @@ class GunshotOnnxService : BaseAudioDetectionService() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
 
         private val SPEC = AudioDetectionSpec(
-            assetName = "dart_bin_20260225.onnx",
-            threshold = 0.5f,
+            detectorKey = "gunshot",
+            assetName = "dart-bin-2chan_20260327.onnx",
+            threshold = DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT / 100f,
             debugDirName = "gunshot_debug",
             logTag = TAG,
             triggerPrefix = "GS",

@@ -121,6 +121,8 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
@@ -314,8 +316,12 @@ class MainActivity : ComponentActivity() {
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
         var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
+        var onnxGunshotTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT)
+        var onnxGunshotTriggerThresholdPercent : Int = DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
         var enableOnnxUasServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_UAS)
         var enableOnnxUasService : Boolean = DEFAULT_ENABLE_ONNX_UAS
+        var onnxUasTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT)
+        var onnxUasTriggerThresholdPercent : Int = DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -919,7 +925,9 @@ class MainActivity : ComponentActivity() {
             bloodhoundProximityRadiusMeters = dataRepository.getBloodhoundProximityRadiusMeters.first()
             bloodhoundProximityIntensity = dataRepository.getBloodhoundProximityIntensity.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
+            onnxGunshotTriggerThresholdPercent = dataRepository.getOnnxGunshotTriggerThresholdPercent.first()
             enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
+            onnxUasTriggerThresholdPercent = dataRepository.getOnnxUasTriggerThresholdPercent.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
             highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
@@ -1398,7 +1406,9 @@ class MainActivity : ComponentActivity() {
         bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
 
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
+        onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
         enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
+        onnxUasTriggerThresholdPercentSettingsState.postValue(onnxUasTriggerThresholdPercent)
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)

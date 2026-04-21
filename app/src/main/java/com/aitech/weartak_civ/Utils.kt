@@ -518,6 +518,7 @@ object Utils {
 
         val obj = org.json.JSONObject().apply {
             put("uid", event.uid)
+            put("inferenceWindowUid", event.uid)
             put("eventTimestamp", event.timestamp)
             put("detectorKey", event.detectorKey)
             put("confidence", event.confidence)
@@ -529,7 +530,11 @@ object Utils {
             put("audioSeq", event.chunkRef.seq)
             put("audioChunkTimestampMs", event.chunkRef.timestampMs)
             put("sampleRateHz", event.chunkRef.sampleRateHz)
+            put("channels", event.chunkRef.channels)
             put("micSource", event.audioSource)
+            put("inferStartElapsedMs", event.inferStartElapsedMs)
+            put("inferEndElapsedMs", event.inferEndElapsedMs)
+            put("triggerToFeedbackMs", respondedAtMs - event.timestamp)
             put("manufacturer", android.os.Build.MANUFACTURER)
             put("model", android.os.Build.MODEL)
             put("sdkInt", android.os.Build.VERSION.SDK_INT)

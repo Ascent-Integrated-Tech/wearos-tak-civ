@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
-
 package com.aitech.weartak_civ.service.audio
 
 import ai.onnxruntime.OnnxTensor
@@ -33,6 +24,7 @@ import kotlin.concurrent.withLock
 import kotlin.math.min
 
 data class AudioDetectionSpec(
+    val detectorKey: String,
     val assetName: String,
     val threshold: Float,
     val debugDirName: String,
@@ -42,13 +34,23 @@ data class AudioDetectionSpec(
     val targetSr: Int = 44_100,
     val targetSamples: Int = 44_100,
     val windowSamples: Int = 44_100,
-    val hopMs: Long = 1000L,
-    val triggerCooldownMs: Long = 3000L
-)
+    val hopSamples: Int = windowSamples / 2,
+    val triggerCooldownMs: Long = 3000L,
+    val metricsSegmentMaxBytes: Long = 4L * 1024L * 1024L,
+    val metricsDirMaxBytes: Long = 32L * 1024L * 1024L,
+    val triggerPcmDirMaxBytes: Long = 16L * 1024L * 1024L
+) {
+    init {
+        require(windowSamples > 0) { "windowSamples must be > 0" }
+        require(hopSamples in 1..windowSamples) { "hopSamples must be within 1..windowSamples" }
+    }
+}
 
 data class AudioDetectionInferenceResult(
+    val inferenceSucceeded: Boolean,
     val detected: Boolean,
-    val confidence: Float
+    val confidence: Float?,
+    val errorMessage: String? = null
 )
 
 data class AudioDetectionTrigger(
@@ -67,6 +69,7 @@ class AudioDetectionRuntime(
     private val scope: CoroutineScope,
     private val audioRepo: AudioCaptureRepository,
     private val pcmFlow: SharedFlow<AudioCaptureRepository.AudioPcmChunk>,
+    private val thresholdProvider: () -> Float,
     private val onTrigger: suspend (AudioDetectionTrigger) -> Unit
 ) {
     private lateinit var env: OrtEnvironment
@@ -74,13 +77,16 @@ class AudioDetectionRuntime(
     @Volatile private var detectorLoaded: Boolean = false
 
     private val lock = ReentrantLock()
-    private val ring = ShortRingBuffer(spec.windowSamples)
+    private val windowBuffer = SlidingWindowBuffer()
     private val pcmWriteGate = kotlinx.coroutines.sync.Semaphore(1)
+    private val metricsLogger = AudioDetectionMetricsLogger(context, spec)
 
-    private var lastInferEl = 0L
     private var lastSeq: Long? = null
     private var lastTriggerMs = 0L
     private var pcmCollectJob: Job? = null
+    private var streamSegmentIndex = 0
+    private var nextWindowIndex = 0L
+    private var nextWindowStartSample = 0L
 
     fun start() {
         env = OrtEnvironment.getEnvironment()
@@ -91,6 +97,7 @@ class AudioDetectionRuntime(
 
     fun shutdown() {
         pcmCollectJob?.cancel()
+        metricsLogger.close()
         lock.withLock {
             try { detectorSession?.close() } catch (_: Throwable) {}
             detectorSession = null
@@ -105,53 +112,88 @@ class AudioDetectionRuntime(
 
             if (prev != null && chunk.seq != prev + 1) {
                 Log.w(spec.logTag, "PCM GAP: prev=$prev now=${chunk.seq} (dropping window until refilled)")
-                ring.reset()
-                return@collect
+                windowBuffer.reset()
+                streamSegmentIndex += 1
+                nextWindowIndex = 0L
+                nextWindowStartSample = 0L
             }
 
-            ring.append(chunk.samples)
+            windowBuffer.append(chunk.samples)
 
-            val nowEl = SystemClock.elapsedRealtime()
-            if (nowEl - lastInferEl < spec.hopMs) return@collect
+            while (windowBuffer.hasWindow(spec.windowSamples)) {
+                val windowStartSample = nextWindowStartSample
+                val windowEndSample = windowStartSample + spec.windowSamples
+                val windowPcm = windowBuffer.peekWindow(spec.windowSamples)
+                val threshold = thresholdProvider().coerceIn(0f, 1f)
 
-            val windowPcm = ring.snapshot() ?: return@collect
+                val inferStart = SystemClock.elapsedRealtime()
+                val cpuStartMs = AudioDetectionMetricsLogger.currentProcessCpuTimeMs()
+                val detection = runDetectorOnPcm16(windowPcm, chunk.sampleRateHz, threshold)
+                val cpuEndMs = AudioDetectionMetricsLogger.currentProcessCpuTimeMs()
+                val inferEnd = SystemClock.elapsedRealtime()
 
-            val inferStart = SystemClock.elapsedRealtime()
-            val detection = runDetectorOnPcm16(windowPcm, chunk.sampleRateHz) ?: return@collect
-            val inferEnd = SystemClock.elapsedRealtime()
-            lastInferEl = inferEnd
+                val inferMs = inferEnd - inferStart
+                val audioAgeMs = inferStart - chunk.timestampElMs
+                val audioSource = audioRepo.audioSource.toString()
+                val shouldTrigger = detection.detected && (inferEnd - lastTriggerMs) > spec.triggerCooldownMs
+                val cooldownSuppressed = detection.detected && !shouldTrigger
+                var triggerUid: String? = null
+                var triggerPcmPath: String? = null
 
-            val inferMs = inferEnd - inferStart
-            val audioAgeMs = nowEl - chunk.timestampElMs
+                if (shouldTrigger) {
+                    lastTriggerMs = inferEnd
 
-            if (detection.detected && (nowEl - lastTriggerMs) > spec.triggerCooldownMs) {
-                lastTriggerMs = nowEl
+                    val uid = UUID.randomUUID().toString()
+                    val windowFile = metricsLogger.triggerPcmFile(uid)
+                    triggerUid = uid
+                    triggerPcmPath = windowFile.absolutePath
 
-                val dir = File(context.filesDir, spec.debugDirName).apply { mkdirs() }
-                val uid = UUID.randomUUID().toString()
-                val windowFile = File(dir, "$uid.pcm")
-
-                Log.i(
-                    spec.logTag,
-                    "${spec.triggerPrefix}_TRIGGER uid=$uid conf=${"%.4f".format(detection.confidence)} " +
-                        "chunkSeq=${chunk.seq} readSamples=${chunk.samples.size} sr=${chunk.sampleRateHz} " +
-                        "audioToDetectWallMs=$audioAgeMs inferMs=$inferMs"
-                )
-
-                onTrigger(
-                    AudioDetectionTrigger(
-                        uid = uid,
-                        confidence = detection.confidence,
-                        pcmChunk = chunk,
-                        triggerPcmPath = windowFile.absolutePath,
-                        audioSource = audioRepo.audioSource.toString(),
-                        inferStart = inferStart,
-                        inferEnd = inferEnd
+                    Log.i(
+                        spec.logTag,
+                        "${spec.triggerPrefix}_TRIGGER uid=$uid conf=${"%.4f".format(detection.confidence ?: 0f)} " +
+                            "chunkSeq=${chunk.seq} readSamples=${chunk.samples.size} sr=${chunk.sampleRateHz} " +
+                            "audioToDetectWallMs=$audioAgeMs inferMs=$inferMs " +
+                            "windowIndex=$nextWindowIndex windowStartSample=$windowStartSample"
                     )
+
+                    onTrigger(
+                        AudioDetectionTrigger(
+                            uid = uid,
+                            confidence = detection.confidence ?: 0f,
+                            pcmChunk = chunk,
+                            triggerPcmPath = triggerPcmPath,
+                            audioSource = audioSource,
+                            inferStart = inferStart,
+                            inferEnd = inferEnd
+                        )
+                    )
+
+                    val windowCopy = windowPcm.copyOf()
+                    launchPcmWrite(uid, windowFile, windowCopy)
+                }
+
+                metricsLogger.logInferenceWindow(
+                    chunk = chunk,
+                    streamSegmentIndex = streamSegmentIndex,
+                    windowIndex = nextWindowIndex,
+                    windowStartSample = windowStartSample,
+                    windowEndSample = windowEndSample,
+                    thresholdUsed = threshold,
+                    inferStartElapsedMs = inferStart,
+                    inferEndElapsedMs = inferEnd,
+                    inference = detection,
+                    audioSource = audioSource,
+                    triggerUid = triggerUid,
+                    triggerPcmPath = triggerPcmPath,
+                    triggered = shouldTrigger,
+                    cooldownSuppressed = cooldownSuppressed,
+                    cpuStartMs = cpuStartMs,
+                    cpuEndMs = cpuEndMs
                 )
 
-                val windowCopy = windowPcm.copyOf()
-                launchPcmWrite(uid, windowFile, windowCopy)
+                windowBuffer.discard(spec.hopSamples)
+                nextWindowIndex += 1
+                nextWindowStartSample += spec.hopSamples
             }
         }
     }
@@ -170,6 +212,7 @@ class AudioDetectionRuntime(
                     spec.logTag,
                     "${spec.triggerPrefix}_PCM_SAVED uid=$uid bytes=${windowCopy.size * 2} writeMs=${t1 - t0} path=${windowFile.absolutePath}"
                 )
+                metricsLogger.onTriggerPcmSaved()
             } catch (t: Throwable) {
                 Log.e(spec.logTag, "${spec.triggerPrefix}_PCM_SAVE_FAIL uid=$uid err=${t.message}", t)
             } finally {
@@ -218,12 +261,21 @@ class AudioDetectionRuntime(
         }
     }
 
-    private fun runDetectorOnPcm16(audioPcm: ShortArray, sampleRateHz: Int): AudioDetectionInferenceResult? {
+    private fun runDetectorOnPcm16(
+        audioPcm: ShortArray,
+        sampleRateHz: Int,
+        threshold: Float
+    ): AudioDetectionInferenceResult {
         val session = detectorSession
 
         if (!detectorLoaded || session == null) {
             Log.e(spec.logTag, "Detector model not loaded")
-            return null
+            return AudioDetectionInferenceResult(
+                inferenceSucceeded = false,
+                detected = false,
+                confidence = null,
+                errorMessage = "Detector model not loaded"
+            )
         }
 
         val floatData = pcm16ToFloat(audioPcm)
@@ -232,12 +284,18 @@ class AudioDetectionRuntime(
         return try {
             val score = lock.withLock { runModelScalar(session, modelInput) }
             AudioDetectionInferenceResult(
-                detected = score >= spec.threshold,
+                inferenceSucceeded = true,
+                detected = score >= threshold,
                 confidence = score
             )
         } catch (t: Throwable) {
             Log.e(spec.logTag, "Detector inference error", t)
-            null
+            AudioDetectionInferenceResult(
+                inferenceSucceeded = false,
+                detected = false,
+                confidence = null,
+                errorMessage = t.message ?: t.javaClass.simpleName
+            )
         }
     }
 
@@ -288,36 +346,48 @@ class AudioDetectionRuntime(
         }
     }
 
-    private class ShortRingBuffer(private val capacity: Int) {
-        private val buf = ShortArray(capacity)
-        private var writePos = 0
-        private var filled = false
+    private class SlidingWindowBuffer {
+        private var buf = ShortArray(0)
+        private var size = 0
 
         fun append(src: ShortArray) {
-            var i = 0
-            while (i < src.size) {
-                buf[writePos] = src[i]
-                writePos++
-                if (writePos >= capacity) {
-                    writePos = 0
-                    filled = true
-                }
-                i++
+            if (src.isEmpty()) return
+            ensureCapacity(size + src.size)
+            System.arraycopy(src, 0, buf, size, src.size)
+            size += src.size
+        }
+
+        fun hasWindow(windowSamples: Int): Boolean = size >= windowSamples
+
+        fun peekWindow(windowSamples: Int): ShortArray {
+            val out = ShortArray(windowSamples)
+            System.arraycopy(buf, 0, out, 0, windowSamples)
+            return out
+        }
+
+        fun discard(samples: Int) {
+            if (samples <= 0) return
+            if (samples >= size) {
+                size = 0
+                return
             }
+
+            System.arraycopy(buf, samples, buf, 0, size - samples)
+            size -= samples
         }
 
         fun reset() {
-            writePos = 0
-            filled = false
+            size = 0
         }
 
-        fun snapshot(): ShortArray? {
-            if (!filled) return null
-            val out = ShortArray(capacity)
-            val tail = capacity - writePos
-            System.arraycopy(buf, writePos, out, 0, tail)
-            System.arraycopy(buf, 0, out, tail, writePos)
-            return out
+        private fun ensureCapacity(required: Int) {
+            if (buf.size >= required) return
+
+            var newCapacity = buf.size.coerceAtLeast(1)
+            while (newCapacity < required) {
+                newCapacity *= 2
+            }
+            buf = buf.copyOf(newCapacity)
         }
     }
 }
