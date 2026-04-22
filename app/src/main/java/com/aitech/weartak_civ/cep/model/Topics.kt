@@ -17,6 +17,7 @@ object Topics {
     const val LIGHT     = "light"
     const val SLEEP     = "sleep"
     const val OFFBODY   = "offbody"
+    const val PRESSURE  = "pressure"
 }
 
 
