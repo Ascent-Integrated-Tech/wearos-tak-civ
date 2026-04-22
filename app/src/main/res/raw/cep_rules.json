@@ -2049,20 +2049,19 @@
     },
     {
       "id": "pressure_low_atm",
-      "description": "Mean atmospheric pressure below configured low threshold for 10 s. Gated on settings.pressure.low_atm_alert_enabled.",
+      "description": "Mean atmospheric pressure below configured low threshold for 5 s. Gated on settings.pressure.low_atm_alert_enabled.",
       "when": {
         "all": [
           { "gte_key": ["settings.pressure.low_atm_alert_enabled", 1.0] },
-          { "gte_key": ["features.pressure.below_low_threshold", 1.0] },
-          {"gte_key": ["offbody.on_wrist", 0.5]}
+          { "gte_key": ["features.pressure.below_low_threshold", 1.0] }
         ]
       },
-      "sustained_for_sec": 10,
+      "sustained_for_sec": 5,
       "hold_down_sec": 60,
       "snapshot_keys": ["features.pressure.mean_n5", "thresholds.pressure.low"],
       "action": {
         "type": "log",
-        "severity": "WARN",
+        "severity": "EMERGENCY",
         "message": "Low atmospheric pressure alert.",
         "category": "CAT_LOW_PRESSURE_ALERT",
         "isTak": true,
@@ -2080,20 +2079,19 @@
     },
     {
       "id": "pressure_high_atm",
-      "description": "Mean atmospheric pressure above configured high threshold for 10 s. Gated on settings.pressure.high_atm_alert_enabled.",
+      "description": "Mean atmospheric pressure above configured high threshold for 5 s. Gated on settings.pressure.high_atm_alert_enabled.",
       "when": {
         "all": [
           { "gte_key": ["settings.pressure.high_atm_alert_enabled", 1.0] },
-          { "gte_key": ["features.pressure.above_high_threshold", 1.0] },
-          {"gte_key": ["offbody.on_wrist", 0.5]}
+          { "gte_key": ["features.pressure.above_high_threshold", 1.0] }
         ]
       },
-      "sustained_for_sec": 10,
+      "sustained_for_sec": 5,
       "hold_down_sec": 60,
       "snapshot_keys": ["features.pressure.mean_n5", "thresholds.pressure.high"],
       "action": {
         "type": "log",
-        "severity": "WARN",
+        "severity": "EMERGENCY",
         "message": "High atmospheric pressure alert.",
         "category": "CAT_HIGH_PRESSURE_ALERT",
         "isTak": true,
