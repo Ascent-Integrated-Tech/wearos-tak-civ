@@ -58,12 +58,12 @@ class SitxEncryptedDataStore(context: Context) {
 
     // -------- encrypted --------
 
-    fun encryptedString(key: Preferences.Key<String>): Flow<String?> =
+    fun encryptedString(key: Preferences.Key<String>, default: String? = null): Flow<String?> =
         ds.data.map { prefs ->
-            val enc = prefs[key] ?: return@map null
+            val enc = prefs[key] ?: return@map default
             when (val res = EncryptedSerializer.decryptFromBase64(aead, enc, SitxSecretsKeys.AAD)) {
                 is DecryptResult.Success -> res.plaintext
-                is DecryptResult.Failure -> null
+                is DecryptResult.Failure -> default
             }
         }
 

@@ -38,7 +38,7 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
     val baseUrl: Flow<String> = store.plaintextString(SitxSecretsKeys.BASE_URL, default = "")
 
     // Encrypted
-    val clientId: Flow<String?> = store.encryptedString(SitxSecretsKeys.CLIENT_ID)
+    val clientId: Flow<String?> = store.encryptedString(SitxSecretsKeys.CLIENT_ID, "D4RTE81TJjccxlc8LPD7QQ")
 
     val deviceCode: Flow<String?> = store.encryptedString(SitxSecretsKeys.DEVICE_CODE)
     val userCode: Flow<String?> = store.encryptedString(SitxSecretsKeys.USER_CODE)

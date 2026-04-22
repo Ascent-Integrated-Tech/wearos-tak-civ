@@ -520,7 +520,7 @@ fun loadSettingsValues(){
     enableEsriEndpointSettingsState.postValue(enableEsriEndpoint)
     enableSitxServiceSettingsState.postValue(enableSitxService)
     sitxTakUrlSettingsState.postValue(sitxTakUrl)
-    sitxTakClientIdSettingsState.postValue(sitxTakClientId)
+    //sitxTakClientIdSettingsState.postValue(sitxTakClientId)
 
     enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization)
     enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization)
@@ -742,6 +742,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 "sitx_tak_screen"
             )
         }
+        /*
         composable("sitx_tak_client_id_screen") {
             StringEntryPage(
                 navController,
@@ -750,7 +751,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
                 stringResource(R.string.client_id),
                 "sitx_tak_screen"
             )
-        }
+        } */
         composable(
             "tablet_command_screen") {
             ManageOutputsTabletCommandSetting(navController)
@@ -3192,8 +3193,8 @@ fun ManageOutputsSetting(navController: NavController) {
         columnContent = {
             DataMetricsChip("tak_sa_multicast_screen", stringResource(R.string.tak_sa_multicast),
                 enableDisableFromBoolean(enableMulticastSettingsState.value), navController)
-            DataMetricsChip("sitx_tak_screen", stringResource(R.string.sitx_tak),
-                enableDisableFromBoolean(enableSitxServiceSettingsState.value), navController)
+            //DataMetricsChip("sitx_tak_screen", stringResource(R.string.sitx_tak),
+            //    enableDisableFromBoolean(enableSitxServiceSettingsState.value), navController)
             DataMetricsChip("tablet_command_screen", stringResource(R.string.tablet_command),
                 enableDisableFromBoolean(enableTabletCommandEndpointSettingsState.value), navController)
             DataMetricsChip("esri_screen", stringResource(R.string.esri),
@@ -3217,7 +3218,7 @@ fun ManageOutputsSetting(navController: NavController) {
                     tabletCommandApikeySettingsState.setValue(tabletCommandApikey)
                     esriEndpointSettingsState.setValue(esriEndpoint)
                     sitxTakUrlSettingsState.setValue(sitxTakUrl)
-                    sitxTakClientIdSettingsState.setValue(sitxTakClientId)
+                    //sitxTakClientIdSettingsState.setValue(sitxTakClientId)
 
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
@@ -3476,10 +3477,31 @@ fun ManageOutputsSitxSetting(navController: NavController, sitxVm: SitxViewModel
             )
 
             DataMetricsChip("sitx_tak_url_screen", stringResource(R.string.address), sitxTakUrlSettingsState.value.toString(), navController)
-            DataMetricsChip("sitx_tak_client_id_screen", stringResource(R.string.client_id), sitxTakClientIdSettingsState.value.toString(), navController)
+            //DataMetricsChip("sitx_tak_client_id_screen", stringResource(R.string.client_id), sitxTakClientIdSettingsState.value.toString(), navController)
             if (true == enableSitxServiceSettingsState.value) {
                 val nameSecondary = if (enableSitxService) sitxStatusText(sitxEvent) else "Service not enabled"
                 DataMetricsChip("sitx_status_authorization_screen", "Sit(x) State", nameSecondary, navController)
+                Button(
+                    onClick = {
+                        runBlocking {
+                            SitxServiceCommandBus.trySend(SitxServiceCommand.BeginAuth(
+                                baseUrl = sitxRepo.baseUrl.first(),
+                                clientId = sitxRepo.clientId.first() ?: "",
+                                callsign = callsign,
+                                deviceName = device_uid,
+                                deviceId = device_uid
+                            )
+                            )
+                        }
+                    },
+                    contentPadding = PaddingValues(10.dp),
+                    colors = ButtonDefaults.buttonColors(colors.primary),
+                ) {
+                    Text(
+                        text = "Re-Auth",
+                        color = Color.Black
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
         },
@@ -3489,17 +3511,17 @@ fun ManageOutputsSitxSetting(navController: NavController, sitxVm: SitxViewModel
                     Log.d(TAG, "Sit(x) TAK Settings NOT saved")
                     enableSitxServiceSettingsState.setValue(enableSitxService)
                     sitxTakUrlSettingsState.setValue(sitxTakUrl)
-                    sitxTakClientIdSettingsState.setValue(sitxTakClientId)
+                    //sitxTakClientIdSettingsState.setValue(sitxTakClientId)
 
-                    navController.navigate("manage_outputs_screen") {
-                        popUpTo(("manage_outputs_screen")) {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
                             inclusive = true
                         }
                     }
                 },
                 onClickConfirm = {
-                    navController.navigate("manage_outputs_screen") {
-                        popUpTo(("manage_outputs_screen")) {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
                             inclusive = true
                         }
                     }
@@ -4874,6 +4896,8 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(bottom = 3.dp)
             )
+            DataMetricsChip("sitx_tak_screen", stringResource(R.string.sitx_tak),
+                enableDisableFromBoolean(enableSitxServiceSettingsState.value), navController)
             Chip(
                 onClick = {
                     navController.navigate("reporting_settings_screen") {
@@ -5326,7 +5350,7 @@ fun SettingsScreen(
                     var esriEndpointChanged = false
                     var sitxCheckedChanged = false
                     var sitxUrlChanged = false
-                    var sitxClientIdChanged = false
+                    //var sitxClientIdChanged = false
                     var heightFeetChanged: Boolean = false
                     var heightInchesChanged: Boolean = false
                     var weightChanged: Boolean = false
@@ -5629,10 +5653,11 @@ fun SettingsScreen(
                         settingsChanged = true; sitxUrlChanged = true
                         sitxTakUrl = sitxTakUrlSettingsState.value ?: sitxTakUrl
                     }
+                    /*
                     if (sitxTakClientId != sitxTakClientIdSettingsState.value) {
                         settingsChanged = true; sitxClientIdChanged = true
                         sitxTakClientId = sitxTakClientIdSettingsState.value ?: sitxTakClientId
-                    }
+                    } */
 
                     if (enableChatService != enableChatServiceSettingsState.value) {
                         settingsChanged = true; chatCheckedChanged = true
@@ -5959,11 +5984,14 @@ fun SettingsScreen(
                                 sitxRepo.setBaseUrl(sitxTakUrl)
                                 // TODO Senni: Need to restart the device authorization
                             }
+                            /*
                             if (sitxClientIdChanged) {
                                 Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
                                 sitxRepo.setClientId(sitxTakClientId)
                                 // TODO Senni: Need to restart the device authorization
                             }
+
+                             */
                             if (companionAppCheckedChanged) {
                                 Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
                                 dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
