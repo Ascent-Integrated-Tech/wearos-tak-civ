@@ -67,6 +67,65 @@ sealed interface FeatureDef {
         // Phase 3: per-feature compute cadence
         override val updateIntervalMs: Long = 1000L
     ): FeatureDef
+
+    /**
+     * Sample-count rolling window aggregate.
+     * Operates over the last [sampleCount] samples inserted into the ring,
+     * regardless of wall-clock time.
+     *
+     * @param source       Ring key (e.g. Topics.PRESSURE = "pressure")
+     * @param op           Aggregation: "avg", "min", "max", "rms", "median", "variance", "stddev"
+     * @param sampleCount  Number of recent samples to include.
+     * @param minSamples   Minimum samples required before the feature is written (default 1).
+     * @param maxAgeSec    If set, the most-recent sample must be younger than this; otherwise
+     *                     feature is suppressed (write-time staleness guard).
+     */
+    data class SampleWindow(
+        override val id: String,
+        val source: String,
+        val op: String,
+        val sampleCount: Int,
+        val minSamples: Int = 1,
+        val maxAgeSec: Long? = null,
+        override val updateIntervalMs: Long = 1000L
+    ): FeatureDef
+
+    /**
+     * Sample-count delta: (last sample) − (sample [horizonSamples] positions ago).
+     * Returns null and writes nothing if fewer than horizonSamples+1 samples are available.
+     *
+     * @param horizonSamples  How many samples back to look (e.g. 5 = "delta over last 5 samples").
+     * @param maxAgeSec       Freshness guard on the most-recent sample (same semantics as SampleWindow).
+     */
+    data class SampleDelta(
+        override val id: String,
+        val source: String,
+        val horizonSamples: Int,
+        val maxAgeSec: Long? = null,
+        override val updateIntervalMs: Long = 1000L
+    ): FeatureDef
+
+    /**
+     * Sample-count slope via least-squares regression over [sampleCount] recent samples.
+     * Uses real sensor timestamps as the x-axis so slope is in signal-units per second (or
+     * per minute when [unitsPerSec] = "per_minute").
+     *
+     * Suppressed (writes nothing) when:
+     *  - fewer than 2 samples are available
+     *  - the timestamp span of the window is < MIN_SLOPE_SPAN_MS (avoids ÷0 near-singularity)
+     *  - [maxAgeSec] is set and newest sample is stale
+     *
+     * @param sampleCount  Number of samples to include in the regression.
+     * @param unitsPerSec  "per_second" (default) or "per_minute".
+     */
+    data class SampleSlope(
+        override val id: String,
+        val source: String,
+        val sampleCount: Int,
+        val unitsPerSec: String = "per_second",
+        val maxAgeSec: Long? = null,
+        override val updateIntervalMs: Long = 1000L
+    ): FeatureDef
 }
 
 data class RuleDef(

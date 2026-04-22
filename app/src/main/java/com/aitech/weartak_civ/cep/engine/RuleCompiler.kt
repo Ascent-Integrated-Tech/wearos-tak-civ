@@ -83,6 +83,30 @@ object RuleCompiler {
                     maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getDouble("max_age_sec") else null,
                     updateIntervalMs = updateIntervalMs
                 )
+                "sample_window" -> out += FeatureDef.SampleWindow(
+                    id = id,
+                    source = o.getString("source"),
+                    op = o.optString("op", "avg"),
+                    sampleCount = o.getInt("sample_count"),
+                    minSamples = o.optInt("min_samples", 1),
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
+                    updateIntervalMs = updateIntervalMs
+                )
+                "sample_delta" -> out += FeatureDef.SampleDelta(
+                    id = id,
+                    source = o.getString("source"),
+                    horizonSamples = o.getInt("horizon_samples"),
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
+                    updateIntervalMs = updateIntervalMs
+                )
+                "sample_slope" -> out += FeatureDef.SampleSlope(
+                    id = id,
+                    source = o.getString("source"),
+                    sampleCount = o.getInt("sample_count"),
+                    unitsPerSec = o.optString("units_per_sec", "per_second"),
+                    maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
+                    updateIntervalMs = updateIntervalMs
+                )
             }
         }
         return out

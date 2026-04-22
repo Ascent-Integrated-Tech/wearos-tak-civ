@@ -667,6 +667,104 @@
         ]
       },
       "units": "bool"
+    },
+
+    {
+      "_comment": "── Pressure: sample-count features ──────────────────────────────────────",
+      "id": "features.pressure.mean_n5",
+      "type": "sample_window",
+      "source": "pressure",
+      "op": "avg",
+      "sample_count": 5,
+      "min_samples": 5,
+      "max_age_sec": 30,
+      "update_interval_ms": 500
+    },
+    {
+      "id": "features.pressure.delta_n5",
+      "type": "sample_delta",
+      "source": "pressure",
+      "horizon_samples": 5,
+      "max_age_sec": 30,
+      "update_interval_ms": 500
+    },
+    {
+      "id": "features.pressure.slope_n20",
+      "type": "sample_slope",
+      "source": "pressure",
+      "sample_count": 20,
+      "units_per_sec": "per_second",
+      "max_age_sec": 120,
+      "update_interval_ms": 1000
+    },
+
+    {
+      "_comment": "── Pressure: derived boolean/categorical features ───────────────────────",
+      "id": "features.pressure.delta_rapid_rise",
+      "type": "derived",
+      "expr": {
+        "gt": [
+          { "key": "features.pressure.delta_n5" },
+          5.0
+        ]
+      },
+      "update_interval_ms": 500
+    },
+    {
+      "id": "features.pressure.delta_shallow_rise",
+      "type": "derived",
+      "expr": {
+        "and": [
+          { "gte": [ { "key": "features.pressure.delta_n5" }, 2.0 ] },
+          { "lte": [ { "key": "features.pressure.delta_n5" }, 4.0 ] }
+        ]
+      },
+      "update_interval_ms": 500
+    },
+    {
+      "id": "features.pressure.above_high_threshold",
+      "type": "derived",
+      "expr": {
+        "gt": [
+          { "key": "features.pressure.mean_n5" },
+          { "key": "thresholds.pressure.high" }
+        ]
+      },
+      "update_interval_ms": 1000
+    },
+    {
+      "id": "features.pressure.below_low_threshold",
+      "type": "derived",
+      "expr": {
+        "lt": [
+          { "key": "features.pressure.mean_n5" },
+          { "key": "thresholds.pressure.low" }
+        ]
+      },
+      "update_interval_ms": 1000
+    },
+    {
+      "_comment": "20-sample rolling average used as a pre-rise baseline for submerge detection",
+      "id": "features.pressure.mean_n20",
+      "type": "sample_window",
+      "source": "pressure",
+      "op": "avg",
+      "sample_count": 20,
+      "min_samples": 20,
+      "max_age_sec": 120,
+      "update_interval_ms": 1000
+    },
+    {
+      "_comment": "Difference between recent 5-sample mean and 20-sample rolling baseline. Positive and large when pressure has just risen above a stable ambient level — approximates the PressureService frozen-baseline delta used for submerge detection. A Phase-7 frozen-baseline feature type would give an exact 60 s confirmation.",
+      "id": "features.pressure.submerge_rise",
+      "type": "derived",
+      "expr": {
+        "sub": [
+          { "key": "features.pressure.mean_n5" },
+          { "key": "features.pressure.mean_n20" }
+        ]
+      },
+      "update_interval_ms": 1000
     }
   ],
   "rules": [
@@ -1879,6 +1977,136 @@
           "spo2",
           "perfusion"
         ]
+      }
+    },
+
+    {
+      "_comment": "── Pressure rules ───────────────────────────────────────────────────────",
+      "id": "pressure_dunk_detected",
+      "description": "Rapid pressure rise (>5 hPa over 5 samples) — probable water immersion/dunk. Gated on settings.pressure.immersion_alerts_enabled so the rule respects the user's immersion alert toggle.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.immersion_alerts_enabled", 1.0] },
+          { "gte_key": ["features.pressure.delta_rapid_rise", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 2,
+      "hold_down_sec": 5,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Probable immersion warning — rapid pressure rise detected.",
+        "category": "CAT_IMMERSION_WARN",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "immersion", "dunk"]
+      }
+    },
+    {
+      "id": "pressure_shallow_dunk",
+      "description": "Moderate pressure rise (2–4 hPa over 5 samples) — possible shallow immersion. Gated on immersion alerts toggle.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.immersion_alerts_enabled", 1.0] },
+          { "gte_key": ["features.pressure.delta_shallow_rise", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 1,
+      "hold_down_sec": 3,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Possible shallow immersion — moderate pressure rise detected.",
+        "category": "CAT_IMMERSION_WARN",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "immersion", "shallow_dunk"]
+      }
+    },
+    {
+      "id": "pressure_submerge_detected",
+      "description": "Sustained pressure elevation ≥5 hPa above the 20-sample rolling baseline — probable prolonged immersion. Approximates PressureService.handleSubmergeDetection() using mean_n5 vs mean_n20; the 5 s sustained window covers the period before mean_n20 fully catches up to the elevated pressure. Phase-7 TODO: replace with a frozen-baseline feature type to support the full 60 s confirmation.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.immersion_alerts_enabled", 1.0] },
+          { "gte_key": ["features.pressure.submerge_rise", 5.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 5,
+      "hold_down_sec": 30,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Probable sustained immersion — pressure held elevated above baseline.",
+        "category": "CAT_IMMERSION_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "immersion", "submerge"]
+      }
+    },
+    {
+      "id": "pressure_low_atm",
+      "description": "Mean atmospheric pressure below configured low threshold for 10 s. Gated on settings.pressure.low_atm_alert_enabled.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.low_atm_alert_enabled", 1.0] },
+          { "gte_key": ["features.pressure.below_low_threshold", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 10,
+      "hold_down_sec": 60,
+      "snapshot_keys": ["features.pressure.mean_n5", "thresholds.pressure.low"],
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Low atmospheric pressure alert.",
+        "category": "CAT_LOW_PRESSURE_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "atm", "low"],
+        "monitor": [
+          {
+            "feature": "features.pressure.mean_n5",
+            "exit_above": "thresholds.pressure.low",
+            "hysteresis": 1.0
+          }
+        ],
+        "exit_sustain_sec": 5
+      }
+    },
+    {
+      "id": "pressure_high_atm",
+      "description": "Mean atmospheric pressure above configured high threshold for 10 s. Gated on settings.pressure.high_atm_alert_enabled.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.high_atm_alert_enabled", 1.0] },
+          { "gte_key": ["features.pressure.above_high_threshold", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 10,
+      "hold_down_sec": 60,
+      "snapshot_keys": ["features.pressure.mean_n5", "thresholds.pressure.high"],
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "High atmospheric pressure alert.",
+        "category": "CAT_HIGH_PRESSURE_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "atm", "high"],
+        "monitor": [
+          {
+            "feature": "features.pressure.mean_n5",
+            "exit_below": "thresholds.pressure.high",
+            "hysteresis": 1.0
+          }
+        ],
+        "exit_sustain_sec": 5
       }
     }
   ]
