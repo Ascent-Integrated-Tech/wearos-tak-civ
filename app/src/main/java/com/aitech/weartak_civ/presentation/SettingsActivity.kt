@@ -6162,6 +6162,11 @@ fun SettingsScreen(
                                 mainActivity.updateCepSustainOverridesMap()
                                 CepProvider.getOrCreateEngine(context).updateSustainOverrides()
                             }
+                            if (immersionAlertsChanged ||
+                                lowPressureAlertChanged || lowPressureAlertThresholdChanged ||
+                                highPressureAlertChanged || highPressureAlertThresholdChanged) {
+                                CepProvider.getOrCreateEngine(context).updatePressureProfile()
+                            }
                             Log.d(TAG, "Finished saving settings")
                         }
                     } else {

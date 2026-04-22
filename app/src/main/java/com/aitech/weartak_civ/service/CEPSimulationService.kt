@@ -1,3 +1,11 @@
+/*
+ * Copyright (C) 2025, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
 package com.aitech.weartak_civ.service
 
 import android.app.Notification
@@ -14,6 +22,7 @@ import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.bus.CepBus
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
@@ -33,6 +42,7 @@ import com.aitech.weartak_civ.cep.model.payloads.SleepPayload
 import com.aitech.weartak_civ.cep.model.payloads.Spo2Payload
 import com.aitech.weartak_civ.cep.model.payloads.WaterPayload
 import com.aitech.weartak_civ.cep.model.payloads.WindPayload
+import com.aitech.weartak_civ.cep.model.payloads.PressurePayload
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -204,14 +214,10 @@ class CEPSimulationService : Service() {
                 Scenario.P1_T6_HOLDDOWN_REGRESSION
             )
             for (scenario in phase1Scenarios) {
-                // Flush any lingering TriggerTimer state from the previous scenario
                 emitResetBurst()
-
                 Log.i(TAG, "[P1] ▶ Starting: $scenario")
                 updateNotification("[P1] Running: $scenario")
-
                 simulateScenario(scenario, ageYears = 35, hrRest = 60)
-
                 Log.i(TAG, "[P1] ✓ Completed: $scenario")
                 updateNotification("[P1] Done: $scenario")
                 delay(2_000)
@@ -229,12 +235,9 @@ class CEPSimulationService : Service() {
             )
             for (scenario in phase2Scenarios) {
                 emitResetBurst()
-
                 Log.i(TAG, "[P2] ▶ Starting: $scenario")
                 updateNotification("[P2] Running: $scenario")
-
                 simulateScenario(scenario, ageYears = 35, hrRest = 60)
-
                 Log.i(TAG, "[P2] ✓ Completed: $scenario")
                 updateNotification("[P2] Done: $scenario")
                 delay(2_000)
@@ -251,12 +254,9 @@ class CEPSimulationService : Service() {
             )
             for (scenario in phase3Scenarios) {
                 emitResetBurst()
-
                 Log.i(TAG, "[P3] ▶ Starting: $scenario")
                 updateNotification("[P3] Running: $scenario")
-
                 simulateScenario(scenario, ageYears = 35, hrRest = 60)
-
                 Log.i(TAG, "[P3] ✓ Completed: $scenario")
                 updateNotification("[P3] Done: $scenario")
                 delay(2_000)
@@ -275,12 +275,9 @@ class CEPSimulationService : Service() {
             )
             for (scenario in phase4Scenarios) {
                 emitResetBurst()
-
                 Log.i(TAG, "[P4] ▶ Starting: $scenario")
                 updateNotification("[P4] Running: $scenario")
-
                 simulateScenario(scenario, ageYears = 35, hrRest = 60)
-
                 Log.i(TAG, "[P4] ✓ Completed: $scenario")
                 updateNotification("[P4] Done: $scenario")
                 delay(2_000)
@@ -306,8 +303,30 @@ class CEPSimulationService : Service() {
                 delay(3_000)
             }
             Log.i(TAG, "[SIM] === PHASE 5 COMPLETE ===")
-            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 testing complete")
-            updateNotification("[ALL] P1 + P2 + P3 + P4 + P5 complete")
+            updateNotification("[P5] Complete – P6 starting in 3 s")
+            delay(3_000)
+
+            // ── Phase 6: Sample-count pressure feature verification ──────────
+            val phase6Scenarios = listOf(
+                Scenario.P6_T1_DUNK_DETECTED,
+                Scenario.P6_T2_SHALLOW_DUNK,
+                Scenario.P6_T3_LOW_ATM_PRESSURE,
+                Scenario.P6_T4_HIGH_ATM_PRESSURE,
+                Scenario.P6_T5_INSUFFICIENT_HISTORY,
+                Scenario.P6_T6_STALE_DATA_SUPPRESSION
+            )
+            Log.i(TAG, "[SIM] === PHASE 6 START === sample-count pressure features")
+            for (scenario in phase6Scenarios) {
+                Log.i(TAG, "[P6] ▶ Starting: $scenario")
+                updateNotification("[P6] Running: $scenario")
+                runPhase6Scenario(scenario)
+                Log.i(TAG, "[P6] ✓ Completed: $scenario")
+                updateNotification("[P6] Done: $scenario")
+                delay(3_000)
+            }
+            Log.i(TAG, "[SIM] === PHASE 6 COMPLETE ===")
+            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 + P6 testing complete")
+            updateNotification("[ALL] P1–P6 complete")
         }
     }
 
@@ -467,7 +486,28 @@ class CEPSimulationService : Service() {
         P5_T1_ALERT_LATENCY_BASELINE,
         P5_T2_ALERT_LATENCY_FAST_ONSET,
         P5_T3_NO_DOUBLE_FIRE,
-        P5_T4_SUSTAIN_ACCURACY
+        P5_T4_SUSTAIN_ACCURACY,
+
+        // ── Phase 6: Sample-count pressure feature verification ──────────────
+        // P6-T1: Rapid pressure rise (>5 hPa over 5 samples) → pressure_dunk_detected
+        //         fires after sustained_for_sec=2 wall-clock seconds.
+        P6_T1_DUNK_DETECTED,
+        // P6-T2: Shallow pressure rise (2–4 hPa over 5 samples) → pressure_shallow_dunk
+        //         fires after sustained_for_sec=1.
+        P6_T2_SHALLOW_DUNK,
+        // P6-T3: Mean atmospheric pressure below low threshold for 10 s → pressure_low_atm.
+        //         Requires CepEngine to have loaded thresholds.pressure.low via updatePressureProfile().
+        P6_T3_LOW_ATM_PRESSURE,
+        // P6-T4: Mean atmospheric pressure above high threshold for 10 s → pressure_high_atm.
+        P6_T4_HIGH_ATM_PRESSURE,
+        // P6-T5: Insufficient sample history guard — only 3 pressure samples emitted.
+        //         mean_n5 (min_samples=5) and delta_n5 (horizonSamples=5) require ≥5/6 samples;
+        //         all pressure rules must NOT fire. Assert: SUMMARY no_alerts_fired.
+        P6_T5_INSUFFICIENT_HISTORY,
+        // P6-T6: Stale data suppression — emit dunk trigger, clear, then pause 35 s (>max_age_sec=30).
+        //         During and after the gap no stale-triggered alert should fire; verifies that
+        //         max_age_sec freshness guard suppresses sample-window features during dropout.
+        P6_T6_STALE_DATA_SUPPRESSION
     }
 
     private data class ScenarioConfig(
@@ -936,6 +976,9 @@ class CEPSimulationService : Service() {
                 skinWristC = 33.0, skinHandC = 32.0,
                 wet = false, immersion = false
             )
+            // P6 scenarios are driven by runPhase6Scenario() and never call simulateScenario(),
+            // so they never reach scenarioConfig(). The else branch satisfies exhaustiveness.
+            else -> throw IllegalArgumentException("scenarioConfig() called for non-simulatable scenario: $s")
         }
     }
 
@@ -1124,6 +1167,316 @@ class CEPSimulationService : Service() {
             Log.i("CEP", "[P5-T4] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed windowMs=175000..185000")
         }
         emitResetBurst()
+        AlertRegistry.clearAll()
+    }
+
+    // ── Phase 6: Sample-count pressure feature tests ──────────────────────────
+
+    /**
+     * Clears the pressure ring, all pressure-derived FeatureStore keys, and AlertRegistry
+     * before each Phase 6 scenario so tests run from a known-clean state.
+     */
+    private fun resetP6PressureState() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.clearPressureStateForTest()
+        // All P6 scenarios assert the CEP rule fires; enable all pressure alert flags so
+        // the settings-gate conditions added in Phase 6 never suppress a test assertion.
+        engine.injectPressureAlertFlagsForTest(immersion = true, lowAtm = true, highAtm = true)
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * Dispatches a Phase 6 scenario to its runner function.
+     * Always resets pressure state first so scenarios do not bleed into each other.
+     */
+    private suspend fun runPhase6Scenario(scenario: Scenario) {
+        resetP6PressureState()
+        delay(200L) // let FeatureStore clear propagate before emitting new samples
+        when (scenario) {
+            Scenario.P6_T1_DUNK_DETECTED         -> runP6T1DunkDetected()
+            Scenario.P6_T2_SHALLOW_DUNK          -> runP6T2ShallowDunk()
+            Scenario.P6_T3_LOW_ATM_PRESSURE      -> runP6T3LowAtmPressure()
+            Scenario.P6_T4_HIGH_ATM_PRESSURE     -> runP6T4HighAtmPressure()
+            Scenario.P6_T5_INSUFFICIENT_HISTORY  -> runP6T5InsufficientHistory()
+            Scenario.P6_T6_STALE_DATA_SUPPRESSION -> runP6T6StaleDataSuppression()
+            else -> { /* non-P6 scenario, no-op */ }
+        }
+    }
+
+    /**
+     * Emits a single pressure sample on CepBus.
+     *
+     * @param hpa Pressure reading in hectopascals.
+     * @param tsMs Measurement timestamp (wall-clock ms).
+     */
+    private suspend fun emitPressureSample(hpa: Float, tsMs: Long = System.currentTimeMillis()) {
+        Log.d("CEP_P6", "[EMIT] hpa=$hpa ts=$tsMs")
+        CepBus.emit(
+            CepEvent(
+                topic = Topics.PRESSURE,
+                payload = PressurePayload(hpa = hpa, accuracy = 3, sampleIndex = tsMs, sourceId = "baro_sim"),
+                ts = tsMs
+            )
+        )
+    }
+
+    /**
+     * P6-T1: Rapid pressure rise — pressure_dunk_detected.
+     *
+     * Emits 6 baseline samples at 1013 hPa then 12 trigger samples at 1020 hPa.
+     * delta_n5 = 1020 − 1013 = 7.0 > 5.0 → features.pressure.delta_rapid_rise = true.
+     * pressure_dunk_detected has sustained_for_sec=2; must fire within ~4 s of first trigger.
+     *
+     * Assert: rule fires; elapsedMs from first trigger is ≥ 2000 ms.
+     */
+    private suspend fun runP6T1DunkDetected() {
+        val ruleId = "pressure_dunk_detected"
+        AlertRegistry.clearAll()
+
+        Log.i(TAG, "[P6-T1] ▶ Filling ring: 6 baseline samples at 1013 hPa")
+        repeat(6) {
+            emitPressureSample(1013.0f)
+            delay(400L)
+        }
+
+        Log.i(TAG, "[P6-T1] ▶ Emitting dunk trigger: 12 samples at 1020 hPa (delta_n5 ≈ +7 hPa)")
+        val triggerStart = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(12) {
+            emitPressureSample(1020.0f)
+            if (fireTime == null && AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                fireTime = System.currentTimeMillis()
+            }
+            delay(500L)
+        }
+
+        if (fireTime == null) {
+            val snap = CepProvider.getOrCreateEngine(applicationContext).pressureFeatureSnapshot()
+            Log.i("CEP", "[P6-T1] ASSERT FAIL rule=$ruleId did_not_fire_within=6000ms SNAPSHOT=$snap")
+        } else {
+            val elapsed = fireTime!! - triggerStart
+            val pass = elapsed >= 2_000L
+            Log.i("CEP", "[P6-T1] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedFromTriggerMs=$elapsed expected=>=2000ms")
+        }
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P6-T2: Shallow pressure rise — pressure_shallow_dunk.
+     *
+     * Emits 6 baseline samples at 1013 hPa then 12 trigger samples at 1016 hPa.
+     * delta_n5 = 1016 − 1013 = 3.0 ∈ [2.0, 4.0] → features.pressure.delta_shallow_rise = true.
+     * pressure_shallow_dunk has sustained_for_sec=1; must fire within ~3 s of first trigger.
+     *
+     * Assert: rule fires; elapsedMs ≥ 1000 ms.
+     */
+    private suspend fun runP6T2ShallowDunk() {
+        val ruleId = "pressure_shallow_dunk"
+        AlertRegistry.clearAll()
+
+        Log.i(TAG, "[P6-T2] ▶ Filling ring: 6 baseline samples at 1013 hPa")
+        repeat(6) {
+            emitPressureSample(1013.0f)
+            delay(400L)
+        }
+
+        Log.i(TAG, "[P6-T2] ▶ Emitting shallow trigger: 12 samples at 1016 hPa (delta_n5 ≈ +3 hPa)")
+        val triggerStart = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(12) {
+            emitPressureSample(1016.0f)
+            if (fireTime == null && AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                fireTime = System.currentTimeMillis()
+            }
+            delay(400L)
+        }
+
+        if (fireTime == null) {
+            val snap = CepProvider.getOrCreateEngine(applicationContext).pressureFeatureSnapshot()
+            Log.i("CEP", "[P6-T2] ASSERT FAIL rule=$ruleId did_not_fire_within=4800ms SNAPSHOT=$snap")
+        } else {
+            val elapsed = fireTime!! - triggerStart
+            val pass = elapsed >= 1_000L
+            Log.i("CEP", "[P6-T2] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedFromTriggerMs=$elapsed expected=>=1000ms")
+        }
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P6-T3: Low atmospheric pressure — pressure_low_atm.
+     *
+     * Emits 25 samples at 900 hPa (well below any reasonable low-pressure threshold loaded
+     * by updatePressureProfile()).  mean_n5 (avg of last 5 samples) = 900.0 hPa.
+     * pressure_low_atm has sustained_for_sec=10; must fire within ~12 s of condition onset.
+     *
+     * Prerequisite: CepEngine.updatePressureProfile() has been called at startup so that
+     * thresholds.pressure.low is available in FeatureStore.
+     *
+     * Assert: rule fires.
+     */
+    private suspend fun runP6T3LowAtmPressure() {
+        val ruleId = "pressure_low_atm"
+        // Inject known thresholds: low=950, high=2000 hPa.  900 < 950 → below_low_threshold = true.
+        CepProvider.getOrCreateEngine(applicationContext).injectPressureThresholdsForTest(950.0, 2000.0)
+        AlertRegistry.clearAll()
+
+        Log.i(TAG, "[P6-T3] ▶ Emitting 25 samples at 900 hPa (below low threshold=950)")
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(25) {
+            emitPressureSample(900.0f)
+            if (fireTime == null && AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                fireTime = System.currentTimeMillis()
+            }
+            delay(500L)
+        }
+
+        if (fireTime == null) {
+            val snap = CepProvider.getOrCreateEngine(applicationContext).pressureFeatureSnapshot()
+            Log.i("CEP", "[P6-T3] ASSERT FAIL rule=$ruleId did_not_fire SNAPSHOT=$snap")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in 10_000L..13_000L
+            Log.i("CEP", "[P6-T3] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed expected=10000..13000ms")
+        }
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P6-T4: High atmospheric pressure — pressure_high_atm.
+     *
+     * Emits 25 samples at 1070 hPa (above any reasonable high-pressure threshold).
+     * mean_n5 = 1070.0 hPa.  pressure_high_atm has sustained_for_sec=10.
+     *
+     * Assert: rule fires.
+     */
+    private suspend fun runP6T4HighAtmPressure() {
+        val ruleId = "pressure_high_atm"
+        // Inject high threshold at 1060 hPa so 1070 > 1060 → above_high_threshold = true.
+        // Default is 2000, which would make 1070 > 2000 = false and the test always fail.
+        CepProvider.getOrCreateEngine(applicationContext).injectPressureThresholdsForTest(950.0, 1060.0)
+        AlertRegistry.clearAll()
+
+        Log.i(TAG, "[P6-T4] ▶ Emitting 25 samples at 1070 hPa (above high threshold=1060)")
+        val t0 = System.currentTimeMillis()
+        var fireTime: Long? = null
+        repeat(25) {
+            emitPressureSample(1070.0f)
+            if (fireTime == null && AlertRegistry.allActive().any { it.ruleId == ruleId }) {
+                fireTime = System.currentTimeMillis()
+            }
+            delay(500L)
+        }
+
+        if (fireTime == null) {
+            val snap = CepProvider.getOrCreateEngine(applicationContext).pressureFeatureSnapshot()
+            Log.i("CEP", "[P6-T4] ASSERT FAIL rule=$ruleId did_not_fire SNAPSHOT=$snap")
+        } else {
+            val elapsed = fireTime!! - t0
+            val pass = elapsed in 10_000L..13_000L
+            Log.i("CEP", "[P6-T4] ASSERT ${if (pass) "PASS" else "FAIL"} rule=$ruleId elapsedMs=$elapsed expected=10000..13000ms")
+        }
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P6-T5: Insufficient sample history — no pressure alert should fire.
+     *
+     * Emits only 3 pressure samples (fewer than min_samples=5 for mean_n5 and fewer than the
+     * 6 needed for delta_n5 with horizonSamples=5).  All pressure sample-window features will
+     * be suppressed:
+     *  - computeSampleWindow: window.size < def.minSamples (3 < 5) → not written
+     *  - computeSampleDelta:  ring.getByCount(5) returns null (need ≥6) → not written
+     *
+     * With no feature values, all downstream derived features (delta_rapid_rise, etc.) also
+     * produce null, and no pressure rule fires.
+     *
+     * Assert: SUMMARY no_alerts_fired.
+     */
+    private suspend fun runP6T5InsufficientHistory() {
+        // Inject thresholds so threshold-dependent rules COULD fire if history were sufficient.
+        // This ensures the pass proves the min_samples/horizon_samples guard, not missing thresholds.
+        CepProvider.getOrCreateEngine(applicationContext).injectPressureThresholdsForTest(950.0, 1060.0)
+        AlertRegistry.clearAll()
+        val baselineIds: Set<String> = AlertRegistry.allActive().map { it.ruleId }.toSet()
+
+        Log.i(TAG, "[P6-T5] ▶ Emitting only 3 pressure samples (below min_samples=5) — ring is clean")
+        repeat(3) {
+            emitPressureSample(1020.0f)   // Would be a dunk if history were sufficient
+            delay(500L)
+        }
+
+        // Give feature coroutines time to run (up to 2× updateIntervalMs=500ms)
+        delay(2_000L)
+
+        val newAlerts = AlertRegistry.allActive().filter { it.ruleId !in baselineIds }
+        if (newAlerts.isEmpty()) {
+            Log.i("CEP", "[P6-T5] ASSERT PASS SUMMARY no_pressure_alerts_fired — min_samples/horizon_samples guard working ✓ (clean ring, thresholds injected)")
+        } else {
+            Log.i("CEP", "[P6-T5] ASSERT FAIL unexpected_alerts=${newAlerts.map { it.ruleId }}")
+        }
+        AlertRegistry.clearAll()
+    }
+
+    /**
+     * P6-T6: Stale data suppression — max_age_sec freshness guard.
+     *
+     * Step 1: Confirm dunk detection works (establishes baseline).
+     * Step 2: Pause all pressure emissions for 35 s (> max_age_sec=30 on mean_n5 / delta_n5).
+     *         During this gap, computeSampleWindow and computeSampleDelta suppress writes because
+     *         ring.lastTsOrNull() is >30s old.  Downstream derived features go stale.
+     * Step 3: Verify no dunk alert fires during the stale window despite residual ring state.
+     * Step 4: Resume pressure emissions at baseline and confirm system recovers.
+     *
+     * Assert: no alert fires during the 35 s gap; system recovers after resuming.
+     *
+     * Note: hold_down_sec=5 on pressure_dunk_detected prevents immediate re-fire, so we use
+     * AlertRegistry.clearAll() between phases to isolate the stale-window assertion.
+     */
+    private suspend fun runP6T6StaleDataSuppression() {
+        AlertRegistry.clearAll()
+
+        // Step 1: Establish dunk detection works
+        Log.i(TAG, "[P6-T6] Step 1: fill ring with baseline (1013 hPa)")
+        repeat(6) {
+            emitPressureSample(1013.0f)
+            delay(400L)
+        }
+        Log.i(TAG, "[P6-T6] Step 1: emit dunk trigger (1020 hPa)")
+        var dunkFireTime: Long? = null
+        val step1Start = System.currentTimeMillis()
+        repeat(10) {
+            emitPressureSample(1020.0f)
+            if (dunkFireTime == null && AlertRegistry.allActive().any { it.ruleId == "pressure_dunk_detected" }) {
+                dunkFireTime = System.currentTimeMillis()
+            }
+            delay(500L)
+        }
+        val step1Ok = dunkFireTime != null
+        if (!step1Ok) {
+            val snap = CepProvider.getOrCreateEngine(applicationContext).pressureFeatureSnapshot()
+            Log.i("CEP", "[P6-T6] Step 1 FAIL dunk_baseline fired=never SNAPSHOT=$snap")
+        } else {
+            Log.i("CEP", "[P6-T6] Step 1 PASS dunk_baseline fired=${dunkFireTime!! - step1Start}ms")
+        }
+        AlertRegistry.clearAll()
+
+        // Step 2: Pause pressure emissions for 35 s
+        Log.i(TAG, "[P6-T6] Step 2: pausing pressure for 35 s (max_age_sec=30 → features go stale)")
+        delay(35_000L)
+
+        // Step 3: During (now after) stale period, verify no alerts fired from residual ring state
+        val staleAlerts = AlertRegistry.allActive().filter { it.ruleId.startsWith("pressure_") }
+        val step3Pass = staleAlerts.isEmpty()
+        Log.i("CEP", "[P6-T6] Step 3 ${if (step3Pass) "PASS" else "FAIL"} stale_window_alerts=${staleAlerts.map { it.ruleId }}")
+
+        // Step 4: Resume emissions at normal baseline — features should recover
+        Log.i(TAG, "[P6-T6] Step 4: resuming at 1013 hPa — features should recover")
+        repeat(12) {
+            emitPressureSample(1013.0f)
+            delay(400L)
+        }
+        Log.i("CEP", "[P6-T6] SUMMARY max_age_sec_guard: step1=${if (step1Ok) "PASS" else "FAIL"} step3=${if (step3Pass) "PASS" else "FAIL"}")
         AlertRegistry.clearAll()
     }
 

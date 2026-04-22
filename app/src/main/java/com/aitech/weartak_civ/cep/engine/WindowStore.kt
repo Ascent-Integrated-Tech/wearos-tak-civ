@@ -8,6 +8,7 @@ import com.aitech.weartak_civ.cep.model.payloads.*
 import com.aitech.weartak_civ.cep.util.TimedArrayRing
 import com.aitech.weartak_civ.cep.util.TimedDoubleRing
 import com.aitech.weartak_civ.cep.util.MathOps
+import com.aitech.weartak_civ.cep.util.Stats
 
 /**
  * Stores ingested sensor samples in per-channel ring buffers and exposes
@@ -180,6 +181,15 @@ class WindowStore(private val ringConfig: RingConfig) {
                     fs.put("als.covered", it, tsMs)
                 }
             }
+
+            // ---- PressurePayload (Topics.PRESSURE) ----
+            is PressurePayload -> {
+                val ring = num.getOrPut(Topics.PRESSURE) { TimedDoubleRing(numCap()) }
+                ring.add(p.hpa.toDouble(), tsMs)
+                fs.put(Topics.PRESSURE, p.hpa.toDouble(), tsMs)
+                fs.put("pressure.accuracy", p.accuracy.toDouble(), tsMs)
+                //Log.d("CEP_P6", "[INGEST] hpa=${p.hpa} ts=$tsMs ringSize=${ring.size}")
+            }
         }
     }
 
@@ -312,5 +322,142 @@ class WindowStore(private val ringConfig: RingConfig) {
         // Phase 2: time-based horizon lookup
         val back = ring.getByTime(def.horizonSec * 1000L, tsMs) ?: return
         fs.putDerived(def.id, now - back, tsMs)
+    }
+
+    // ── Sample-count feature compute (signal-agnostic) ────────────────────────
+
+    /**
+     * Rolling aggregate over the last [def.sampleCount] samples by insertion order.
+     *
+     * Suppressed when:
+     *  - the ring for [def.source] has not been populated yet
+     *  - fewer than [def.minSamples] samples are available
+     *  - [def.maxAgeSec] is set and the newest sample is older than that threshold
+     *
+     * Supported ops: avg, min, max, rms, median, stddev, variance
+     */
+
+    /** Test-only: drop the numeric ring for [topic] so the next ingest starts from an empty buffer. */
+    fun clearRing(topic: String) { num.remove(topic) }
+
+    fun computeSampleWindow(def: FeatureDef.SampleWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        //val isPressure = def.source == Topics.PRESSURE
+        val ring = num[def.source] ?: run {
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
+            return
+        }
+
+        // Freshness guard: newest sample must be within maxAgeSec of now
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: run {
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
+                return
+            }
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) {
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
+                return
+            }
+        }
+
+        val window = ring.tailByCount(def.sampleCount)
+        if (window.size < def.minSamples) {
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=insufficient have=${window.size} need=${def.minSamples} ringSize=${ring.size}")
+            return
+        }
+
+        val v: Double? = when (def.op) {
+            avg        -> window.average()
+            min        -> window.minOrNull()
+            max        -> window.maxOrNull()
+            rms        -> MathOps.rms(window)
+            median     -> window.sorted().let { s -> s[s.size / 2] }
+            "stddev"   -> Stats.std(window)
+            "variance" -> Stats.std(window)?.let { s -> s * s }
+            else       -> null
+        }
+        v?.let {
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} value=$it")
+            fs.putDerived(def.id, it, tsMs)
+        }
+    }
+
+    /**
+     * Sample-count delta: (newest sample) − (sample [def.horizonSamples] positions back).
+     *
+     * Position 0 is the most-recently inserted sample; position [horizonSamples] is
+     * [horizonSamples] samples older.  Writes nothing if insufficient history.
+     */
+    fun computeSampleDelta(def: FeatureDef.SampleDelta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        //val isPressure = def.source == Topics.PRESSURE
+        val ring = num[def.source] ?: run {
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
+            return
+        }
+
+        // Freshness guard on the newest sample
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: run {
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
+                return
+            }
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) {
+                //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
+                return
+            }
+        }
+
+        val now  = ring.getByCount(0) ?: run {
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_newest ringSize=${ring.size}")
+            return
+        }
+        val back = ring.getByCount(def.horizonSamples) ?: run {
+            //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_back ringSize=${ring.size} need=${def.horizonSamples + 1}")
+            return
+        }
+        val delta = now - back
+        //if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} now=$now back=$back delta=$delta")
+        fs.putDerived(def.id, delta, tsMs)
+    }
+
+    /**
+     * Sample-count slope via least-squares regression over [def.sampleCount] recent samples.
+     *
+     * Real sensor timestamps serve as the x-axis (converted to seconds) so the slope is
+     * in signal-units/second (or /minute when [def.unitsPerSec] = "per_minute").
+     *
+     * Suppressed when:
+     *  - fewer than 2 samples exist
+     *  - timestamp span of the window is < MIN_SLOPE_SPAN_MS (guards against ÷0 near-singularity
+     *    when multiple samples share the same millisecond timestamp)
+     *  - [def.maxAgeSec] freshness check fails
+     */
+    fun computeSampleSlope(def: FeatureDef.SampleSlope, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        val ring = num[def.source] ?: return
+
+        // Freshness guard
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: return
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) return
+        }
+
+        val pairs = ring.tailByCountPairs(def.sampleCount)
+        if (pairs.size < 2) return
+
+        // Guard against near-zero time span (e.g. high-frequency replay with synthetic clocks)
+        val span = pairs.last().first - pairs.first().first
+        if (span < MIN_SLOPE_SPAN_MS) return
+
+        val t0 = pairs.first().first
+        val xs = DoubleArray(pairs.size) { i -> (pairs[i].first - t0) / 1000.0 }
+        val ys = DoubleArray(pairs.size) { i -> pairs[i].second }
+
+        val slopePerSec = MathOps.lsqSlopeXY(xs, ys) ?: return
+        val slope = if (def.unitsPerSec == "per_minute") slopePerSec * 60.0 else slopePerSec
+        fs.putDerived(def.id, slope, tsMs)
+    }
+
+    companion object {
+        /** Minimum timestamp span (ms) required to compute a valid sample-count slope. */
+        private const val MIN_SLOPE_SPAN_MS = 10L
     }
 }

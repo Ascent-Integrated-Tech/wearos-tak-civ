@@ -62,7 +62,8 @@ class ArrayRing(private val cap: Int) {
 class TimedDoubleRing(private val cap: Int) {
     private val values = DoubleArray(cap)
     private val times  = LongArray(cap)
-    private var size = 0
+    var size = 0
+        private set
     private var head = 0
 
     fun add(v: Double, tsMs: Long) {
@@ -118,6 +119,49 @@ class TimedDoubleRing(private val cap: Int) {
             if (times[idx] <= target) return values[idx]
         }
         return null
+    }
+
+    // ── Sample-count accessors (for SampleWindow / SampleDelta / SampleSlope) ──
+
+    /**
+     * Returns the [n] most-recently inserted samples in chronological order
+     * (oldest-first).  If fewer than [n] samples exist, returns all of them.
+     */
+    fun tailByCount(n: Int): List<Double> {
+        val take = n.coerceAtMost(size)
+        val out = ArrayList<Double>(take)
+        for (i in 0 until take) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            out.add(values[idx])
+        }
+        out.reverse()
+        return out
+    }
+
+    /**
+     * Returns (tsMs, value) pairs for the [n] most-recently inserted samples
+     * in chronological order (oldest-first).
+     */
+    fun tailByCountPairs(n: Int): List<Pair<Long, Double>> {
+        val take = n.coerceAtMost(size)
+        val out = ArrayList<Pair<Long, Double>>(take)
+        for (i in 0 until take) {
+            val idx = Math.floorMod(head - 1 - i, cap)
+            out.add(Pair(times[idx], values[idx]))
+        }
+        out.reverse()
+        return out
+    }
+
+    /**
+     * Returns the value of the sample [k] positions back from the most-recently
+     * inserted sample (0 = newest, 1 = second-newest, …).
+     * Returns null if [k] is out of range.
+     */
+    fun getByCount(k: Int): Double? {
+        if (k < 0 || k >= size) return null
+        val idx = Math.floorMod(head - 1 - k, cap)
+        return values[idx]
     }
 }
 

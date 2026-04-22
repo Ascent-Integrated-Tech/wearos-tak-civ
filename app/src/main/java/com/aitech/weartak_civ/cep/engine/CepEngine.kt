@@ -10,6 +10,7 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
+import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
 import com.aitech.weartak_civ.data.DataRepository
@@ -48,6 +49,7 @@ class CepEngine(
         //Call this fn whenever the yob is changed
         updateHrProfile()
         updateHrrProfile()
+        updatePressureProfile()
         scope.launch { updateSustainOverrides() }
 
         // Subscribe to the bus (no emitters yet; safe)
@@ -64,11 +66,14 @@ class CepEngine(
                 while (isActive) {
                     try {
                         when (def) {
-                            is FeatureDef.Window      -> windows.computeWindow(def, featureStore)
-                            is FeatureDef.MultiWindow -> windows.computeMultiWindow(def, featureStore)
-                            is FeatureDef.SlopeMulti  -> windows.computeSlopeMulti(def, featureStore)
-                            is FeatureDef.Delta       -> windows.computeDelta(def, featureStore)
-                            is FeatureDef.Derived     -> DerivedEval.eval(def, featureStore)
+                            is FeatureDef.Window       -> windows.computeWindow(def, featureStore)
+                            is FeatureDef.MultiWindow  -> windows.computeMultiWindow(def, featureStore)
+                            is FeatureDef.SlopeMulti   -> windows.computeSlopeMulti(def, featureStore)
+                            is FeatureDef.Delta        -> windows.computeDelta(def, featureStore)
+                            is FeatureDef.Derived      -> DerivedEval.eval(def, featureStore)
+                            is FeatureDef.SampleWindow -> windows.computeSampleWindow(def, featureStore)
+                            is FeatureDef.SampleDelta  -> windows.computeSampleDelta(def, featureStore)
+                            is FeatureDef.SampleSlope  -> windows.computeSampleSlope(def, featureStore)
                         }
                     } catch (ex: Throwable) {
                         Log.e("CEP", "Feature compute failed for ${def.id} — isolated, engine continues", ex)
@@ -147,6 +152,95 @@ class CepEngine(
     }
 
     /**
+     * Load atmospheric-pressure alert thresholds from DataRepository into FeatureStore
+     * so derived features (features.pressure.above_high_threshold, below_low_threshold)
+     * can compare against them without hard-coding numeric values in the rules JSON.
+     *
+     * Call from start() and whenever the user changes pressure alert thresholds in settings.
+     */
+    fun updatePressureProfile() {
+        scope.launch {
+            try {
+                val highHpa = dataRepository.getHighAtmPressureAlertThreshold.first()
+                val lowHpa  = dataRepository.getLowAtmPressureAlertThreshold.first()
+                featureStore.put("thresholds.pressure.high", highHpa.toDouble())
+                featureStore.put("thresholds.pressure.low",  lowHpa.toDouble())
+
+                // Write user enable flags into FeatureStore so CEP rules can gate on them.
+                // Rules use gte_key on settings.pressure.* (1.0 = enabled, 0.0 = disabled).
+                val immersionOn = dataRepository.getEnableImmersionAlerts.first()
+                val lowAtmOn    = dataRepository.getEnableLowAtmPressureAlert.first()
+                val highAtmOn   = dataRepository.getEnableHighAtmPressureAlert.first()
+                featureStore.put("settings.pressure.immersion_alerts_enabled", if (immersionOn) 1.0 else 0.0)
+                featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
+                featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
+
+                clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn, immersionOn=immersionOn)
+
+                Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
+                            "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
+            } catch (t: Throwable) {
+                Log.e("CEP", "Failed to update pressure profile from DataRepository", t)
+            }
+        }
+    }
+
+    /**
+     * Test-only: write known threshold values directly into FeatureStore, bypassing the async
+     * DataRepository load.  Call before P6-T3 / P6-T4 / P6-T5 to make threshold-dependent
+     * derived features deterministic regardless of device DataStore state.
+     */
+    fun injectPressureThresholdsForTest(lowHpa: Double, highHpa: Double) {
+        featureStore.put("thresholds.pressure.high", highHpa)
+        featureStore.put("thresholds.pressure.low",  lowHpa)
+        Log.d("CEP", "[TEST] Injected pressure thresholds: low=$lowHpa high=$highHpa hPa")
+    }
+
+    /**
+     * Test-only: write the three pressure alert enable flags synchronously into FeatureStore,
+     * bypassing the async DataRepository load.  All P6 scenarios call this with all flags = true
+     * so the enable-flag gate in each pressure rule does not suppress test assertions.
+     */
+    fun injectPressureAlertFlagsForTest(immersion: Boolean = true, lowAtm: Boolean = true, highAtm: Boolean = true) {
+        featureStore.put("settings.pressure.immersion_alerts_enabled", if (immersion) 1.0 else 0.0)
+        featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtm)    1.0 else 0.0)
+        featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtm)   1.0 else 0.0)
+        Log.d("CEP", "[TEST] Injected pressure alert flags: immersion=$immersion lowAtm=$lowAtm highAtm=$highAtm")
+    }
+
+    /**
+     * Test-only: drop the pressure numeric ring and clear all pressure-derived keys from
+     * FeatureStore so each Phase 6 scenario starts from a completely clean state.
+     */
+
+    /** Test-only: snapshot all pressure-related FeatureStore keys for FAIL diagnostics. */
+    fun pressureFeatureSnapshot(): Map<String, Any?> = featureStore.snapshot(
+        listOf(
+            "pressure", "pressure.accuracy",
+            "thresholds.pressure.low", "thresholds.pressure.high",
+            "features.pressure.mean_n5", "features.pressure.delta_n5",
+            "features.pressure.delta_rapid_rise", "features.pressure.delta_shallow_rise",
+            "features.pressure.below_low_threshold", "features.pressure.above_high_threshold"
+        )
+    )
+
+    fun clearPressureStateForTest() {
+        windows.clearRing("pressure")
+        listOf(
+            "pressure", "pressure.accuracy",
+            "features.pressure.mean_n5",  "features.pressure.mean_n20",
+            "features.pressure.delta_n5", "features.pressure.slope_n20",
+            "features.pressure.submerge_rise",
+            "features.pressure.delta_rapid_rise", "features.pressure.delta_shallow_rise",
+            "features.pressure.above_high_threshold", "features.pressure.below_low_threshold"
+        ).forEach { featureStore.clear(it) }
+        // Note: settings.pressure.* flags are NOT cleared — they are injected by
+        // injectPressureAlertFlagsForTest() and must survive across the clear so the
+        // enable-gate conditions stay satisfied for the next scenario.
+        Log.d("CEP", "[TEST] Pressure ring and derived features cleared")
+    }
+
+    /**
      * Load sustain overrides from DataRepository and apply only for rules with allowSustainOverride.
      * Call after engine start and whenever UI/settings save overrides (mirror updateHrProfile pattern).
      */
@@ -175,6 +269,49 @@ class CepEngine(
 
     // Note: computeFeaturesSafely() was removed in Phase 3.
     // Feature compute is now done by per-feature coroutines launched in start().
+
+    private suspend fun clearActiveAlertByRuleId(ruleId: String, reason: String? = null): Boolean {
+        val alert = AlertRegistry.get(ruleId) ?: return false
+
+        if (alert.priority == 1) {
+            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+        } else {
+            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
+        }
+        AlertRegistry.clear(ruleId)
+        dataRepository.addAlertClearedEventCep(alert.uid)
+        Log.i("CEP", "Cleared active alert for rule=$ruleId reason=${reason ?: "unspecified"} uid=${alert.uid}")
+        return true
+    }
+
+    private suspend fun clearDisabledPressureAlerts(lowAtmOn: Boolean, highAtmOn: Boolean, immersionOn: Boolean) {
+        if (!lowAtmOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_low_atm",
+                reason = "settings.pressure.low_atm_alert_enabled=0"
+            )
+        }
+        if (!highAtmOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_high_atm",
+                reason = "settings.pressure.high_atm_alert_enabled=0"
+            )
+        }
+        if (!immersionOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_dunk_detected",
+                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
+            )
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_shallow_dunk",
+                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
+            )
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_submerge_detected",
+                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
+            )
+        }
+    }
 
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {
@@ -254,5 +391,4 @@ class CepEngine(
     }
 
 }
-
 
