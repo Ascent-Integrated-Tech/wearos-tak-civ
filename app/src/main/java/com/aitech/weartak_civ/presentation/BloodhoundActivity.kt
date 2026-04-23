@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
@@ -88,7 +89,7 @@ import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -146,7 +147,9 @@ class BloodhoundActivity  : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context)
+                    val settingsVm: WearTAKSettingsViewModel = viewModel()
+
+                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context, settingsVm)
                 }
             }
         }
@@ -173,7 +176,7 @@ class BloodhoundActivity  : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
+fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: WearTAKSettingsViewModel) {
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
@@ -184,9 +187,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
 
-    val bloodhoundEnabledLive by MainActivity.Constants
-        .enableBloodhoundCompassServiceSettingsState
-        .observeAsState()
+    val bloodhoundEnabledLive by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.bloodhoundUiCommands.collectLatest { command ->
@@ -214,7 +215,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
         Log.i(TAG, "isValid: $isValid, currentDest: $currentDestination, chatEnabledLive: $bloodhoundEnabledLive")
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
+                context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 exitActivity()
             }
             isValid && bloodhoundEnabledLive == true && currentDestination != "bloodhound_screen" -> {
@@ -259,7 +260,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
         composable(
             "invalid_license_screen") {
             LaunchedEffect(Unit) {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
+                context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 Log.i(TAG, "Launching Settings from invalid_license_screen")
                 exitActivity()   // <-- actually call it so the user returns to MainActivity
             }
@@ -342,7 +343,7 @@ fun BloodhoundScreen(
                 }
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
+                WearTAKBackButton(
                     onClick = {
                         exitActivity()
                         context.startActivity(Intent(context, MainActivity::class.java))
@@ -473,48 +474,56 @@ fun BloodhoundScreenDetailed(
         .ofPattern("HH:mm 'UTC'")
         .withZone(ZoneOffset.UTC)
         .format(Instant.ofEpochMilli(bhoundTimeReceived))
-
-    WearTakCivScreenDimensions(
+    //TODO: WEAR-450: Test this
+    WearTAKPageWithBackArrow(
+        title = bhoundTarget,
         columnContent = {
-            OrientationAware()
-            Text(
-                //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
-                text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
-                fontSize = 14.sp,
-                overflow = TextOverflow.Ellipsis,
-                color = if (bhoundBloodhounding) Color.White else Color.LightGray,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 10.dp)
-            )
-            DetailedBloodhoundInfo(
-                distance = bhoundDistance,
-                callsign = bhoundCallsign,
-                timeReceived = timeUtc,
-                orientation = bhoundOrientation
-            )
-            if (bhoundBloodhounding){
-                Button(
-                    onClick = {
+            item {
+                OrientationAware()
+            }
+            item {
+                Text(
+                    //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
+                    text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
+                    fontSize = 14.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (bhoundBloodhounding) Color.White else Color.LightGray,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+            }
+            item {
+                DetailedBloodhoundInfo(
+                    distance = bhoundDistance,
+                    callsign = bhoundCallsign,
+                    timeReceived = timeUtc,
+                    orientation = bhoundOrientation
+                )
+            }
+            item {
+                if (bhoundBloodhounding) {
+                    Button(
+                        onClick = {
 //                        bloodhoundDefaultList.removeAt(index)
-                        bhRepo.requestInPosition(item.uid)
+                            bhRepo.requestInPosition(item.uid)
 //                        activeBhoundItem.value = null
-                        requestBloodhoundComplicationUpdate(context)
-                    },
-                    modifier = Modifier.padding(top = 10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.primary,
-                        contentColor = Color.Black
-                    ),
-                ) {
-                    Text(
-                        text = stringResource(R.string.npos),
-                        fontSize = 15.sp,
-                        overflow = TextOverflow.Ellipsis,
-                        color = Color.Black,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                //TODO: WEAR-161: Add when chat backend is finished
+                            requestBloodhoundComplicationUpdate(context)
+                        },
+                        modifier = Modifier.padding(top = 10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.primary,
+                            contentColor = Color.Black
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.npos),
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            color = Color.Black,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    //TODO: WEAR-161: Add when chat backend is finished
 //            Button(
 //                onClick = {},
 //                modifier = Modifier.padding(top = 7.dp),
@@ -538,42 +547,40 @@ fun BloodhoundScreenDetailed(
 //                    fontWeight = FontWeight.SemiBold,
 //                )
 //            }
-            } else {
-                Button(
-                    onClick = {
+                } else {
+                    Button(
+                        onClick = {
 //                        activeBhoundItem.value = bloodhoundItem
 //                        setActiveBloodhound(index)
 
-                        bhRepo.requestActivateBloodhound(item.uid)
-                        requestBloodhoundComplicationUpdate(context)
+                            bhRepo.requestActivateBloodhound(item.uid)
+                            requestBloodhoundComplicationUpdate(context)
 //                        Log.d(TAG, bloodhoundDefaultList.toString())
-                        Log.i(TAG, "Requesting Ack and Activation of bloodhound")
-                    },
-                    modifier = Modifier.padding(top = 10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.primary,
-                        contentColor = Color.Black
-                    ),
-                ) {
-                    Text(
-                        text = stringResource(R.string.rgr),
-                        fontSize = 15.sp,
-                        overflow = TextOverflow.Ellipsis,
-                        color = Color.Black,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                            Log.i(TAG, "Requesting Ack and Activation of bloodhound")
+                        },
+                        modifier = Modifier.padding(top = 10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.primary,
+                            contentColor = Color.Black
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.rgr),
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            color = Color.Black,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         },
-        rowContent = {
-            BackButton(
-                onClick = {
-                    navController.navigate("bloodhound_screen") {
-                        popUpTo("bloodhound_screen") { inclusive = true }
-                    }
-                })
-        },
-        text = bhoundTarget
+        navController = navController,
+        exitFunction = {
+            navController.navigate("bloodhound_screen") {
+                popUpTo("bloodhound_screen") { inclusive = true }
+            }
+        }
     )
 }
 

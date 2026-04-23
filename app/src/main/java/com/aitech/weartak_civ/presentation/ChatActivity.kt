@@ -74,6 +74,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -98,9 +99,9 @@ import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
@@ -157,13 +158,16 @@ class ChatActivity : ComponentActivity() {
 
                     val callsign = intent.getStringExtra("user_callsign")
                     var fromMaps = intent.getBooleanExtra("from_maps", false)
+                    val settingsVm: WearTAKSettingsViewModel = viewModel()
+
                     ChatCivApp(
                         exitActivity = { finishAndRemoveTask() },
                         context = context,
                         initialRoomUid = intent.getStringExtra(EXTRA_OPEN_ROOM_UID),
                         uid = uid,
                         callsign = callsign,
-                        fromMaps = fromMaps
+                        fromMaps = fromMaps,
+                        settingsVm
                     )
                 }
             }
@@ -173,9 +177,9 @@ class ChatActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, uid: String?, callsign: String?, fromMaps: Boolean) {
+fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, uid: String?, callsign: String?, fromMaps: Boolean, settingsVm: WearTAKSettingsViewModel) {
     val navController = rememberSwipeDismissableNavController()
-    val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
+    val chatEnabledLive by settingsVm.savedEnableChatService.collectAsState()
     var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
     val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
@@ -249,7 +253,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         }
 
         composable("invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
             exitActivity()
         }
     }
@@ -312,7 +316,11 @@ fun ChatScreen(
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(onClick = { exitActivity(); context.startActivity(Intent(context, MainActivity::class.java)) })
+                WearTAKBackButton(
+                    onClick = {
+                        exitActivity(); context.startActivity(Intent(context, MainActivity::class.java))
+                    }
+                )
             }
         }
     }
@@ -520,11 +528,13 @@ fun ChatScreenDetailed(
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(onClick = {
-                    navController.navigate("chat_screen") {
-                        popUpTo("chat_screen") { inclusive = true }
+                WearTAKBackButton(
+                    onClick = {
+                        navController.navigate("chat_screen") {
+                            popUpTo("chat_screen") { inclusive = true }
+                        }
                     }
-                })
+                )
             }
         }
     }
@@ -583,113 +593,114 @@ fun TextSelectionScreen(
             )
         )
     }
-
-    WearTakCivScreenDimensions(
+//TODO: WEAR-450 test this
+    WearTAKPageWithConfirmCancel(
+        title = titleText,
         columnContent = {
-            Row(
-                modifier = Modifier.padding(bottom=5.dp),
-                verticalAlignment= Alignment.CenterVertically,
+            item {
+                Row(
+                    modifier = Modifier.padding(bottom = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                TextField(
-                    value = replyTextFieldValue,
-                    onValueChange = {
-                        replyTextFieldValue = it
-                    },
-                    placeholder = { Text("") },
-                    modifier = if (replyTextFieldValue.text.isEmpty()) {
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(.8F)
-                            .height(30.dp)
-                    } else {
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(.8F)
-                            .defaultMinSize(minHeight = 30.dp)
-                            .wrapContentHeight()
-                    },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.DarkGray,
-                        unfocusedContainerColor = Color.DarkGray,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        unfocusedTextColor = Color.White,
-                        focusedTextColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(50), // pill shape like Chip
-                    maxLines = 3,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                    )
-                Spacer(modifier = Modifier.width(5.dp))
-                IconButton(
-                    onClick = {
-                        if (replyTextFieldValue.text.isNotEmpty()) {
-                            val newText = replyTextFieldValue.text.dropLast(1)
-                            replyTextFieldValue = replyTextFieldValue.copy(
-                                text = newText,
-                                selection = TextRange(newText.length) // keep cursor at the end
-                            )
-                        }
-                    },
-                    modifier = Modifier
-                        .size(35.dp),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = Color.Black,
-                        containerColor = Color.Unspecified
-                    )
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.backspace),
-                        contentDescription = "Close icon",
-                        tint = colors.primary,
-                        modifier = Modifier.size(25.dp)
-                    )
-                }
-            }
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.height(100.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                items(buttonOptions) { replyOption ->
-                    Button(
-                        onClick = {  replyTextFieldValue = TextFieldValue(
-                            text = replyTextFieldValue.text + " " + replyOption.longText,
-                            selection = TextRange((replyTextFieldValue.text +  " " + replyOption.longText).length)
-                        )},
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.DarkGray,
-                            contentColor = Color.White
+                    TextField(
+                        value = replyTextFieldValue,
+                        onValueChange = {
+                            replyTextFieldValue = it
+                        },
+                        placeholder = { Text("") },
+                        modifier = if (replyTextFieldValue.text.isEmpty()) {
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(.8F)
+                                .height(30.dp)
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(.8F)
+                                .defaultMinSize(minHeight = 30.dp)
+                                .wrapContentHeight()
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.DarkGray,
+                            unfocusedContainerColor = Color.DarkGray,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color.White
                         ),
-                        shape = RoundedCornerShape(size = 10.dp)
+                        shape = RoundedCornerShape(50), // pill shape like Chip
+                        maxLines = 3,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    IconButton(
+                        onClick = {
+                            if (replyTextFieldValue.text.isNotEmpty()) {
+                                val newText = replyTextFieldValue.text.dropLast(1)
+                                replyTextFieldValue = replyTextFieldValue.copy(
+                                    text = newText,
+                                    selection = TextRange(newText.length) // keep cursor at the end
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .size(35.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = Color.Black,
+                            containerColor = Color.Unspecified
+                        )
                     ) {
-                        Text(
-                            text = replyOption.longText,
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 10.sp,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                        Icon(
+                            painter = painterResource(R.drawable.backspace),
+                            contentDescription = "Close icon",
+                            tint = colors.primary,
+                            modifier = Modifier.size(25.dp)
                         )
                     }
+                }
+            }
+            item {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.height(100.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    items(buttonOptions) { replyOption ->
+                        Button(
+                            onClick = {
+                                replyTextFieldValue = TextFieldValue(
+                                    text = replyTextFieldValue.text + " " + replyOption.longText,
+                                    selection = TextRange((replyTextFieldValue.text + " " + replyOption.longText).length)
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.DarkGray,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(size = 10.dp)
+                        ) {
+                            Text(
+                                text = replyOption.longText,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
 
+                    }
                 }
             }
         },
-        rowContent = {
-            ConfirmCancelButtons(
-                onClickCancel = {
-                    onCancel()
-                },
-                onClickConfirm = {
-                    confirmedText.value = replyTextFieldValue.text
-                    onConfirm()
-                }
-            )
+        navController = navController,
+        onClickConfirm = {
+            confirmedText.value = replyTextFieldValue.text
+            onConfirm()
         },
-        text = titleText
+        onClickCancel = { onCancel() },
     )
 
 }

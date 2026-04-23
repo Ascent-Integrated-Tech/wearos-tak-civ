@@ -418,7 +418,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
 
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
+                context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 exitActivity()
             }
             isValid == true && currentDestination != "sos_screen" -> {
@@ -495,7 +495,7 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
         }
         composable(
             "invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
         }
     }
 }

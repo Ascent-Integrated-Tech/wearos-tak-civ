@@ -22,12 +22,12 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.bloodhoundActiveComplication
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
@@ -62,7 +62,8 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
             return createComplicationData(getString(R.string.loading), getString(R.string.callsign_loading), R.drawable.compass_1, R.drawable.new_item_indicator,"Loading", 0F)
         }
         return when (isLicenseValid()) {
-            true -> return when (enableBloodhoundCompassServiceSettingsState.value) {
+            //TODO: WEAR-450 see if this updates
+            true -> return when (enableBloodhoundCompassService) {
                 true -> return when (active != null) {
                     true -> createComplicationData(
                         text = activeDistanceText,

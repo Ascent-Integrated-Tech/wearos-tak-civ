@@ -124,12 +124,15 @@ import androidx.wear.compose.foundation.CurvedModifier
 import androidx.wear.compose.foundation.CurvedTextStyle
 import androidx.wear.compose.foundation.RevealValue
 import androidx.wear.compose.foundation.basicCurvedText
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.foundation.padding
 import androidx.wear.compose.foundation.rememberRevealState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.ExperimentalWearMaterialApi
 import androidx.wear.compose.material.Icon
+import androidx.wear.compose.material.PositionIndicator
+import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.SwipeToRevealChip
 import androidx.wear.compose.material.SwipeToRevealDefaults
 import androidx.wear.compose.material.SwipeToRevealPrimaryAction
@@ -140,7 +143,6 @@ import com.aitech.weartak_civ.data.DataRepository.MarkerCotType
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
-import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerRemarkSettingsState
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerTitleSettingsState
@@ -442,52 +444,56 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
                         )
                     ) {
                         Text(
-                            text = "View Dropped Markers",
+                            text = "Dropped Markers",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
                         )
                     }
-                    Button(
-                        modifier = Modifier.padding(7.dp),
-                        onClick = {
-                            Log.d(TAG, "View Received Markers clicked")
-                            navController.navigate("received_marker_screen")
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.DarkGray,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Text(
-                            text = "View Received Markers",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                    Row(
 
-
-                    //Currently back button, can change to cancel button or another long press if needed
-                    IconButton(
-                        onClick = { navController.navigate("marker_screen") {
-                            popUpTo(("marker_screen")) {
-                                inclusive = true
-                            }
-                        }},
-                        modifier = Modifier
-                            .size(60.dp)
-                            .border(1.dp, color = Color.Black, shape = CircleShape),
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = Color.Black,
-                            containerColor = Color.LightGray
-                        )
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = "Close icon",
-                            tint = Color.Black
-                        )
+                        //Currently back button, can change to cancel button or another long press if needed
+                        IconButton(
+                            onClick = {
+                                navController.navigate("marker_screen") {
+                                    popUpTo(("marker_screen")) {
+                                        inclusive = true
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .size(60.dp)
+                                .border(1.dp, color = Color.Black, shape = CircleShape),
+                            colors = IconButtonDefaults.iconButtonColors(
+                                contentColor = Color.Black,
+                                containerColor = Color.LightGray
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = "Close icon",
+                                tint = Color.Black
+                            )
+                        }
+//                        Button(
+//                            modifier = Modifier.padding(7.dp),
+//                            onClick = {
+//                                Log.d(TAG, "View Received Markers clicked")
+//                                navController.navigate("received_marker_screen")
+//                            },
+//                            colors = ButtonDefaults.buttonColors(
+//                                containerColor = Color.DarkGray,
+//                                contentColor = Color.White
+//                            )
+//                        ) {
+//                            Text(
+//                                text = "Received Markers",
+//                                fontSize = 13.sp,
+//                                fontWeight = FontWeight.SemiBold,
+//                                textAlign = TextAlign.Center
+//                            )
+//                        }
                     }
 
                     Button(
@@ -521,150 +527,110 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
 @Composable
 fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewModel, droppedMarkerListSetting: List<DataRepository.DroppedMarker>, shouldShowDialog: MutableState<Boolean>, shouldShowSuccess: MutableState<Boolean>) {
 
-    Log.d(Constants.TAG, "DropMarkerSetting called")
-    WearTakCivScreenDimensions(
-        columnContent = {
-            LazyColumn(modifier = Modifier
-                .height(200.dp),
-//                reverseLayout = true,
-                verticalArrangement = Arrangement.Top,
-                horizontalAlignment = Alignment.CenterHorizontally){
-                //TODO: Ideally have list in reverse order, but doing this causes UI to glitch right now
-                itemsIndexed(
-                    items = droppedMarkerListSetting,
-                    key = { _, droppedMarker -> droppedMarker.uid }
-                ){ index, droppedMarker ->
-                    SwipeableMarkerChip(
-                        droppedMarker.markerType.type,
-                        droppedMarker.title,
-                        droppedMarker.cotType,
-                        droppedMarker.enqueuedToBeSent,
-                        droppedMarker.timeDropped,
-                        onPrimaryActionClick = {
-                            Log.d(Constants.TAG, "Request clear for marker uid=${droppedMarker.uid}")
-                            CoroutineScope(Dispatchers.Main).launch {
-                                viewModel.requestClearSpecificMarker(droppedMarker.uid)
-                            }
-                        },
-                        onSecondaryActionClick = {
-                            navController.navigate("edit_marker_screen/$index")
-                        },
-                    )
-                }
-                if (droppedMarkerListSetting.isNotEmpty() && droppedMarkerListSetting.all { it.cotType != MarkerCotType.CLEAR }) {
-                    item {
-                        Chip(
-                            onClick = {
-                                shouldShowDialog.value = true
-                                shouldShowSuccess.value = false
-                            },
-                            label = {
-                                Text(
-                                    text = "Clear All Markers",
-                                    textAlign = TextAlign.Center,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            },
-                            colors = ChipDefaults.chipColors(
-                                backgroundColor = Color.Red,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier
-                                .padding(top = 10.dp)
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-        },
-        rowContent = {
-            BackButton(
-                onClick = {
-                    navController.navigate("long_press_marker_screen") {
-                        popUpTo(("long_press_marker_screen")) {
-                            inclusive = true
-                        }
-                    } },
-            )
-        },
-        "Clear Dropped Markers"
-    )
-}
+    Log.d(TAG, "DropMarkerSetting called")
 
-@Composable
-fun ReceivedMarkerSetting(
-    navController: NavController,
-    receivedMarkerListSetting: List<DataRepository.ReceivedMarker>
-) {
-    WearTakCivScreenDimensions(
-        columnContent = {
-            LazyColumn(
-                modifier = Modifier.height(200.dp),
-                verticalArrangement = Arrangement.Top,
-                horizontalAlignment = Alignment.CenterHorizontally
+    WearTAKCIVTheme {
+        val listState = rememberScalingLazyListState()
+        Scaffold(
+            positionIndicator = {
+                PositionIndicator(scalingLazyListState = listState)
+            }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.background)
+                    .padding(bottom = 16.dp, top = 15.dp)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                itemsIndexed(
-                    items = receivedMarkerListSetting,
-                    key = { _, receivedMarker -> receivedMarker.uid }
-                ) { index, receivedMarker ->
-                    Chip(
-                        onClick = { navController.navigate("received_marker_detail/$index") },
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.9f)
+                        .align(Alignment.TopCenter)
+                        .padding(bottom = 30.dp)
+                        .verticalScroll(rememberScrollState()),
 
-                        icon = {
-                            Icon(
-                                markerIconFromString(receivedMarker.markerType),
-                                contentDescription = "",
-                                tint = Color.Unspecified,
-                                modifier = Modifier.size(30.dp)
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Clear Dropped Markers",
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .padding(vertical = 10.dp, horizontal = 20.dp)
+                            .align(Alignment.CenterHorizontally)
+                    )
+                    LazyColumn(modifier = Modifier
+                        .height(200.dp),
+//                reverseLayout = true,
+                        verticalArrangement = Arrangement.Top,
+                        horizontalAlignment = Alignment.CenterHorizontally){
+                        //TODO: Ideally have list in reverse order, but doing this causes UI to glitch right now
+                        itemsIndexed(
+                            items = droppedMarkerListSetting,
+                            key = { _, droppedMarker -> droppedMarker.uid }
+                        ){ index, droppedMarker ->
+                            SwipeableMarkerChip(
+                                droppedMarker.markerType.type,
+                                droppedMarker.title,
+                                droppedMarker.cotType,
+                                droppedMarker.enqueuedToBeSent,
+                                droppedMarker.timeDropped,
+                                onPrimaryActionClick = {
+                                    Log.d(TAG, "Request clear for marker uid=${droppedMarker.uid}")
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        viewModel.requestClearSpecificMarker(droppedMarker.uid)
+                                    }
+                                },
+                                onSecondaryActionClick = {
+                                    navController.navigate("edit_marker_screen/$index")
+                                },
                             )
-                        },
-                        label = {
-                            Column {
-                                Text(
-                                    text = receivedMarker.title,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = markerTextFromString(receivedMarker.markerType),
-                                    maxLines = 1,
-                                    fontSize = 12.sp,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Normal
+                        }
+                        if (droppedMarkerListSetting.isNotEmpty() && droppedMarkerListSetting.all { it.cotType != MarkerCotType.CLEAR }) {
+                            item {
+                                Chip(
+                                    onClick = {
+                                        shouldShowDialog.value = true
+                                        shouldShowSuccess.value = false
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "Clear All Markers",
+                                            textAlign = TextAlign.Center,
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    },
+                                    colors = ChipDefaults.chipColors(
+                                        backgroundColor = Color.Red,
+                                        contentColor = Color.White
+                                    ),
+                                    modifier = Modifier
+                                        .padding(top = 10.dp)
                                 )
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 3.dp),
-                        colors = ChipDefaults.chipColors(
-                            backgroundColor = Color.DarkGray,
-                            contentColor = Color.White,
-                            secondaryContentColor = Color.LightGray
-                        )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+                Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                    WearTAKBackButton(
+                        onClick = {
+                            navController.navigate("long_press_marker_screen") {
+                                popUpTo(("long_press_marker_screen")) {
+                                    inclusive = true
+                                }
+                            } },
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(10.dp))
-        },
-        rowContent = {
-            BackButton(
-                onClick = {
-                    navController.navigate("long_press_marker_screen") {
-                        popUpTo("long_press_marker_screen") {
-                            inclusive = true
-                        }
-                    }
-                }
-            )
-        },
-        "Received Markers"
-    )
+        }
+    }
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -1428,7 +1394,7 @@ fun EditSelectedMarker(
                 )
             }
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
+                WearTAKBackButton(
                     onClick = {
                         exitActivity()
 //                        navController.popBackStack()
@@ -1534,7 +1500,7 @@ fun MarkerTitleRemarkSetting(
             placeholder = if (remarkOrTitle == "remark") "Enter a remark" else "Enter a title"
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-            ConfirmCancelButtons(
+            WearTAKConfirmCancelButtons(
                 onClickCancel = {
                     Log.i(TAG, "Title or Remark NOT saved")
                     navController.popBackStack()
@@ -1714,7 +1680,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
 
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
+                context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 exitActivity()
                 navController.navigate(actualStartDestination) {
 //                    popUpTo(0) { inclusive = true } // clears the back stack
@@ -2074,7 +2040,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                         }
                     }
                     Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                        BackButton(onClick = { exitActivity() })
+                        WearTAKBackButton(onClick = { exitActivity() })
                     }
                 }
             }
@@ -2294,7 +2260,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
         }
         composable(
             "invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
         }
     }
 }

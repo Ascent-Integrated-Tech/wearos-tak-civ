@@ -53,7 +53,6 @@ import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.ERR
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -1037,7 +1036,7 @@ class CompanionAppService : Service() {
         val storedTakServerList = repo.awaitTakServerList()
         // reflect the settings ui.
         takServerList = storedTakServerList
-        takServerListState.postValue(takServerList)
+//        takServerListState.postValue(takServerList)
 
         // 2) Store reporting interval
         val int = payload.reportIntSecs
@@ -1050,7 +1049,8 @@ class CompanionAppService : Service() {
 
         repo.storeCallsign(payload.callsign)
         callsign = payload.callsign
-        MainActivity.callsignSettingsState.postValue(callsign)
+        //TODO: WEAR-450 check this still works
+//        MainActivity.callsignSettingsState.postValue(callsign)
 
         // Only rename BT adapter when not actively connected
         if (connectedDevice == null) {
