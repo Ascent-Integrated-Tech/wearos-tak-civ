@@ -175,6 +175,8 @@ class CepEngine(
                 featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
                 featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
 
+                clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn)
+
                 Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
                             "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
             } catch (t: Throwable) {
@@ -268,6 +270,35 @@ class CepEngine(
     // Note: computeFeaturesSafely() was removed in Phase 3.
     // Feature compute is now done by per-feature coroutines launched in start().
 
+    private suspend fun clearActiveAlertByRuleId(ruleId: String, reason: String? = null): Boolean {
+        val alert = AlertRegistry.get(ruleId) ?: return false
+
+        if (alert.priority == 1) {
+            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+        } else {
+            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
+        }
+        AlertRegistry.clear(ruleId)
+        dataRepository.addAlertClearedEventCep(alert.uid)
+        Log.i("CEP", "Cleared active alert for rule=$ruleId reason=${reason ?: "unspecified"} uid=${alert.uid}")
+        return true
+    }
+
+    private suspend fun clearDisabledPressureAlerts(lowAtmOn: Boolean, highAtmOn: Boolean) {
+        if (!lowAtmOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_low_atm",
+                reason = "settings.pressure.low_atm_alert_enabled=0"
+            )
+        }
+        if (!highAtmOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_high_atm",
+                reason = "settings.pressure.high_atm_alert_enabled=0"
+            )
+        }
+    }
+
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {
         val now = System.currentTimeMillis()
@@ -346,5 +377,4 @@ class CepEngine(
     }
 
 }
-
 
