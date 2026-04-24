@@ -66,3 +66,12 @@
 
 # UniFFI generated bindings
 -keep class uniffi.** { *; }
+
+# Jackson optional Java desktop APIs
+-dontwarn java.beans.ConstructorProperties
+-dontwarn java.beans.Transient
+-dontwarn com.fasterxml.jackson.databind.ext.Java7SupportImpl
+
+# Apache Commons Lang optional MethodHandle support
+-dontwarn java.lang.invoke.MethodHandleProxies
+-dontwarn org.apache.commons.lang3.function.MethodInvokers

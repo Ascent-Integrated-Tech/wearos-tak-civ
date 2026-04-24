@@ -10,10 +10,13 @@ object CepBus {
 
     private const val TAG = "CepBus"
 
-    // Hot stream (producers will emit later from services)
+    // Hot stream (producers will emit later from services).
+    // Phase 4: buffer raised 256 → 1024 to handle native-rate sensor ingestion.
+    // Multiple sensors at SENSOR_DELAY_NORMAL (~5 Hz each) can burst ~50+ events/s;
+    // 1024 gives ~20 s of headroom before DROP_OLDEST kicks in.
     val events = MutableSharedFlow<CepEvent<out CepPayload>>(
         replay = 0,
-        extraBufferCapacity = 256,
+        extraBufferCapacity = 1024,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 

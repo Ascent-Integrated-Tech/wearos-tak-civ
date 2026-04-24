@@ -36,6 +36,8 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
         var wifiServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var wifiServerConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var wifiServerConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var wifiServerConnectedMulticastLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var wifiServerConnectedMulticastLocationDisabledComplicationData: SmallImageComplicationData? = null
         var wifiServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var wifiServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var bluetoothServerConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
@@ -150,6 +152,22 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
                     Log.d(TAG, "Creating new wifiServerConnectedLocationDisabledComplicationData")
                     wifiServerConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_server_connected_location_disabled), getString(R.string.wifi_server_connected_location_disabled))
                     return wifiServerConnectedLocationDisabledComplicationData
+                }
+            }
+            getString(R.string.wifi_server_connected_multicast_location_enabled) -> when (null != wifiServerConnectedMulticastLocationEnabledComplicationData) {
+                true -> wifiServerConnectedMulticastLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiServerConnectedMulticastLocationEnabledComplicationData")
+                    wifiServerConnectedMulticastLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_server_connected_multicast_location_enabled), getString(R.string.wifi_server_connected_multicast_location_enabled))
+                    return wifiServerConnectedMulticastLocationEnabledComplicationData
+                }
+            }
+            getString(R.string.wifi_server_connected_multicast_location_disabled) -> when (null != wifiServerConnectedMulticastLocationDisabledComplicationData) {
+                true -> wifiServerConnectedMulticastLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiServerConnectedMulticastLocationDisabledComplicationData")
+                    wifiServerConnectedMulticastLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_server_connected_multicast_location_disabled), getString(R.string.wifi_server_connected_multicast_location_disabled))
+                    return wifiServerConnectedMulticastLocationDisabledComplicationData
                 }
             }
             getString(R.string.wifi_server_disconnected_location_enabled) -> when (null != wifiServerDisconnectedLocationEnabledComplicationData) {

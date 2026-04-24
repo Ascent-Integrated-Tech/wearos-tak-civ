@@ -13,6 +13,7 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -84,6 +85,7 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.collections.List
 
@@ -318,9 +320,9 @@ fun SuccessDialogActivity(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = if (isAlerting.value == true)
-                                    "Alert will cancel when reconnected"
+                                    "Cancel Alert will be sent when reconnected"
                                 else
-                                    "Alert will send when reconnected",
+                                    "Alert will be sent when reconnected",
                         textAlign = TextAlign.Center,
                     )
 
@@ -347,6 +349,30 @@ fun manualAlertOrClearRequest(isAlerting: Boolean){
     }
 }
 
+@Composable
+private fun SuccessfulCotSentCheck(
+    shouldShowConfirm: MutableState<Boolean>,
+    anyEndpointConnected: Boolean?,
+    context: Context,
+    exitActivity: () -> Unit,
+    successBoolean: MutableState<Boolean>,
+    location: Location?,
+    locationChecked: Boolean,
+    dialog: @Composable () -> Unit,
+    successFunction: () -> Unit
+){
+    if (shouldShowConfirm.value) {
+        successBoolean.value = locationChecked && (anyEndpointConnected == true)
+        LaunchedEffect(Unit) {
+            delay(1000) // Delay for 5 seconds
+            shouldShowConfirm.value = false // Dismiss the dialog
+            exitActivity()
+            successFunction()
+//            context.startActivity(Intent(context, MainActivity::class.java))
+        }
+        dialog()
+    }
+}
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
@@ -366,6 +392,9 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+    LaunchedEffect(locationEnabled, anyEndpointConnected) {
+        successBoolean.value = locationEnabled && anyEndpointConnected
+    }
 
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
@@ -416,7 +445,8 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                 isAlertingLiveData,
                 {
                     successBoolean.value = (locationEnabled && (anyEndpointConnected || peatBtleActive))
-                    if (successBoolean.value) {manualAlertOrClearRequest(isAlertingLiveData.value ?: false)}
+                    Log.i(TAG, "successBoolean.value=${successBoolean}")
+                    manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
                 },
                 {exitActivity()}
             )

@@ -130,6 +130,7 @@
     <string name="view_chat">View Chat</string>
     <string name="rgr">RGR</string>
     <string name="npos">nPos</string>
+    <string name="m">m</string>
     <string name="km">km</string>
     <string name="bloodhounding">Bloodhounding</string>
     <string name="not_bloodhounding">Not Bloodhounding</string>
@@ -181,4 +182,19 @@
     <string name="low_atm_pressure_threshold">Low Pressure Threshold (hPa)</string>
     <string name="high_atm_pressure_alert">High Pressure Alert</string>
     <string name="high_atm_pressure_threshold">High Pressure Threshold (hPa)</string>
+    <string name="server_connected_multicast">Server Connected Multicast</string>
+    <string name="marker_stored_error_msg">Marker details stored and will be sent when connected and/or location is updated</string>
+    <string name="bloodhound_settings">Bloodhound Settings</string>
+    <string name="bloodhound_proximity_vibration">Bloodhound Proximity Vibration</string>
+    <string name="bloodhound_proximity_radius">Bloodhound Proximity Radius</string>
+    <string name="bloodhound_proximity_intensity">Bloodhound Proximity Intensity</string>
+    <string name="bloodhound_proximity_intensity_basic">Single Burst</string>
+    <string name="bloodhound_proximity_intensity_basic_desc">One set of three quick vibrations</string>
+    <string name="bloodhound_proximity_intensity_escalated">Triple Burst</string>
+    <string name="bloodhound_proximity_intensity_escalated_desc">Three sets of three quick vibrations</string>
+    <string name="bloodhound_proximity_intensity_persistent">Until In Position</string>
+    <string name="bloodhound_proximity_intensity_persistent_desc">Repeats until you click NPOS</string>
+	<string name="audio_detection_trigger_threshold">Trigger Threshold</string>
+    <string name="gunshot_trigger_threshold">Gunshot Trigger Threshold</string>
+    <string name="uas_trigger_threshold">UAS Trigger Threshold</string>
 </resources>

@@ -43,7 +43,10 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
@@ -59,6 +62,9 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
+import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_USER_WARNING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -119,9 +125,11 @@ import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
+import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.update
 import java.time.Year
 import java.util.EnumMap
@@ -359,12 +367,20 @@ class DataRepository(private val context: Context) {
             enable && (state == HailLicenseStates.VALID ||
                     state == HailLicenseStates.SOFT_EXPIRED)
         }
-        .distinctUntilChanged()
-        .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
+            .distinctUntilChanged()
+            .stateIn(repoScope, SharingStarted.Eagerly, /* initial */ false)
 
     // ======== ======== HAIL SECTION END ======== ==========
 
     // ======== ======== Multicast SECTION Start ======== ==========
+
+    private val _multicastPublisherRunning = MutableStateFlow<Boolean> (false)
+    val multicastPublisherRunning: StateFlow<Boolean> = _multicastPublisherRunning
+
+    fun setMulticastPublisherRunning(running: Boolean) {
+        _multicastPublisherRunning.value = running
+    }
+
     val multicastEnabled: StateFlow<Boolean?> =
         context.dataStore.data
             .map { prefs ->
@@ -437,6 +453,11 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /*
+     *  tracks the wifi connection state to start or stop multicasting.
+     */
+    var isWifiConnected = MutableStateFlow<Boolean>(false)
+
     // ======== ======== Multicast SECTION END ======== ==========
 
     val geofenceServiceEnabled: StateFlow<Boolean?> =
@@ -506,16 +527,71 @@ class DataRepository(private val context: Context) {
     private val _latestLocation = MutableStateFlow<Location?>(null)
     val latestLocation: StateFlow<Location?> = _latestLocation
 
+    private val _useGpsCogAsHeading = MutableStateFlow(false)
+    val useGpsCogAsHeading: StateFlow<Boolean> = _useGpsCogAsHeading
+
+    private val _magAzTrueDeg = MutableStateFlow<Double?>(null)
+    val magAzTrueDeg: StateFlow<Double?> = _magAzTrueDeg
+
+    fun setUseGpsCogAsHeading(enabled: Boolean) {
+        _useGpsCogAsHeading.value = enabled
+    }
+
+    fun updateMagAzimuthTrue(angleTrueDeg: Double?) {
+        _magAzTrueDeg.value = angleTrueDeg?.let(LocationVectorCalculator::normalize0to360)
+    }
+
+    val autoUseGps: StateFlow<Boolean> =
+        latestLocation
+            .map { loc -> loc != null && loc.hasSpeed() && loc.speed > 1.5f && loc.hasBearing() }
+            .stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val gpsCogTrueDeg: StateFlow<Double?> =
+        latestLocation
+            .map { loc ->
+                if (loc != null && loc.hasBearing() && loc.hasSpeed() && loc.speed > 1.5f) {
+                    LocationVectorCalculator.normalize0to360(loc.bearing.toDouble())
+                } else {
+                    null
+                }
+            }
+            .stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val useGpsHeadingFinal: StateFlow<Boolean> =
+        combine(useGpsCogAsHeading, autoUseGps) { manual, auto ->
+            if (manual) true else auto
+        }.stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val azimuthTrueDeg: StateFlow<Double?> =
+        combine(useGpsHeadingFinal, gpsCogTrueDeg, magAzTrueDeg) { useGps, gps, mag ->
+            LocationVectorCalculator.fuseHeading(
+                useGpsHeading = useGps,
+                gpsCogTrueDeg = gps,
+                magAzTrueDeg = mag
+            )
+        }.stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val azimuthTrueDegSmoothed: StateFlow<Double?> =
+        azimuthTrueDeg
+            .scan<Double?, Double?>(null) { prev, curr ->
+                when {
+                    prev == null -> curr
+                    curr == null -> null
+                    else -> LocationVectorCalculator.smoothAngle(prev, curr, alpha = 0.15)
+                }
+            }
+            .stateIn(repoScope, SharingStarted.WhileSubscribed(5_000), null)
+
     private val _latestBatteryPercentage = MutableStateFlow<Int?>(null)
     val latestBatteryPercentage: StateFlow<Int?> = _latestBatteryPercentage
     // TODO: Later move nonNullBatteryPercentage to ViewModel
     val nonNullBatteryPercentage: StateFlow<Int> = latestBatteryPercentage
-            .map { it ?: 100 }
-            .stateIn(
-                scope = repoScope,
-                started = SharingStarted.Eagerly,
-                initialValue = 100
-            )
+        .map { it ?: 100 }
+        .stateIn(
+            scope = repoScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 100
+        )
 
     private val _dockType = MutableStateFlow(BatteryService.DockType.NONE)
     val dockType: StateFlow<BatteryService.DockType> = _dockType
@@ -653,6 +729,36 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableBloodhoundCompassService(enableBloodhoundService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_BLOODHOUND_COMPASS_SERVICE] = enableBloodhoundService
+        }
+    }
+
+    val getEnableBloodhoundProximityVibration: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BLOODHOUND_PROXIMITY_VIBRATION] ?: DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
+    }
+
+    suspend fun storeEnableBloodhoundProximityVibration(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BLOODHOUND_PROXIMITY_VIBRATION] = enabled
+        }
+    }
+
+    val getBloodhoundProximityRadiusMeters: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[BLOODHOUND_PROXIMITY_RADIUS_METERS] ?: DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+    }
+
+    suspend fun storeBloodhoundProximityRadiusMeters(radiusMeters: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[BLOODHOUND_PROXIMITY_RADIUS_METERS] = radiusMeters
+        }
+    }
+
+    val getBloodhoundProximityIntensity: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[BLOODHOUND_PROXIMITY_INTENSITY] ?: DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+    }
+
+    suspend fun storeBloodhoundProximityIntensity(intensity: String) {
+        context.dataStore.edit { prefs ->
+            prefs[BLOODHOUND_PROXIMITY_INTENSITY] = intensity
         }
     }
 
@@ -883,18 +989,33 @@ class DataRepository(private val context: Context) {
     }
 
     data class MarkerSnapshot(
+        val cotType: MarkerCotType,
         val uid: String,
         val markerType: MarkerType,
         val title: String,
+        val remark: String,
         val iconSetPath: String?,
+        val enqueuedToBeSent: Boolean,
+        val waitingForUpdatedLocation: Boolean,
         val loc: LocationSnapshot?,
         val time: Utils.CotEventTimeSnapshot,
         val physio: PhysioSnapshot?,
         val system: SystemSnapshot
     )
 
-    suspend fun snapshotMarker(req: MarkerDropRequest): MarkerSnapshot? {
-        val loc = snapshotLocation() ?: return null
+    suspend fun snapshotMarkerLocation(uid: String, lat: Double?, lon: Double?, timeMillis: Long): LocationSnapshot? {
+        return if (lat == null || lon == null) {
+            _droppedMarkerList.value.firstOrNull { it.uid == uid }?.location
+                ?: snapshotLocation()
+        } else {
+            LocationSnapshot(timeMillis = timeMillis, lat = lat, lon = lon,
+                hae = 0.0, ce = 0.0f, le = 0.0f, course = 0.0f, speed = 0.0f
+            )
+        }
+    }
+
+    suspend fun snapshotMarker(item: DroppedMarker): MarkerSnapshot {
+        val loc = item.location
         val timeSnapshot = Utils.getCotEventTimeSnapshot(
             startOffset = Utils.TimeOffset(),
             staleOffset = Utils.TimeOffset(years = 1)
@@ -904,10 +1025,14 @@ class DataRepository(private val context: Context) {
         val systemSnapshot = snapshotSystem()
 
         return MarkerSnapshot(
-            uid = req.uid.ifEmpty { UUID.randomUUID().toString() },
-            markerType = req.markerType,
-            title = req.title,
-            iconSetPath = req.markerType.icon,
+            cotType = item.cotType,
+            uid = item.uid.ifEmpty { UUID.randomUUID().toString() },
+            markerType = item.markerType,
+            title = item.title,
+            remark = item.remark,
+            iconSetPath = item.markerType.icon,
+            enqueuedToBeSent = item.enqueuedToBeSent,
+            waitingForUpdatedLocation = item.waitingForUpdatedLocation,
             loc = loc,
             time = timeSnapshot,
             physio = physioSnapshot,
@@ -1145,14 +1270,21 @@ class DataRepository(private val context: Context) {
         _clearPhysioAndAutoGenAlert.emit(ClearRequest.All)
     }
 
+    enum class MarkerCotType {
+        DROP, EDIT, CLEAR
+    }
 
     // Backend-only use for markers
     data class DroppedMarker(
+        val cotType: MarkerCotType,
         val uid: String,
-        val markerType: String,
+        val markerType: MarkerType,
         val title: String,
+        val remark: String,
         val timeDropped: Long,
-        val location: LocationSnapshot?
+        val location: LocationSnapshot?,
+        val enqueuedToBeSent: Boolean,
+        val waitingForUpdatedLocation: Boolean
     )
 
     data class ReceivedMarker(
@@ -1171,6 +1303,33 @@ class DataRepository(private val context: Context) {
     // Backend-only mutators (UI never calls these)
     suspend fun appendDroppedMarker(item: DroppedMarker) {
         _droppedMarkerList.emit(_droppedMarkerList.value + item)
+    }
+
+    suspend fun changeDroppedMarkerCotTypeStatusByUid(uid: String, cotType: MarkerCotType, enqueuedToBeSent: Boolean, waitingForUpdatedLocation: Boolean) {
+        val updatedMarkers = _droppedMarkerList.value.map {
+            if (it.uid == uid) {
+                it.copy(cotType = cotType, enqueuedToBeSent = enqueuedToBeSent, waitingForUpdatedLocation = waitingForUpdatedLocation)
+            } else { it }
+        }
+        _droppedMarkerList.emit(updatedMarkers)
+    }
+
+    suspend fun changeDroppedMarkerLocationByUid(uid: String, location: LocationSnapshot?) {
+        val updatedMarkers = _droppedMarkerList.value.map {
+            if (it.uid == uid) {
+                it.copy(location = location)
+            } else { it }
+        }
+        _droppedMarkerList.emit(updatedMarkers)
+    }
+
+    suspend fun changeDroppedMarkerCotTypeByUid(uid: String, cotType: MarkerCotType) {
+        val updatedMarkers = _droppedMarkerList.value.map {
+            if (it.uid == uid) {
+                it.copy(cotType = cotType)
+            } else { it }
+        }
+        _droppedMarkerList.emit(updatedMarkers)
     }
 
     suspend fun removeMarkerByUid(uid: String) {
@@ -1259,14 +1418,19 @@ class DataRepository(private val context: Context) {
     data class MarkerDropRequest(
         val markerType: MarkerType,
         val title: String,
+        val remark: String,
         val timeMillis: Long,
-        val uid: String = ""
+        val uid: String = "",
+        val lat: Double? = null,
+        val lon: Double? = null
     )
 
     data class MarkerEditRequest(
         val uid: String,
         val markerType: MarkerType,
         val title: String,
+        val remark: String,
+        val updateLocation: Boolean = false,
         val timeMillis: Long
     )
 
@@ -1280,12 +1444,9 @@ class DataRepository(private val context: Context) {
     val clearMarkerRequests: SharedFlow<ClearRequest> = _clearMarkerRequests
 
     // UI-facing API
-    suspend fun requestMarkerDrop(markerType: MarkerType, remark: String, timeMillis: Long) =
-        _markerDropRequests.emit(MarkerDropRequest(markerType, remark, timeMillis))
-
-    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, timeMillis: Long): Boolean {
+    suspend fun requestMarkerDrop(markerTypeRaw: String, title: String, remark: String, timeMillis: Long, lat: Double? = null, lon: Double? = null): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _markerDropRequests.emit(MarkerDropRequest(parsed, title, timeMillis))
+        _markerDropRequests.emit(MarkerDropRequest(parsed, title, remark, timeMillis, lat = lat, lon = lon))
         return true
     }
 
@@ -1294,33 +1455,65 @@ class DataRepository(private val context: Context) {
         var updatedMarker: DroppedMarker? = null
         _droppedMarkerList.update { list ->
             list.map { marker ->
-                if (marker.uid == uid) {
-                    marker.copy(location = loc).also { updatedMarker = it }
+                if ((marker.uid == uid) && (marker.cotType != MarkerCotType.CLEAR)) {
+                    marker.copy(cotType = MarkerCotType.EDIT, location = loc, enqueuedToBeSent = true, waitingForUpdatedLocation = true).also { updatedMarker = it }
                 } else {
                     marker
                 }
             }
         }
-        emitMarkerEditRequest(updatedMarker)
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
     }
 
     fun requestChangeMarkerTitle(uid: String, title: String) {
         var updatedMarker: DroppedMarker? = null
         _droppedMarkerList.update { list ->
             list.map { marker ->
-                if (marker.uid == uid) {
-                    marker.copy(title = title).also { updatedMarker = it }
+                if ((marker.uid == uid) && (marker.cotType != MarkerCotType.CLEAR)) {
+                    marker.copy(cotType = MarkerCotType.EDIT, enqueuedToBeSent = true, title = title).also { updatedMarker = it }
                 } else {
                     marker
                 }
             }
         }
-        emitMarkerEditRequest(updatedMarker)
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
+    }
+
+    fun requestChangeMarkerRemark(uid: String, remark: String) {
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) {
+                    if (marker.cotType != MarkerCotType.CLEAR) {
+                        marker.copy(cotType = MarkerCotType.EDIT, enqueuedToBeSent = true, remark = remark).also { updatedMarker = it }
+                    } else { marker }
+                } else {
+                    marker
+                }
+            }
+        }
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
+    }
+
+    fun requestChangeMarkerType(uid: String, type: MarkerType) {
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid) {
+                    if (marker.cotType != MarkerCotType.CLEAR) {
+                        marker.copy(cotType = MarkerCotType.EDIT, enqueuedToBeSent = true, markerType = type).also { updatedMarker = it }
+                    } else { marker }
+                } else {
+                    marker
+                }
+            }
+        }
+        if (null != updatedMarker) emitMarkerEditRequest(updatedMarker)
     }
 
     private fun emitMarkerEditRequest(marker: DroppedMarker?) {
         if (marker == null) return
-        val markerType = MarkerType.parse(marker.markerType)
+        val markerType = MarkerType.parse(marker.markerType.type)
         if (markerType == null) {
             Log.w(TAG, "Skipping marker edit send request, unknown marker type: ${marker.markerType}")
             return
@@ -1331,6 +1524,8 @@ class DataRepository(private val context: Context) {
                 uid = marker.uid,
                 markerType = markerType,
                 title = marker.title,
+                remark = marker.remark,
+                updateLocation = marker.waitingForUpdatedLocation,
                 timeMillis = System.currentTimeMillis()
             )
         )
@@ -1765,6 +1960,36 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getOnnxGunshotTriggerThresholdPercent: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT] ?: DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+    }
+
+    suspend fun storeOnnxGunshotTriggerThresholdPercent(thresholdPercent: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT] = thresholdPercent
+        }
+    }
+
+    val getEnableOnnxUasService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_ONNX_UAS_SERVICE] ?: DEFAULT_ENABLE_ONNX_UAS
+    }
+
+    suspend fun storeEnableOnnxUasService(enableOnnxUas: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_ONNX_UAS_SERVICE] = enableOnnxUas
+        }
+    }
+
+    val getOnnxUasTriggerThresholdPercent: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[ONNX_UAS_TRIGGER_THRESHOLD_PERCENT] ?: DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
+    }
+
+    suspend fun storeOnnxUasTriggerThresholdPercent(thresholdPercent: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[ONNX_UAS_TRIGGER_THRESHOLD_PERCENT] = thresholdPercent
+        }
+    }
+
     private val _almightyReportingIntervalSecs =
         MutableStateFlow(DEFAULT_CONSTANT_REPORTING_INTERVAL)
 
@@ -1782,11 +2007,6 @@ class DataRepository(private val context: Context) {
     suspend fun storeReportingUpdateInterval(reportingUpdateInterval: Int) {
         _reportingUpdateIntervalSecs.emit(reportingUpdateInterval)
     }
-
-    /*
-     *  tracks the wifi connection state to start or stop multicasting.
-     */
-    var isWifiConnected = MutableStateFlow<Boolean>(false)
 
     val getEnableWifiBatteryOptimization: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_WIFI_BATTERY_OPTIMIZATION] ?: DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
@@ -2040,7 +2260,7 @@ class DataRepository(private val context: Context) {
         _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
     }
 
-    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, SITX, PEAT_BTLE }
+    enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, SITX, MULTICAST, PEAT_BTLE }
 
     private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
     val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
@@ -2642,7 +2862,7 @@ class DataRepository(private val context: Context) {
     }
 
 
-//    private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
+    // private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     private val _physioAlertsFlow = MutableStateFlow<List<Utils.PhysioAlert>>(emptyList())
     val physioAlertsFlow: StateFlow<List<Utils.PhysioAlert>> = _physioAlertsFlow
 
@@ -3043,7 +3263,7 @@ class DataRepository(private val context: Context) {
 
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
-//        private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
+        // private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")
         private val TEAM = stringPreferencesKey("team")
         private val TEAM_NAMES = stringPreferencesKey("team_names")
@@ -3075,10 +3295,16 @@ class DataRepository(private val context: Context) {
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
         private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
+        private val ENABLE_ONNX_UAS_SERVICE = booleanPreferencesKey("enable_onnx_uas_service")
+        private val ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_gunshot_trigger_threshold_percent")
+        private val ONNX_UAS_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_uas_trigger_threshold_percent")
 
         private val ENABLE_GEOFENCE_SERVICE = booleanPreferencesKey("enable_geofence_service")
         private val ENABLE_BATTERY_ALERTS = booleanPreferencesKey("enable_battery_alerts")
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
+        private val ENABLE_BLOODHOUND_PROXIMITY_VIBRATION = booleanPreferencesKey("enable_bloodhound_proximity_vibration")
+        private val BLOODHOUND_PROXIMITY_RADIUS_METERS = intPreferencesKey("bloodhound_proximity_radius_meters")
+        private val BLOODHOUND_PROXIMITY_INTENSITY = stringPreferencesKey("bloodhound_proximity_intensity")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")
         private val ENABLE_WIFI_BATTERY_OPTIMIZATION = booleanPreferencesKey("enable_wifi_battery_optimization")

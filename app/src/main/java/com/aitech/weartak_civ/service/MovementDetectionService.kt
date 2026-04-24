@@ -24,8 +24,8 @@ import android.os.Looper
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,8 +42,6 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     // --- Data Layers ---
     private val repo by lazy { (applicationContext as WearTakApplication).repo as DataRepository }
-    private val bhRepo by lazy { (applicationContext as WearTakApplication).bhRepo as BloodhoundRepository }
-
     // --- WearTAK Service requirements: Binder / scope ---
     private val binder = MovementDetectionServiceBinder()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -183,7 +181,7 @@ class MovementDetectionService : Service(), SensorEventListener {
 
         // Magnetic azimuth (radians → degrees)
         var azimuthMagDeg = Math.toDegrees(orientation[0].toDouble())
-        azimuthMagDeg = normalize0to360(azimuthMagDeg)
+        azimuthMagDeg = LocationVectorCalculator.normalize0to360(azimuthMagDeg)
 
         // Add declination from latest location -> TRUE north
         val loc = repo.latestLocation.value
@@ -196,25 +194,14 @@ class MovementDetectionService : Service(), SensorEventListener {
             ).declination.toDouble()
         } else 0.0
 
-        val azimuthTrue = normalize0to360(azimuthMagDeg + declinationDeg)
+        val azimuthTrue = LocationVectorCalculator.normalize0to360(azimuthMagDeg + declinationDeg)
 
         // Smooth and publish at throttled rate
         val smoothed = lastAzimuthTrueDeg?.let {
-            smoothAngle(it, azimuthTrue, HEADING_SMOOTH_ALPHA)
+            LocationVectorCalculator.smoothAngle(it, azimuthTrue, HEADING_SMOOTH_ALPHA)
         } ?: azimuthTrue
         lastAzimuthTrueDeg = smoothed
-        bhRepo.updateMagAzimuthTrue(smoothed)
-    }
-    // --- Helpers ---
-
-    private fun normalize0to360(deg: Double): Double =
-        ((deg % 360.0) + 360.0) % 360.0
-
-    private fun smoothAngle(prevDeg: Double, newDeg: Double, alpha: Double): Double {
-        var delta = newDeg - prevDeg
-        if (delta > 180) delta -= 360.0
-        if (delta < -180) delta += 360.0
-        return normalize0to360(prevDeg + alpha * delta)
+        repo.updateMagAzimuthTrue(smoothed)
     }
 
     private var currentInterval = INTERVAL_STILL
@@ -224,7 +211,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         Log.d(TAG, "MovementDetectionService onDestroy()")
         isRunning.set(false)
         sensorManager.unregisterListener(this)
-        bhRepo.updateMagAzimuthTrue(null) // clear compass needle
+        repo.updateMagAzimuthTrue(null)
         scope.coroutineContext.cancel()
         stopForeground(STOP_FOREGROUND_DETACH)
     }

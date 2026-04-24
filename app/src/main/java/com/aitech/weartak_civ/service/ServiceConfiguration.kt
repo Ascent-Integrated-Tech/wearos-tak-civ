@@ -87,8 +87,14 @@ class ServiceConfiguration(
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
         ServiceType.GEOFENCE  -> dataRepository.getEnableGeofenceService.distinctUntilChanged()
         ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
-        ServiceType.AUDIO_CAP -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()  //TODO: if other audio
+        ServiceType.AUDIO_CAP -> combine(
+            dataRepository.getEnableOnnxGunshotService.distinctUntilChanged(),
+            dataRepository.getEnableOnnxUasService.distinctUntilChanged()
+        ) { gunshotOn, uasOn ->
+            gunshotOn || uasOn
+        }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
+        ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
@@ -97,8 +103,7 @@ class ServiceConfiguration(
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.CUST_ACCESS,
         ServiceType.BATTERY,
-            //TODO - ALERT SIMULATION: Uncomment to use
-//        ServiceType.CEP_SIMULATION,
+        ServiceType.CEP_SIMULATION,
 
 //        ServiceType.BATTERY_ALERTS -> dataRepository.getEnableBatteryAlerts.distinctUntilChanged()
         ServiceType.POWER_MGR -> flowOf(true).distinctUntilChanged()
@@ -168,6 +173,9 @@ class ServiceConfiguration(
         ServiceType.ONNX_GUNSHOT -> listOf(
             android.Manifest.permission.RECORD_AUDIO
         )
+        ServiceType.ONNX_UAS -> listOf(
+            android.Manifest.permission.RECORD_AUDIO
+        )
 
         ServiceType.SITX_SERVICE -> emptyList()
 
@@ -178,8 +186,7 @@ class ServiceConfiguration(
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.BATTERY,
         ServiceType.GEOFENCE,
-            //TODO - ALERT SIMULATION: Uncomment to use
-//        ServiceType.CEP_SIMULATION,
+        ServiceType.CEP_SIMULATION,
         ServiceType.POWER_MGR -> emptyList()
         ServiceType.COMPANION_APP -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)

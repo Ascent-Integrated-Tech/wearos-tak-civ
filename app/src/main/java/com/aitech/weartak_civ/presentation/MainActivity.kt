@@ -74,12 +74,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonColors
-import androidx.compose.material3.AlertDialog
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -132,6 +132,8 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
+import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
@@ -212,7 +214,10 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
@@ -227,6 +232,7 @@ import com.aitech.weartak_civ.DEFAULT_PEAT_CANNED_MESSAGE_TTL_SECONDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_SITX_SERVICE
@@ -277,8 +283,10 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
-import com.aitech.weartak_civ.data.OnnxRepository
+import com.aitech.weartak_civ.data.GunshotOnnxRepository
+import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
+import com.aitech.weartak_civ.presentation.audio.AudioDetectionPromptHost
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
@@ -300,6 +308,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
+import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import java.io.File
 
 
@@ -324,6 +334,12 @@ class MainActivity : ComponentActivity() {
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
         var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
+        var onnxGunshotTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT)
+        var onnxGunshotTriggerThresholdPercent : Int = DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
+        var enableOnnxUasServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_UAS)
+        var enableOnnxUasService : Boolean = DEFAULT_ENABLE_ONNX_UAS
+        var onnxUasTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT)
+        var onnxUasTriggerThresholdPercent : Int = DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
@@ -341,6 +357,12 @@ class MainActivity : ComponentActivity() {
         var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_COMPANION_APP_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
         var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE)
+        var enableBloodhoundProximityVibration: Boolean = DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
+        var enableBloodhoundProximityVibrationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION)
+        var bloodhoundProximityRadiusMeters: Int = DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+        var bloodhoundProximityRadiusMetersSettingsState = MutableLiveData<Int>(DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS)
+        var bloodhoundProximityIntensity: String = DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+        var bloodhoundProximityIntensitySettingsState = MutableLiveData<String>(DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY)
         var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE
         var enableChatServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_CHAT_SERVICE)
         var enableBatteryAlerts: Boolean = DEFAULT_ENABLE_BATTERY_ALERTS
@@ -640,11 +662,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val onnxRepo by lazy {
+    private val gunshotOnnxRepo by lazy {
         try {
-            (applicationContext as WearTakApplication).onnxRepo
+            (applicationContext as WearTakApplication).gunshotOnnxRepo
         } catch (_: Throwable) {
-            OnnxRepository(applicationContext)
+            GunshotOnnxRepository(applicationContext)
         }
     }
 
@@ -926,7 +948,13 @@ class MainActivity : ComponentActivity() {
             enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
             enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
+            enableBloodhoundProximityVibration = dataRepository.getEnableBloodhoundProximityVibration.first()
+            bloodhoundProximityRadiusMeters = dataRepository.getBloodhoundProximityRadiusMeters.first()
+            bloodhoundProximityIntensity = dataRepository.getBloodhoundProximityIntensity.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
+            onnxGunshotTriggerThresholdPercent = dataRepository.getOnnxGunshotTriggerThresholdPercent.first()
+            enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
+            onnxUasTriggerThresholdPercent = dataRepository.getOnnxUasTriggerThresholdPercent.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
             highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
@@ -1120,6 +1148,10 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Selected Physio Metric:", selectedPhysioMetric)}
                     ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Bloodhound:", enableBloodhoundCompassService.toString())}
+                    ${String.format("%-25s %-30s", "Enable Bloodhound Proximity Vibration:", enableBloodhoundProximityVibration.toString())}
+                    ${String.format("%-25s %-30s", "Bloodhound Proximity Radius (m):", bloodhoundProximityRadiusMeters.toString())}
+                    ${String.format("%-25s %-30s", "Bloodhound Proximity Vibration Intensity:", bloodhoundProximityIntensity)}
                     ${String.format("%-25s %-30s", "Enable Immersion Alerts:", enableImmersionAlerts.toString())}
                     ${String.format("%-25s %-30s", "Enable Low Atm Pressure Alert:", enableLowAtmPressureAlert.toString())}
                     ${String.format("%-25s %-30s", "Low Atm Pressure Alert Threshold (hPa):", lowAtmPressureAlertThreshold.toString())}
@@ -1396,8 +1428,14 @@ class MainActivity : ComponentActivity() {
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
         enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
+        enableBloodhoundProximityVibrationSettingsState.postValue(enableBloodhoundProximityVibration)
+        bloodhoundProximityRadiusMetersSettingsState.postValue(bloodhoundProximityRadiusMeters)
+        bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
 
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
+        onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
+        enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
+        onnxUasTriggerThresholdPercentSettingsState.postValue(onnxUasTriggerThresholdPercent)
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
         enableDittoServiceSettingsState.postValue(enableDittoService)
@@ -1780,6 +1818,9 @@ class MainActivity : ComponentActivity() {
         val enableChatServiceConfigUpdate =
             appRestrictions.getBoolean("chat_service_enabled", enableChatService)
         val enableBloodhoundCompassConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_compass", enableBloodhoundCompassService)
+        val enableBloodhoundProximityVibrationConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_proximity_vibration", enableBloodhoundProximityVibration)
+        val bloodhoundProximityRadiusMetersConfigUpdate = appRestrictions.getInt("bloodhound_proximity_radius_meters", bloodhoundProximityRadiusMeters)
+        val bloodhoundProximityIntensityConfigUpdate = appRestrictions.getString("bloodhound_proximity_intensity", bloodhoundProximityIntensity) ?: bloodhoundProximityIntensity
         val enableBleBeaconServiceConfigUpdate =
             appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
@@ -2164,6 +2205,9 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThresholdConfigUpdate)
             dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
             dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassConfigUpdate)
+            dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibrationConfigUpdate)
+            dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMetersConfigUpdate)
+            dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensityConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeEnableSitxService(enableSitxServiceConfigUpdate)
             dataRepository.storeEnableBatdokCot(enableBatdokCotConfigUpdate)
@@ -2325,6 +2369,27 @@ class MainActivity : ComponentActivity() {
                 enableBloodhoundCompassService = enableBloodhoundCompassConfigUpdate
                 Log.d(TAG, "enableBloodhoundCompassService=$enableBloodhoundCompassService")
                 if (!calledOnCreate) dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
+            }
+            if (enableBloodhoundProximityVibrationConfigUpdate != enableBloodhoundProximityVibration) {
+                enableBloodhoundProximityVibration = enableBloodhoundProximityVibrationConfigUpdate
+                Log.d(TAG, "enableBloodhoundProximityVibration=$enableBloodhoundProximityVibration")
+                if (!calledOnCreate) {
+                    dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibration)
+                }
+            }
+            if (bloodhoundProximityRadiusMetersConfigUpdate != bloodhoundProximityRadiusMeters) {
+                bloodhoundProximityRadiusMeters = bloodhoundProximityRadiusMetersConfigUpdate
+                Log.d(TAG, "bloodhoundProximityRadiusMeters=$bloodhoundProximityRadiusMeters")
+                if (!calledOnCreate) {
+                    dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMeters)
+                }
+            }
+            if (bloodhoundProximityIntensityConfigUpdate != bloodhoundProximityIntensity) {
+                bloodhoundProximityIntensity = bloodhoundProximityIntensityConfigUpdate
+                Log.d(TAG, "bloodhoundProximityIntensity=$bloodhoundProximityIntensity")
+                if (!calledOnCreate) {
+                    dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensity)
+                }
             }
             enableHailService = enableHailServiceConfigUpdate
             enableSitxService = enableSitxServiceConfigUpdate
@@ -2694,95 +2759,18 @@ fun MainScreen(
 
     // Get the repo for gunshots
     val context = LocalContext.current
-    val onnxRepo = remember(context.applicationContext) {
+    val gunshotOnnxRepo = remember(context.applicationContext) {
         try {
-            (context.applicationContext as WearTakApplication).onnxRepo
+            (context.applicationContext as WearTakApplication).gunshotOnnxRepo
         } catch (_: Throwable) {
-            OnnxRepository(context.applicationContext)
+            GunshotOnnxRepository(context.applicationContext)
         }
     }
-
-    val shouldShowGunshotDialog = remember { mutableStateOf(false) }
-    val pendingGunshot          = remember { mutableStateOf<OnnxRepository.OnnxGunshotEvent?>(null) }
-    val gunshotShownAtMs        = remember { mutableStateOf(0L) }
-    val uiReceivedAtEl = remember { mutableStateOf(0L) }
-
-    val GUNSHOT_PROMPT_TIMEOUT = 15_000L
-
-    // Collect Gunshot events from Onnx & trigger gunshot dialog.
-    LaunchedEffect(Unit) {
-        Log.i(TAG, "MainScreen: starting gunshotEvents collector")
-
-        onnxRepo.gunshotEvents.collect { event ->
-            val recvEl = SystemClock.elapsedRealtime()
-            uiReceivedAtEl.value = recvEl
-
-            Log.i(
-                TAG,
-                "GS_UI_RECEIVE uid=${event.uid} conf=${"%.4f".format(event.confidence)} " +
-                        "inferEndEl=${event.inferEndElapsedMs} uiRecvEl=$recvEl " +
-                        "inferToUiMs=${event.inferEndElapsedMs?.let { recvEl - it }}"
-            )
-
-            pendingGunshot.value = event
-            gunshotShownAtMs.value = SystemClock.elapsedRealtime()
-            shouldShowGunshotDialog.value = true
-
-            Utils.vibrateWatch(vibDurationMs = 150, numberOfVibes = 2, timeBtwnVibesMs = 120)
-        }
-    }
-
-    fun finishPrompt(
-        eventUid: String,
-        label: OnnxRepository.GunshotUserLabel
-    ) {
-        val event = pendingGunshot.value
-        if (event == null) {
-            Log.w(TAG, "GS_UI_FINISH uid=$eventUid label=$label ignored (no pending)")
-            return
-        }
-        if (event.uid != eventUid) {
-            Log.w(TAG, "GS_UI_FINISH uid=$eventUid label=$label ignored (pending=${event.uid})")
-            return
-        }
-
-        val nowEl = SystemClock.elapsedRealtime()
-        val nowWall = System.currentTimeMillis()
-        val latencyMs = nowEl - gunshotShownAtMs.value
-
-        Log.i(TAG, "GS_UI_FINISH uid=$eventUid label=$label uiLatencyMs=$latencyMs")
-
-        onnxRepo.tryEmitGunshotFeedback(
-            OnnxRepository.GunshotFeedback(
-                eventUid = eventUid,
-                label = label,
-                respondedAtMs = nowWall,
-                responseLatencyMs = nowEl - gunshotShownAtMs.value
-            )
-        )
-
-        shouldShowGunshotDialog.value = false
-        pendingGunshot.value = null
-    }
-
-    /* Start a Timeout for each Gunshot Dialog.
-    	•	If user answered → timeout does nothing
-	    •	If new gunshot event replaced old → timeout does nothing
-	    •	If user never answers → timeout triggers and is logged for that event
-	    •	Only the correct UID finishes
-     */
-    LaunchedEffect(pendingGunshot.value?.uid) {
-        val event = pendingGunshot.value ?: return@LaunchedEffect
-        val uid = event.uid
-
-        delay(GUNSHOT_PROMPT_TIMEOUT)
-
-        val stillSame =
-            shouldShowGunshotDialog.value &&
-                    pendingGunshot.value?.uid == uid
-
-        if (stillSame) {
-            finishPrompt(uid, OnnxRepository.GunshotUserLabel.TIMEOUT)
+    val uasRepo = remember(context.applicationContext) {
+        try {
+            (context.applicationContext as WearTakApplication).uasOnnxRepo
+        } catch (_: Throwable) {
+            UasOnnxRepository(context.applicationContext)
         }
     }
 
@@ -2973,92 +2961,24 @@ fun MainScreen(
                     }
                 )
 
+                AudioDetectionPromptHost(
+                    logTag = TAG,
+                    logPrefix = "GS",
+                    promptText = "Was that a gunshot?",
+                    events = gunshotOnnxRepo.gunshotEvents,
+                    emitFeedback = gunshotOnnxRepo::tryEmitGunshotFeedback
+                )
+
+                AudioDetectionPromptHost(
+                    logTag = TAG,
+                    logPrefix = "UAS",
+                    promptText = "Was that a UAS?",
+                    events = uasRepo.uasEvents,
+                    emitFeedback = uasRepo::tryEmitUasFeedback
+                )
             }
         }
     }
-
-    // Should we prompt the user about a gunshot event?
-    val lastDialogUid = remember { mutableStateOf<String?>(null) }
-
-    val event = pendingGunshot.value
-
-    if (shouldShowGunshotDialog.value && event != null) {
-
-        if (lastDialogUid.value != event.uid) {
-            lastDialogUid.value = event.uid
-            Log.i(
-                TAG,
-                "GS_UI_DIALOG_SHOW uid=${event.uid} " +
-                        "uiRecvToShowMs=${SystemClock.elapsedRealtime() - uiReceivedAtEl.value}"
-            )
-        }
-
-        GunshotFeedbackDialog(
-            shouldShowDialog = shouldShowGunshotDialog,
-            event = event,
-            onLabel = { label ->
-                finishPrompt(event.uid, label)
-            }
-        )
-    }
-}
-
-@Composable
-fun GunshotFeedbackDialog(
-    shouldShowDialog: MutableState<Boolean>,
-    event: OnnxRepository.OnnxGunshotEvent,
-    onLabel: (OnnxRepository.GunshotUserLabel) -> Unit
-) {
-    if (!shouldShowDialog.value) return
-
-    Log.i(TAG, "DIALOG_COMPOSE uid=${event.uid} show=${shouldShowDialog.value}")
-    val confPercent = kotlin.math.round(event.confidence * 100f)
-
-    AlertDialog(
-        containerColor = colors.background,
-        modifier = Modifier.fillMaxSize(),
-        onDismissRequest = {
-            onLabel(OnnxRepository.GunshotUserLabel.UNKNOWN)
-            shouldShowDialog.value = false
-        },
-        icon = {
-            Icon(
-                Icons.Default.Warning,
-                modifier = Modifier.size(25.dp),
-                contentDescription = null,
-                tint = Color.LightGray
-            )
-        },
-        text = {
-            Text(
-                "Was that a gunshot?\nScore: ${"%.0f".format(confPercent)}%",
-                textAlign = TextAlign.Center,
-                fontSize = 14.sp
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onLabel(OnnxRepository.GunshotUserLabel.YES)
-                    shouldShowDialog.value = false
-                },
-                modifier = Modifier.fillMaxWidth(0.45f),
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Green)
-            ) { Text("YES", color = Color.Black) }
-        },
-        dismissButton = {
-            Button(
-                onClick = {
-                    onLabel(OnnxRepository.GunshotUserLabel.NO)
-                    shouldShowDialog.value = false
-                },
-                modifier = Modifier.fillMaxWidth(0.45f),
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
-            ) { Text("NO") }
-        }
-    )
 }
 
 @Composable
@@ -3316,7 +3236,7 @@ fun HeartRate(context: Context) {
 }
 
 enum class Connectivity { CELL, WIFI, BLUETOOTH, AIRPLANE, NONE }
-enum class TakServer { CONNECTED, CONNECTING, DISCONNECTED }
+enum class TakServer { CONNECTED, CONNECTED_MULTICAST , CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     if (networkManager == null) return Connectivity.NONE
@@ -3338,16 +3258,18 @@ fun readConnectivity(networkManager: NetworkManager?): Connectivity {
 }
 
 fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
-    if ((takConnectService == null) && (enableSitxService == false)) {
+    if ((takConnectService == null) && (enableSitxService == false) && (enableMulticastOnWifi == false)) {
         return TakServer.DISCONNECTED
     }
 
     val connected = (TAKConnectService.isAnyTakConnectedLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED)
     val connecting = (TAKConnectService.isAnyTakConnectingLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTING)
+    val connectedMulticast = dataRepository.multicastPublisherRunning.value
 
     return when {
         connected -> TakServer.CONNECTED
         connecting -> TakServer.CONNECTING
+        connectedMulticast -> TakServer.CONNECTED_MULTICAST
         else -> TakServer.DISCONNECTED
     }
 }
@@ -3374,6 +3296,7 @@ fun buildComplicationString(
     val takLabel = when (effectiveTak) {
         TakServer.CONNECTED -> getString(context, R.string.server_connected)
         TakServer.CONNECTING -> getString(context, R.string.server_connecting)
+        TakServer.CONNECTED_MULTICAST -> getString(context, R.string.server_connected_multicast)
         TakServer.DISCONNECTED -> getString(context, R.string.server_disconnected)
     }
     val locLabel = if (locationEnabled) getString(context, R.string.location_enabled) else getString(context, R.string.location_disabled)
@@ -3428,6 +3351,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
 //        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
 //        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
         val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
+        val multicastConnected by dataRepository.multicastPublisherRunning.collectAsStateWithLifecycle()
         val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
 
         val painter = when {
@@ -3443,6 +3367,8 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
                     (sitxEvent is SitxServiceEvent.Authorized) ||
                     (sitxEvent is SitxServiceEvent.SocketStatus)) ->
                 painterResource(R.drawable.tak_server_connecting)
+
+            multicastConnected -> painterResource((R.drawable.multicast_connected))
 
             else ->
                 painterResource(R.drawable.tak_server_disconnected)
@@ -3552,7 +3478,6 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
                 .size(iconSizeSmall)
 
         )
-        Log.i("Iscellconnected", cellConnected.toString())
         requestStatusIconsComplicationUpdate(mainActivity.applicationContext)
     }
 }
@@ -3792,11 +3717,16 @@ fun bloodhoundActiveComplication(): Int {
 
 @Composable
 fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
-    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
-    val northBearing by bhRepo.azimuthTrueDegSmoothed.collectAsState()
+    val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
     val activeTarget = activeItem?.target ?: ""
+    val activeDistanceText = DistanceFormatter
+        .format(activeItem?.distance)
+        .text(
+            metersLabel = stringResource(R.string.m),
+            kilometersLabel = stringResource(R.string.km)
+        )
     val hasUnreadBloodhound by dataRepository.hasUnreadBloodhounds.collectAsState() // monitor the number of unread messages
 
     requestBloodhoundComplicationUpdate(context)
@@ -3837,8 +3767,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                 .align(Alignment.CenterVertically)
                 .size(35.dp)
                 .graphicsLayer {
-                    rotationZ =
-                        needleOrientation.toFloat()
+                    rotationZ = needleOrientation.toFloat()
                 }
         )
         Column (
@@ -3854,7 +3783,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                     )
 
                         Text(
-                            text = activeItem.distance.toString() + " km",
+                            text = activeDistanceText,
                             fontSize = 15.sp,
                             overflow = TextOverflow.Ellipsis,
                             fontWeight = FontWeight.SemiBold,
@@ -4219,5 +4148,3 @@ public fun Modifier.unswipeable() =
             state = DraggableState {}
         )
     )
-
-

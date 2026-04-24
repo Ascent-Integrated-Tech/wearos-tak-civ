@@ -20,7 +20,7 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.CotUtils.Point
 import com.aitech.weartak_civ.Utils.CotUtils.MarkerMapItem
 import com.aitech.weartak_civ.Utils.CotUtils.Link
-import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.provider.TargetVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,23 +42,12 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 class BloodhoundRepository(private val context: Context) {
     private val TAG = "WearTAK-" + BloodhoundRepository::class.java.simpleName
-    private val repo by lazy {
-        try {
-            (context as WearTakApplication).repo
-        } catch (_: Throwable) {
-            DataRepository(context)
-        }
-    }
-    data class VectorToTarget(
-        val distance: Double? = null,
-        val bearing: Double? = null
-    )
 
     data class BloodhoundItem(
         val bhEvent: BloodhoundEvent,
 
         // fields you want to update/react to in UI and service:
-        val vector: VectorToTarget = VectorToTarget(),
+        val vector: TargetVector = TargetVector(),
         val state: State = State(),
         val target: Target = Target(bhEvent.mapItem),
         val origin: Origin = Origin(bhEvent),
@@ -153,8 +142,7 @@ class BloodhoundRepository(private val context: Context) {
     // --- UI Adapter function
     //  - backend domain item -> frontend UI model item (Utils.BloodhoundItem)
     private fun BloodhoundItem.toUi(isActive: Boolean): Utils.BloodhoundItem {
-        val distKm = this.vector.distance
-        val distKmRounded = distKm?.round(2) ?: 0.0
+        val distKm = this.vector.distance ?: 0.0
         val needle = this.compass.targetBearingDeg ?: 0.0
 
 //        val eventMs = Utils.toMillis(bhEvent.timeIssued) ?: System.currentTimeMillis()
@@ -165,7 +153,7 @@ class BloodhoundRepository(private val context: Context) {
             uid = this.uid,
             callsign = this.originLabel ?: "Unknown sender",
             timeReceived = eventMs,
-            distance = distKmRounded,
+            distance = distKm,
             orientation = needle.round(1).toFloat(),
             bloodhounding = isActive,
             acknowledged = this.state.acknowledged
@@ -195,7 +183,7 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     // ---- API ----
-    fun updateBloodhoundItemVector(uid: String, vector: VectorToTarget) {
+    fun updateBloodhoundItemVector(uid: String, vector: TargetVector) {
         updateBloodhound(uid) { it.copy(vector = vector) }
     }
 
@@ -277,7 +265,6 @@ class BloodhoundRepository(private val context: Context) {
 
     fun remarkFromHoundmaster(uid: String) = _bloodhoundMap.value[uid]?.containsHoundmasterRemark ?: false
 
-
     fun updateBloodhoundCompassNeedle(uid: String, needleDeg: Double) {
         _bloodhoundMap.update { currentMap ->
             val item = currentMap[uid] ?: return@update currentMap  // nothing to change
@@ -308,76 +295,6 @@ class BloodhoundRepository(private val context: Context) {
     suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
         _bloodhoundEvent.emit(event)
     }
-
-    // ===== Compass section START =====
-
-    // --- Manual override: prefer GPS Course over Ground as heading instead of magnetometer?
-    private val _useGpsCogAsHeading = MutableStateFlow(false)
-    val useGpsCogAsHeading: StateFlow<Boolean> = _useGpsCogAsHeading
-    fun setUseGpsCogAsHeading(enabled: Boolean) { _useGpsCogAsHeading.value = enabled }
-
-    // --- Magnetometer TRUE azimuth (degrees). Origin: MovementDetectionService should pass TRUE (declination applied upstream)
-    private val _magAzTrueDeg = MutableStateFlow<Double?>(null)
-    val magAzTrueDeg: StateFlow<Double?> = _magAzTrueDeg
-    fun updateMagAzimuthTrue(angleTrueDeg: Double?) {
-        _magAzTrueDeg.value = angleTrueDeg?.let(::normalize0to360)
-    }
-
-    // --- Auto rule: when moving with valid COG, prefer GPS
-    val autoUseGps: StateFlow<Boolean> =
-        repo.latestLocation
-            .map { loc ->
-                loc != null && loc.hasSpeed() && loc.speed > 1.5f && loc.hasBearing()
-            }
-            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), false)
-
-    // --- GPS Course-Over-Ground heading (assumed TRUE degrees on Android GNSS; normalize just in case)
-    val gpsCogTrueDeg: StateFlow<Double?> =
-        repo.latestLocation
-            .map { loc ->
-                if (loc != null && loc.hasBearing() && loc.hasSpeed() && loc.speed > 1.5f)
-                    normalize0to360(loc.bearing.toDouble())
-                else null
-            }
-            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
-
-    // --- Final selection: manual override takes precedence; otherwise follow autoUseGps
-    private val useGpsFinal: StateFlow<Boolean> =
-        combine(useGpsCogAsHeading, autoUseGps) { manual, auto ->
-            if (manual) true else auto
-        }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), false)
-
-    // --- Fused azimuth (TRUE degrees)
-    val azimuthTrueDeg: StateFlow<Double?> =
-        combine(useGpsFinal, gpsCogTrueDeg, magAzTrueDeg) { useGps, gps, mag ->
-            val chosen = if (useGps) (gps ?: mag) else (mag ?: gps)
-            chosen?.let(::normalize0to360)
-        }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
-
-    // --- Optional: smoothed azimuth for UI
-    val azimuthTrueDegSmoothed: StateFlow<Double?> =
-        azimuthTrueDeg
-            .scan<Double?, Double?>(null) { prev, curr ->
-                when {
-                    prev == null -> curr
-                    curr == null -> null
-                    else -> smoothAngle(prev, curr, alpha = 0.15)
-                }
-            }
-            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
-
-    // --- Helper: wrap angle to [0, 360)
-    private fun normalize0to360(deg: Double): Double =
-        ((deg % 360.0) + 360.0) % 360.0
-
-    // --- Helper: smooth shortest-arc angle transition
-    private fun smoothAngle(prevDeg: Double, newDeg: Double, alpha: Double): Double {
-        var delta = newDeg - prevDeg
-        if (delta > 180) delta -= 360.0
-        if (delta < -180) delta += 360.0
-        return normalize0to360(prevDeg + alpha * delta)
-    }
-    // ===== Compass section END =====
 
     companion object {
         private val ENABLE = booleanPreferencesKey("enable_bloodhound_service")

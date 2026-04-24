@@ -8,6 +8,7 @@
  */
 package com.aitech.weartak_civ.presentation
 
+import android.content.Intent
 import androidx.compose.ui.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -16,16 +17,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -48,7 +55,6 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.TAG
@@ -75,7 +81,6 @@ import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.map.OrnamentOptions
 import org.maplibre.compose.material3.ScaleBar
 import org.maplibre.compose.style.BaseStyle
-
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -89,23 +94,52 @@ import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
-import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
+import com.aitech.weartak_civ.MARKER_FRIENDLY
+import com.aitech.weartak_civ.MARKER_HOSTILE
+import com.aitech.weartak_civ.MARKER_NEUTRAL
+import com.aitech.weartak_civ.MARKER_UNKNOWN
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import com.aitech.weartak_civ.Utils.latLonToMgrs
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.DataRepository.MarkerType
+import com.aitech.weartak_civ.events.LocationUpdateRequired
+import org.greenrobot.eventbus.EventBus
+import org.maplibre.android.style.expressions.Expression.switchCase
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
+import org.maplibre.compose.expressions.dsl.asBoolean
+import org.maplibre.compose.expressions.dsl.asNumber
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
-import org.maplibre.compose.expressions.dsl.feature
 import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
+import org.maplibre.compose.expressions.dsl.condition
 import org.maplibre.compose.expressions.dsl.offset
+import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
-import org.maplibre.compose.expressions.value.TextUnitOffsetValue
 
 class MapActivity : ComponentActivity() {
 
@@ -139,7 +173,7 @@ class MapActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
-                    MapApp(exitActivity = {finishAndRemoveTask() })
+                MapApp({finishAndRemoveTask()})
             }
         }
     }
@@ -150,13 +184,14 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
         FeatureCollection(
             features = markers.map { m ->
                 Feature(
-                    geometry = Point(coordinates = Position(m.lon, m.lat)),
+                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
                             "title" to JsonPrimitive(m.title),
-                            "markerType" to JsonPrimitive(m.markerType)
-                        )
+                            "markerType" to JsonPrimitive(m.markerType),
+                            "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
+                            "cotType" to JsonPrimitive(m.cotType.name))
                     )
                 )
             }
@@ -167,15 +202,33 @@ data class MapMarkerItem(
     val uid: String,
     val markerType: String,
     val title: String,
-    val lat: Double,
-    val lon: Double
+    val lat: Double?,
+    val lon: Double?,
+    val enQueuedToBeSent: Boolean,
+    val cotType: DataRepository.MarkerCotType
 )
-
+@Composable
+fun grayMarkerIconFromString(markerType: String): Painter {
+    val painter: Painter = when (markerType) {
+        MARKER_UNKNOWN -> painterResource(R.drawable.unknown_gray)
+        MarkerType.UNKNOWN.type -> painterResource(R.drawable.unknown_gray)
+        MARKER_FRIENDLY -> painterResource(R.drawable.friendly_gray)
+        MarkerType.FRIENDLY.type -> painterResource(R.drawable.friendly_gray)
+        MARKER_HOSTILE -> painterResource(R.drawable.hostile_gray)
+        MarkerType.HOSTILE.type -> painterResource(R.drawable.hostile_gray)
+        MARKER_NEUTRAL -> painterResource(R.drawable.neutral_gray)
+        MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral_gray)
+        "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
+        else ->  //TODO: Change to error icon
+            painterResource(R.drawable.unknown_gray)
+    }
+    return painter
+}
 @Composable
 fun MarkersOnMap(
     markers: List<MapMarkerItem>,
-    onMarkerClick: (id: String, title: String) -> Unit,
-    camera: CameraState
+    onMarkerClick: (id: String, title: String) -> Unit = { _, _ -> },
+    camera: CameraState,
 ) {
     if (markers.isEmpty()) return
     val fc = rememberMarkerFeatures(markers)
@@ -188,11 +241,26 @@ fun MarkersOnMap(
 
     typeGroups.forEach { (markerType, group) ->
         val iconRes = markerIconFromString(markerType)
+        val iconResGray = grayMarkerIconFromString(markerType)
         SymbolLayer(
-            id = "markers-$markerType",
+            id = group.first().uid,
             source = source,
             filter = eq(get("markerType").asString(),const(markerType), c),
-            iconImage = image(iconRes),
+            iconImage =
+                switch(
+                    condition(
+                        eq(get("cotType").asString(), const("CLEAR"), c),
+                        image(iconResGray)
+                    ),
+                    fallback = image(iconRes)
+                ),
+            iconOpacity = switch(
+                condition(
+                    get("enQueuedToBeSent").asBoolean(),
+                    const(.5F)
+                ),
+                fallback = const(1F)
+            ),
             iconAllowOverlap = const(true),
             iconIgnorePlacement = const(true),
             textAllowOverlap = const(true),
@@ -200,7 +268,7 @@ fun MarkersOnMap(
             onClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
                 onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
-                ClickResult.Consume
+                ClickResult.Pass
             },
             iconSize = const(1),
             textField = if (camera.position.zoom > 10.0) {
@@ -220,7 +288,8 @@ fun MarkersOnMap(
 }
 @Composable
 fun MapApp(exitActivity: () -> Unit) {
-        val locationFlow by dataRepository.latestLocation.collectAsState()
+    val context = LocalContext.current
+    val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
     val lat = locationFlow?.latitude ?: 0.0
     val lon = locationFlow?.longitude ?: 0.0
@@ -233,30 +302,57 @@ fun MapApp(exitActivity: () -> Unit) {
         )
     )
     val scope = rememberCoroutineScope()
+    val markerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val locationProvider = remember(scope) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
     val userLocationState = rememberUserLocationState(locationProvider)
+    var showPopup by remember { mutableStateOf(false) }
+    val projection = cameraState.projection
+    val puckScreenOffset: DpOffset? = remember(
+        locationFlow,
+        projection,
+        cameraState.position
+    ) {
+        val loc = locationFlow
+        val proj = projection
+
+        if (loc != null && proj != null) {
+            proj.screenLocationFromPosition(
+                Position(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude
+                )
+            )
+        } else {
+            null
+        }
+    }
     val droppedMarkerListSetting by dataRepository
         .droppedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val mapMarkers = remember(droppedMarkerListSetting, receivedMarkerListSetting) {
+    val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
-                droppedMarkerListSetting.mapNotNull { marker ->
-                    val location = marker.location ?: return@mapNotNull null
+                droppedMarkerListSetting.map { marker ->
                     MapMarkerItem(
                         uid = marker.uid,
-                        markerType = marker.markerType,
+                        markerType = marker.markerType.type,
                         title = marker.title,
-                        lat = location.lat,
-                        lon = location.lon
+                        lat = marker.location?.lat,
+                        lon = marker.location?.lon,
+                        marker.enqueuedToBeSent,
+                        marker.cotType
                     )
                 }
             )
+        }
+    }
+    val receivedMapMarkers = remember(receivedMarkerListSetting) {
+        buildList {
             addAll(
                 receivedMarkerListSetting.mapNotNull { marker ->
                     val location = marker.location ?: return@mapNotNull null
@@ -265,14 +361,37 @@ fun MapApp(exitActivity: () -> Unit) {
                         markerType = marker.markerType,
                         title = marker.title,
                         lat = location.lat,
-                        lon = location.lon
+                        lon = location.lon,
+                        false,
+                        //TODO: Is this okay to have here?
+                        DataRepository.MarkerCotType.DROP
+
                     )
                 }
             )
         }
     }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                Log.i(TAG, "MapApp Lifecycle.Event.ON_RESUME called")
+                EventBus.getDefault().post(LocationUpdateRequired())
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
+        var pointerOffset by remember { mutableStateOf<DpOffset?>(null) }
+        val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle()
+
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
             baseStyle = BaseStyle.Uri("asset://style.json"),
@@ -281,6 +400,39 @@ fun MapApp(exitActivity: () -> Unit) {
                 ornamentOptions = OrnamentOptions.AllDisabled,
                 gestureOptions = GestureOptions.RotationLocked),
             zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
+            onMapLongClick = { coordinates, offset ->
+                Utils.vibrateWatch(vibDurationMs = 100L, numberOfVibes = 1, timeBtwnVibesMs = 10L)
+                pointerOffset = offset
+                val time = System.currentTimeMillis()
+
+                Log.d(TAG, "LongClick Map before launch")
+                 markerScope.launch {
+                    try {
+                        Log.d(TAG, "LongClick coroutine started")
+                        Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
+
+                        dataRepository.requestMarkerDrop(
+                            MarkerActivity.markerType,
+                            "",
+                            "",
+                            time,
+                            lat = coordinates.latitude,
+                            lon = coordinates.longitude,
+                        )
+
+                        Log.d(TAG, "requestMarkerDrop finished")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "requestMarkerDrop failed", e)
+                    }
+                }
+//                if (!anyEndpointConnected) {
+//                    Toast.makeText(
+//                        mainActivity,
+//                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
+//                }
+                ClickResult.Pass
+            }
+
         ) {
             if (locationProvider.location.collectAsState().value != null) {
                 LocationPuck(
@@ -306,19 +458,74 @@ fun MapApp(exitActivity: () -> Unit) {
                                 "Brown" -> brown
                                 else -> Color.Unspecified
                             }
-                    )
+                    ),
+                    onClick = {
+                        scope.launch {
+                            val current = cameraState.position
+
+                            cameraState.animateTo(
+                                CameraPosition(
+                                    target = Position(
+                                        latitude = lat,
+                                        longitude = lon
+                                    ),
+                                    zoom = current.zoom,
+                                    bearing = current.bearing,
+                                    tilt = current.tilt,
+
+                                    // More right padding pushes the target visually left
+                                    padding = PaddingValues(
+                                        start = 0.dp,
+                                        top = 0.dp,
+                                        end = 84.dp,
+                                        bottom = 30.dp
+                                    )
+                                )
+                            )
+
+                            showPopup = true
+                        }
+                    }
                 )
             }
             MarkersOnMap(
-                markers = mapMarkers,
-                onMarkerClick = { id, title -> /* show dialog/toast */ },
+                markers = droppedMapMarkers.filter{ (null != it.lat) && (null != it.lon) },
+                onMarkerClick = { id, title ->
+                    val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
+                    if (droppedMapMarkers.get(index).cotType != DataRepository.MarkerCotType.CLEAR) {
+                        Log.d(TAG, "Index from map: $index")
+                        val intent = Intent(context, MarkerActivity::class.java).apply {
+                            putExtra("marker_index", index)
+                            putExtra("start_route", "edit_marker_screen/$index")
+                            putExtra("from_maps", true)
+                        }
+                        context.startActivity(intent)
+                    }
+                },
                 cameraState
             )
+            MarkersOnMap(
+                markers = receivedMapMarkers,
+                camera = cameraState
+            )
         }
+        if (showPopup && puckScreenOffset != null) {
+           PopupBox(
+               showPopup = showPopup,
+                anchor = puckScreenOffset,
+               lat = lat,
+               lon = lon,
+                onClickOutside = { showPopup = false }
+            )
+        }
+//        PopupBox(showPopup = showPopup, onClickOutside = {showPopup = false})
+
         Image(
             painter = painterResource(R.drawable.north_arrow),
             contentDescription = "North Arrow",
-            modifier = Modifier.align(Alignment.TopCenter).size(40.dp),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .size(40.dp),
             alignment = Alignment.TopCenter
         )
         val current = cameraState.position
@@ -330,7 +537,9 @@ fun MapApp(exitActivity: () -> Unit) {
 
             ScaleBar(
                 cameraState.metersPerDpAtTarget,
-                modifier = Modifier.align(Alignment.TopCenter).width(100.dp),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .width(100.dp),
                 color = colors.primary,
                 textStyle = MaterialTheme.typography.bodySmall,
                 barWidth = 1.dp
@@ -420,6 +629,58 @@ fun MapApp(exitActivity: () -> Unit) {
 //                }
 //                Log.d(TAG, "zoom = $nextZoom") }
 //        )
+    }
+}
+@Composable
+fun PopupBox(
+    anchor: DpOffset,
+    showPopup: Boolean,
+    lat: Double,
+    lon: Double,
+    onClickOutside: () -> Unit,
+){
+    val density = LocalDensity.current
+
+    if (showPopup) {
+        // full screen background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(10F),
+            contentAlignment = Alignment.Center
+        ) {
+            // popup
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = with(density) {
+                    IntOffset(
+                        x = (anchor.x + 12.dp).roundToPx(), // move popup to the right
+                        y = anchor.y.roundToPx()
+                    )
+                },
+                properties = PopupProperties(
+                    excludeFromSystemGesture = true,
+                ),
+                // to dismiss on click outside
+                onDismissRequest = { onClickOutside() }
+            ) {
+                Box(
+                    Modifier
+                        .wrapContentSize()
+                        .background(Color.Black.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column (modifier = Modifier.padding(5.dp)){
+                        Text(
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            lineHeight = 10.sp,
+                            text = "Lat: $lat\nLon: $lon\n\n${latLonToMgrs(lat, lon)}")
+                    }
+                }
+            }
+        }
     }
 }
 @Composable
@@ -562,5 +823,5 @@ fun MapUi(
 @Preview(widthDp = 192, heightDp = 192, showBackground = true)
 @Composable
 fun MyAppPreview() {
-//    MapUi()
+    PopupBox(showPopup = true, anchor = DpOffset.Unspecified, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
 }

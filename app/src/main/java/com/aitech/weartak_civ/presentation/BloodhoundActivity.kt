@@ -20,7 +20,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +35,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,7 +82,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
-import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
@@ -92,8 +89,15 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
+import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
@@ -134,7 +138,7 @@ class BloodhoundActivity  : ComponentActivity() {
         bloodhoundActivity = this
         val app = applicationContext as WearTakApplication
         Log.i(TAG, "onCreate() Bloodhound clearing unread state")
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             app.repo.clearBloodhoundUnreadCount("BloodhoundActivity.onCreate")
         }
         enableEdgeToEdge()
@@ -347,13 +351,19 @@ fun BloodhoundChip(
     directionDegrees: Float,
     onClick: () -> Unit
 ) {
+    val distanceText = DistanceFormatter
+        .format(distance)
+        .text(
+            metersLabel = stringResource(R.string.m),
+            kilometersLabel = stringResource(R.string.km)
+        )
     val gradientColors = listOf(
-        MaterialTheme.colors.surface
+        colors.surface
             .copy(alpha = 0f)
-            .compositeOver(MaterialTheme.colors.surface),
-        MaterialTheme.colors.primary
+            .compositeOver(colors.surface),
+        colors.primary
             .copy(alpha = 0.5f)
-            .compositeOver(MaterialTheme.colors.surface),
+            .compositeOver(colors.surface),
     )
     Chip(
         icon = {
@@ -394,7 +404,7 @@ fun BloodhoundChip(
             )
         },
         secondaryLabel = {
-            Text(text = "$distance" + stringResource(R.string.km),
+            Text(text = distanceText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = Color.White,
@@ -450,10 +460,10 @@ fun BloodhoundScreenDetailed(
     val bhoundDistance = item.distance
     val bhoundOrientation = item.orientation
     var bhoundBloodhounding = item.bloodhounding
-    val timeUtc = java.time.format.DateTimeFormatter
+    val timeUtc = DateTimeFormatter
         .ofPattern("HH:mm 'UTC'")
-        .withZone(java.time.ZoneOffset.UTC)
-        .format(java.time.Instant.ofEpochMilli(bhoundTimeReceived))
+        .withZone(ZoneOffset.UTC)
+        .format(Instant.ofEpochMilli(bhoundTimeReceived))
 
     WearTakCivScreenDimensions(
         columnContent = {
@@ -575,6 +585,12 @@ fun DetailedBloodhoundInfo(
     timeReceived: String,
     orientation: Float
 ) {
+    val distanceText = DistanceFormatter
+        .format(distance)
+        .text(
+            metersLabel = stringResource(R.string.m),
+            kilometersLabel = stringResource(R.string.km)
+        )
     Row(
         verticalAlignment = Alignment.CenterVertically
     ){
@@ -599,7 +615,7 @@ fun DetailedBloodhoundInfo(
         Spacer(modifier = Modifier.width(10.dp))
         Column(){
             Text(
-                text = distance.toString() + stringResource(R.string.km),
+                text = distanceText,
                 fontSize = 18.sp,
                 overflow = TextOverflow.Ellipsis,
                 color = Color.White,
@@ -721,4 +737,14 @@ fun BloodhoundScreenPreview() {
 @Composable
 fun BloodhoundDetailedScreenPreview() {
     BloodhoundScreenDetailed(rememberSwipeDismissableNavController(), 0, bloodhoundDefaultList, LocalContext.current, {})
+}
+@Preview(widthDp = 192, heightDp = 60, showBackground = true)
+@Composable
+fun BhoundTextPreview() {
+    DetailedBloodhoundInfo(
+        distance = 1.0,
+     callsign = "HEllo",
+     timeReceived = "0",
+     orientation = 1F
+    )
 }

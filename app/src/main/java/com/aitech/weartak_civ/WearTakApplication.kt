@@ -25,8 +25,9 @@ import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.GunshotOnnxRepository
 import com.aitech.weartak_civ.data.PeatBtleRepository
-import com.aitech.weartak_civ.data.OnnxRepository
+import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.secure.migration.TakServerMigration
 import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
@@ -52,10 +53,11 @@ class WearTakApplication : Application() {
     lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
 
-    lateinit var onnxRepo: OnnxRepository; private set
+    lateinit var gunshotOnnxRepo: GunshotOnnxRepository; private set
+    lateinit var uasOnnxRepo: UasOnnxRepository; private set
 
     companion object {
-        val TAG = "WearTAK-Applicaton"
+        val TAG = "WearTAK-Application"
         lateinit var instance: WearTakApplication; private set
     }
 
@@ -69,7 +71,8 @@ class WearTakApplication : Application() {
         capRepo = CompanionAppRepository(applicationContext)
         peatBtleRepo = PeatBtleRepository(applicationContext)
         audioRepo = AudioCaptureRepository(applicationContext)
-        onnxRepo = OnnxRepository(applicationContext)
+        gunshotOnnxRepo = GunshotOnnxRepository(applicationContext)
+        uasOnnxRepo = UasOnnxRepository(applicationContext)
         sitxRepo = SitxSecretsRepository(SitxEncryptedDataStore(applicationContext))
 
         AppCtx.init(this)

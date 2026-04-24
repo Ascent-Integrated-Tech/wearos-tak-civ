@@ -7,6 +7,11 @@
     "Append all entries in `rules` to your existing rules array.",
     "If an `id` already exists in your file and you prefer our version, replace it; otherwise rename ours with a suffix."
   ],
+  "engine": {
+    "window_tick_ms": 1000,
+    "rule_eval_interval_ms": 500,
+    "_comment": "Phase 1: window_tick_ms sets the ring-buffer resolution; rule_eval_interval_ms controls how often rules are evaluated. Both default to 1000ms (1 Hz). Decoupling them is the Phase 5 goal."
+  },
   "features": [
     {
       "type": "window_multi",
@@ -14,7 +19,8 @@
       "source": "skin_temp",
       "multi_policy": "min",
       "op": "min",
-      "window_sec": 60
+      "window_sec": 60,
+      "max_age_sec": 120
     },
     {
       "type": "derived",
@@ -48,7 +54,8 @@
       "source": "skin_temp",
       "multi_policy": "min_channel",
       "window_sec": 20,
-      "units_per_sec": "per_second"
+      "units_per_sec": "per_second",
+      "max_age_sec": 60
     },
     {
       "type": "derived",
@@ -151,7 +158,8 @@
       "id": "features.ppg.amplitude_recent_20s",
       "source": "ppg.amplitude",
       "op": "avg",
-      "window_sec": 20
+      "window_sec": 20,
+      "max_age_sec": 60
     },
     {
       "type": "derived",
@@ -210,7 +218,8 @@
       "id": "features.spo2.recent_120s",
       "source": "spo2",
       "op": "avg",
-      "window_sec": 120
+      "window_sec": 120,
+      "max_age_sec": 240
     },
     {
       "type": "window",
@@ -251,7 +260,8 @@
       "id": "features.hrv.rmssd_recent_1m",
       "source": "hrv.rmssd_ms",
       "op": "avg",
-      "window_sec": 60
+      "window_sec": 60,
+      "max_age_sec": 120
     },
     {
       "type": "derived",
@@ -646,7 +656,7 @@
       "expr": { "key": "thresholds.hrr.exert_alert_percent" },
       "units": "percent"
     },
-    
+
     {
       "type": "derived",
       "id": "features.hr.exertion_warning_active",
@@ -886,9 +896,10 @@
           },
           {"gte_key": ["offbody.on_wrist", 0.5]},
           {
-            "gte_keys": [
+            "gte_key_fresh": [
               "features.heart_rate",
-              "features.hr.high_threshold_bpm"
+              "features.hr.high_threshold_bpm",
+              5
             ]
           }
         ]
@@ -1057,6 +1068,7 @@
         ]
       },
       "sustained_for_sec": 180,
+      "hold_down_sec": 120,
       "action": {
         "type": "nonelog",
         "severity": "EMERGENCY",
@@ -1242,6 +1254,65 @@
     },
     {
       "id": "hr_low_threshold_resting_alert_static",
+      "when": {
+        "all": [
+          {
+            "eq_key": [
+              "activity.state",
+              "STILL"
+            ]
+          },
+          {
+            "eq_key": [
+              "sleep.is_sleeping",
+              false
+            ]
+          },
+          {
+            "lte_keys": [
+              "features.heart_rate",
+              "thresholds.hr.rest_low_bpm"
+            ]
+          },
+          {
+            "gte_key": [
+              "offbody.on_wrist",
+              0.5
+            ]
+          }
+        ]
+      },
+      "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "none_warn_log",
+        "severity": "EMERGENCY",
+        "message": "LOW HR — below {thresholds.hr.rest_low_bpm} bpm",
+        "tags": [
+          "hr",
+          "rest",
+          "brady"
+        ],
+        "category": "CAT_HR_REST_BRADY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 60,
+        "monitor": [
+          {
+            "feature": "features.heart_rate",
+            "exit_below": null,
+            "exit_above": "thresholds.hr.rest_low_bpm",
+            "hysteresis": 2.0
+          }
+        ],
+        "exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_rest_brady_10min_emergency_static",
       "when": {
         "all": [
           {
@@ -1549,6 +1620,34 @@
       }
     },
     {
+      "id": "hr_zone4_exercise_10min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "ref": "features.hr.exertion_warning_active", "is": true }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "nonewarn",
+        "severity": "EMERGENCY",
+        "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
+        "isTak": false,
+        "monitor": [
+          {
+            "feature": "features.hrr_percent",
+            "exit_below": "features.hr.exertion_warning_threshold_hrr_percent",
+            "hysteresis": 2.0
+          }
+        ],
+        "exit_below_hrr_percent": "features.hr.exertion_warning_threshold_hrr_percent",
+        "exit_hysteresis_hrr_percent": 2.0,
+        "exit_sustain_sec": 10
+      }
+    },
+    {
       "id": "hr_zone4_rest_immediate_emergency",
       "when": {
         "all": [
@@ -1575,7 +1674,7 @@
       },
       "sustained_for_sec": 5,
       "action": {
-        "type": "none",
+        "type": "nonelog",
         "severity": "EMERGENCY",
         "message": "HR ZONE 4 \u2014 between 80% and 90% HRR",
         "tags": [
@@ -1634,6 +1733,33 @@
           }
         ],
         "exit_logic": "OR",
+        "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
+        "exit_hysteresis_hrr_percent": 2.0,
+        "exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone5_exercise_5min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "gte_keys": ["features.hrr_percent", "features.hr.exertion_alert_threshold_hrr_percent"] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "nonelog",
+        "severity": "EMERGENCY",
+        "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
+        "monitor": [
+          {
+            "feature": "features.hrr_percent",
+            "exit_below": "features.hr.exertion_alert_threshold_hrr_percent",
+            "hysteresis": 2.0
+          }
+        ],
         "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
         "exit_sustain_sec": 10

@@ -22,6 +22,11 @@
     <string name="ditto">Ditto</string>
     <string name="companion_app" translatable="false">Companion Plugin</string>
     <string name="gunshot_detection" translatable="false">Gunshot Detect</string>
+    <string name="uas_detection" translatable="false">UAS Detect</string>
+    <string name="audio_detection_trigger_threshold">Trigger Threshold</string>
+    <string name="gunshot_trigger_threshold">Gunshot Trigger Threshold</string>
+    <string name="uas_trigger_threshold">UAS Trigger Threshold</string>
+    <string name="threshold_percent_format"  translatable="false">%1$d%%</string>
     <string name="version">Version %1$s</string>
     <string name="tak_servers">TAK Servers</string>
     <string name="edit_server">Edit Server</string>
@@ -118,6 +123,8 @@
     <string name="wifi_server_connecting_location_disabled" translatable="false">Wifi, Server Connecting, Location Disabled</string>
     <string name="wifi_server_connected_location_enabled" translatable="false">Wifi, Server Connected, Location Enabled</string>
     <string name="wifi_server_connected_location_disabled" translatable="false">Wifi, Server Connected, Location Disabled</string>
+    <string name="wifi_server_connected_multicast_location_enabled" translatable="false">Wifi, Server Connected Multicast, Location Enabled</string>
+    <string name="wifi_server_connected_multicast_location_disabled" translatable="false">Wifi, Server Connected Multicast, Location Disabled</string>
     <string name="wifi_server_disconnected_location_enabled" translatable="false">Wifi, Server Disconnected, Location Enabled</string>
     <string name="wifi_server_disconnected_location_disabled" translatable="false">Wifi, Server Disconnected, Location Disabled</string>
     <string name="no_connect_server_connecting_location_enabled" translatable="false">No Connection, Server Connecting, Location Enabled</string>
@@ -561,6 +568,7 @@
     <string name="view_chat">View Chat</string>
     <string name="rgr">RGR</string>
     <string name="npos">nPos</string>
+    <string name="m">m</string>
     <string name="km">km</string>
     <string name="bloodhounding">Bloodhounding</string>
     <string name="not_bloodhounding">Not Bloodhounding</string>
@@ -583,6 +591,25 @@
     <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound/Compass</string>
     <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
     <string name="enable_bloodhound_compass_default" translatable="false">true</string>
+    <string name="bloodhound_settings">Bloodhound Settings</string>
+    <string name="bloodhound_proximity_vibration">Bloodhound Proximity Vibration</string>
+    <string name="bloodhound_proximity_radius">Bloodhound Proximity Radius</string>
+    <string name="bloodhound_proximity_intensity">Bloodhound Proximity Intensity</string>
+    <string name="bloodhound_proximity_intensity_basic">Single Burst</string>
+    <string name="bloodhound_proximity_intensity_basic_desc">One set of three quick vibrations</string>
+    <string name="bloodhound_proximity_intensity_escalated">Triple Burst</string>
+    <string name="bloodhound_proximity_intensity_escalated_desc">Three sets of three quick vibrations</string>
+    <string name="bloodhound_proximity_intensity_persistent">Until In Position</string>
+    <string name="bloodhound_proximity_intensity_persistent_desc">Repeats until you click NPOS</string>
+    <string name="enable_bloodhound_proximity_vibration_title" translatable="false">Enable Bloodhound Proximity Vibration</string>
+    <string name="enable_bloodhound_proximity_vibration_description" translatable="false">Vibrate when the active bloodhound target enters the configured proximity radius</string>
+    <string name="enable_bloodhound_proximity_vibration_default" translatable="false">true</string>
+    <string name="bloodhound_proximity_radius_title" translatable="false">Bloodhound Proximity Radius (meters)</string>
+    <string name="bloodhound_proximity_radius_description" translatable="false">Distance in meters for the active bloodhound target proximity vibration alert</string>
+    <string name="bloodhound_proximity_radius_default" translatable="false">50</string>
+    <string name="bloodhound_proximity_intensity_title" translatable="false">Bloodhound Proximity Intensity</string>
+    <string name="bloodhound_proximity_intensity_description" translatable="false">Controls how aggressively the watch vibrates when the active bloodhound target enters range</string>
+    <string name="bloodhound_proximity_intensity_default" translatable="false">basic</string>
     <string name="enable_battery_alerts" translatable="false">Enable Battery Alerts</string>
     <string name="enable_battery_alerts_desc" translatable="false">Enables wearTAK to send battery alerts via chat</string>
     <string name="enable_battery_alerts_default" translatable="false">false</string>
@@ -641,4 +668,6 @@
     <string name="low_atm_pressure_threshold">Low Pressure Threshold (hPa)</string>
     <string name="high_atm_pressure_alert">High Pressure Alert</string>
     <string name="high_atm_pressure_threshold">High Pressure Threshold (hPa)</string>
+    <string name="server_connected_multicast">Server Connected Multicast</string>
+    <string name="marker_stored_error_msg">Marker details stored and will be sent when connected and/or location is updated</string>
 </resources>
