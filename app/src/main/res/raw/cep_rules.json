@@ -2000,7 +2000,13 @@
         "category": "CAT_IMMERSION_WARN",
         "isTak": true,
         "isLocal": true,
-        "tags": ["pressure", "immersion", "dunk"]
+        "tags": ["pressure", "immersion", "dunk"],
+        "monitor": [
+          {
+            "feature": "settings.pressure.immersion_alerts_enabled",
+            "exit_below": 1.0
+          }
+        ]
       }
     },
     {
@@ -2022,7 +2028,13 @@
         "category": "CAT_IMMERSION_WARN",
         "isTak": true,
         "isLocal": true,
-        "tags": ["pressure", "immersion", "shallow_dunk"]
+        "tags": ["pressure", "immersion", "shallow_dunk"],
+        "monitor": [
+          {
+            "feature": "settings.pressure.immersion_alerts_enabled",
+            "exit_below": 1.0
+          }
+        ]
       }
     },
     {
@@ -2044,7 +2056,13 @@
         "category": "CAT_IMMERSION_ALERT",
         "isTak": true,
         "isLocal": true,
-        "tags": ["pressure", "immersion", "submerge"]
+        "tags": ["pressure", "immersion", "submerge"],
+        "monitor": [
+          {
+            "feature": "settings.pressure.immersion_alerts_enabled",
+            "exit_below": 1.0
+          }
+        ]
       }
     },
     {
@@ -2072,8 +2090,13 @@
             "feature": "features.pressure.mean_n5",
             "exit_above": "thresholds.pressure.low",
             "hysteresis": 1.0
+          },
+          {
+            "feature": "settings.pressure.low_atm_alert_enabled",
+            "exit_below": 1.0
           }
         ],
+        "exit_logic": "OR",
         "exit_sustain_sec": 5
       }
     },
@@ -2102,8 +2125,13 @@
             "feature": "features.pressure.mean_n5",
             "exit_below": "thresholds.pressure.high",
             "hysteresis": 1.0
+          },
+          {
+            "feature": "settings.pressure.high_atm_alert_enabled",
+            "exit_below": 1.0
           }
         ],
+        "exit_logic": "OR",
         "exit_sustain_sec": 5
       }
     }
