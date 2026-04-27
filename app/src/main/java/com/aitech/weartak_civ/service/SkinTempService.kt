@@ -245,11 +245,11 @@ class SkinTempService : Service() {
             }
             // PPG capability detection with fallbacks
             initPpgCapability()
-            startPpgContinuousIfSelected()
             // Emit inputs_ok flag for cold stress into CEP FeatureStore
             pushColdInputsOkFlag()
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
+                startPpgContinuousIfSelected()
                 // Start HR tracker and apply screen policy
                 startHrTracker()
                 if (!isInteractiveNow) {
@@ -432,6 +432,10 @@ class SkinTempService : Service() {
     }
 
     private fun resumePpgContinuousAfterSpo2() {
+        if (!deviceWorn) {
+            ppgPausedForSpo2 = false
+            return
+        }
         if (!ppgPausedForSpo2) return
         ppgPausedForSpo2 = false
         startPpgContinuousIfSelected()
@@ -967,6 +971,7 @@ class SkinTempService : Service() {
         Log.d(TAG, "SkinTempService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
+        deviceWorn = sharedRepo.latestIsDeviceWorn.value
 
         deleteLogFile()
         CoroutineScope(Dispatchers.IO).launch{
@@ -1077,31 +1082,34 @@ class SkinTempService : Service() {
         // Clear old callbacks so they don’t pile up
         backgroundHandler.removeCallbacksAndMessages(null)
 
-        if (nowWorn) {
-            deviceWorn = true
-            // HR continuous starts and follow screen policy
-            startHrTracker()
-            if (!isInteractiveNow) {
-                enableScreenOffFlushLoop()
-                flushHr("worn_event_screen_off")
+        if (nowWorn != deviceWorn) {
+            if (nowWorn) {
+                deviceWorn = true
+                startPpgContinuousIfSelected()
+                // HR continuous starts and follow screen policy
+                startHrTracker()
+                if (!isInteractiveNow) {
+                    enableScreenOffFlushLoop()
+                    flushHr("worn_event_screen_off")
+                } else {
+                    disableScreenOffFlushLoop()
+                }
+                startSkinTracker()    // immediate snapshot
+                scheduleNextReading()
+                startEmitLoopIfNeeded()
+                //writeToLogFileLocation(logFile, "deviceWorn=true.")
             } else {
-                disableScreenOffFlushLoop()
+                deviceWorn = false
+                stopHrTracker(true)
+                stopSkinTracker(true)     // shut it down
+                stopSpo2Tracker()
+                stopPpgTracker()
+                stopEmitLoop()
+                spo2TimeoutCleanup()
+                ppgTimeoutCleanup()
+                measureState.set(MeasurementState.IDLE)
+                //writeToLogFileLocation(logFile, "deviceWorn=false.")
             }
-            startSkinTracker()    // immediate snapshot
-            scheduleNextReading()
-            startEmitLoopIfNeeded()
-            //writeToLogFileLocation(logFile, "deviceWorn=true.")
-        } else {
-            deviceWorn = false
-            stopHrTracker(true)
-            stopSkinTracker(true)     // shut it down
-            stopSpo2Tracker()
-            stopPpgTracker()
-            stopEmitLoop()
-            spo2TimeoutCleanup()
-            ppgTimeoutCleanup()
-            measureState.set(MeasurementState.IDLE)
-            //writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
 
