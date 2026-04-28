@@ -141,6 +141,8 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.EdgeScoutConnectionState
+import com.aitech.weartak_civ.data.EdgeScoutRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -2743,6 +2745,13 @@ fun MainScreen(
             UasOnnxRepository(context.applicationContext)
         }
     }
+    val edgeScoutRepo = remember(context.applicationContext) {
+        try {
+            (context.applicationContext as WearTakApplication).edgeScoutRepo
+        } catch (_: Throwable) {
+            EdgeScoutRepository(context.applicationContext)
+        }
+    }
 
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
@@ -2857,6 +2866,10 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.Center
                     ){
                         BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
+                        Spacer(
+                            modifier = Modifier.width(10.dp)
+                        )
+                        EdgeScoutLaunchButton(context, edgeScoutRepo)
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -2881,6 +2894,45 @@ fun MainScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun EdgeScoutLaunchButton(
+    context: Context,
+    edgeScoutRepo: EdgeScoutRepository,
+) {
+    val connectionState by edgeScoutRepo.connectionState.collectAsStateWithLifecycle()
+    val lastMessageAtMs by edgeScoutRepo.lastMessageAtMs.collectAsStateWithLifecycle()
+
+    val streamActive = lastMessageAtMs?.let {
+        System.currentTimeMillis() - it <= 10_000L
+    } == true
+
+    val containerColor = when {
+        connectionState == EdgeScoutConnectionState.ERROR -> Color(0xFF5C1F1F)
+        streamActive -> Color(0xFF1B5E20)
+        connectionState == EdgeScoutConnectionState.CONNECTED -> Color(0xFF234A6B)
+        connectionState == EdgeScoutConnectionState.SCANNING -> Color(0xFF5A4A16)
+        else -> Color.DarkGray
+    }
+
+    FilledIconButton(
+        onClick = { context.startActivity(Intent(context, EdgeScoutActivity::class.java)) },
+        modifier = Modifier.size(45.dp),
+        colors = IconButtonColors(
+            containerColor = containerColor,
+            contentColor = Color.Unspecified,
+            disabledContentColor = Color.Gray,
+            disabledContainerColor = Color.Black
+        )
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.bluetooth),
+            contentDescription = "Open Edge Scout",
+            tint = Color.Unspecified,
+            modifier = Modifier.size(25.dp),
+        )
     }
 }
 

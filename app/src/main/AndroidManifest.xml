@@ -377,6 +377,12 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
+        <service
+            android:name=".service.EdgeScoutService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="false" />
         <!-- Phase 1 testing: CEPSimulationService is registered but only activates when
              CEPSimulationService.IN_TESTING = true is set in the companion object.
              Safe to keep in production manifests — the service is a no-op by default. -->
@@ -509,6 +515,17 @@
         </activity>
         <activity
             android:name=".presentation.SettingsActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.aitech.weartak_civ"
+            android:theme="@style/MainActivityTheme.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".presentation.EdgeScoutActivity"
             android:exported="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
