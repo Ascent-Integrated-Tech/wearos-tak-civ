@@ -17,11 +17,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.FloatBuffer
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import kotlin.math.min
 
 data class AudioDetectionSpec(
     val detectorKey: String,
@@ -57,6 +55,7 @@ data class AudioDetectionTrigger(
     val uid: String,
     val confidence: Float,
     val pcmChunk: AudioCaptureRepository.AudioPcmChunk,
+    val windowPcm: ShortArray,
     val triggerPcmPath: String,
     val audioSource: String,
     val inferStart: Long,
@@ -145,6 +144,7 @@ class AudioDetectionRuntime(
 
                     val uid = UUID.randomUUID().toString()
                     val windowFile = metricsLogger.triggerPcmFile(uid)
+                    val windowCopy = windowPcm.copyOf()
                     triggerUid = uid
                     triggerPcmPath = windowFile.absolutePath
 
@@ -161,6 +161,7 @@ class AudioDetectionRuntime(
                             uid = uid,
                             confidence = detection.confidence ?: 0f,
                             pcmChunk = chunk,
+                            windowPcm = windowCopy,
                             triggerPcmPath = triggerPcmPath,
                             audioSource = audioSource,
                             inferStart = inferStart,
@@ -168,7 +169,6 @@ class AudioDetectionRuntime(
                         )
                     )
 
-                    val windowCopy = windowPcm.copyOf()
                     launchPcmWrite(uid, windowFile, windowCopy)
                 }
 
@@ -278,8 +278,13 @@ class AudioDetectionRuntime(
             )
         }
 
-        val floatData = pcm16ToFloat(audioPcm)
-        val modelInput = forceOneSecond(floatData, sampleRateHz)
+        val floatData = AudioOnnxInferenceUtils.pcm16ToFloat(audioPcm)
+        val modelInput = AudioOnnxInferenceUtils.forceOneSecond(
+            x = floatData,
+            inputSr = sampleRateHz,
+            targetSr = spec.targetSr,
+            targetSamples = spec.targetSamples
+        )
 
         return try {
             val score = lock.withLock { runModelScalar(session, modelInput) }
@@ -299,51 +304,8 @@ class AudioDetectionRuntime(
         }
     }
 
-    private fun pcm16ToFloat(pcm: ShortArray): FloatArray =
-        FloatArray(pcm.size) { i -> pcm[i] / 32768f }
-
-    private fun forceOneSecond(x: FloatArray, inputSr: Int): FloatArray {
-        val resampled = if (inputSr == spec.targetSr) x else linearResample(x, inputSr, spec.targetSr)
-        return forceExactLength(resampled, spec.targetSamples)
-    }
-
-    private fun linearResample(x: FloatArray, inSr: Int, outSr: Int): FloatArray {
-        if (x.isEmpty()) return FloatArray(0)
-        val outLen = ((x.size.toLong() * outSr) / inSr).toInt().coerceAtLeast(1)
-        val y = FloatArray(outLen)
-        val scale = inSr.toFloat() / outSr.toFloat()
-        for (i in 0 until outLen) {
-            val src = i * scale
-            val idx = src.toInt()
-            val frac = src - idx
-            val a = x[min(idx, x.size - 1)]
-            val b = x[min(idx + 1, x.size - 1)]
-            y[i] = a + (b - a) * frac
-        }
-        return y
-    }
-
-    private fun forceExactLength(x: FloatArray, n: Int): FloatArray {
-        if (x.size == n) return x
-        val y = FloatArray(n)
-        val copyN = min(x.size, n)
-        System.arraycopy(x, 0, y, 0, copyN)
-        return y
-    }
-
     private fun runModelScalar(session: OrtSession, data: FloatArray): Float {
-        val shape = longArrayOf(1, data.size.toLong())
-        val fb: FloatBuffer = FloatBuffer.wrap(data)
-        val inputName = session.inputNames.first()
-
-        OnnxTensor.createTensor(env, fb, shape).use { input ->
-            session.run(mapOf(inputName to input)).use { results ->
-                val outTensor = results[0] as OnnxTensor
-                val outBuf = outTensor.floatBuffer
-                outBuf.rewind()
-                return outBuf.get()
-            }
-        }
+        return AudioOnnxInferenceUtils.runModelOutputVector(env, session, data).first()
     }
 
     private class SlidingWindowBuffer {

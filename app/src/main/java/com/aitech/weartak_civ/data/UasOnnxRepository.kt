@@ -12,6 +12,7 @@ package com.aitech.weartak_civ.data
 import android.content.Context
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.audio.AudioClassificationResult
 import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
 import com.aitech.weartak_civ.data.audio.AudioDetectionFeedback
 import com.aitech.weartak_civ.data.audio.AudioDetectionStore
@@ -36,7 +37,8 @@ class UasOnnxRepository(private val context: Context) {
         triggerPcmPath: String?,
         audioSource: String?,
         inferStart: Long? = null,
-        inferEnd: Long? = null
+        inferEnd: Long? = null,
+        classification: AudioClassificationResult? = null
     ): AudioDetectionEvent = store.createEvent(
         uid = uid,
         confidence = confidence,
@@ -44,7 +46,8 @@ class UasOnnxRepository(private val context: Context) {
         triggerPcmPath = triggerPcmPath,
         audioSource = audioSource,
         inferStart = inferStart,
-        inferEnd = inferEnd
+        inferEnd = inferEnd,
+        classification = classification
     )
 
     val uasFeedback = store.feedback

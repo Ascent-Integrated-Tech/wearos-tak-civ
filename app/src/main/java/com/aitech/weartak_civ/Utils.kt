@@ -34,6 +34,7 @@ import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
 import com.aitech.weartak_civ.data.audio.AudioDetectionUserLabel
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
@@ -516,43 +517,11 @@ object Utils {
         val sl = repo.snapshotLocation()
         val ss = repo.snapshotSystem()
 
-        val obj = org.json.JSONObject().apply {
-            put("uid", event.uid)
-            put("inferenceWindowUid", event.uid)
-            put("eventTimestamp", event.timestamp)
-            put("detectorKey", event.detectorKey)
-            put("confidence", event.confidence)
+        val obj = buildAudioDetectionEventJson(event, sl, ss).apply {
             put("label", label.name)
             put("respondedAtMs", respondedAtMs)
             put("responseLatencyMs", responseLatencyMs)
-            put("triggerPcmPath", event.triggerPcmPath)
-            put("audioSessionId", event.chunkRef.sessionId)
-            put("audioSeq", event.chunkRef.seq)
-            put("audioChunkTimestampMs", event.chunkRef.timestampMs)
-            put("sampleRateHz", event.chunkRef.sampleRateHz)
-            put("channels", event.chunkRef.channels)
-            put("micSource", event.audioSource)
-            put("inferStartElapsedMs", event.inferStartElapsedMs)
-            put("inferEndElapsedMs", event.inferEndElapsedMs)
             put("triggerToFeedbackMs", respondedAtMs - event.timestamp)
-            put("manufacturer", android.os.Build.MANUFACTURER)
-            put("model", android.os.Build.MODEL)
-            put("sdkInt", android.os.Build.VERSION.SDK_INT)
-            put("wearTakVersion", ss.wearTakVersion)
-            put("callsign", ss.callsign)
-            put("deviceId", ss.deviceId)
-
-            sl?.let {
-                put("lat", it.lat)
-                put("lon", it.lon)
-                put("hae", it.hae)
-                put("ce", it.ce)
-            }
-
-            put("isWorn", ss.systemStates.isWorn)
-            put("charging", ss.systemStates.charging)
-            put("bat", ss.batteryPercent)
-            put("latestActRec", repo.latestActivityRecognized.value)
 
             val extrasObj = org.json.JSONObject()
             for ((k, v) in extra) extrasObj.put(k, v)
@@ -560,6 +529,82 @@ object Utils {
         }
 
         appendJsonLine(logFile, obj.toString())
+    }
+
+    suspend fun logAudioDetectionClassification(
+        context: Context,
+        event: AudioDetectionEvent,
+        debugDirName: String
+    ) {
+        val classification = event.classification ?: return
+        val dir = File(context.filesDir, debugDirName).apply { mkdirs() }
+        val logFile = File(dir, "${event.detectorKey}_classification.jsonl")
+        val sl = repo.snapshotLocation()
+        val ss = repo.snapshotSystem()
+
+        val obj = buildAudioDetectionEventJson(event, sl, ss).apply {
+            put("predictedLabel", classification.predictedLabel)
+            put("predictedClassIndex", classification.predictedIndex)
+            put("predictedScore", classification.predictedScore)
+        }
+
+        appendJsonLine(logFile, obj.toString())
+    }
+
+    private fun buildAudioDetectionEventJson(
+        event: AudioDetectionEvent,
+        location: DataRepository.LocationSnapshot?,
+        system: DataRepository.SystemSnapshot
+    ): org.json.JSONObject = org.json.JSONObject().apply {
+        put("uid", event.uid)
+        put("inferenceWindowUid", event.uid)
+        put("eventTimestamp", event.timestamp)
+        put("detectorKey", event.detectorKey)
+        put("confidence", event.confidence)
+        put("triggerPcmPath", event.triggerPcmPath)
+        put("audioSessionId", event.chunkRef.sessionId)
+        put("audioSeq", event.chunkRef.seq)
+        put("audioChunkTimestampMs", event.chunkRef.timestampMs)
+        put("sampleRateHz", event.chunkRef.sampleRateHz)
+        put("channels", event.chunkRef.channels)
+        put("micSource", event.audioSource)
+        put("inferStartElapsedMs", event.inferStartElapsedMs)
+        put("inferEndElapsedMs", event.inferEndElapsedMs)
+        putClassificationFields(event)
+        putDeviceFields(system)
+        putLocationFields(location)
+        put("isWorn", system.systemStates.isWorn)
+        put("charging", system.systemStates.charging)
+        put("bat", system.batteryPercent)
+        put("latestActRec", repo.latestActivityRecognized.value)
+    }
+
+    private fun org.json.JSONObject.putClassificationFields(event: AudioDetectionEvent) {
+        event.classification?.let { classification ->
+            put("classifierLabel", classification.predictedLabel)
+            put("classifierClassIndex", classification.predictedIndex)
+            put("classifierScore", classification.predictedScore)
+            put("classifierScores", org.json.JSONArray(classification.scores))
+            put("classifierLabels", org.json.JSONArray(classification.labels))
+        }
+    }
+
+    private fun org.json.JSONObject.putDeviceFields(system: DataRepository.SystemSnapshot) {
+        put("manufacturer", android.os.Build.MANUFACTURER)
+        put("model", android.os.Build.MODEL)
+        put("sdkInt", android.os.Build.VERSION.SDK_INT)
+        put("wearTakVersion", system.wearTakVersion)
+        put("callsign", system.callsign)
+        put("deviceId", system.deviceId)
+    }
+
+    private fun org.json.JSONObject.putLocationFields(location: DataRepository.LocationSnapshot?) {
+        location?.let {
+            put("lat", it.lat)
+            put("lon", it.lon)
+            put("hae", it.hae)
+            put("ce", it.ce)
+        }
     }
 
     fun jitteredLatLon(lat: Double, lon: Double, maxJitterM: Double): Pair<Double, Double> {
