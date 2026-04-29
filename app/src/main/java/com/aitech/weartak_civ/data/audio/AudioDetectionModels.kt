@@ -20,6 +20,14 @@ data class AudioDetectionChunkRef(
     val channels: Int
 )
 
+data class AudioClassificationResult(
+    val predictedIndex: Int,
+    val predictedLabel: String,
+    val predictedScore: Float,
+    val scores: List<Float>,
+    val labels: List<String>
+)
+
 data class AudioDetectionEvent(
     val detectorKey: String,
     val timestamp: Long,
@@ -31,7 +39,8 @@ data class AudioDetectionEvent(
     val triggerPcmPath: String?,
     val audioSource: String?,
     val inferStartElapsedMs: Long? = null,
-    val inferEndElapsedMs: Long? = null
+    val inferEndElapsedMs: Long? = null,
+    val classification: AudioClassificationResult? = null
 )
 
 enum class AudioDetectionUserLabel { YES, NO, UNKNOWN, TIMEOUT }

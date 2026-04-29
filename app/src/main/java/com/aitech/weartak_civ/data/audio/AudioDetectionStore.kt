@@ -53,7 +53,8 @@ class AudioDetectionStore(
         triggerPcmPath: String?,
         audioSource: String?,
         inferStart: Long? = null,
-        inferEnd: Long? = null
+        inferEnd: Long? = null,
+        classification: AudioClassificationResult? = null
     ): AudioDetectionEvent {
         val event = AudioDetectionEvent(
             detectorKey = detectorKey,
@@ -72,7 +73,8 @@ class AudioDetectionStore(
             triggerPcmPath = triggerPcmPath,
             audioSource = audioSource,
             inferStartElapsedMs = inferStart,
-            inferEndElapsedMs = inferEnd
+            inferEndElapsedMs = inferEnd,
+            classification = classification
         )
         _events.emit(event)
         upsertRecent(event)
