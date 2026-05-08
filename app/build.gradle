@@ -139,9 +139,15 @@ dependencies {
 
     implementation "live.ditto:ditto:4.10.2"
 
-    // Peat BLE mesh sync (replaces Ditto for power-efficient P2P)
-    // Use Maven dependency so composite build substitution works
-    implementation 'com.defenseunicorns:peat:0.1.1'
+    // Peat BLE mesh sync (replaces Ditto for power-efficient P2P).
+    // peat-btle 0.4.0 is the post-Slice-4.b release (ADR-059 Amendment 4
+    // back-edge cycle break) plus peat-btle#52 fixes — `PeatHealthStatus`
+    // wire byte order and `DataReceivedResult.activityLevel` / `.alerts`
+    // surfacing for STAND→PRONE indication. Resolved via the composite
+    // build wiring in settings.gradle when checked out alongside the
+    // sibling peat-btle repo (Peat/{wearos-tak-civ, peat-btle, …});
+    // falls back to mavenLocal / Maven Central for non-developer builds.
+    implementation 'com.defenseunicorns:peat-btle:0.4.0'
     // Peat Lite - CannedMessage primitives (UniFFI bindings)
     implementation files('../../peat-lite/android/build/outputs/aar/peat-lite-android-release.aar')
     implementation "net.java.dev.jna:jna:5.14.0@aar"  // Required by UniFFI

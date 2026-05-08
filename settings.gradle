@@ -26,11 +26,19 @@ dependencyResolutionManagement {
     }
 }
 
-// Composite build for peat-btle development (changes propagate immediately)
-// Enable this for local development, disable for published versions
+// Composite build for peat-btle development (changes propagate immediately).
+// The dependency-substitution coordinate must match the one declared in
+// app/build.gradle exactly — `com.defenseunicorns:peat-btle`. The earlier
+// `com.defenseunicorns:peat` substitution didn't match any declared
+// dependency, so composite build was silently a no-op (peat-atak-plugin
+// hit and fixed the same bug at peat-atak-plugin#17). Without composite
+// build engaging, every watch build resolved against an old maven snapshot
+// and never picked up local peat-btle source changes — including the
+// PeatHealthStatus wire byte-order fix and the activity_level / alerts
+// surfacing on DataReceivedResult that peat-btle#52 required.
 includeBuild('../peat-btle/android') {
     dependencySubstitution {
-        substitute module('com.defenseunicorns:peat') using project(':')
+        substitute module('com.defenseunicorns:peat-btle') using project(':')
     }
 }
 
