@@ -1010,6 +1010,19 @@ object Utils {
             val detail: MarkerDetail,
         )
 
+        data class UserPositionCotEvent(
+            val version: String,
+            val uid: String,
+            val type: String,
+            val how: String,
+            val time: Long,
+            val start: Long,
+            val stale: Long,
+            val access: String?,
+            val point: Point,
+            val detail: MarkerDetail,
+        )
+
         data class MarkerMapItem(
             val cotEvent: MarkerCotEvent
         ) {
@@ -1054,6 +1067,47 @@ object Utils {
         )
 
         object Bloodhound {
+            fun parseUserPositionCotOrNull(rawXml: String): UserPositionCotEvent? {
+                val typeStr = attrOfEvent(rawXml, "type") ?: return null
+                if (!isUserPositionType(typeStr)) return null
+
+                val uid = attrOfEvent(rawXml, "uid") ?: return null
+                val how = attrOfEvent(rawXml, "how") ?: ""
+                val version = attrOfEvent(rawXml, "version") ?: ""
+                val access = attrOfEvent(rawXml, "access")
+
+                val timeIso = attrOfEvent(rawXml, "time") ?: return null
+                val startIso = attrOfEvent(rawXml, "start") ?: timeIso
+                val staleIso = attrOfEvent(rawXml, "stale") ?: timeIso
+
+                val point = pointOf(rawXml) ?: return null
+
+                val detail = MarkerDetail(
+                    markerCallsign = contactCallsign(rawXml) ?: "",
+                    creator = creatorOf(rawXml),
+                    link = linkOf(rawXml),
+                    usericon = null,
+                    remarks = extractElementText(rawXml, "remarks"),
+                    contact = null
+                )
+
+                return UserPositionCotEvent(
+                    version = version,
+                    uid = uid,
+                    type = typeStr,
+                    how = how,
+                    time = parseIsoToEpochMs(timeIso),
+                    start = parseIsoToEpochMs(startIso),
+                    stale = parseIsoToEpochMs(staleIso),
+                    access = access,
+                    point = point,
+                    detail = detail
+                )
+            }
+
+            fun isUserPositionType(typeStr: String): Boolean {
+                return typeStr == "a-f-G-U-C" || typeStr.startsWith("a-f-G-U-C-")
+            }
 
             /**
              * MVP entrypoint:
