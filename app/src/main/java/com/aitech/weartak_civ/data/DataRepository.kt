@@ -1410,6 +1410,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    data class ReceivedUser(
+        val uid: String,
+        val team: String,
+        val title: String,
+        val timeReceived: Long,
+        val staleTime: Long,
+        val location: LocationSnapshot?,
+        val source: String
+    )
+
     // --- request flows (UI -> backend) ---
     data class MarkerDropRequest(
         val markerType: MarkerType,

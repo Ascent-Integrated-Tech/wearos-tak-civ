@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -108,6 +107,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.wear.compose.material.MaterialTheme
 import com.aitech.weartak_civ.MARKER_FRIENDLY
 import com.aitech.weartak_civ.MARKER_HOSTILE
 import com.aitech.weartak_civ.MARKER_NEUTRAL
@@ -140,6 +140,7 @@ import org.maplibre.compose.expressions.dsl.condition
 import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
+import kotlin.Long
 
 class MapActivity : ComponentActivity() {
 
@@ -286,6 +287,109 @@ fun MarkersOnMap(
         )
     }
 }
+
+@Composable
+fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
+    remember(users) {
+        FeatureCollection(
+            features = users.map { m ->
+                Feature(
+                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
+                    properties = JsonObject(
+                        mapOf(
+                            "id" to JsonPrimitive(m.uid),
+                            "title" to JsonPrimitive(m.title),
+                            "team" to JsonPrimitive(m.team))
+                    )
+                )
+            }
+        )
+    }
+
+data class MapUserItem(
+    val uid: String,
+//    val markerType: String,
+    val team: String,
+    val title: String,
+    val lat: Double?,
+    val lon: Double?,
+//    val enQueuedToBeSent: Boolean,
+//    val cotType: DataRepository.MarkerCotType
+)
+
+@Composable
+fun UsersOnMap(
+    users: List<MapUserItem>,
+    onUserClick: (id: String, title: String) -> Unit = { _, _ -> },
+    camera: CameraState,
+) {
+    if (users.isEmpty()) return
+    val fc = rememberOtherUsersFeatures(users)
+    val typeGroups = remember(users) { users.groupBy { it.team } }
+
+    val source = rememberGeoJsonSource(
+        data = GeoJsonData.Features(fc)
+    )
+    val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
+
+    typeGroups.forEach { (team, group) ->
+        SymbolLayer(
+            id = group.first().uid,
+            source = source,
+            filter = eq(get("team").asString(),const(team), c),
+            iconImage =
+                switch(
+                    condition(
+                        eq(get("team").asString(), const("CLEAR"), c),
+                        image(painterResource(R.drawable.unknown_gray))
+                    ),
+                    fallback = image(painterResource(R.drawable.unknown_gray))
+                ),
+            iconAllowOverlap = const(true),
+            iconIgnorePlacement = const(true),
+            textAllowOverlap = const(true),
+            textIgnorePlacement = const(true),
+            onClick = { features ->
+                val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
+                onUserClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
+                ClickResult.Pass
+            },
+            iconSize = const(1),
+            textField = if (camera.position.zoom > 10.0) {
+                get("title").asString()
+            } else {
+                const("")
+            },
+            textSize = const(0.6.em),
+            textAnchor = const(SymbolAnchor.Bottom),
+            textColor = const(Color.White),
+            textHaloColor = const(Color.Black),
+            textHaloWidth =const(2.dp),
+            textOffset = offset(0f.em, (-1f).em),
+            )
+    }
+}
+
+fun TeamColors(team: String) : Color{
+   val teamColor =  when (team){
+        "White" -> Color.White
+        "Yellow" -> Color.Yellow
+        "Orange" -> orange
+        "Magenta" -> Color.Magenta
+        "Red" -> Color.Red
+        "Maroon" -> maroon
+        "Purple" ->purple
+        "Dark Blue" -> dark_blue
+        "Blue" -> Color.Blue
+        "Cyan" -> Color.Cyan
+        "Teal" -> teal
+        "Green" -> Color.Green
+        "Dark Green" -> dark_green
+        "Brown" -> brown
+        else -> Color.Unspecified
+    }
+    return teamColor
+}
 @Composable
 fun MapApp(exitActivity: () -> Unit) {
     val context = LocalContext.current
@@ -334,6 +438,44 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val receivedUserListSetting = listOf(
+        DataRepository.ReceivedUser(
+            uid = "0",
+            team = "Maroon",
+            title = "User_1",
+            timeReceived = 0L,
+            staleTime = 0L,
+            location = DataRepository.LocationSnapshot(
+                timeMillis = 0L,
+                lat = 41.910621323869194,
+                lon = -87.68529956323195,
+                hae = 0.0,
+                ce = 0F,
+                le = 0F,
+                course = 0F,
+                speed = 0F
+            ),
+            source = ""
+        ),
+        DataRepository.ReceivedUser(
+            uid = "1",
+            team = "Blue",
+            title = "User_2",
+            timeReceived = 0L,
+            staleTime = 0L,
+            location = DataRepository.LocationSnapshot(
+                timeMillis = 0L,
+                lat = 41.91079973340626,
+                lon = -87.68288620460604,
+                hae = 0.0,
+                ce = 0F,
+                le = 0F,
+                course = 0F,
+                speed = 0F
+            ),
+            source = ""
+        )
+    )
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
@@ -366,6 +508,22 @@ fun MapApp(exitActivity: () -> Unit) {
                         //TODO: Is this okay to have here?
                         DataRepository.MarkerCotType.DROP
 
+                    )
+                }
+            )
+        }
+    }
+    val receivedMapUsers = remember(receivedUserListSetting) {
+        buildList {
+            addAll(
+                receivedUserListSetting.mapNotNull { user ->
+                    val location = user.location ?: return@mapNotNull null
+                    MapUserItem(
+                        uid = user.uid,
+                        team = user.team,
+                        title = user.title,
+                        lat = location.lat,
+                        lon = location.lon
                     )
                 }
             )
@@ -412,7 +570,7 @@ fun MapApp(exitActivity: () -> Unit) {
                         Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
 
                         dataRepository.requestMarkerDrop(
-                            MarkerActivity.markerType,
+                            markerType,
                             "",
                             "",
                             time,
@@ -440,29 +598,10 @@ fun MapApp(exitActivity: () -> Unit) {
                     locationState = userLocationState,
                     cameraState = cameraState,
                     colors = LocationPuckColors(
-                        dotFillColorCurrentLocation =
-                            when (team){
-                                "White" -> Color.White
-                                "Yellow" -> Color.Yellow
-                                "Orange" -> orange
-                                "Magenta" -> Color.Magenta
-                                "Red" -> Color.Red
-                                "Maroon" -> maroon
-                                "Purple" ->purple
-                                "Dark Blue" -> dark_blue
-                                "Blue" -> Color.Blue
-                                "Cyan" -> Color.Cyan
-                                "Teal" -> teal
-                                "Green" -> Color.Green
-                                "Dark Green" -> dark_green
-                                "Brown" -> brown
-                                else -> Color.Unspecified
-                            }
-                    ),
+                        dotFillColorCurrentLocation = TeamColors(team)),
                     onClick = {
                         scope.launch {
                             val current = cameraState.position
-
                             cameraState.animateTo(
                                 CameraPosition(
                                     target = Position(
@@ -508,6 +647,10 @@ fun MapApp(exitActivity: () -> Unit) {
                 markers = receivedMapMarkers,
                 camera = cameraState
             )
+            UsersOnMap(
+                users = receivedMapUsers,
+                camera = cameraState
+            )
         }
         if (showPopup && puckScreenOffset != null) {
            PopupBox(
@@ -541,7 +684,7 @@ fun MapApp(exitActivity: () -> Unit) {
                     .align(Alignment.TopCenter)
                     .width(100.dp),
                 color = colors.primary,
-                textStyle = MaterialTheme.typography.bodySmall,
+                textStyle = MaterialTheme.typography.body2,
                 barWidth = 1.dp
             )
 
