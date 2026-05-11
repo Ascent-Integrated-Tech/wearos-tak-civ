@@ -440,6 +440,19 @@
             android:exported="false">
         </receiver>
 
+        <!-- WEAR-508: app-level ManagedConfiguration CEP overlay receiver.
+             Listens for ACTION_APPLICATION_RESTRICTIONS_CHANGED outside of MainActivity so
+             the overlay can be applied without an activity. exported=true is required because
+             the broadcast is delivered by the system process. -->
+        <receiver
+            android:name=".integration.managedconfig.CepManagedConfigReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.APPLICATION_RESTRICTIONS_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"

@@ -5,42 +5,76 @@ import com.aitech.weartak_civ.R
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * RuleCompiler is the single parser authority for CEP definitions.
+ *
+ * WEAR-508 [Update v1.1 — U2]: built-in JSON and ManagedConfiguration overlay JSON must be
+ * parsed by the same entry points so identical input yields identical [FeatureDef]/[RuleDef]
+ * shapes regardless of source. The shared, throwing entry points are:
+ *  - [parseEngineCadence]
+ *  - [parseFeatureDefs]
+ *  - [parseRuleDefs]
+ *
+ * `loadFromRaw` and `parse` (built-in path) and `ManagedConfigOverlayParser` (overlay path)
+ * both delegate to these, so any parser divergence is structurally impossible.
+ */
 object RuleCompiler {
+
+    /** Defaults applied when an `engine` object is omitted from the JSON. */
+    data class EngineCadence(val tickHz: Int, val ruleEvalIntervalMs: Int)
 
     fun loadFromRaw(context: Context, rawResId: Int = R.raw.cep_rules): CepConfig {
         val json = context.resources.openRawResource(rawResId).bufferedReader().use { it.readText() }
         return parse(JSONObject(json))
     }
 
+    /**
+     * Built-in path: tolerant parse used at process start. Errors collapse to an empty config so
+     * the engine can still start. Overlay parsers must NOT use this; they must call the strict
+     * shared entry points so malformed payloads surface as validation errors.
+     */
     fun parse(root: JSONObject): CepConfig {
         return try {
-            val engine = root.optJSONObject("engine")
-            val tickMs = engine?.optInt("window_tick_ms", 1000) ?: 1000
-            val tickHz = (1000 / tickMs).coerceAtLeast(1)
-            // Phase 1: rule_eval_interval_ms may differ from window_tick_ms (used in later phases)
-            val ruleEvalIntervalMs = engine?.optInt("rule_eval_interval_ms", tickMs) ?: tickMs
-            val features = try { parseFeatures(root.optJSONArray("features")) } catch (ex: Throwable) {
+            val cadence = parseEngineCadence(root.optJSONObject("engine"))
+            val features = try {
+                parseFeatureDefs(root.optJSONArray("features"))
+            } catch (ex: Throwable) {
                 android.util.Log.e("CEP", "Failed to parse features", ex); emptyList()
             }
             val rules = try {
-                if (root.has("rules")) parseRules(root.optJSONArray("rules")) else emptyList()
+                if (root.has("rules")) parseRuleDefs(root.optJSONArray("rules")) else emptyList()
             } catch (ex: Throwable) {
                 android.util.Log.e("CEP", "Failed to parse rules", ex); emptyList()
             }
-            CepConfig(tickHz, features, rules, ruleEvalIntervalMs)
+            CepConfig(cadence.tickHz, features, rules, cadence.ruleEvalIntervalMs)
         } catch (t: Throwable) {
             android.util.Log.e("CEP", "Failed to parse CEP config", t)
             CepConfig(1, emptyList(), emptyList())
         }
     }
 
-    private fun parseFeatures(arr: JSONArray?): List<FeatureDef> {
+    /**
+     * Shared entry point: parse `engine` cadence object.
+     * Returns defaults when [engine] is null (omitted in payload).
+     */
+    fun parseEngineCadence(engine: JSONObject?): EngineCadence {
+        val tickMs = engine?.optInt("window_tick_ms", 1000) ?: 1000
+        val tickHz = (1000 / tickMs).coerceAtLeast(1)
+        val ruleEvalIntervalMs = engine?.optInt("rule_eval_interval_ms", tickMs) ?: tickMs
+        return EngineCadence(tickHz, ruleEvalIntervalMs)
+    }
+
+    /**
+     * Shared entry point: parse a `features` JSON array into [FeatureDef]s.
+     * Throws [org.json.JSONException] on malformed entries; callers (validator/overlay parser)
+     * decide whether to reject the whole candidate or fall back.
+     */
+    fun parseFeatureDefs(arr: JSONArray?): List<FeatureDef> {
         if (arr == null) return emptyList()
         val out = mutableListOf<FeatureDef>()
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val id = o.optString("id", o.optString("name"))
-            // Phase 3: per-feature compute cadence; defaults to 1000ms (legacy 1-Hz behaviour)
             val updateIntervalMs = if (o.has("update_interval_ms") && !o.isNull("update_interval_ms"))
                 o.getLong("update_interval_ms") else 1000L
             when (o.getString("type")) {
@@ -49,7 +83,6 @@ object RuleCompiler {
                     source = o.getString("source"),
                     op = o.optString("op", o.optString("agg", "min")),
                     windowSec = o.getInt("window_sec"),
-                    // Phase 1: optional freshness guard parsed from JSON "max_age_sec"
                     maxAgeSec = if (o.has("max_age_sec") && !o.isNull("max_age_sec")) o.getLong("max_age_sec") else null,
                     updateIntervalMs = updateIntervalMs
                 )
@@ -112,7 +145,11 @@ object RuleCompiler {
         return out
     }
 
-    private fun parseRules(arr: JSONArray?): List<RuleDef> {
+    /**
+     * Shared entry point: parse a `rules` JSON array into [RuleDef]s.
+     * Throws [org.json.JSONException] on malformed entries.
+     */
+    fun parseRuleDefs(arr: JSONArray?): List<RuleDef> {
         if (arr == null) return emptyList()
         val out = mutableListOf<RuleDef>()
         for (i in 0 until arr.length()) {
@@ -123,8 +160,8 @@ object RuleCompiler {
             val monitorArray = action.optJSONArray("monitor")
             val monitorList = mutableListOf<ExitCondition>()
             if (monitorArray != null) {
-                for (i in 0 until monitorArray.length()) {
-                    val m = monitorArray.getJSONObject(i)
+                for (mi in 0 until monitorArray.length()) {
+                    val m = monitorArray.getJSONObject(mi)
                     val feature = m.getString("feature")
 
                     // exit_below can be number OR feature ref string
@@ -189,7 +226,6 @@ object RuleCompiler {
                 }
             }
 
-            // Parse exit_sustain_sec and optional exit_logic
             val exitSustainSec =
                 if (action.has("exit_sustain_sec") && !action.isNull("exit_sustain_sec"))
                     action.getLong("exit_sustain_sec") else null
@@ -237,4 +273,3 @@ object RuleCompiler {
         return out
     }
 }
-

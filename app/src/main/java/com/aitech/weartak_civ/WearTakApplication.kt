@@ -84,7 +84,9 @@ class WearTakApplication : Application() {
             TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
         }
         CepProvider.init(this)
-        CepProvider.getOrCreateEngine(this).start()
+        // bootstrapEngine() inside getOrCreateEngine handles warm-up + start under the
+        // holder-mediated swap path, so callers must NOT invoke start() separately.
+        CepProvider.getOrCreateEngine(this)
     }
 
     object AppCtx {

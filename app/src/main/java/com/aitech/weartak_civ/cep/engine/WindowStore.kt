@@ -58,6 +58,34 @@ class WindowStore(private val ringConfig: RingConfig) {
     private fun numCap() = ringConfig.maxSecondsNumeric * ringConfig.maxSensorHz
     private fun arrCap() = ringConfig.maxSecondsArray  * ringConfig.maxSensorHz
 
+    /** Test / diagnostics: newest sample in numeric ring [topic], if any. */
+    internal fun peekNumericRingLast(topic: String): Double? = num[topic]?.lastOrNull()
+
+    /**
+     * Holder-mediated swap: copy per-topic ring buffers and [latest] from another store.
+     * [FeatureStore] is intentionally not copied — profile and derived keys are re-seeded in
+     * [CepEngine.warmUp]. Requires identical [RingConfig] so ring capacities match.
+     */
+    fun adoptIngestionStateFrom(other: WindowStore) {
+        require(ringConfig == other.ringConfig) {
+            "RingConfig mismatch; retained rings are undefined across this swap."
+        }
+        num.clear()
+        arr.clear()
+        latest.clear()
+        for ((topic, srcRing) in other.num) {
+            val dst = TimedDoubleRing(numCap())
+            dst.copyStateFrom(srcRing)
+            num[topic] = dst
+        }
+        for ((topic, srcRing) in other.arr) {
+            val dst = TimedArrayRing(arrCap())
+            dst.copyStateFrom(srcRing)
+            arr[topic] = dst
+        }
+        latest.putAll(other.latest)
+    }
+
     // ── Ingestion ─────────────────────────────────────────────────────────────
 
     fun ingest(evt: CepEvent<out CepPayload>, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {

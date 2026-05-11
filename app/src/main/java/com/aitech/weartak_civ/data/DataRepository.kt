@@ -3146,6 +3146,116 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // ====================================================================================
+    // WEAR-508 ManagedConfiguration CEP overlay persistence
+    //
+    // Persistence boundary (per [Update v1.1 — U1 cleanup]):
+    //   pre-swap   : cep_configuration_raw_json
+    //   post-swap  : cep_configuration_applied_hash, cep_configuration_applied_at_ms,
+    //                cep_last_consumed_reset_epoch (when reset commits with apply)
+    // Applied-state keys must NEVER be written for a candidate that did not become
+    // authoritative through CepEngineHolder.swap(...).
+    // ====================================================================================
+
+    /** Last validated raw managed-overlay payload (or empty string when overlay is cleared). */
+    val getCepConfigurationRawJson: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CEP_CONFIGURATION_RAW_JSON] ?: ""
+    }
+
+    suspend fun getCepConfigurationRawJsonOnce(): String = getCepConfigurationRawJson.first()
+
+    /** Pre-swap write. Used after parse + validate + canonicalize, before engine swap. */
+    suspend fun storeCepConfigurationRawJson(raw: String) {
+        context.dataStore.edit { prefs ->
+            if (raw.isBlank()) prefs.remove(CEP_CONFIGURATION_RAW_JSON)
+            else prefs[CEP_CONFIGURATION_RAW_JSON] = raw
+        }
+    }
+
+    /** Canonical hash of the most recent authoritative effective config. Empty when never applied. */
+    val getCepConfigurationAppliedHash: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CEP_CONFIGURATION_APPLIED_HASH] ?: ""
+    }
+
+    suspend fun getCepConfigurationAppliedHashOnce(): String = getCepConfigurationAppliedHash.first()
+
+    /** Timestamp of the most recent authoritative apply (ms epoch); 0 when never applied. */
+    val getCepConfigurationAppliedAtMs: Flow<Long> = context.dataStore.data.map { prefs ->
+        prefs[CEP_CONFIGURATION_APPLIED_AT_MS] ?: 0L
+    }
+
+    /** Post-swap-only write. Caller MUST gate this on a successful CepEngineHolder.swap(...). */
+    suspend fun storeCepConfigurationApplied(hash: String, atMs: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[CEP_CONFIGURATION_APPLIED_HASH] = hash
+            prefs[CEP_CONFIGURATION_APPLIED_AT_MS] = atMs
+        }
+    }
+
+    /** Local mirror of the most recently consumed `cepResetEpoch`. */
+    val getCepLastConsumedResetEpoch: Flow<Long> = context.dataStore.data.map { prefs ->
+        prefs[CEP_LAST_CONSUMED_RESET_EPOCH] ?: 0L
+    }
+
+    suspend fun getCepLastConsumedResetEpochOnce(): Long = getCepLastConsumedResetEpoch.first()
+
+    /** Pre-swap write as part of reset consumption ordering. */
+    suspend fun storeCepLastConsumedResetEpoch(epoch: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[CEP_LAST_CONSUMED_RESET_EPOCH] = epoch.coerceAtLeast(0L)
+        }
+    }
+
+    /**
+     * Returns true when [epoch] should be consumed on the next **successful** authoritative
+     * apply (`epoch > 0` and newer than [CEP_LAST_CONSUMED_RESET_EPOCH]). Does not mutate
+     * storage — failed validation/warm-up/swap leaves mirror and sustain overrides intact.
+     */
+    suspend fun shouldConsumeCepResetEpoch(epoch: Long): Boolean {
+        if (epoch <= 0L) return false
+        val current = getCepLastConsumedResetEpochOnce()
+        return epoch > current
+    }
+
+    /**
+     * Advances [CEP_LAST_CONSUMED_RESET_EPOCH] after `CepEngineHolder.swap` + applied-state
+     * persistence commit.
+     */
+    suspend fun advanceCepResetEpochMirror(epoch: Long): Boolean {
+        if (epoch <= 0L) return false
+        var advanced = false
+        context.dataStore.edit { prefs ->
+            val cur = prefs[CEP_LAST_CONSUMED_RESET_EPOCH] ?: 0L
+            if (epoch > cur) {
+                prefs[CEP_LAST_CONSUMED_RESET_EPOCH] = epoch
+                advanced = true
+            }
+        }
+        return advanced
+    }
+
+    /** Clears persisted sustain overrides (reset consumption after validation, before warm-up). */
+    suspend fun clearCepSustainOverridesStorage() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON)
+        }
+    }
+
+    /** Persisted CEP diagnostic ring. Newest-last; bounded by the encoder/decoder. */
+    val getCepDiagnostics: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CEP_DIAGNOSTICS_JSON] ?: ""
+    }
+
+    suspend fun getCepDiagnosticsOnce(): String = getCepDiagnostics.first()
+
+    /** Replace the persisted diagnostic ring atomically. */
+    suspend fun storeCepDiagnostics(json: String) {
+        context.dataStore.edit { prefs ->
+            if (json.isBlank()) prefs.remove(CEP_DIAGNOSTICS_JSON)
+            else prefs[CEP_DIAGNOSTICS_JSON] = json
+        }
+    }
+
 
     companion object {
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
@@ -3221,6 +3331,12 @@ class DataRepository(private val context: Context) {
         private val LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH = intPreferencesKey("low_resting_hr_alert_threshold_length")
         private val RESTING_HR_ALERT_BPM_LENGTH_THRESHOLD = intPreferencesKey("resting_hr_alert_bpm_length_threshold")
         private val CEP_SUSTAINED_FOR_SEC_OVERRIDES_JSON = stringPreferencesKey("cep_sustain_overrides_json")
+        // WEAR-508 ManagedConfiguration CEP overlay persistence
+        private val CEP_CONFIGURATION_RAW_JSON = stringPreferencesKey("cep_configuration_raw_json")
+        private val CEP_CONFIGURATION_APPLIED_HASH = stringPreferencesKey("cep_configuration_applied_hash")
+        private val CEP_CONFIGURATION_APPLIED_AT_MS = androidx.datastore.preferences.core.longPreferencesKey("cep_configuration_applied_at_ms")
+        private val CEP_LAST_CONSUMED_RESET_EPOCH = androidx.datastore.preferences.core.longPreferencesKey("cep_last_consumed_reset_epoch")
+        private val CEP_DIAGNOSTICS_JSON = stringPreferencesKey("cep_diagnostics_json")
         private val EXERTION_THRESHOLD_WARNING = intPreferencesKey("exertion_threshold_warning")
         private val EXERTION_THRESHOLD_ALERT = intPreferencesKey("exertion_threshold_alert")
         private val EXERTION_WARNING_THRESHOLD_LENGTH = intPreferencesKey("exertion_warning_threshold_length")

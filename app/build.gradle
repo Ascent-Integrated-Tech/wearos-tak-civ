@@ -200,6 +200,9 @@ dependencies {
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // WEAR-508 ManagedConfiguration CEP overlay processing pipeline
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation libs.tink.android
     implementation libs.play.services.location
     implementation "androidx.wear:wear-ongoing:1.0.0"
@@ -229,4 +232,11 @@ dependencies {
     androidTestImplementation libs.ui.test.junit4
     debugImplementation libs.ui.tooling
     debugImplementation libs.ui.test.manifest
+
+    // WEAR-508 unit tests for CEP managed-config overlay pipeline
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1'
+    testImplementation 'org.robolectric:robolectric:4.12.1'
+    testImplementation 'io.mockk:mockk:1.13.11'
 }

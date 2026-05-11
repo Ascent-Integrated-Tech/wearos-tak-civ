@@ -2,44 +2,218 @@ package com.aitech.weartak_civ.cep.di
 
 import android.content.Context
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.cep.engine.CepConfig
 import com.aitech.weartak_civ.cep.engine.CepEngine
 import com.aitech.weartak_civ.cep.engine.ProfileStore
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
+import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.engine.action.CepActionDispatcher
 import com.aitech.weartak_civ.cep.engine.action.LogActionHandler
 import com.aitech.weartak_civ.cep.engine.action.WarnActionHandler
 import com.aitech.weartak_civ.cep.engine.action.WarnLogActionHandler
+import com.aitech.weartak_civ.cep.engine.config.CanonicalJson
+import com.aitech.weartak_civ.cep.engine.config.CepConfigRegistry
+import com.aitech.weartak_civ.cep.engine.config.CepDiagnosticRecord
+import com.aitech.weartak_civ.cep.engine.config.CepDiagnosticSink
+import com.aitech.weartak_civ.cep.engine.config.DiagnosticsCodec
+import com.aitech.weartak_civ.cep.engine.config.ManagedConfigOverlayParser
+import com.aitech.weartak_civ.cep.engine.config.ParsedManagedOverlay
+import com.aitech.weartak_civ.cep.engine.config.ParserException
+import com.aitech.weartak_civ.cep.engine.config.ReasonCodes
+import com.aitech.weartak_civ.cep.engine.config.Resolved
+import com.aitech.weartak_civ.cep.engine.config.SourceLayer
+import com.aitech.weartak_civ.cep.engine.config.ValidationResult
+import com.aitech.weartak_civ.cep.engine.lifecycle.CepEngineHolder
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * CEP DI bootstrap and runtime apply orchestrator.
+ *
+ * Responsibilities (per WEAR-508 design):
+ *  - Cold-start bootstrap: parse built-ins, hydrate cached managed overlay, validate +
+ *    compose synchronously, fall back to built-ins on rejection with a persisted diagnostic.
+ *  - Engine factory: build a fresh [CepEngine] with its own coroutine scope from a resolved
+ *    [CepConfig]. The engine itself remains immutable post-construction.
+ *  - Holder-mediated apply: [applyManagedOverlay] runs validate → build → warm-up → swap →
+ *    cancel-old → persist applied state on a single dedicated apply lane (last-write-wins).
+ *  - Diagnostics: persists structured rejection records via [DataRepository] so they
+ *    survive process restart.
+ *
+ * `CepEngine` is intentionally NOT given an `applyConfig(...)` method. Runtime swap lives
+ * here (per [Update v1.1 — U1 cleanup]).
+ */
 object CepProvider {
+    private const val TAG = "CEP"
+
     private lateinit var appCtx: Context
-    fun init(context: Context) { appCtx = context.applicationContext }
+    private lateinit var dataRepo: DataRepository
+    private lateinit var registry: CepConfigRegistry
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Dispatcher scope is global because CepActionDispatcher and ProfileStore are
+     * registry-independent. Per-engine scopes are created in [buildEngine].
+     */
+    private val supportScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    @Volatile private var engine: CepEngine? = null
+    /** Single-threaded apply lane so recompose is serialized (per concurrency contract). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val applyDispatcher = Dispatchers.Default.limitedParallelism(1)
+    private val applyMutex = Mutex()
+
+    /** Holder is the single ownership seam for the running engine. */
+    private val holder = CepEngineHolder()
+
+    /** Monotonic apply ticket; used by the apply lane to enforce last-write-wins. */
+    private val applyTicket = AtomicLong(0L)
+    @Volatile private var latestQueuedTicket: Long = 0L
+    @Volatile private var latestAppliedHash: String = ""
+
     @Volatile private var dispatcher: CepActionDispatcher? = null
     @Volatile private var profileStore: ProfileStore? = null
+    @Volatile private var diagnosticSink: PersistentDiagnosticSink? = null
 
-    fun getOrCreateEngine(context: Context): CepEngine {
-        return engine ?: synchronized(this) {
-            engine ?: buildEngine(context).also { engine = it }
+    private lateinit var managedApplyExecutor: CepManagedApplyExecutor
+
+    fun init(context: Context) {
+        appCtx = context.applicationContext
+        dataRepo = (appCtx as WearTakApplication).repo
+        diagnosticSink = PersistentDiagnosticSink(dataRepo, supportScope)
+        registry = bootstrapRegistry(appCtx)
+        managedApplyExecutor = CepManagedApplyExecutor(
+            registry = registry,
+            persistence = RepoCepApplyPersistence(dataRepo),
+            holder = holder,
+            appCtx = appCtx,
+            buildEngine = { ctx, cfg -> buildEngine(ctx, cfg) },
+            diagnostics = object : CepApplyDiagnostics {
+                override fun recordRejection(
+                    source: SourceLayer,
+                    reasonCode: String,
+                    schemaVersion: Int?,
+                    payloadHash: String?,
+                    effectiveBefore: String?,
+                    effectiveAfter: String?,
+                    fallbackDecision: String?,
+                    tenant: String?, issuer: String?,
+                    message: String?
+                ) {
+                    this@CepProvider.recordRejection(
+                        source, reasonCode, schemaVersion, payloadHash,
+                        effectiveBefore, effectiveAfter, fallbackDecision,
+                        tenant, issuer, message
+                    )
+                }
+
+                override fun recordInfo(
+                    source: SourceLayer,
+                    reasonCode: String,
+                    schemaVersion: Int?,
+                    payloadHash: String?,
+                    effectiveBefore: String?,
+                    effectiveAfter: String?,
+                    tenant: String?, issuer: String?
+                ) {
+                    this@CepProvider.recordInfo(
+                        source, reasonCode, schemaVersion, payloadHash,
+                        effectiveBefore, effectiveAfter, tenant, issuer
+                    )
+                }
+            },
+            clearAlertsForRemovedRules = { removed, reason ->
+                clearAlertsForRemovedRules(removed, reason)
+            }
+        )
+    }
+
+    /**
+     * Cold-start: parse built-ins, build the registry, attempt to hydrate any cached
+     * managed overlay, fall back to built-ins on rejection. Always returns a registry
+     * configured against the parsed built-in surface — i.e. the registry itself can never
+     * be in an unhealthy state because of a bad cached overlay.
+     */
+    private fun bootstrapRegistry(context: Context): CepConfigRegistry {
+        val builtIn = RuleCompiler.loadFromRaw(context)
+        val defaultCadence = RuleCompiler.EngineCadence(
+            tickHz = builtIn.tickHz,
+            ruleEvalIntervalMs = builtIn.ruleEvalIntervalMs
+        )
+        return CepConfigRegistry(builtIn = builtIn, defaultCadence = defaultCadence)
+    }
+
+    /**
+     * Synchronously produce the cold-start [Resolved] for engine creation.
+     * If the cached overlay is malformed/invalid, persists a diagnostic and falls back to
+     * built-ins. Engine startup is never delayed by an overlay rejection.
+     */
+    private fun resolveColdStart(): Resolved {
+        val cachedRaw = runBlocking { dataRepo.getCepConfigurationRawJsonOnce() }
+        val effectiveBefore = "" // before any apply this run
+        if (cachedRaw.isBlank()) {
+            return composeBuiltinsOnly()
+        }
+        val parsed = try {
+            ManagedConfigOverlayParser.parse(cachedRaw, registry.configBounds)
+        } catch (e: ParserException) {
+            recordRejection(
+                source = SourceLayer.BOOTSTRAP,
+                reasonCode = e.reasonCode,
+                schemaVersion = null,
+                payloadHash = CanonicalJson.hashRaw(cachedRaw),
+                effectiveBefore = effectiveBefore,
+                effectiveAfter = effectiveBefore,
+                fallbackDecision = CepDiagnosticRecord.FALLBACK_TO_BUILTINS,
+                tenant = null, issuer = null,
+                message = "cached overlay rejected at boot: ${e.message}"
+            )
+            return composeBuiltinsOnly()
+        }
+
+        return when (val v = registry.compose(parsed)) {
+            is ValidationResult.Ok -> v.resolved
+            is ValidationResult.Err -> {
+                recordRejection(
+                    source = SourceLayer.BOOTSTRAP,
+                    reasonCode = v.reasonCode,
+                    schemaVersion = parsed.schemaVersion,
+                    payloadHash = parsed.payloadHash,
+                    effectiveBefore = effectiveBefore,
+                    effectiveAfter = effectiveBefore,
+                    fallbackDecision = CepDiagnosticRecord.FALLBACK_TO_BUILTINS,
+                    tenant = parsed.tenant, issuer = parsed.issuer,
+                    message = "cached overlay invalid at boot: ${v.message}"
+                )
+                composeBuiltinsOnly()
+            }
+        }
+    }
+
+    private fun composeBuiltinsOnly(): Resolved {
+        return when (val r = registry.composeWithoutManagedOverlay()) {
+            is ValidationResult.Ok -> r.resolved
+            is ValidationResult.Err -> error("Built-in CEP config failed validation: ${r.message}")
         }
     }
 
     fun getActionDispatcher(): CepActionDispatcher {
         return dispatcher ?: synchronized(this) {
             dispatcher ?: CepActionDispatcher(
-                scope = scope,
+                scope = supportScope,
                 handlers = listOf(
-                LogActionHandler(appScope = scope),
-                WarnActionHandler(appScope = scope),
-                WarnLogActionHandler(appScope = scope)
-            )
+                    LogActionHandler(appScope = supportScope),
+                    WarnActionHandler(appScope = supportScope),
+                    WarnLogActionHandler(appScope = supportScope)
+                )
             ).also { dispatcher = it }
         }
     }
@@ -50,19 +224,239 @@ object CepProvider {
         }
     }
 
-    private fun buildEngine(context: Context): CepEngine {
-        val config = RuleCompiler.loadFromRaw(context)
-
-        //val dataRepo = DataRepository(context.applicationContext)
-
-        val dataRepo = (context as WearTakApplication).repo
-
-        val yearOfBirth = kotlinx.coroutines.runBlocking {
-            dataRepo.getYearOfBirth.first()
+    /**
+     * Returns the running engine, building and starting one synchronously the first time it
+     * is requested. Subsequent calls return the holder's authoritative reference.
+     */
+    fun getOrCreateEngine(context: Context): CepEngine {
+        val existing = holder.current()
+        if (existing != null) return existing
+        return synchronized(this) {
+            holder.current() ?: bootstrapEngine(context)
         }
+    }
 
-        return CepEngine(context.applicationContext, scope, config, yearOfBirth = yearOfBirth, dataRepo)
+    /** Authoritative read of the running engine, or null before cold start. */
+    fun currentEngine(): CepEngine? = holder.current()
+
+    /** Returns the configured registry — useful for tests and for ManagedConfigApplyWorker. */
+    fun registry(): CepConfigRegistry = registry
+
+    /** Persisted diagnostic sink. */
+    fun diagnostics(): CepDiagnosticSink = requireNotNull(diagnosticSink) {
+        "CepProvider.init(...) must be called before diagnostics()"
+    }
+
+    /**
+     * First-run engine construction. Resolves the cold-start config, builds an engine,
+     * warms it up synchronously, installs it into the holder, and starts it. Mirrors the
+     * holder-mediated swap path but with no prior engine to cancel.
+     */
+    private fun bootstrapEngine(context: Context): CepEngine {
+        val resolved = resolveColdStart()
+        val engine = buildEngine(context, resolved.engineConfig)
+        runBlocking { engine.warmUp() }
+        check(holder.install(engine)) { "CepEngineHolder already initialized before bootstrap" }
+        // The cold-start install IS an authoritative install — set the in-memory hash
+        // BEFORE start() launches coroutines so any concurrent managed-config worker that
+        // reads `latestAppliedHash` sees the correct baseline.
+        latestAppliedHash = resolved.effectiveHash
+        engine.start()
+        // Persist baseline applied-hash so subsequent applies have a stable point of
+        // comparison for no-op detection across process restarts. Per the design, applied
+        // state is post-swap-only; the cold-start install qualifies as becoming
+        // authoritative (the engine the system actually ran).
+        runBlocking {
+            dataRepo.storeCepConfigurationApplied(resolved.effectiveHash, System.currentTimeMillis())
+        }
+        return engine
+    }
+
+    /**
+     * Factory builder per [Update v1.1 — U1 cleanup]. Constructs a NEW engine instance with
+     * its own coroutine scope. Old and new engines must not share scopes — this is what
+     * makes "fully cancelled before the new ones become authoritative" enforceable.
+     */
+    fun buildEngine(context: Context, config: CepConfig): CepEngine {
+        val freshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val ctx = context.applicationContext
+        val app = ctx as WearTakApplication
+        val yob = runBlocking { app.repo.getYearOfBirth.first() }
+        return CepEngine(
+            appContext = ctx,
+            scope = freshScope,
+            config = config,
+            yearOfBirth = yob,
+            dataRepository = app.repo
+        )
+    }
+
+    /**
+     * Apply a managed overlay payload. Returns an [ApplyResult] describing the outcome.
+     * Designed to be called from `ManagedConfigApplyWorker` on the WorkManager dispatcher;
+     * internally serializes through [applyMutex] on a single-parallelism dispatcher to enforce
+     * last-write-wins (per [Update v1.1 — U10]).
+     *
+     * Empty `rawPayload` means "managed overlay is now empty" and is processed by recomposing
+     * built-ins-only. The cached raw is cleared as part of the pre-swap persistence step.
+     */
+    suspend fun applyManagedOverlay(
+        rawPayload: String?
+    ): ApplyResult = withContext(applyDispatcher) {
+        val ticket = applyTicket.incrementAndGet()
+        latestQueuedTicket = ticket
+        applyMutex.withLock {
+            // Last-write-wins: if a newer ticket arrived while we were waiting for the lock,
+            // we abandon this one cleanly without touching the engine.
+            if (ticket != latestQueuedTicket) {
+                return@withLock ApplyResult.Superseded
+            }
+            doApplyLocked(ticket, rawPayload?.takeUnless { ManagedConfigOverlayParser.isEmpty(it) })
+        }
+    }
+
+    private suspend fun doApplyLocked(ticket: Long, rawPayload: String?): ApplyResult {
+        val effectiveBefore = latestAppliedHash
+        val result = managedApplyExecutor.execute(
+            ticket = ticket,
+            rawPayload = rawPayload,
+            effectiveBefore = effectiveBefore,
+            isSuperseded = { ticket != latestQueuedTicket }
+        )
+        when (result) {
+            is ApplyResult.Applied -> latestAppliedHash = result.effectiveHash
+            else -> Unit
+        }
+        return result
+    }
+
+    /**
+     * Clear active alerts whose rules were removed by recompose / disable list / reset.
+     * Per the design's `Active-alert hygiene` section, removing a rule must:
+     *  1. clear the rule's active alert state in [AlertRegistry]
+     *  2. emit downstream clear/cancel behavior per channel policy
+     *  3. retain shared `WindowStore` topic rings (the new engine adopts them)
+     */
+    private fun clearAlertsForRemovedRules(removedRules: Set<String>, reason: String) {
+        if (removedRules.isEmpty()) return
+        var cleared = 0
+        for (ruleId in removedRules) {
+            val alert = AlertRegistry.get(ruleId) ?: continue
+            // Run the same channel-clear path used by CepEngine.checkAndClearAlerts so that
+            // TAK retract / local UI dismiss / SMS no-retract behavior is consistent.
+            supportScope.launch {
+                runCatching {
+                    if (alert.priority == 1) {
+                        dataRepo.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+                    } else {
+                        dataRepo.removePhysioAndAutoGenAlertByUid(alert.uid)
+                    }
+                    AlertRegistry.clear(ruleId)
+                    dataRepo.addAlertClearedEventCep(alert.uid)
+                }
+            }
+            cleared++
+        }
+        android.util.Log.i(TAG, "Cleared $cleared alerts for removed rules: reason=$reason")
+    }
+
+    private fun recordRejection(
+        source: SourceLayer,
+        reasonCode: String,
+        schemaVersion: Int?,
+        payloadHash: String?,
+        effectiveBefore: String?,
+        effectiveAfter: String?,
+        fallbackDecision: String?,
+        tenant: String?, issuer: String?,
+        message: String?
+    ) {
+        val record = CepDiagnosticRecord(
+            timestamp = System.currentTimeMillis(),
+            sourceLayer = source,
+            reasonCode = reasonCode,
+            schemaVersion = schemaVersion,
+            payloadHash = payloadHash,
+            effectiveHashBefore = effectiveBefore,
+            effectiveHashAfter = effectiveAfter,
+            fallbackDecision = fallbackDecision,
+            tenant = tenant, issuer = issuer,
+            message = message
+        )
+        diagnosticSink?.record(record)
+    }
+
+    private fun recordInfo(
+        source: SourceLayer,
+        reasonCode: String,
+        schemaVersion: Int?,
+        payloadHash: String?,
+        effectiveBefore: String?,
+        effectiveAfter: String?,
+        tenant: String?, issuer: String?
+    ) {
+        val record = CepDiagnosticRecord(
+            timestamp = System.currentTimeMillis(),
+            sourceLayer = source,
+            reasonCode = reasonCode,
+            schemaVersion = schemaVersion,
+            payloadHash = payloadHash,
+            effectiveHashBefore = effectiveBefore,
+            effectiveHashAfter = effectiveAfter,
+            fallbackDecision = null,
+            tenant = tenant, issuer = issuer,
+            message = null
+        )
+        diagnosticSink?.record(record)
+    }
+
+    /** Apply outcome surfaced to callers (eg. WorkManager worker). */
+    sealed class ApplyResult {
+        data class Applied(val effectiveHash: String, val atMs: Long) : ApplyResult()
+        data object NoOp : ApplyResult()
+        data class Rejected(val reasonCode: String, val message: String) : ApplyResult()
+        data object Superseded : ApplyResult()
     }
 }
 
+/**
+ * Persistent diagnostic ring backed by [DataRepository]. Maintains a hot in-memory copy plus
+ * a bounded persisted JSON document; the persisted form survives restart per
+ * [Update v1.1 — U7].
+ */
+private class PersistentDiagnosticSink(
+    private val repo: DataRepository,
+    private val scope: CoroutineScope,
+    private val capacity: Int = 64
+) : CepDiagnosticSink {
 
+    private val ring = ArrayDeque<CepDiagnosticRecord>(capacity)
+    private val mutex = Mutex()
+
+    init {
+        // Hydrate hot cache from disk once, off-thread.
+        scope.launch {
+            val raw = runCatching { repo.getCepDiagnosticsOnce() }.getOrNull()
+            val records = DiagnosticsCodec.decode(raw)
+            mutex.withLock {
+                ring.clear()
+                for (r in records.takeLast(capacity)) ring.addLast(r)
+            }
+        }
+    }
+
+    override fun record(record: CepDiagnosticRecord) {
+        scope.launch {
+            mutex.withLock {
+                if (ring.size >= capacity) ring.removeFirst()
+                ring.addLast(record)
+                runCatching { repo.storeCepDiagnostics(DiagnosticsCodec.encode(ring.toList())) }
+            }
+        }
+    }
+
+    override fun recent(): List<CepDiagnosticRecord> {
+        // Best-effort snapshot. Fine for diagnostics surfaces.
+        return ring.toList()
+    }
+}
