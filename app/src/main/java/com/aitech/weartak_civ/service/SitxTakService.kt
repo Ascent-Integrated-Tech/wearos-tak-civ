@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
+import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseUserPositionCotOrNull
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
@@ -728,7 +729,8 @@ class SitxTakService : Service() {
 
     // TODO Sitx: Merge with startCotReader in TakConnectService
     private fun handleTextMessage(flowTag: String, rawXml: String) {
-        if (CotUtils.isChatMessage(rawXml)
+        if (runBlocking { dataRepo.getEnableChatService.first() }
+            && CotUtils.isChatMessage(rawXml)
             && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
             Log.i(TAG, "Received Chat for me:\n$rawXml")
             EventBus.getDefault().post(TakChatEvent(rawXml))
@@ -741,6 +743,21 @@ class SitxTakService : Service() {
                 }
             }
         } else {
+            val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
+            if (userPositionCotEvent != null) {
+                if (userPositionCotEvent.uid != MainActivity.device_uid) {
+                    Log.i(
+                        TAG,
+                        "Inbound user CoT: source=$flowTag uid=${userPositionCotEvent.uid} " +
+                            "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
+                            "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
+                            "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
+                            "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
+                            "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how}"
+                    )
+                }
+                return
+            }
             val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
             if (markerCotEvent != null) {

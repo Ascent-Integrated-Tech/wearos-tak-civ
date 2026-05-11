@@ -2011,12 +2011,23 @@ class CotDispatchService : Service() {
         // Blocks the current (scheduler) thread until the work is done.
         runBlocking(Dispatchers.IO) {
             val snapshot = dataRepository.snapshotPli()
+            val loc = snapshot.loc
 
             val xml = buildPliCot(snapshot)
 
+            Log.i(
+                TAG,
+                "Outbound PLI built: uid=${snapshot.systemData.deviceId} " +
+                    "lat=${loc?.lat ?: 0.0} lon=${loc?.lon ?: 0.0} " +
+                    "hae=${loc?.hae ?: 0.0} takConnected=${TAKConnectService.isAnyTakConnected} " +
+                    "sitxAvailable=${sitxAvailable()} companionAvailable=${companionAppAvailable()}"
+            )
+
             if (TAKConnectService.isAnyTakConnected) {
+                Log.i(TAG, "Outbound PLI send via TAK server")
                 sendDataTAKServers(xml, false)
             }
+            Log.i(TAG, "Outbound PLI send via Sitx command bus")
             SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
 
             if (companionAppAvailable()) {
@@ -2051,7 +2062,7 @@ class CotDispatchService : Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
-        //Log.i(TAG, "onLocationRcvdEvent called")
+        Log.i(TAG, "onLocationRcvdEvent: received location trigger for outbound PLI")
         lastLocationUpdateRcvd = System.currentTimeMillis()
         if (readyToSendAlertEvents()) {
             // Flush pending Manual emergency (if any)
