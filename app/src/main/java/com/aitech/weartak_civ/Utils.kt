@@ -1013,6 +1013,7 @@ object Utils {
         data class UserPositionCotEvent(
             val version: String,
             val uid: String,
+            val team: String,
             val type: String,
             val how: String,
             val time: Long,
@@ -1079,6 +1080,7 @@ object Utils {
                 val timeIso = attrOfEvent(rawXml, "time") ?: return null
                 val startIso = attrOfEvent(rawXml, "start") ?: timeIso
                 val staleIso = attrOfEvent(rawXml, "stale") ?: timeIso
+                val team = groupName(rawXml) ?: ""
 
                 val point = pointOf(rawXml) ?: return null
 
@@ -1094,6 +1096,7 @@ object Utils {
                 return UserPositionCotEvent(
                     version = version,
                     uid = uid,
+                    team = team,
                     type = typeStr,
                     how = how,
                     time = parseIsoToEpochMs(timeIso),
@@ -1202,6 +1205,11 @@ object Utils {
             /** Extract contact@callsign inside <detail>. */
             private fun contactCallsign(xml: String): String? {
                 return extractAttr(xml, "contact", "callsign")
+            }
+
+            /** Extract _group@name inside <detail>. */
+            private fun groupName(xml: String): String? {
+                return extractAttr(xml, "__group", "name")
             }
 
             /** Extract <creator .../> attributes. */

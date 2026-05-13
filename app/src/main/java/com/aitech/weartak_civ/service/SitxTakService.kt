@@ -745,18 +745,33 @@ class SitxTakService : Service() {
         } else {
             val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
             if (userPositionCotEvent != null) {
+                //TODO: WEAR-494: Move this to data repo
                 if (userPositionCotEvent.uid != MainActivity.device_uid) {
-                    Log.i(
-                        TAG,
-                        "Inbound user CoT: source=$flowTag uid=${userPositionCotEvent.uid} " +
-                            "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
-                            "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
-                            "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
-                            "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
-                            "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how}"
-                    )
+//                    Log.i(
+//                        TAG,
+//                        "Inbound user CoT: source=$flowTag uid=${userPositionCotEvent.uid} " +
+//                            "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
+//                            "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
+//                            "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
+//                            "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
+//                            "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how}"
+//                    )
+//                    return
+//                }
+                    serviceScope.launch {
+                        val shouldTrackUser = dataRepo.applyReceivedUserEvent(
+                            event = userPositionCotEvent,
+                            source = flowTag
+                        )
+                        if (!shouldTrackUser) {
+                            Log.i(
+                                TAG,
+                                "Removing stale received user from map state: ${userPositionCotEvent.uid}"
+                            )
+                            return@launch
+                        }
+                    }
                 }
-                return
             }
             val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 

@@ -1415,20 +1415,36 @@ class TAKConnectService: Service() {
                                 val geofenceCot = GeofenceCotParser.parse(rawXml)
                                 if (null != geofenceCot) GeofenceRepository.sendGeofenceCot(geofenceCot)
                             } else {
+
+
                                 val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
                                 if (userPositionCotEvent != null) {
                                     if (userPositionCotEvent.uid != MainActivity.device_uid) {
-                                        Log.i(
-                                            TAG,
-                                            "Inbound user CoT: source=${takServerDetail.address} uid=${userPositionCotEvent.uid} " +
-                                                "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
-                                                "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
-                                                "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
-                                                "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
-                                                "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how}"
+//                                        Log.i(
+//                                            TAG,
+//                                            "Inbound user CoT: source=${takServerDetail.address} uid=${userPositionCotEvent.uid} " +
+//                                                "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
+//                                                "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
+//                                                "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
+//                                                "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
+//                                                "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how} "+
+//                                                "name = ${userPositionCotEvent.team}"
+//                                        )
+//                                        continue
+
+
+                                        val shouldTrackUser = dataRepository.applyReceivedUserEvent(
+                                            event = userPositionCotEvent,
+                                            source = takServerDetail.address
                                         )
+                                        if (!shouldTrackUser) {
+                                            Log.i(
+                                                TAG,
+                                                "Removing stale received user from map state: ${userPositionCotEvent.uid}"
+                                            )
+                                            continue
+                                        }
                                     }
-                                    continue
                                 }
                                 val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
