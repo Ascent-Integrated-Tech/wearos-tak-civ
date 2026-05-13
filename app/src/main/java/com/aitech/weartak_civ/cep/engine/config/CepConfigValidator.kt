@@ -155,7 +155,8 @@ object CepConfigValidator {
             engineConfig = cfg,
             featureSource = merge.featureSource,
             ruleSource = merge.ruleSource,
-            effectiveHash = effectiveHash
+            effectiveHash = effectiveHash,
+            pluginCollisions = merge.pluginCollisions
         )
         return ValidationResult.Ok(resolved)
     }

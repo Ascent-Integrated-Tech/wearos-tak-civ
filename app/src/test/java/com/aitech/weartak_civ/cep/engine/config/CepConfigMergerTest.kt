@@ -128,4 +128,41 @@ class CepConfigMergerTest {
         assertEquals(SourceLayer.BUILT_IN, res.featureSource["features.a"])
         assertEquals(SourceLayer.BUILT_IN, res.ruleSource["r1"])
     }
+
+    @Test fun pluginCollidingWithBuiltInProducesBlockedByBuiltinDiagnostic() {
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val pluginVersion = FeatureDef.Window(id = "features.a", source = "plugin", op = "avg", windowSec = 5)
+        val plugin = listOf(CepConfigMerger.PluginContribution(pluginId = "com.acme.p", features = listOf(pluginVersion)))
+        val res = CepConfigMerger.merge(builtIn, managed = null, plugin = plugin, defaultCadence = cadence)
+        assertEquals(1, res.pluginCollisions.size)
+        val col = res.pluginCollisions.first()
+        assertEquals("com.acme.p", col.pluginId)
+        assertEquals("features.a", col.entryId)
+        assertEquals(SourceLayer.BUILT_IN, col.blockedBy)
+    }
+
+    @Test fun pluginCollidingWithManagedProducesBlockedByMdmDiagnostic() {
+        val builtIn = CepConfig(1, emptyList(), emptyList(), 1000)
+        val pluginRule = rule("rule.shared")
+        val managedRule = rule("rule.shared")
+        val managed = overlay(rules = listOf(managedRule))
+        val plugin = listOf(CepConfigMerger.PluginContribution(pluginId = "com.acme.p", rules = listOf(pluginRule)))
+        val res = CepConfigMerger.merge(builtIn, managed, plugin, cadence)
+        val cols = res.pluginCollisions.filter { it.blockedBy == SourceLayer.MANAGED_CONFIG }
+        assertEquals(1, cols.size)
+        assertEquals("com.acme.p", cols.first().pluginId)
+        assertEquals("rule.shared", cols.first().entryId)
+    }
+
+    @Test fun replaceModeManagedShadowingPluginRecordsCollision() {
+        val builtIn = CepConfig(1, emptyList(), emptyList(), 1000)
+        val pluginFeat = FeatureDef.Window(id = "features.from_plugin", source = "p", op = "min", windowSec = 5)
+        val plugin = listOf(CepConfigMerger.PluginContribution(pluginId = "com.acme.p", features = listOf(pluginFeat)))
+        val managed = overlay(featuresMode = "REPLACE", features = emptyList())
+        val res = CepConfigMerger.merge(builtIn, managed, plugin, cadence)
+        assertEquals(1, res.pluginCollisions.size)
+        assertEquals(SourceLayer.MANAGED_CONFIG, res.pluginCollisions.first().blockedBy)
+        assertEquals("features.from_plugin", res.pluginCollisions.first().entryId)
+        assertTrue(res.config.features.isEmpty())
+    }
 }

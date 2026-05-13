@@ -28,10 +28,30 @@ data class Resolved(
      * `noop_recompose`). Validation-failure rejections are emitted via
      * [com.aitech.weartak_civ.cep.engine.config.DiagnosticRecorder] instead.
      */
-    val infoDiagnostics: List<String> = emptyList()
+    val infoDiagnostics: List<String> = emptyList(),
+    /**
+     * Plugin entries that were shadowed by a higher-priority layer during merge. The merger
+     * keeps `MANAGED_CONFIG ≻ BUILT_IN ≻ PLUGIN` so a plugin entry colliding with a built-in
+     * or MDM entry is silently overwritten; this list lets the apply lane emit one
+     * `plugin_blocked_by_*` diagnostic per shadowed entry.
+     */
+    val pluginCollisions: List<PluginCollision> = emptyList()
 ) {
     val features: List<FeatureDef> get() = engineConfig.features
     val rules: List<RuleDef> get() = engineConfig.rules
+}
+
+/**
+ * One plugin-vs-higher-layer collision detected at merge time. Used by the apply lane to
+ * emit a `plugin_blocked_by_builtin` / `plugin_blocked_by_mdm` info diagnostic per entry.
+ */
+data class PluginCollision(
+    val pluginId: String,
+    val entryId: String,
+    val entryKind: Kind,
+    val blockedBy: SourceLayer
+) {
+    enum class Kind { FEATURE, RULE }
 }
 
 /**
@@ -102,6 +122,22 @@ object ReasonCodes {
     const val CLEAR_SUPERSEDES_RULES_ARRAY = "clear_supersedes_rules_array"
     const val CLEAR_SUPERSEDES_FEATURES_ARRAY = "clear_supersedes_features_array"
     const val MDM_PAYLOAD_POISON_PILL_HOLDOFF = "mdm_payload_poison_pill_holdoff"
+    const val PLUGIN_ID_PACKAGE_MISMATCH = "plugin_id_package_mismatch"
+    const val PLUGIN_CERT_CHANGED = "plugin_cert_changed"
+    const val PLUGIN_NAMESPACE_VIOLATION = "plugin_namespace_violation"
+    const val PLUGIN_ENGINE_NOT_ALLOWED = "plugin_engine_not_allowed"
+    const val PLUGIN_OVERLAY_RATE_LIMITED = "plugin_overlay_rate_limited"
+    // [Update v1.1 — design §983–994] Plugin-collision and duplicate diagnostics. The merger
+    // keeps the higher-layer entry (BUILT_IN ≻ MANAGED_CONFIG ≻ PLUGIN was inverted to
+    // MANAGED_CONFIG ≻ BUILT_IN ≻ PLUGIN); these codes make that shadowing observable.
+    const val PLUGIN_BLOCKED_BY_BUILTIN = "plugin_blocked_by_builtin"
+    const val PLUGIN_BLOCKED_BY_MDM = "plugin_blocked_by_mdm"
+    const val PLUGIN_BLOCKED_BY_HIGHER_LAYER = "plugin_blocked_by_higher_layer"
+    const val PLUGIN_PAYLOAD_DUPLICATE_ID = "plugin_payload_duplicate_id"
+    // Sample-ingress invariants (design §918–920).
+    const val PLUGIN_SAMPLE_DRIFT = "plugin_sample_drift"
+    const val PLUGIN_SAMPLE_RATE_LIMITED = "plugin_sample_rate_limited"
+    const val PLUGIN_SAMPLE_INVALID = "plugin_sample_invalid"
 }
 
 /** Validator/registry tuneables. Defaults match design guardrails. */

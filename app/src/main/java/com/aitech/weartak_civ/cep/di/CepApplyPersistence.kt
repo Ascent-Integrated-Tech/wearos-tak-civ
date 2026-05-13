@@ -14,6 +14,11 @@ internal interface CepApplyPersistence {
     suspend fun storeCepConfigurationApplied(hash: String, atMs: Long)
     suspend fun shouldConsumeCepResetEpoch(epoch: Long): Boolean
     suspend fun advanceCepResetEpochMirror(epoch: Long): Boolean
+
+    // Poison-pill hold-off persistence (design §847–857).
+    suspend fun getManagedPayloadFailureStateOnce(): DataRepository.CepManagedPayloadFailureState?
+    suspend fun storeManagedPayloadFailureState(state: DataRepository.CepManagedPayloadFailureState)
+    suspend fun clearManagedPayloadFailureState()
 }
 
 internal class RepoCepApplyPersistence(private val repo: DataRepository) : CepApplyPersistence {
@@ -37,4 +42,13 @@ internal class RepoCepApplyPersistence(private val repo: DataRepository) : CepAp
 
     override suspend fun advanceCepResetEpochMirror(epoch: Long): Boolean =
         repo.advanceCepResetEpochMirror(epoch)
+
+    override suspend fun getManagedPayloadFailureStateOnce(): DataRepository.CepManagedPayloadFailureState? =
+        repo.getCepManagedPayloadFailureStateOnce()
+
+    override suspend fun storeManagedPayloadFailureState(state: DataRepository.CepManagedPayloadFailureState) =
+        repo.storeCepManagedPayloadFailureState(state)
+
+    override suspend fun clearManagedPayloadFailureState() =
+        repo.clearCepManagedPayloadFailureState()
 }

@@ -10,22 +10,25 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
-import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.CepPayload
 import com.aitech.weartak_civ.cep.model.NumericSample
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancelAndJoin
+import java.util.concurrent.atomic.AtomicBoolean
 
 class CepEngine(
     private val appContext: Context,
     private val scope: CoroutineScope,
     private val config: CepConfig,
-    private val yearOfBirth: Int,
     private val dataRepository: DataRepository
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(RingConfig.default())
+    private val warmUpCompleted = AtomicBoolean(false)
+    private val started = AtomicBoolean(false)
+    private val authoritative = AtomicBoolean(false)
 
     /**
      * Retains sensor ring buffers across a holder-mediated swap. Invoke on the replacement
@@ -64,17 +67,17 @@ class CepEngine(
         sustainOverrideWarnProvider = { sustainOverridesWarn }
     )
 
-    @Volatile
-    private var currentYearOfBirth: Int = yearOfBirth
-
     fun start() {
+        if (!warmUpCompleted.get()) {
+            Log.w("CEP", "start() ignored until warmUp() has completed")
+            return
+        }
+        if (!started.compareAndSet(false, true)) {
+            Log.w("CEP", "start() ignored: engine already started")
+            return
+        }
+        authoritative.set(true)
         Log.d("CEP", "CEP Engine started")
-
-        //Call this fn whenever the yob is changed
-        updateHrProfile()
-        updateHrrProfile()
-        updatePressureProfile()
-        scope.launch { updateSustainOverrides() }
 
         // Subscribe to the bus (no emitters yet; safe)
         // Phase 1: pass evt.ts so WindowStore timestamps reflect sensor measurement time, not processing time
@@ -111,7 +114,7 @@ class CepEngine(
         // Runs at ruleEvalIntervalMs (from config); reads cached FeatureStore values written
         // by the per-feature coroutines above.  No feature compute happens here.
         scope.launch {
-            val tickMs = config.ruleEvalIntervalMs.toLong().coerceAtLeast(1L)
+            val tickMs = config.ruleEvalIntervalMs.toLong()
             while (isActive) {
                 featureStore.beginTick()
                 featureStore.logDerivedTick("CEP")
@@ -184,7 +187,16 @@ class CepEngine(
      * Call from start() and whenever the user changes pressure alert thresholds in settings.
      */
     fun updatePressureProfile() {
-        scope.launch { loadPressureProfile() }
+        scope.launch {
+            loadPressureProfile()
+            if (authoritative.get()) {
+                try {
+                    clearDisabledPressureAlertsFromRepository()
+                } catch (t: Throwable) {
+                    Log.e("CEP", "Failed to clear disabled pressure alerts after profile update", t)
+                }
+            }
+        }
     }
 
     /** Synchronous form of [updatePressureProfile] used during warm-up. */
@@ -201,8 +213,6 @@ class CepEngine(
             featureStore.put("settings.pressure.immersion_alerts_enabled", if (immersionOn) 1.0 else 0.0)
             featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
             featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
-
-            clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn, immersionOn=immersionOn)
 
             Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
                         "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
@@ -225,6 +235,19 @@ class CepEngine(
         loadHrrProfile()
         loadPressureProfile()
         updateSustainOverrides()
+        warmUpCompleted.set(true)
+    }
+
+    /**
+     * Post-swap pressure hygiene pass. This keeps warm-up pure while still allowing the
+     * authoritative engine to clear alerts whose enable flags are currently off.
+     */
+    suspend fun applyPressureAlertHygiene() {
+        try {
+            clearDisabledPressureAlertsFromRepository()
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to apply pressure alert hygiene from DataRepository", t)
+        }
     }
 
     /**
@@ -235,11 +258,31 @@ class CepEngine(
      */
     fun cancel() {
         try {
+            authoritative.set(false)
             (scope.coroutineContext[kotlinx.coroutines.Job])?.cancel()
         } catch (t: Throwable) {
             Log.w("CEP", "CepEngine.cancel(): ${t.message}")
         }
     }
+
+    /**
+     * Cancel and wait for this engine's scope to quiesce.
+     *
+     * The apply lane uses this before running global hygiene so the previous engine cannot
+     * keep reading or mutating shared state while the replacement is being prepared.
+     */
+    suspend fun cancelAndJoin() {
+        try {
+            authoritative.set(false)
+            scope.coroutineContext[kotlinx.coroutines.Job]?.cancelAndJoin()
+        } catch (t: Throwable) {
+            Log.w("CEP", "CepEngine.cancelAndJoin(): ${t.message}")
+        }
+    }
+
+    internal fun isAuthoritativeForTest(): Boolean = authoritative.get()
+    internal fun isScopeCancelledForTest(): Boolean = scope.coroutineContext[kotlinx.coroutines.Job]?.isCancelled == true
+    internal fun isScopeActiveForTest(): Boolean = scope.coroutineContext[kotlinx.coroutines.Job]?.isActive == true
 
     /**
      * Test-only: write known threshold values directly into FeatureStore, bypassing the async
@@ -363,15 +406,15 @@ class CepEngine(
         if (!immersionOn) {
             clearActiveAlertByRuleId(
                 ruleId = "pressure_dunk_detected",
-                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
+                reason = "settings.pressure.immersion_alerts_enabled=0"
             )
             clearActiveAlertByRuleId(
                 ruleId = "pressure_shallow_dunk",
-                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
+                reason = "settings.pressure.immersion_alerts_enabled=0"
             )
             clearActiveAlertByRuleId(
                 ruleId = "pressure_submerge_detected",
-                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
+                reason = "settings.pressure.immersion_alerts_enabled=0"
             )
         }
     }
@@ -427,6 +470,9 @@ class CepEngine(
     }
 
     fun ingest(path: String, value: Double, tsMs: Long = System.currentTimeMillis()) {
+        if (!authoritative.get()) {
+            return
+        }
         try {
             val parts = path.split(".")
             if (parts.size < 2) return
@@ -453,5 +499,11 @@ class CepEngine(
         }
     }
 
-}
+    private suspend fun clearDisabledPressureAlertsFromRepository() {
+        val immersionOn = dataRepository.getEnableImmersionAlerts.first()
+        val lowAtmOn = dataRepository.getEnableLowAtmPressureAlert.first()
+        val highAtmOn = dataRepository.getEnableHighAtmPressureAlert.first()
+        clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn, immersionOn = immersionOn)
+    }
 
+}

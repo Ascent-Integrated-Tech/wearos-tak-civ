@@ -22,6 +22,7 @@ android {
         targetSdk 34
         versionCode 59
         versionName "5.7.4"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -113,6 +114,19 @@ android {
     lint {
         abortOnError true
         checkReleaseBuilds true
+    }
+    testOptions {
+        unitTests.all { test ->
+            // Robolectric writes a download-lock file under user.home; override to a
+            // writable build dir so tests work under sandboxed/CI environments where the
+            // default home is read-only.
+            def roboHome = file("${buildDir}/test-home")
+            test.systemProperty 'user.home', roboHome.absolutePath
+            test.environment 'HOME', roboHome.absolutePath
+            test.doFirst {
+                roboHome.mkdirs()
+            }
+        }
     }
 }
 
@@ -230,6 +244,10 @@ dependencies {
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.work:work-testing:2.9.1'
     debugImplementation libs.ui.tooling
     debugImplementation libs.ui.test.manifest
 

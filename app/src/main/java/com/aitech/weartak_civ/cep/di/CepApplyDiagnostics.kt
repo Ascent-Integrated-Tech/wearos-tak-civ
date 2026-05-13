@@ -11,8 +11,11 @@ internal interface CepApplyDiagnostics {
         effectiveBefore: String?,
         effectiveAfter: String?,
         fallbackDecision: String?,
-        tenant: String?, issuer: String?,
-        message: String?
+        tenant: String?,
+        issuer: String?,
+        message: String?,
+        pluginId: String? = null,
+        pluginVersion: String? = null,
     )
 
     fun recordInfo(
@@ -22,6 +25,9 @@ internal interface CepApplyDiagnostics {
         payloadHash: String?,
         effectiveBefore: String?,
         effectiveAfter: String?,
-        tenant: String?, issuer: String?
+        tenant: String?,
+        issuer: String?,
+        pluginId: String? = null,
+        pluginVersion: String? = null,
     )
 }

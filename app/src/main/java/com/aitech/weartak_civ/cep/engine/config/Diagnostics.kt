@@ -18,6 +18,8 @@ data class CepDiagnosticRecord(
     val effectiveHashAfter: String? = null,
     val fallbackDecision: String? = null,
     val pluginId: String? = null,
+    /** Plugin-declared version string from the overlay envelope (design §494). */
+    val pluginVersion: String? = null,
     val tenant: String? = null,
     val issuer: String? = null,
     val message: String? = null
@@ -32,6 +34,7 @@ data class CepDiagnosticRecord(
         if (effectiveHashAfter != null) put("effectiveHashAfter", effectiveHashAfter)
         if (fallbackDecision != null) put("fallbackDecision", fallbackDecision)
         if (pluginId != null) put("pluginId", pluginId)
+        if (pluginVersion != null) put("pluginVersion", pluginVersion)
         if (tenant != null) put("tenant", tenant)
         if (issuer != null) put("issuer", issuer)
         if (message != null) put("message", message)
@@ -52,6 +55,7 @@ data class CepDiagnosticRecord(
             effectiveHashAfter = if (obj.has("effectiveHashAfter") && !obj.isNull("effectiveHashAfter")) obj.optString("effectiveHashAfter") else null,
             fallbackDecision = if (obj.has("fallbackDecision") && !obj.isNull("fallbackDecision")) obj.optString("fallbackDecision") else null,
             pluginId = if (obj.has("pluginId") && !obj.isNull("pluginId")) obj.optString("pluginId") else null,
+            pluginVersion = if (obj.has("pluginVersion") && !obj.isNull("pluginVersion")) obj.optString("pluginVersion") else null,
             tenant = if (obj.has("tenant") && !obj.isNull("tenant")) obj.optString("tenant") else null,
             issuer = if (obj.has("issuer") && !obj.isNull("issuer")) obj.optString("issuer") else null,
             message = if (obj.has("message") && !obj.isNull("message")) obj.optString("message") else null

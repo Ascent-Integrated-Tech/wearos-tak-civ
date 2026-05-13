@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <permission
+        android:name="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST"
+        android:protectionLevel="signature" />
+
     <uses-feature android:name="android.hardware.type.watch" />
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -450,6 +454,43 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.APPLICATION_RESTRICTIONS_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".integration.plugin.PluginOverlayReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            <intent-filter>
+                <action android:name="com.aitech.weartak_civ.PLUGIN_OVERLAY" />
+                <action android:name="com.aitech.weartak_civ.PLUGIN_UNREGISTER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WEAR-509: plugin sample ingest. Design action name is PLUGIN_SAMPLE; the legacy
+             PLUGIN_INGEST action is retained temporarily for backward compatibility with
+             plugins that still publish against the older name. -->
+        <receiver
+            android:name=".integration.plugin.PluginIngestReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            <intent-filter>
+                <action android:name="com.aitech.weartak_civ.PLUGIN_SAMPLE" />
+                <action android:name="com.aitech.weartak_civ.PLUGIN_INGEST" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WEAR-509: package uninstall triggers plugin eviction + recompose (design §540). -->
+        <receiver
+            android:name=".integration.plugin.PluginPackageRemovedReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_PACKAGE_REMOVED">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
             </intent-filter>
         </receiver>
 

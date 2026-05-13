@@ -24,6 +24,8 @@ import com.aitech.weartak_civ.cep.engine.config.Resolved
 import com.aitech.weartak_civ.cep.engine.config.SourceLayer
 import com.aitech.weartak_civ.cep.engine.config.ValidationResult
 import com.aitech.weartak_civ.cep.engine.lifecycle.CepEngineHolder
+import com.aitech.weartak_civ.cep.plugin.PluginRegistry
+import com.aitech.weartak_civ.cep.plugin.PluginTrust
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -84,12 +86,35 @@ object CepProvider {
     @Volatile private var diagnosticSink: PersistentDiagnosticSink? = null
 
     private lateinit var managedApplyExecutor: CepManagedApplyExecutor
+    private lateinit var pluginRegistry: PluginRegistry
+    private lateinit var pluginTrust: PluginTrust
 
     fun init(context: Context) {
         appCtx = context.applicationContext
         dataRepo = (appCtx as WearTakApplication).repo
         diagnosticSink = PersistentDiagnosticSink(dataRepo, supportScope)
         registry = bootstrapRegistry(appCtx)
+        pluginTrust = PluginTrust(appCtx, dataRepo)
+        pluginRegistry = PluginRegistry(
+            repo = dataRepo,
+            trust = pluginTrust,
+            onBootstrapParseFailure = { raw, reasonCode, message ->
+                recordRejection(
+                    source = SourceLayer.BOOTSTRAP,
+                    reasonCode = reasonCode,
+                    schemaVersion = null,
+                    payloadHash = CanonicalJson.hashRaw(raw),
+                    effectiveBefore = latestAppliedHash,
+                    effectiveAfter = latestAppliedHash,
+                    fallbackDecision = null,
+                    tenant = null,
+                    issuer = null,
+                    message = "cached plugin overlay rejected at boot: $message"
+                )
+            }
+        ).also {
+            runBlocking { it.bootstrap() }
+        }
         managedApplyExecutor = CepManagedApplyExecutor(
             registry = registry,
             persistence = RepoCepApplyPersistence(dataRepo),
@@ -106,12 +131,14 @@ object CepProvider {
                     effectiveAfter: String?,
                     fallbackDecision: String?,
                     tenant: String?, issuer: String?,
-                    message: String?
+                    message: String?,
+                    pluginId: String?,
+                    pluginVersion: String?
                 ) {
                     this@CepProvider.recordRejection(
                         source, reasonCode, schemaVersion, payloadHash,
                         effectiveBefore, effectiveAfter, fallbackDecision,
-                        tenant, issuer, message
+                        tenant, issuer, message, pluginId, pluginVersion
                     )
                 }
 
@@ -122,17 +149,20 @@ object CepProvider {
                     payloadHash: String?,
                     effectiveBefore: String?,
                     effectiveAfter: String?,
-                    tenant: String?, issuer: String?
+                    tenant: String?, issuer: String?,
+                    pluginId: String?,
+                    pluginVersion: String?
                 ) {
                     this@CepProvider.recordInfo(
                         source, reasonCode, schemaVersion, payloadHash,
-                        effectiveBefore, effectiveAfter, tenant, issuer
+                        effectiveBefore, effectiveAfter, tenant, issuer, pluginId, pluginVersion
                     )
                 }
             },
             clearAlertsForRemovedRules = { removed, reason ->
                 clearAlertsForRemovedRules(removed, reason)
-            }
+            },
+            pluginContributionsProvider = { pluginRegistry.contributions() }
         )
     }
 
@@ -179,7 +209,8 @@ object CepProvider {
             return composeBuiltinsOnly()
         }
 
-        return when (val v = registry.compose(parsed)) {
+        val pluginContrib = runBlocking { pluginRegistry.contributions() }
+        return when (val v = registry.compose(parsed, pluginContrib)) {
             is ValidationResult.Ok -> v.resolved
             is ValidationResult.Err -> {
                 recordRejection(
@@ -257,6 +288,7 @@ object CepProvider {
         val engine = buildEngine(context, resolved.engineConfig)
         runBlocking { engine.warmUp() }
         check(holder.install(engine)) { "CepEngineHolder already initialized before bootstrap" }
+        runBlocking { engine.applyPressureAlertHygiene() }
         // The cold-start install IS an authoritative install — set the in-memory hash
         // BEFORE start() launches coroutines so any concurrent managed-config worker that
         // reads `latestAppliedHash` sees the correct baseline.
@@ -281,12 +313,10 @@ object CepProvider {
         val freshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val ctx = context.applicationContext
         val app = ctx as WearTakApplication
-        val yob = runBlocking { app.repo.getYearOfBirth.first() }
         return CepEngine(
             appContext = ctx,
             scope = freshScope,
             config = config,
-            yearOfBirth = yob,
             dataRepository = app.repo
         )
     }
@@ -311,17 +341,176 @@ object CepProvider {
             if (ticket != latestQueuedTicket) {
                 return@withLock ApplyResult.Superseded
             }
+            evictExpiredPluginOverlays()
             doApplyLocked(ticket, rawPayload?.takeUnless { ManagedConfigOverlayParser.isEmpty(it) })
         }
+    }
+
+    /**
+     * Apply a plugin overlay broadcast. The receiver MUST have already resolved
+     * [senderUid] and [senderPackages] from `Binder.getCallingUid()` + `getPackagesForUid`
+     * so the trust gate can bind the claimed `pluginId` to the actual broadcaster's package
+     * identity (closing the first-handshake spoofability gap).
+     */
+    suspend fun applyPluginOverlay(
+        rawOverlayJson: String,
+        senderUid: Int,
+        senderPackages: Set<String>,
+    ): ApplyResult = withContext(applyDispatcher) {
+        val ticket = applyTicket.incrementAndGet()
+        latestQueuedTicket = ticket
+        applyMutex.withLock {
+            if (ticket != latestQueuedTicket) return@withLock ApplyResult.Superseded
+            evictExpiredPluginOverlays()
+            val parsed = try {
+                pluginRegistry.upsertFromRaw(rawOverlayJson, senderUid, senderPackages)
+            } catch (e: ParserException) {
+                recordRejection(
+                    source = SourceLayer.PLUGIN,
+                    reasonCode = e.reasonCode,
+                    schemaVersion = null,
+                    payloadHash = CanonicalJson.hashRaw(rawOverlayJson),
+                    effectiveBefore = latestAppliedHash,
+                    effectiveAfter = latestAppliedHash,
+                    fallbackDecision = CepDiagnosticRecord.FALLBACK_KEPT_PREVIOUS,
+                    tenant = null, issuer = null,
+                    message = "plugin overlay rejected: ${e.message}",
+                    pluginId = null
+                )
+                return@withLock ApplyResult.Rejected(e.reasonCode, e.message ?: "")
+            }
+            val managedRaw = dataRepo.getCepConfigurationRawJsonOnce().takeUnless { ManagedConfigOverlayParser.isEmpty(it) }
+            val result = managedApplyExecutor.execute(
+                rawPayload = managedRaw,
+                effectiveBefore = latestAppliedHash,
+                isSuperseded = { ticket != latestQueuedTicket },
+                source = SourceLayer.PLUGIN,
+                pluginId = parsed.pluginId,
+                pluginVersion = parsed.pluginVersion
+            )
+            if (result is ApplyResult.Applied) latestAppliedHash = result.effectiveHash
+            result
+        }
+    }
+
+    /**
+     * Plugin-explicit unregister + recompose. The plugin-side alert hygiene contract
+     * (§545–550) is satisfied because the apply executor computes
+     * `previousRules - newEngine.ruleIds` after the swap and runs
+     * [clearAlertsForRemovedRules] over the diff — same path the managed apply lane uses.
+     */
+    suspend fun unregisterPluginOverlay(pluginId: String): ApplyResult = withContext(applyDispatcher) {
+        val ticket = applyTicket.incrementAndGet()
+        latestQueuedTicket = ticket
+        applyMutex.withLock {
+            if (ticket != latestQueuedTicket) return@withLock ApplyResult.Superseded
+            evictExpiredPluginOverlays()
+            pluginRegistry.unregister(pluginId)
+            val managedRaw = dataRepo.getCepConfigurationRawJsonOnce().takeUnless { ManagedConfigOverlayParser.isEmpty(it) }
+            val result = managedApplyExecutor.execute(
+                rawPayload = managedRaw,
+                effectiveBefore = latestAppliedHash,
+                isSuperseded = { ticket != latestQueuedTicket },
+                source = SourceLayer.PLUGIN,
+                pluginId = pluginId
+            )
+            if (result is ApplyResult.Applied) latestAppliedHash = result.effectiveHash
+            result
+        }
+    }
+
+    /**
+     * Package-removed eviction. Unregisters every plugin currently owned by [packageName]
+     * (pluginId == packageName per design §477) and triggers a recompose so alert hygiene
+     * runs on rules contributed by the uninstalled plugin.
+     */
+    suspend fun evictPluginByPackage(packageName: String): ApplyResult? = withContext(applyDispatcher) {
+        if (packageName.isBlank()) return@withContext null
+        evictExpiredPluginOverlays()
+        val known = pluginRegistry.knownPluginIds()
+        // pluginId == sender package name in v1, so a direct match is the only eviction key.
+        if (packageName !in known) return@withContext null
+        unregisterPluginOverlay(packageName)
+    }
+
+    /**
+     * Plugin sample ingress (design §414–432). The receiver has already validated drift +
+     * rate-limit + sender binding; this entry runs the trust gate (cert pin) and routes the
+     * accepted sample into the engine ingest path so `FeatureStore` / `WindowStore` rings
+     * pick it up.
+     */
+    suspend fun ingestPluginSample(
+        pluginId: String,
+        topic: String,
+        tsMs: Long,
+        value: Double,
+        senderUid: Int,
+        senderPackages: Set<String>,
+    ): IngestResult {
+        return try {
+            // Re-run trust at submission time. Sender-package binding is already guaranteed
+            // by the receiver, but cert pinning may still reject if the package's signer has
+            // changed since first handshake.
+            pluginTrust.enforce(pluginId, senderUid, senderPackages)
+            val engine = currentEngine() ?: return IngestResult.Dropped("engine_not_ready")
+            engine.ingest(topic, value, tsMs)
+            IngestResult.Accepted
+        } catch (e: ParserException) {
+            recordRejection(
+                source = SourceLayer.PLUGIN,
+                reasonCode = e.reasonCode,
+                schemaVersion = null,
+                payloadHash = null,
+                effectiveBefore = latestAppliedHash,
+                effectiveAfter = latestAppliedHash,
+                fallbackDecision = CepDiagnosticRecord.FALLBACK_KEPT_PREVIOUS,
+                tenant = null, issuer = null,
+                message = "plugin sample rejected: ${e.message}",
+                pluginId = pluginId
+            )
+            IngestResult.Dropped(e.reasonCode)
+        }
+    }
+
+    /**
+     * Helper for the receiver layer to surface a structured diagnostic when an inbound
+     * broadcast fails the sender-package binding check before any worker is enqueued.
+     */
+    fun recordPluginSenderRejection(
+        action: String,
+        claimedPluginId: String?,
+        senderUid: Int,
+        senderPackages: Set<String>,
+        reasonCode: String = ReasonCodes.PLUGIN_ID_PACKAGE_MISMATCH,
+    ) {
+        if (!::dataRepo.isInitialized) return // pre-init: drop quietly to avoid crashing tests
+        recordRejection(
+            source = SourceLayer.PLUGIN,
+            reasonCode = reasonCode,
+            schemaVersion = null,
+            payloadHash = null,
+            effectiveBefore = latestAppliedHash,
+            effectiveAfter = latestAppliedHash,
+            fallbackDecision = CepDiagnosticRecord.FALLBACK_KEPT_PREVIOUS,
+            tenant = null, issuer = null,
+            message = "plugin sender uid=$senderUid pkgs=${senderPackages.joinToString()} " +
+                "claimed pluginId=$claimedPluginId on action=$action",
+            pluginId = claimedPluginId
+        )
+    }
+
+    sealed class IngestResult {
+        data object Accepted : IngestResult()
+        data class Dropped(val reasonCode: String) : IngestResult()
     }
 
     private suspend fun doApplyLocked(ticket: Long, rawPayload: String?): ApplyResult {
         val effectiveBefore = latestAppliedHash
         val result = managedApplyExecutor.execute(
-            ticket = ticket,
             rawPayload = rawPayload,
             effectiveBefore = effectiveBefore,
-            isSuperseded = { ticket != latestQueuedTicket }
+            isSuperseded = { ticket != latestQueuedTicket },
+            source = SourceLayer.MANAGED_CONFIG
         )
         when (result) {
             is ApplyResult.Applied -> latestAppliedHash = result.effectiveHash
@@ -360,6 +549,13 @@ object CepProvider {
         android.util.Log.i(TAG, "Cleared $cleared alerts for removed rules: reason=$reason")
     }
 
+    private suspend fun evictExpiredPluginOverlays() {
+        val evicted = pluginRegistry.evictExpired()
+        if (evicted.isNotEmpty()) {
+            android.util.Log.i(TAG, "Evicted expired plugin overlays: ${evicted.joinToString()}")
+        }
+    }
+
     private fun recordRejection(
         source: SourceLayer,
         reasonCode: String,
@@ -369,7 +565,9 @@ object CepProvider {
         effectiveAfter: String?,
         fallbackDecision: String?,
         tenant: String?, issuer: String?,
-        message: String?
+        message: String?,
+        pluginId: String? = null,
+        pluginVersion: String? = null
     ) {
         val record = CepDiagnosticRecord(
             timestamp = System.currentTimeMillis(),
@@ -380,6 +578,8 @@ object CepProvider {
             effectiveHashBefore = effectiveBefore,
             effectiveHashAfter = effectiveAfter,
             fallbackDecision = fallbackDecision,
+            pluginId = pluginId,
+            pluginVersion = pluginVersion,
             tenant = tenant, issuer = issuer,
             message = message
         )
@@ -393,7 +593,9 @@ object CepProvider {
         payloadHash: String?,
         effectiveBefore: String?,
         effectiveAfter: String?,
-        tenant: String?, issuer: String?
+        tenant: String?, issuer: String?,
+        pluginId: String? = null,
+        pluginVersion: String? = null
     ) {
         val record = CepDiagnosticRecord(
             timestamp = System.currentTimeMillis(),
@@ -404,6 +606,8 @@ object CepProvider {
             effectiveHashBefore = effectiveBefore,
             effectiveHashAfter = effectiveAfter,
             fallbackDecision = null,
+            pluginId = pluginId,
+            pluginVersion = pluginVersion,
             tenant = tenant, issuer = issuer,
             message = null
         )

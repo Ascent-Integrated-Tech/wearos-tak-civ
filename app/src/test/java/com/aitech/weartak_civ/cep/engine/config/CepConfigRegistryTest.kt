@@ -122,6 +122,34 @@ class CepConfigRegistryTest {
         assertEquals(400, r.resolved.engineConfig.ruleEvalIntervalMs)
     }
 
+    @Test fun pluginContributionIncludedWhenNoHigherConflict() {
+        val reg = registry(emptyList(), emptyList())
+        val plugin = listOf(
+            CepConfigMerger.PluginContribution(
+                pluginId = "com.acme.plugin",
+                features = listOf(feat("com.acme.plugin.features.a"))
+            )
+        )
+        val r = reg.compose(managed = null, plugin = plugin) as ValidationResult.Ok
+        assertEquals(1, r.resolved.features.size)
+        assertEquals(SourceLayer.PLUGIN, r.resolved.featureSource["com.acme.plugin.features.a"])
+    }
+
+    @Test fun managedAndBuiltInShadowPluginDeterministically() {
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val reg = CepConfigRegistry(builtIn, RuleCompiler.parseEngineCadence(null))
+        val plugin = listOf(
+            CepConfigMerger.PluginContribution(
+                pluginId = "com.acme.plugin",
+                features = listOf(feat("features.a"), feat("com.acme.plugin.features.a"))
+            )
+        )
+        val managed = overlayWithFeature("features.a")
+        val r = reg.compose(managed = managed, plugin = plugin) as ValidationResult.Ok
+        assertEquals(SourceLayer.MANAGED_CONFIG, r.resolved.featureSource["features.a"])
+        assertTrue(r.resolved.features.any { it.id == "com.acme.plugin.features.a" })
+    }
+
     @Test fun isNoOpAgainstReturnsFalseForEmptyPrev() {
         val reg = registry(emptyList(), emptyList())
         val r = reg.compose(overlayWithFeature("features.x")) as ValidationResult.Ok

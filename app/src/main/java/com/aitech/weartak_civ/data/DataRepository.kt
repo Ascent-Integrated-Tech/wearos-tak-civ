@@ -3099,6 +3099,25 @@ class DataRepository(private val context: Context) {
 
     private val cepSustainOverridesType = object : TypeToken<Map<String, Long>>() {}.type
 
+    private fun parseStringMap(json: String?): Map<String, String> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            gson.fromJson<Map<String, String>>(json, object : TypeToken<Map<String, String>>() {}.type) ?: emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun parseLongMap(json: String?): Map<String, Long> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val m = gson.fromJson<Map<String, Long>>(json, object : TypeToken<Map<String, Long>>() {}.type) ?: emptyMap()
+            m.mapValues { (_, v) -> v.coerceAtLeast(0L) }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
     private fun parseCepSustainOverrides(json: String?): CepSustainOverrides {
         if (json.isNullOrBlank()) return CepSustainOverrides(emptyMap(), emptyMap())
         return try {
@@ -3241,6 +3260,108 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // ---- WEAR-509 poison-pill hold-off state -----------------------------------------
+    //
+    // Tracks the most recent managed-config rejection streak keyed by payload hash so
+    // a broken-but-unchanged ManagedConfiguration payload does not cause repeated churn
+    // (design §847–857). State persists across process restart. Only one entry is kept
+    // (latest hash); a different hash supersedes the prior entry.
+
+    /**
+     * Persisted poison-pill streak for a single payload hash. `firstFailureAtMs` is the
+     * ms epoch of the first rejection in the current streak; `failureCount` increments
+     * on each rejection of the same hash and resets when the hash changes or on success.
+     */
+    data class CepManagedPayloadFailureState(
+        val payloadHash: String,
+        val failureCount: Int,
+        val firstFailureAtMs: Long
+    )
+
+    val getCepManagedPayloadFailureState: Flow<CepManagedPayloadFailureState?> =
+        context.dataStore.data.map { prefs ->
+            parseCepManagedPayloadFailureState(prefs[CEP_MANAGED_PAYLOAD_FAILURE_STATE_JSON])
+        }
+
+    suspend fun getCepManagedPayloadFailureStateOnce(): CepManagedPayloadFailureState? =
+        getCepManagedPayloadFailureState.first()
+
+    suspend fun storeCepManagedPayloadFailureState(state: CepManagedPayloadFailureState) {
+        if (state.payloadHash.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val obj = com.google.gson.JsonObject().apply {
+                addProperty("payloadHash", state.payloadHash)
+                addProperty("failureCount", state.failureCount.coerceAtLeast(0))
+                addProperty("firstFailureAtMs", state.firstFailureAtMs.coerceAtLeast(0L))
+            }
+            prefs[CEP_MANAGED_PAYLOAD_FAILURE_STATE_JSON] = gson.toJson(obj)
+        }
+    }
+
+    suspend fun clearCepManagedPayloadFailureState() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(CEP_MANAGED_PAYLOAD_FAILURE_STATE_JSON)
+        }
+    }
+
+    private fun parseCepManagedPayloadFailureState(json: String?): CepManagedPayloadFailureState? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            val el = gson.fromJson(json, com.google.gson.JsonElement::class.java) ?: return null
+            if (!el.isJsonObject) return null
+            val obj = el.asJsonObject
+            val hash = obj.get("payloadHash")?.asString.orEmpty()
+            if (hash.isBlank()) return null
+            val count = obj.get("failureCount")?.asInt ?: 0
+            val firstAt = obj.get("firstFailureAtMs")?.asLong ?: 0L
+            CepManagedPayloadFailureState(hash, count.coerceAtLeast(0), firstAt.coerceAtLeast(0L))
+        } catch (e: Exception) {
+            Log.w("DataRepository", "Invalid CEP managed payload failure state JSON", e)
+            null
+        }
+    }
+
+    // WEAR-509 plugin overlay persistence ---------------------------------------------
+
+    val getCepPluginOverlays: Flow<Map<String, String>> = context.dataStore.data.map { prefs ->
+        parseStringMap(prefs[CEP_PLUGIN_OVERLAYS_JSON])
+    }
+
+    suspend fun getCepPluginOverlaysOnce(): Map<String, String> = getCepPluginOverlays.first()
+
+    suspend fun storeCepPluginOverlays(overlays: Map<String, String>) {
+        context.dataStore.edit { prefs ->
+            if (overlays.isEmpty()) prefs.remove(CEP_PLUGIN_OVERLAYS_JSON)
+            else prefs[CEP_PLUGIN_OVERLAYS_JSON] = gson.toJson(overlays)
+        }
+    }
+
+    val getCepPluginLeaseUntilMs: Flow<Map<String, Long>> = context.dataStore.data.map { prefs ->
+        parseLongMap(prefs[CEP_PLUGIN_LEASE_UNTIL_MS_JSON])
+    }
+
+    suspend fun getCepPluginLeaseUntilMsOnce(): Map<String, Long> = getCepPluginLeaseUntilMs.first()
+
+    suspend fun storeCepPluginLeaseUntilMs(leases: Map<String, Long>) {
+        context.dataStore.edit { prefs ->
+            if (leases.isEmpty()) prefs.remove(CEP_PLUGIN_LEASE_UNTIL_MS_JSON)
+            else prefs[CEP_PLUGIN_LEASE_UNTIL_MS_JSON] = gson.toJson(leases.mapValues { (_, v) -> v.coerceAtLeast(0L) })
+        }
+    }
+
+    val getCepPluginCertLog: Flow<Map<String, String>> = context.dataStore.data.map { prefs ->
+        parseStringMap(prefs[CEP_PLUGIN_CERT_LOG_JSON])
+    }
+
+    suspend fun getCepPluginCertLogOnce(): Map<String, String> = getCepPluginCertLog.first()
+
+    suspend fun storeCepPluginCertLog(certMap: Map<String, String>) {
+        context.dataStore.edit { prefs ->
+            if (certMap.isEmpty()) prefs.remove(CEP_PLUGIN_CERT_LOG_JSON)
+            else prefs[CEP_PLUGIN_CERT_LOG_JSON] = gson.toJson(certMap)
+        }
+    }
+
     /** Persisted CEP diagnostic ring. Newest-last; bounded by the encoder/decoder. */
     val getCepDiagnostics: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[CEP_DIAGNOSTICS_JSON] ?: ""
@@ -3336,6 +3457,10 @@ class DataRepository(private val context: Context) {
         private val CEP_CONFIGURATION_APPLIED_HASH = stringPreferencesKey("cep_configuration_applied_hash")
         private val CEP_CONFIGURATION_APPLIED_AT_MS = androidx.datastore.preferences.core.longPreferencesKey("cep_configuration_applied_at_ms")
         private val CEP_LAST_CONSUMED_RESET_EPOCH = androidx.datastore.preferences.core.longPreferencesKey("cep_last_consumed_reset_epoch")
+        private val CEP_MANAGED_PAYLOAD_FAILURE_STATE_JSON = stringPreferencesKey("cep_managed_payload_failure_state_json")
+        private val CEP_PLUGIN_OVERLAYS_JSON = stringPreferencesKey("cep_plugin_overlays_json")
+        private val CEP_PLUGIN_LEASE_UNTIL_MS_JSON = stringPreferencesKey("cep_plugin_lease_until_ms_json")
+        private val CEP_PLUGIN_CERT_LOG_JSON = stringPreferencesKey("cep_plugin_cert_log_json")
         private val CEP_DIAGNOSTICS_JSON = stringPreferencesKey("cep_diagnostics_json")
         private val EXERTION_THRESHOLD_WARNING = intPreferencesKey("exertion_threshold_warning")
         private val EXERTION_THRESHOLD_ALERT = intPreferencesKey("exertion_threshold_alert")
