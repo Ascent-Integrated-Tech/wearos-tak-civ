@@ -569,7 +569,7 @@ class MainActivity : ComponentActivity() {
         //val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
-        var logFile: java.io.File? = null
+        var logFile: File? = null
 
 //        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
 
@@ -1237,7 +1237,7 @@ class MainActivity : ComponentActivity() {
         }
         refreshUI(context)
 
-        restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
+        restrictionsManager = getSystemService(RESTRICTIONS_SERVICE) as RestrictionsManager
         restrictionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
@@ -1346,7 +1346,7 @@ class MainActivity : ComponentActivity() {
                     )
 
                     // small delay to simulate time between sensor updates
-                    kotlinx.coroutines.delay(500)
+                    delay(500)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "pressure test failed", e)
@@ -3397,12 +3397,17 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
             context.startActivity(Intent(context, SettingsActivity::class.java))
 //            navController.navigate("settings_screen")
                   },
+        leadingIcon = {Icon(
+            painter = painterResource(R.drawable.settings),
+            contentDescription = "Settings Icon",
+            modifier = Modifier.padding(all = 0.dp)
+        )},
         label = { Text(
             "${greetingName}",
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontSize = if (greetingName!!.length <= maxChar) 15.sp else 13.sp,
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier.padding(0.dp),
 
         )},
         shape = RoundedCornerShape(40.dp),
