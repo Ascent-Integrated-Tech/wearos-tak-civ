@@ -27,3 +27,15 @@ dependencyResolutionManagement {
 
 rootProject.name = "WearTAK-CIV"
 include ':app'
+
+// WearTAK plugin contract (AIDL + parcelables): compile-time source of truth lives in the
+// sibling PluginTemplate repo — no host-local copies of contract types.
+def pluginSdkDir = new File(settingsDir, "../PluginTemplate/weartak-plugin-sdk")
+if (!pluginSdkDir.isDirectory()) {
+    throw new GradleException(
+        "Missing weartak-plugin-sdk at ${pluginSdkDir.canonicalPath}. " +
+            "Clone the PluginTemplate repo next to this project or set projectDir in settings.gradle."
+    )
+}
+include ':weartak-plugin-sdk'
+project(':weartak-plugin-sdk').projectDir = pluginSdkDir

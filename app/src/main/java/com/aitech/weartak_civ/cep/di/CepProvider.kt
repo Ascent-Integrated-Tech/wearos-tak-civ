@@ -87,17 +87,17 @@ object CepProvider {
 
     private lateinit var managedApplyExecutor: CepManagedApplyExecutor
     private lateinit var pluginRegistry: PluginRegistry
-    private lateinit var pluginTrust: PluginTrust
+    private lateinit var pluginTrustGate: PluginTrust
 
     fun init(context: Context) {
         appCtx = context.applicationContext
         dataRepo = (appCtx as WearTakApplication).repo
         diagnosticSink = PersistentDiagnosticSink(dataRepo, supportScope)
         registry = bootstrapRegistry(appCtx)
-        pluginTrust = PluginTrust(appCtx, dataRepo)
+        pluginTrustGate = PluginTrust(appCtx, dataRepo)
         pluginRegistry = PluginRegistry(
             repo = dataRepo,
-            trust = pluginTrust,
+            trust = pluginTrustGate,
             onBootstrapParseFailure = { raw, reasonCode, message ->
                 recordRejection(
                     source = SourceLayer.BOOTSTRAP,
@@ -164,6 +164,12 @@ object CepProvider {
             },
             pluginContributionsProvider = { pluginRegistry.contributions() }
         )
+    }
+
+    /** Same [PluginTrust] used by overlay ingest and registry; used for AIDL bind-time admission. */
+    fun pluginTrust(): PluginTrust {
+        check(::pluginTrustGate.isInitialized) { "CepProvider.init must be called before plugin bind" }
+        return pluginTrustGate
     }
 
     /**
@@ -451,7 +457,7 @@ object CepProvider {
             // Re-run trust at submission time. Sender-package binding is already guaranteed
             // by the receiver, but cert pinning may still reject if the package's signer has
             // changed since first handshake.
-            pluginTrust.enforce(pluginId, senderUid, senderPackages)
+            pluginTrustGate.enforce(pluginId, senderUid, senderPackages)
             val engine = currentEngine() ?: return IngestResult.Dropped("engine_not_ready")
             engine.ingest(topic, value, tsMs)
             IngestResult.Accepted

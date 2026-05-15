@@ -12,23 +12,22 @@ class PluginOverlayApplyWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        val ingress = PluginIngressLocator.resolve(applicationContext) ?: return Result.failure()
         return try {
-            when (inputData.getString(KEY_MODE)) {
-                MODE_UPSERT -> {
-                    val raw = inputData.getString(KEY_RAW_OVERLAY).orEmpty()
-                    val senderUid = inputData.getInt(KEY_SENDER_UID, -1)
-                    val senderPackages = inputData.getStringArray(KEY_SENDER_PACKAGES)
-                        ?.toSet().orEmpty()
-                    val r = CepProvider.applyPluginOverlay(raw, senderUid, senderPackages)
-                    logOutcome("plugin_upsert", r)
-                }
-                MODE_UNREGISTER -> {
-                    val pluginId = inputData.getString(KEY_PLUGIN_ID).orEmpty()
-                    val r = CepProvider.unregisterPluginOverlay(pluginId)
-                    logOutcome("plugin_unregister", r)
-                }
-                else -> Result.success()
-            }
+            val mode = inputData.getString(KEY_MODE)
+            val raw = inputData.getString(KEY_RAW_OVERLAY)
+            val pluginId = inputData.getString(KEY_PLUGIN_ID).orEmpty()
+            val senderUid = inputData.getInt(KEY_SENDER_UID, -1)
+            val senderPackages = inputData.getStringArray(KEY_SENDER_PACKAGES)
+                ?.toSet().orEmpty()
+            val r = ingress.applyOverlayFromWorker(
+                mode = mode,
+                raw = raw,
+                pluginId = pluginId,
+                senderUid = senderUid,
+                senderPackages = senderPackages,
+            )
+            logOutcome("plugin_overlay", r)
         } catch (t: Throwable) {
             Log.e(TAG, "PluginOverlayApplyWorker failed", t)
             Result.failure()

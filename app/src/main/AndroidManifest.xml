@@ -72,6 +72,9 @@
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
+    <!-- WEAR-509: bind WearTAK plugins exposing IWearTakPlugin (SDK contract). -->
+    <uses-permission android:name="com.weartak.plugin.permission.BIND_PLUGIN" />
+
     <!--
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
@@ -90,6 +93,9 @@
 
     <queries>
         <package android:name="com.samsung.android.service.health" />
+        <intent>
+            <action android:name="com.weartak.plugin.action.PLUGIN_SERVICE" />
+        </intent>
     </queries>
 
     <application
@@ -490,6 +496,16 @@
             <intent-filter>
                 <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
                 <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".integration.plugin.PluginPackageChangedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
                 <data android:scheme="package" />
             </intent-filter>
         </receiver>

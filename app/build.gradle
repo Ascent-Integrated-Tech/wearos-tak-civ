@@ -131,6 +131,7 @@ android {
 }
 
 dependencies {
+    implementation project(':weartak-plugin-sdk')
     //implementation fileTree(dir: 'libs', include: '*.aar')
     implementation files('libs/samsung-health-sensor-api-1.4.1.aar')
     implementation files('libs/hail-sdk.aar')

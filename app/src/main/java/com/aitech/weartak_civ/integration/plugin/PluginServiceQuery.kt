@@ -1,0 +1,34 @@
+package com.aitech.weartak_civ.integration.plugin
+
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import com.weartak.plugin.sdk.WearTakPluginContract
+
+/**
+ * PackageManager query for plugin services — extracted for unit tests without booting
+ * [com.aitech.weartak_civ.WearTakApplication].
+ */
+internal object PluginServiceQuery {
+    fun discoverPluginComponents(pm: PackageManager, hostPackage: String): List<ComponentName> {
+        val intent = Intent(WearTakPluginContract.ACTION_PLUGIN_SERVICE)
+        val resolves = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val flags = PackageManager.ResolveInfoFlags.of(
+                (PackageManager.GET_META_DATA or PackageManager.MATCH_DEFAULT_ONLY).toLong()
+            )
+            pm.queryIntentServices(intent, flags)
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentServices(intent, PackageManager.GET_META_DATA)
+        }
+        val out = LinkedHashMap<String, ComponentName>()
+        for (ri in resolves) {
+            val si = ri.serviceInfo ?: continue
+            val pkg = si.packageName
+            if (pkg == hostPackage) continue
+            out.putIfAbsent(pkg, ComponentName(si.packageName, si.name))
+        }
+        return out.values.toList()
+    }
+}
