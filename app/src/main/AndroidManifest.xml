@@ -86,6 +86,7 @@
 
     <queries>
         <package android:name="com.samsung.android.service.health" />
+        <package android:name="com.toughstump.atoswearable" />
     </queries>
 
     <application
@@ -353,6 +354,18 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
+        <!-- TODO: Restrict IPC callers by package/signature permission, and allowlist
+             the ATOS package (expected: com.toughstump.atoswearable) once caller identity
+             verification is finalized. -->
+        <service
+            android:name=".ipc.WearTakCotIpcService"
+            android:enabled="true"
+            android:exported="true"
+            android:stopWithTask="false">
+            <intent-filter>
+                <action android:name="com.weartak.ipcservice.START" />
+            </intent-filter>
+        </service>
         <service
             android:name=".service.BloodhoundService"
             android:enabled="true"
