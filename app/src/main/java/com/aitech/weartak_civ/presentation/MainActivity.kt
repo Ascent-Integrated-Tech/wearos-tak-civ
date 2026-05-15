@@ -162,6 +162,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.ipc.WearTakCotIpcService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.CustomAccessibilityService
@@ -1291,6 +1292,7 @@ class MainActivity : ComponentActivity() {
         //startHealthCapabilitiesCollection()
         validateLicense(license)
         startReactiveServiceManager(applicationContext)
+        WearTakCotIpcService.ensureStarted(applicationContext)
         // Kiosk needs to be allow com.samsung.accessibility for code below to work
         val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
 //        Log.d(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")

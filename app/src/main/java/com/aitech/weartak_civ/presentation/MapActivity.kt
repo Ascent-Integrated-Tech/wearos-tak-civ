@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,13 +28,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,7 +54,9 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.ipc.AtosMapMarkerResult
+import com.aitech.weartak_civ.ipc.toAtosMapMarkerResult
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.brown
@@ -95,10 +96,12 @@ import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -113,7 +116,6 @@ import com.aitech.weartak_civ.MARKER_FRIENDLY
 import com.aitech.weartak_civ.MARKER_HOSTILE
 import com.aitech.weartak_civ.MARKER_NEUTRAL
 import com.aitech.weartak_civ.MARKER_UNKNOWN
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import kotlinx.coroutines.CoroutineScope
@@ -123,10 +125,13 @@ import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
+import com.aitech.weartak_civ.events.LocationUpdateRequired
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import org.greenrobot.eventbus.EventBus
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
+import org.maplibre.compose.expressions.dsl.all
 import org.maplibre.compose.expressions.dsl.asBoolean
-import org.maplibre.compose.expressions.dsl.asNumber
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
@@ -140,8 +145,6 @@ import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
 import kotlin.Long
-import org.greenrobot.eventbus.EventBus
-import com.aitech.weartak_civ.events.LocationUpdateRequired
 
 class MapActivity : ComponentActivity() {
 
@@ -155,16 +158,6 @@ class MapActivity : ComponentActivity() {
         val teal = Color(0xFF007F7F)
         val dark_green = Color(0xFF007F00)
         val brown = Color(0xFF964B00)
-        /*
-        val tempMarkers = listOf(
-            DataRepository.DroppedMarker(
-                uid ="1",
-                markerType = "a-h-G",
-                title = "I'm a Marker",
-                timeDropped = 0L,
-                location = null
-            )
-        ) */
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -292,6 +285,179 @@ fun MarkersOnMap(
 }
 
 @Composable
+fun rememberATOSFeatures(markers: List<ATOSItem>) =
+    remember(markers) {
+        FeatureCollection(
+            features = markers.map { m ->
+                Feature(
+                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
+                    properties = JsonObject(
+                        mapOf(
+                            "id" to JsonPrimitive(m.uid),
+                            "title" to JsonPrimitive(m.title),
+                            "type" to JsonPrimitive(m.iconType),
+                            "color" to JsonPrimitive(m.color),
+                            "hae" to JsonPrimitive(m.hae),
+                            "gpsOn" to JsonPrimitive((m.hae != 9999999.0).toString())
+                        )
+                )
+                )
+            }
+        )
+    }
+
+data class ATOSItem(
+    val uid: String?,
+    val iconType: String?,
+    val title: String?,
+    val lat: Double?,
+    val lon: Double?,
+    val color: String?,
+    val hae: Double?
+//    val enQueuedToBeSent: Boolean,
+//    val cotType: DataRepository.MarkerCotType
+)
+
+private data class AtosMarkerVisualSpec(
+    val gpsOnIcon: Int,
+    val gpsOffIcon: Int
+)
+
+// ATOS tag_type drives icon identity; each CoT type resolves to the corresponding watch drawable.
+private val atosMarkerVisualsByCotType = mapOf(
+    "a-f-G" to AtosMarkerVisualSpec(R.drawable.ic_track_pax, R.drawable.ic_pax_no_gps),
+    "a-f-G-U-C-I" to AtosMarkerVisualSpec(R.drawable.ic_track_pax, R.drawable.ic_pax_no_gps),
+    "a-f-G-A" to AtosMarkerVisualSpec(R.drawable.ic_track_hound, R.drawable.ic_track_hound_no_gps),
+    "a-f-G-U-C-I-I" to AtosMarkerVisualSpec(R.drawable.ic_track_veh, R.drawable.ic_track_veh_no_gps),
+    "a-g-G-E" to AtosMarkerVisualSpec(R.drawable.ic_track_equipment, R.drawable.ic_track_equipment_no_gps),
+    "a-f-G-U-S-M" to AtosMarkerVisualSpec(R.drawable.ic_track_medical, R.drawable.ic_track_medical_no_gps),
+    "a-f-G-E-W" to AtosMarkerVisualSpec(R.drawable.ic_track_weapon, R.drawable.ic_track_weapon_no_gps),
+    "a-f-G-c" to AtosMarkerVisualSpec(R.drawable.ic_track_custom, R.drawable.ic_track_custom_no_gps),
+    "a-f-A" to AtosMarkerVisualSpec(R.drawable.ic_track_bundle, R.drawable.ic_track_bundle_no_gps),
+    "a-f-S" to AtosMarkerVisualSpec(R.drawable.ic_track_boat, R.drawable.ic_track_boat_no_gps),
+    "a-f-A-C-F" to AtosMarkerVisualSpec(R.drawable.ic_track_fixed, R.drawable.ic_track_fixed_no_gps),
+    "a-f-A-C-H" to AtosMarkerVisualSpec(R.drawable.ic_track_rotary, R.drawable.ic_track_rotary_no_gps),
+    "a-f-A-M" to AtosMarkerVisualSpec(R.drawable.ic_track_uas, R.drawable.ic_track_uas_no_gps),
+)
+
+@Composable
+fun ATOSTagsOnMap(
+    tags: List<ATOSItem>,
+    onClick: (id: String, title: String) -> Unit = { _, _ -> },
+    camera: CameraState,
+) {
+    if (tags.isEmpty()) return
+    val fc = rememberATOSFeatures(tags)
+    val iconGroups = remember(tags) {
+        tags.groupBy { tag ->
+            Triple(
+                tag.iconType,
+                tag.color,
+                tag.hae != 9999999.0
+            )
+        }
+    }
+    val source = rememberGeoJsonSource(
+        data = GeoJsonData.Features(fc)
+    )
+    val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
+
+    iconGroups.forEach { (key, group) ->
+        val type = key.first
+        val colorName = key.second
+        val gpsOn = key.third
+
+        SymbolLayer(
+            id = "atos-$type-$colorName-$gpsOn",
+            source = source,
+            filter = all(
+                eq(get("type").asString(), const(type.toString()), c),
+                eq(get("color").asString(), const(colorName.toString()), c),
+                eq(get("gpsOn").asString(), const(gpsOn.toString()), c)
+            ),
+            iconImage = image(atosMarkerPainter(colorName, type, gpsOn)),
+            iconAllowOverlap = const(true),
+            iconIgnorePlacement = const(true),
+            textAllowOverlap = const(true),
+            textIgnorePlacement = const(true),
+            onClick = { features ->
+                val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
+                onClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
+                ClickResult.Pass
+            },
+            iconSize = const(1.2F),
+            textField = if (camera.position.zoom > 10.0) {
+                get("title").asString()
+            } else {
+                const("")
+            },
+            textSize = const(0.6.em),
+            textAnchor = const(SymbolAnchor.Bottom),
+            textColor = const(Color.White),
+            textHaloColor = const(Color.Black),
+            textHaloWidth =const(2.dp),
+            textOffset = offset(0f.em, (-1f).em),
+            )
+    }
+}
+
+private fun atosMarkerVisualSpec(cotType: String?): AtosMarkerVisualSpec {
+    return atosMarkerVisualsByCotType[cotType] ?: AtosMarkerVisualSpec(
+        gpsOnIcon = R.drawable.ic_track_custom,
+        gpsOffIcon = R.drawable.ic_track_custom_no_gps
+    )
+}
+
+private fun atosMarkerColor(colorName: String?): Color {
+    return when (colorName) {
+        "White" -> Color(0xFFFFFFFF)
+        "Yellow" -> Color(0xFFFFFF00)
+        "Orange" -> Color(0xFFFFA500)
+        "Magenta" -> Color(0xFFFF00FF)
+        "Red" -> Color(0xFFFF0000)
+        "Maroon" -> Color(0xFF800000)
+        "Purple" -> Color(0xFF800080)
+        "Blue" -> Color(0xFF0000FF)
+        "Dark Blue" -> dark_blue
+        "Cyan" -> Color(0xFF00FFFF)
+        "Teal" -> Color(0xFF00B2B2)
+        "Green" -> Color(0xFF00FF00)
+        "Dark Green" -> Color(0xFF004C00)
+        else -> Color.White
+    }
+}
+
+@Composable
+fun atosMarkerPainter(colorName: String?, iconType: String?, gpsOn: Boolean): Painter {
+    val visualSpec = remember(iconType) {
+        atosMarkerVisualSpec(iconType)
+    }
+    val drawableId = if (gpsOn) visualSpec.gpsOnIcon else visualSpec.gpsOffIcon
+    return tintedPainter(drawableId, atosMarkerColor(colorName))
+}
+
+@Composable
+fun tintedPainter(@DrawableRes id: Int, color: Color): Painter {
+    val basePainter = painterResource(id = id)
+
+    return remember(basePainter, color) {
+        object : Painter() {
+            override val intrinsicSize = basePainter.intrinsicSize
+
+            override fun DrawScope.onDraw() {
+                with(basePainter) {
+                    draw(
+                        size = size,
+                        colorFilter = ColorFilter.tint(color, BlendMode.SrcIn)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
 fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
     remember(users) {
         FeatureCollection(
@@ -410,6 +576,9 @@ fun TeamColors(team: String) : Color {
 @Composable
 fun MapApp(exitActivity: () -> Unit) {
     val context = LocalContext.current
+    val dataRepository = remember(context) {
+        (context.applicationContext as WearTakApplication).repo
+    }
     val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
     val lat = locationFlow?.latitude ?: 0.0
@@ -455,9 +624,11 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val receivedUserListSetting by dataRepository
+    val receivedAtosTagsSetting by dataRepository.receivedAtosTagList.collectAsStateWithLifecycle(initialValue = emptyList())
+    val receivedUserListSetting by MainActivity.Constants.dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
@@ -495,6 +666,37 @@ fun MapApp(exitActivity: () -> Unit) {
             )
         }
     }
+
+    val receivedAtosTags = remember(receivedAtosTagsSetting) {
+        buildList {
+            addAll(
+                receivedAtosTagsSetting.mapNotNull { tag ->
+                    when (val markerResult = tag.toAtosMapMarkerResult()) {
+                        is AtosMapMarkerResult.Success -> {
+                            val marker = markerResult.marker
+                            ATOSItem(
+                                uid = marker.uid,
+                                iconType = marker.iconCotType,
+                                title = marker.title ?: marker.uid,
+                                lat = marker.lat,
+                                lon = marker.lon,
+                                color = marker.color,
+                                hae = marker.hae
+                            )
+                        }
+                        is AtosMapMarkerResult.Failure -> {
+                            Log.w(
+                                TAG,
+                                "ATOS local map render skipped uid=${tag.uid ?: "null"} type=${tag.type ?: "null"} tagType=${tag.atosDetail?.tagType ?: "null"} lat=${tag.point?.lat ?: "null"} lon=${tag.point?.lon ?: "null"} hae=${tag.point?.hae ?: "null"} reason=${markerResult.reason} warnings=${tag.warnings.joinToString(separator = " | ")}"
+                            )
+                            null
+                        }
+                    }
+                }
+            )
+        }
+    }
+
 
     val receivedMapUsers = remember(receivedUserListSetting) {
         buildList {
@@ -630,6 +832,10 @@ fun MapApp(exitActivity: () -> Unit) {
             )
             MarkersOnMap(
                 markers = receivedMapMarkers,
+                camera = cameraState
+            )
+            ATOSTagsOnMap(
+                tags = receivedAtosTags,
                 camera = cameraState
             )
             UsersOnMap(

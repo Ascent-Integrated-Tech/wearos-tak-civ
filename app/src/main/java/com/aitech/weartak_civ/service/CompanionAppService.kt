@@ -504,9 +504,7 @@ class CompanionAppService : Service() {
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent): IBinder? {
-        throw UnsupportedOperationException("Not yet implemented")
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun initBle() {
