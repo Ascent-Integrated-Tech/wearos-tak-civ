@@ -138,7 +138,10 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
+import com.aitech.weartak_civ.Utils.CotUtils.Point
 import com.aitech.weartak_civ.data.model.PressureReading
+import kotlin.collections.plus
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -1264,6 +1267,72 @@ class DataRepository(private val context: Context) {
 
     suspend fun clearPhysioAndAutoGenAlertRequestAll() {
         _clearPhysioAndAutoGenAlert.emit(ClearRequest.All)
+    }
+
+    data class ReceivedUser(
+        val uid: String,
+        val type: String,
+        val team: String,
+        val title: String,
+        val timeReceived: Long,
+        val staleTime: Long,
+        val location: LocationSnapshot?,
+        val source: String
+    )
+
+    private val _receivedUserList = MutableStateFlow<List<ReceivedUser>>(emptyList())
+    val receivedUserList: StateFlow<List<ReceivedUser>> = _receivedUserList
+
+    suspend fun upsertReceivedUser(item: ReceivedUser) {
+        _receivedUserList.update { list ->
+            val existingIndex = list.indexOfFirst { it.uid == item.uid }
+            if (existingIndex < 0) {
+                list + item
+            } else {
+                list.toMutableList().apply { this[existingIndex] = item }
+            }
+        }
+    }
+
+    suspend fun removeReceivedUserByUid(uid: String) {
+        _receivedUserList.update { list -> list.filterNot { it.uid == uid } }
+    }
+
+    suspend fun clearReceivedUsers() {
+        _receivedUserList.emit(emptyList())
+    }
+
+    suspend fun applyReceivedUserEvent(
+        event: Utils.CotUtils.UserPositionCotEvent,
+        source: String
+    ): Boolean {
+        if (event.stale <= System.currentTimeMillis()) {
+            removeReceivedUserByUid(event.uid)
+            return false
+        }
+
+        upsertReceivedUser(
+            ReceivedUser(
+                uid = event.uid,
+                type = event.type,
+                team = event.team,
+                title = event.detail.markerCallsign.orEmpty(),
+                timeReceived = event.time,
+                staleTime = event.stale,
+                location = LocationSnapshot(
+                    timeMillis = event.time,
+                    lat = event.point.lat,
+                    lon = event.point.lon,
+                    hae = event.point.hae,
+                    ce = event.point.ce.toFloat(),
+                    le = event.point.le.toFloat(),
+                    course = null,
+                    speed = null
+                ),
+                source = source
+            )
+        )
+        return true
     }
 
     enum class MarkerCotType {

@@ -23,6 +23,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
+import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseUserPositionCotOrNull
 import com.aitech.weartak_civ.data.parsers.GeofenceCotParser.isRadioSilenceRectangleGeofence
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -1341,7 +1342,9 @@ class TAKConnectService: Service() {
                         val outputStream = takServerDetail.secureSocket!!.getOutputStream()
                         outputStream.write(msg.toByteArray(charset("UTF-8")))
                         outputStream.flush()
-                        //Log.d(TAG, "Sent data (notPli=$isNotPli) to ${takServerDetail.address}: $msg")
+                        if (!isNotPli) {
+                            Log.i(TAG, "Outbound PLI write succeeded to ${takServerDetail.address}")
+                        }
                     } else {
                         if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
                             Log.i(TAG, "ERROR sendDataTAKServers to server(${takServerDetail.address}): secureSocket=${takServerDetail.secureSocket}; isConnected: ${takServerDetail.secureSocket?.isConnected ?: false}. Reconnecting....")
@@ -1385,12 +1388,6 @@ class TAKConnectService: Service() {
                     val buffer = StringBuilder()
 
                     while (true) {
-                        // Gate: do not read unless chat is enabled
-                        if (!dataRepository.getEnableChatService.first()) {
-                            delay(750)    // light sleep; re-check flag soon
-                            continue
-                        }
-
                         val line = try {
                             reader.readLine()
                         } catch (e: SocketTimeoutException) {
@@ -1408,7 +1405,8 @@ class TAKConnectService: Service() {
                             buffer.delete(0, endIdx + "</event>".length)
                             //if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
                             //Log.d(TAG, "Received xml=$rawXml")
-                            if (CotUtils.isChatMessage(rawXml)
+                            if (dataRepository.getEnableChatService.first()
+                                && CotUtils.isChatMessage(rawXml)
                                 && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
                                 Log.i(TAG, "Received Chat for me:\n$rawXml")
                                 EventBus.getDefault().post(TakChatEvent(rawXml))
@@ -1417,6 +1415,37 @@ class TAKConnectService: Service() {
                                 val geofenceCot = GeofenceCotParser.parse(rawXml)
                                 if (null != geofenceCot) GeofenceRepository.sendGeofenceCot(geofenceCot)
                             } else {
+
+
+                                val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
+                                if (userPositionCotEvent != null) {
+                                    if (userPositionCotEvent.uid != MainActivity.device_uid) {
+//                                        Log.i(
+//                                            TAG,
+//                                            "Inbound user CoT: source=${takServerDetail.address} uid=${userPositionCotEvent.uid} " +
+//                                                "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
+//                                                "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
+//                                                "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
+//                                                "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
+//                                                "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how} "+
+//                                                "name = ${userPositionCotEvent.team}"
+//                                        )
+//                                        continue
+
+
+                                        val shouldTrackUser = dataRepository.applyReceivedUserEvent(
+                                            event = userPositionCotEvent,
+                                            source = takServerDetail.address
+                                        )
+                                        if (!shouldTrackUser) {
+                                            Log.i(
+                                                TAG,
+                                                "Removing stale received user from map state: ${userPositionCotEvent.uid}"
+                                            )
+                                            continue
+                                        }
+                                    }
+                                }
                                 val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
                                 if (markerCotEvent != null) {
