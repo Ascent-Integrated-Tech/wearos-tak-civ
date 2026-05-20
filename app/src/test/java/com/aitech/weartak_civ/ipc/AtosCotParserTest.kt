@@ -1,7 +1,6 @@
 package com.aitech.weartak_civ.ipc
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,12 +21,13 @@ class AtosCotParserTest {
                     <contact callsign="hodor" />
                     <track course="22" speed="0.025" vspeed="1.0" />
                     <__atos tag_type="Vehicle" color="Maroon" tag_uid="4"
-                        commandlink="CL-12345" temp_c="5" voltage="3.6" alarm="0">
+                        commandlink="CL-12345" temp_c="5" voltage="3.6" alarm="0"
+                        manifest="Default Manifest">
                         <attributes Remark="remark" Frequency="frq"
                             Special_Equipment="equp" Vehicle_Type="tacoma"
                             Driver_Callsign="hodor" Team_Frequency="420.69" />
                     </__atos>
-                    <link relation="p-p" uid="android-device" type="a-f-g"/>
+                    <link relation="p-p" uid="android-device" type="a-f-g" parent_callsign="PAX 1"/>
                     <archive />
                 </detail>
             </event>
@@ -45,6 +45,7 @@ class AtosCotParserTest {
         assertEquals(22.0, packet.track?.course ?: Double.NaN, 0.0)
         assertEquals(0.025, packet.track?.speed ?: Double.NaN, 0.0)
         assertEquals(1.0, packet.track?.vspeed ?: Double.NaN, 0.0)
+        assertEquals(null, packet.track?.slope)
         assertEquals("Vehicle", packet.atosDetail?.tagType)
         assertEquals("Maroon", packet.atosDetail?.color)
         assertEquals(4, packet.atosDetail?.tagUid)
@@ -52,8 +53,14 @@ class AtosCotParserTest {
         assertEquals(5, packet.atosDetail?.tempC)
         assertEquals(3.6, packet.atosDetail?.voltage ?: Double.NaN, 0.0)
         assertEquals(0, packet.atosDetail?.alarm)
+        assertEquals("Default Manifest", packet.atosDetail?.manifest)
         assertEquals("tacoma", packet.atosDetail?.attributes?.get("Vehicle_Type"))
         assertEquals("hodor", packet.atosDetail?.attributes?.get("Driver_Callsign"))
+        assertEquals("android-device", packet.link?.uid)
+        assertEquals("a-f-g", packet.link?.type)
+        assertEquals("p-p", packet.link?.relation)
+        assertEquals("PAX 1", packet.link?.parentCallsign)
+        assertEquals("hodor", packet.contact?.callsign)
         assertTrue(packet.hasArchive)
         assertTrue(packet.warnings.isEmpty())
     }

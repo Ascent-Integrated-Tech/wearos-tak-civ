@@ -75,7 +75,8 @@ object AtosCotParser {
                             detailParts.link = CotLink(
                                 relation = token.attributes["relation"],
                                 uid = token.attributes["uid"],
-                                type = token.attributes["type"]
+                                type = token.attributes["type"],
+                                parentCallsign = token.attributes["parent_callsign"]
                             )
                         }
                         depth == 2 && token.name.equals("archive", ignoreCase = true) -> {
@@ -172,7 +173,8 @@ object AtosCotParser {
         return CotTrack(
             course = parseDouble(attrs["course"], "track.course", warnings),
             speed = parseDouble(attrs["speed"], "track.speed", warnings),
-            vspeed = parseDouble(attrs["vspeed"], "track.vspeed", warnings)
+            vspeed = parseDouble(attrs["vspeed"], "track.vspeed", warnings),
+            slope = parseDouble(attrs["slope"], "track.slope", warnings)
         )
     }
 
@@ -185,6 +187,7 @@ object AtosCotParser {
             tempC = parseInt(attrs["temp_c"], "detail.__atos.temp_c", warnings),
             voltage = parseDouble(attrs["voltage"], "detail.__atos.voltage", warnings),
             alarm = parseInt(attrs["alarm"], "detail.__atos.alarm", warnings),
+            manifest = attrs["manifest"],
             attributes = emptyMap(),
         )
     }

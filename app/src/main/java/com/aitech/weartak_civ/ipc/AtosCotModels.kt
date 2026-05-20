@@ -42,7 +42,8 @@ data class CotContact(
 data class CotTrack(
     val course: Double?,
     val speed: Double?,
-    val vspeed: Double?
+    val vspeed: Double?,
+    val slope: Double?
 )
 
 data class AtosDetail(
@@ -53,13 +54,15 @@ data class AtosDetail(
     val tempC: Int?,
     val voltage: Double?,
     val alarm: Int?,
+    val manifest: String?,
     val attributes: Map<String, String>
 )
 
 data class CotLink(
     val relation: String?,
     val uid: String?,
-    val type: String?
+    val type: String?,
+    val parentCallsign: String?
 )
 
 sealed class AtosCotParseResult {

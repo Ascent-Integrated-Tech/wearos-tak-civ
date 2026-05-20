@@ -15,7 +15,10 @@ import android.os.IBinder
 import android.os.Binder
 import android.util.Log
 import com.aitech.weartak_civ.BuildConfig
+import com.aitech.weartak_civ.events.DittoDocumentEvent
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import com.weartak.ipcservice.IWearTakAppCotListener
+import org.greenrobot.eventbus.EventBus
 
 class WearTakCotIpcService : Service() {
     private val binder = object : IWearTakAppCotListener.Stub() {
@@ -110,6 +113,20 @@ class WearTakCotIpcService : Service() {
             }
             is AtosCotParseResult.Success -> {
                 logPacket(route, callerUid = callingUid, callerPackages = callerLabel, packet = result.packet)
+                val takXml = AtosCotSerializer.toCotXml(result.packet)
+                if (takXml.isBlank()) {
+                    Log.w(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS CoT serialization failed route=$route uid=${result.packet.uid}"
+                    )
+                } else {
+                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", takXml))
+                    sendDataTAKServers(takXml, true)
+                    Log.i(
+                        AtosIpcConstants.LOG_TAG,
+                        "Forwarded ATOS CoT to TAK route=$route uid=${result.packet.uid} size=${takXml.toByteArray(Charsets.UTF_8).size}"
+                    )
+                }
             }
         }
     }
@@ -169,7 +186,9 @@ class WearTakCotIpcService : Service() {
             append(" speed=").append(track?.speed ?: "null")
             append(" course=").append(track?.course ?: "null")
             append(" vspeed=").append(track?.vspeed ?: "null")
+            append(" slope=").append(track?.slope ?: "null")
             append(" alarm=").append(atos?.alarm ?: "null")
+            append(" manifest=").append(atos?.manifest ?: "null")
             append(" archive=").append(packet.hasArchive)
             append(" attrs=").append(customAttrCount)
             append(" size=").append(packet.rawXmlLength)
@@ -200,7 +219,7 @@ class WearTakCotIpcService : Service() {
         if (link != null) {
             Log.d(
                 AtosIpcConstants.LOG_TAG,
-                "ATOS link route=$route relation=${link.relation ?: "null"} uid=${link.uid ?: "null"} type=${link.type ?: "null"}"
+                "ATOS link route=$route relation=${link.relation ?: "null"} uid=${link.uid ?: "null"} type=${link.type ?: "null"} parentCallsign=${link.parentCallsign ?: "null"}"
             )
         }
     }

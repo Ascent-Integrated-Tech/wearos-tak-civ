@@ -135,7 +135,7 @@ class TAKConnectService: Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.w(TAG, "Repo identity = ${System.identityHashCode(dataRepository)}")
+        //Log.w(TAG, "Repo identity = ${System.identityHashCode(dataRepository)}")
         Log.d(TAG, "TAKConnectService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(
@@ -150,10 +150,10 @@ class TAKConnectService: Service() {
         scope.launch {
             dataRepository.isCompanionConnected
                 .collect { connected ->
-                    Log.w(TAG, "isCompanionConnected=$connected") // temporary
+                    //Log.w(TAG, "isCompanionConnected=$connected")
                     isCompanionAppConnected = connected
                     if (connected) {
-                        Log.w(TAG, "closing TAK sockets because companion is ready")
+                        //Log.w(TAG, "closing TAK sockets because companion is ready")
                         closeTakServerSockets()
                         resetTakServerConnectionDetails()
                         return@collect
@@ -173,7 +173,7 @@ class TAKConnectService: Service() {
     private fun startEnableGoefenceServiceCollector() {
         CoroutineScope(Dispatchers.IO).launch {
             dataRepository.geofenceServiceEnabled.collectLatest { enabled ->
-                Log.i(TAG, "geofenceServiceEnabled=$enabled")
+                //Log.i(TAG, "geofenceServiceEnabled=$enabled")
                 if (null != enabled && enabled != geofenceEnabled)
                 geofenceEnabled = enabled
             }
@@ -197,7 +197,7 @@ class TAKConnectService: Service() {
             }.distinctUntilChanged().collectLatest{ cfg ->
                 val shouldRun = cfg.enable != null && cfg.enable && cfg.net != null &&
                         !cfg.address.isNullOrBlank() && cfg.port != null
-                Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
+                //Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
                 if (shouldRun) {
                     val started = NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
                     if (started) {
@@ -224,8 +224,8 @@ class TAKConnectService: Service() {
                 takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
                     takServer.isP12Cert, takServer.username, takServer.password,
                     takServer.p12Cert, takServer.p12CertPassword, numConnAttempts = 0))
-                Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
-                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
+                //Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
+                //Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             esriEndpoint = dataRepository.getEsriEndpoint.first()
@@ -849,7 +849,7 @@ class TAKConnectService: Service() {
                             Log.w(TAG, "Certificate is expiring soon ($signedCertExpiry). Getting new certificate")
                             return@runBlocking false
                         } else {
-                            Log.v(TAG, "Certificate is NOT expiring soon ($signedCertExpiry)")
+                            //Log.v(TAG, "Certificate is NOT expiring soon ($signedCertExpiry)")
                         }
                     } else {
                         Log.e(TAG, "No certificate chain found for alias: $KEY_ALIAS")
@@ -949,7 +949,7 @@ class TAKConnectService: Service() {
             try {
                 val aliases: Enumeration<String> = ks.aliases()
                 if (!aliases.hasMoreElements()) {
-                    Log.d(tag, "(keystore is empty)")
+                    //Log.d(tag, "(keystore is empty)")
                     return
                 }
                 while (aliases.hasMoreElements()) {
@@ -961,21 +961,21 @@ class TAKConnectService: Service() {
                         isTrustedCert -> "trustedCert"
                         else -> "unknown"
                     }
-                    Log.d(tag, "alias=\"$alias\" type=$type")
+                        //Log.d(tag, "alias=\"$alias\" type=$type")
 
                     if (isKey) {
                         // For key entries you can inspect the certificate chain
                         val chain = ks.getCertificateChain(alias)
-                        Log.d(tag, "  chain length=${chain?.size ?: 0}")
+                        //Log.d(tag, "  chain length=${chain?.size ?: 0}")
                         chain?.forEachIndexed { idx, c ->
                             (c as? X509Certificate)?.let { x ->
-                                logX509("$tag/$alias[$idx]", x)
+                                //logX509("$tag/$alias[$idx]", x)
                             }
                         }
                     } else {
                         // For trusted cert entries there’s a single certificate
                         (ks.getCertificate(alias) as? X509Certificate)?.let { x ->
-                            logX509("$tag/$alias", x)
+                            //logX509("$tag/$alias", x)
                         }
                     }
                 }
@@ -985,13 +985,7 @@ class TAKConnectService: Service() {
         }
 
         private fun logX509(tag: String, cert: X509Certificate) {
-            Log.d(tag, "  Subject: ${cert.subjectX500Principal.name}")
-            Log.d(tag, "  Issuer : ${cert.issuerX500Principal.name}")
-            Log.d(tag, "  Valid  : notBefore=${cert.notBefore}  notAfter=${cert.notAfter}")
-            Log.d(tag, "  SHA256 : ${sha256(cert.encoded)}")
-            // Uncomment if you also want SANs (may be null)
-            // val sans = try { cert.subjectAlternativeNames?.joinToString { it[1].toString() } ?: "(none)" } catch (_: Exception) { "(n/a)" }
-            // Log.d(tag, "  SANs   : $sans")
+            // Intentionally left blank to avoid logging certificate identities or hashes.
         }
 
         private fun sha256(bytes: ByteArray): String {
@@ -1105,7 +1099,7 @@ class TAKConnectService: Service() {
                             deleteFile("${takServerDetail.address}.jks")
                         }
                         if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", KEYSTORE_PASS)) {
-                            Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
+                            //Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
                             takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                             connectTAKServer(takServerDetail)
@@ -1185,7 +1179,7 @@ class TAKConnectService: Service() {
 
         fun findRootInChain(ks: KeyStore): X509Certificate? {
             val alias = firstKeyAlias(ks)
-            Log.d(TAG, "findRootInChain for alias=$alias")
+            //Log.d(TAG, "findRootInChain for alias=$alias")
             val chain = ks.getCertificateChain(alias)
                 ?.map { it as X509Certificate }
             if (null == chain) return null
@@ -1201,15 +1195,15 @@ class TAKConnectService: Service() {
 
         private fun isSelfSigned(cert: X509Certificate): Boolean = try {
             if (cert.subjectX500Principal != cert.issuerX500Principal) {
-                Log.d(TAG, "isSelfSigned=false")
+                //Log.d(TAG, "isSelfSigned=false")
                 false
             } else {
                 cert.verify(cert.publicKey);
-                Log.d(TAG, "isSelfSigned=true")
+                //Log.d(TAG, "isSelfSigned=true")
                 true
             }
         } catch (_: Exception) {
-            Log.d(TAG, "isSelfSigned=false")
+            //Log.d(TAG, "isSelfSigned=false")
             false
         }
 
@@ -1217,16 +1211,16 @@ class TAKConnectService: Service() {
         
         fun connectTAKServer(takServerDetail: TakServerDetail) {
             if (isCompanionAppConnected) {
-                Log.w(TAG, "connectTAKServer CompanionAppIsConnected back out early")
+                //Log.w(TAG, "connectTAKServer CompanionAppIsConnected back out early")
                 return
             }
             val takServer = takServerDetail.address
             val port = takServerDetail.port
-            Log.i(TAG,"connectTAKServer called for takServer ($takServer)")
+            //Log.i(TAG,"connectTAKServer called for takServer ($takServer)")
             if (takServerDetail.connectionStatus.getAndSet(TAK_SERVER_CONNECTING_COT_PORT) == TAK_SERVER_OBTAINED_CLIENT_CERT) {
                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                 try {
-                    Log.d(TAG, "Aliases for server $takServer")
+                    //Log.d(TAG, "Aliases for server $takServer")
                     dumpKeyStoreAliases(takServerDetail.keyStore, TAG)
                     // Initialize the KeyManagerFactory with the client certificate
                     val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
@@ -1238,7 +1232,7 @@ class TAKConnectService: Service() {
 
                     // Initialize SSL Context with TrustManager
                     val root = findRootInChain(takServerDetail.keyStore)
-                    Log.d(TAG, "root=${root?.toString() ?: "null"}")
+                    //Log.d(TAG, "root=${root?.toString() ?: "null"}")
                     val trustKs = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
                         load(null, null)
                         setCertificateEntry("root", root)
@@ -1265,11 +1259,11 @@ class TAKConnectService: Service() {
                         throw Exception("X509TrustManager is NULL. Cannot connect to ${takServerDetail.name}.")
                     }
 
-                    Log.d(TAG, "Going to createSocket and startHandshake")
+                    //Log.d(TAG, "Going to createSocket and startHandshake")
                     // Create the socket and connect
                     val socketFactory = sslContext.socketFactory
                     takServerDetail.secureSocket = socketFactory.createSocket(takServer, port) as SSLSocket
-                    Log.d(TAG, "Starting secureSocket handshake")
+                    //Log.d(TAG, "Starting secureSocket handshake")
                     takServerDetail.secureSocket?.startHandshake()
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
@@ -1281,7 +1275,7 @@ class TAKConnectService: Service() {
                     // Reset counters for connection attempts
                     takServerDetail.numConnAttempts = 0
                     setIsAnyNetworkConnecting()
-                    Log.d(TAG, "Successfully connected to $takServer on port $port")
+                    //Log.d(TAG, "Successfully connected to $takServer on port $port")
                     if (newServerAddedViaUi) {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
@@ -1338,13 +1332,14 @@ class TAKConnectService: Service() {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     if ((null != takServerDetail.secureSocket) && (takServerDetail.secureSocket?.isConnected == true)) {
+                        //Log.d(TAG, "Sending COT to server(${takServerDetail.address}) port=${takServerDetail.port} isNotPli=$isNotPli bytes=${msg.toByteArray(Charsets.UTF_8).size}")
                         val outputStream = takServerDetail.secureSocket!!.getOutputStream()
                         outputStream.write(msg.toByteArray(charset("UTF-8")))
                         outputStream.flush()
-                        //Log.d(TAG, "Sent data (notPli=$isNotPli) to ${takServerDetail.address}: $msg")
+                        //Log.d(TAG, "Sent COT to server(${takServerDetail.address}) port=${takServerDetail.port} isNotPli=$isNotPli")
                     } else {
                         if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                            Log.i(TAG, "ERROR sendDataTAKServers to server(${takServerDetail.address}): secureSocket=${takServerDetail.secureSocket}; isConnected: ${takServerDetail.secureSocket?.isConnected ?: false}. Reconnecting....")
+                            //Log.e(TAG, "Cannot send COT to server(${takServerDetail.address}) port=${takServerDetail.port}: secureSocket=${takServerDetail.secureSocket} isConnected=${takServerDetail.secureSocket?.isConnected ?: false} numConnAttempts=${takServerDetail.numConnAttempts}. Reconnecting.")
                             takServerDetail.secureSocket?.close()
                             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
@@ -1355,7 +1350,7 @@ class TAKConnectService: Service() {
                     }
                 } catch (e: IOException) {
                     if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                        Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}): ${e.message}", e)
+                        //Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}) port=${takServerDetail.port}: ${e.message}", e)
                         takServerDetail.secureSocket?.close()
                         takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                         takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
@@ -1365,7 +1360,7 @@ class TAKConnectService: Service() {
                     }
                 } catch (e: java.lang.Exception) {
                     if (takServerDetail.numConnAttempts <= NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                        Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}): ${e.message}", e)
+                        //Log.e(TAG, "Error sending COT message to server(${takServerDetail.address}) port=${takServerDetail.port}: ${e.message}", e)
                         takServerDetail.secureSocket?.close()
                         takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                         takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
@@ -1547,7 +1542,7 @@ class TAKConnectService: Service() {
                     }
                 }
             } else {
-                Log.d(TAG,"License Invalid or network NOT connected: NOT sending any data")
+                //Log.e(TAG,"Cannot send COT: licenseValid=${isLicenseValid()} networkConnected=$isNetworkConnected")
             }
         }
     }
