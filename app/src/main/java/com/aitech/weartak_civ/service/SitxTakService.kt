@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
-import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseUserPositionCotOrNull
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
@@ -536,10 +535,6 @@ class SitxTakService : Service() {
                         SitxServiceEventBus.tryEmit(
                             SitxServiceEvent.GroupsAvailable(groups)
                         )
-
-                        dataRepo.setSitxGroups(groups)
-
-
                         val savedFlowTag = sitxRepo.selectedTakGroup.first()
 
                         if (!savedFlowTag.isNullOrBlank()) {
@@ -752,7 +747,6 @@ class SitxTakService : Service() {
         }
     }
 
-    //Sends Authorization: Bearer <refresh_token> - backend checks who auth user is, what groups they can access, only returns groups you aer allowed to access.
     private fun takServers(baseUrl: String, refreshToken: String): List<TakServerItem> {
         val url = baseUrl.trimEnd('/') + "/api/v1/tak_servers"
         Log.d(TAG, "takServers: $url")
@@ -826,13 +820,11 @@ class SitxTakService : Service() {
         SitxServiceEventBus.tryEmit(
             SitxServiceEvent.GroupsAvailable(groups)
         )
-        dataRepo.setSitxGroups(groups)
     }
 
     private suspend fun switchTakGroup(
         flowTag: String
     ) {
-
 
         val baseUrl = resolveOrganizationUrl(
             sitxRepo.refreshTokenBaseUrl.first()
@@ -847,7 +839,6 @@ class SitxTakService : Service() {
                     "Missing credentials"
                 )
             )
-
 
             return
         }
@@ -866,7 +857,6 @@ class SitxTakService : Service() {
                 )
             )
 
-
             return
         }
 
@@ -883,7 +873,6 @@ class SitxTakService : Service() {
         SitxServiceEventBus.tryEmit(
             SitxServiceEvent.GroupSwitched(flowTag)
         )
-
     }
     private fun accessToken(baseUrl: String, refreshToken: String, flowTag: String): AccessTokenResponse? {
         val url = baseUrl.trimEnd('/') + "/api/v1/access/token"
@@ -957,8 +946,7 @@ class SitxTakService : Service() {
 
     // TODO Sitx: Merge with startCotReader in TakConnectService
     private fun handleTextMessage(flowTag: String, rawXml: String) {
-        if (runBlocking { dataRepo.getEnableChatService.first() }
-            && CotUtils.isChatMessage(rawXml)
+        if (CotUtils.isChatMessage(rawXml)
             && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
             Log.i(TAG, "Received Chat for me:\n$rawXml")
             EventBus.getDefault().post(TakChatEvent(rawXml))
@@ -971,43 +959,13 @@ class SitxTakService : Service() {
                 }
             }
         } else {
-            val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
-            if (userPositionCotEvent != null) {
-                //TODO: WEAR-494: Move this to data repo
-                if (userPositionCotEvent.uid != MainActivity.device_uid) {
-//                    Log.i(
-//                        TAG,
-//                        "Inbound user CoT: source=$flowTag uid=${userPositionCotEvent.uid} " +
-//                            "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
-//                            "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
-//                            "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
-//                            "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
-//                            "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how}"
-//                    )
-//                    return
-//                }
-                    serviceScope.launch {
-                        val shouldTrackUser = dataRepo.applyReceivedUserEvent(
-                            event = userPositionCotEvent,
-                            source = flowTag
-                        )
-                        if (!shouldTrackUser) {
-                            Log.i(
-                                TAG,
-                                "Removing stale received user from map state: ${userPositionCotEvent.uid}"
-                            )
-                            return@launch
-                        }
-                    }
-                }
-            }
             val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
             if (markerCotEvent != null) {
-//                if (dataRepo.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
-//                    Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
-//                    return
-//                }
+                if (dataRepo.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
+                    Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
+                    return
+                }
                 serviceScope.launch {
                     val shouldTrackMarker = dataRepo.applyReceivedMarkerEvent(
                         event = markerCotEvent,
@@ -1061,8 +1019,6 @@ class SitxTakService : Service() {
                     status = "CONNECTING"
                 )
             )
-            dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.CONNECTING)
-
             val req = Request.Builder()
                 .url(s.endPoint)
                 .addHeader("Authorization", "Bearer ${s.accessToken}")
@@ -1079,7 +1035,6 @@ class SitxTakService : Service() {
                             status = "CONNECTED"
                         )
                     )
-                    dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.CONNECTED)
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -1091,8 +1046,6 @@ class SitxTakService : Service() {
                             message = t.message
                         )
                     )
-                    dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.FAILED)
-
                     sockets.remove(s.flowTag)
                     if (sockets.isEmpty()) {
                         dataRepo.setSitxDisconnected()
@@ -1108,8 +1061,6 @@ class SitxTakService : Service() {
                             status = "DISCONNECTED"
                         )
                     )
-                    dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.DISCONNECTED)
-
                     sockets.remove(s.flowTag)
                     if (sockets.isEmpty()) {
                         dataRepo.setSitxDisconnected()
