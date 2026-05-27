@@ -29,6 +29,8 @@ object SitxSecretsKeys {
     // encrypted secrets
     val CLIENT_ID = stringPreferencesKey("sitx.client_id.enc")
 
+    val GROUP_NAME = stringPreferencesKey("sitx.group_name.enc")
+
     // Step 1 cache (encrypted)
     val DEVICE_CODE = stringPreferencesKey("sitx.device_code.enc")
     val USER_CODE = stringPreferencesKey("sitx.user_code.enc")
@@ -46,6 +48,9 @@ object SitxSecretsKeys {
 
     // TAK sessions list (encrypted JSON array)
     val TAK_SESSIONS_JSON = stringPreferencesKey("sitx.tak_sessions_json.enc")
+
+    val SELECTED_TAK_GROUP =
+        stringPreferencesKey("sitx.selected_tak_group.enc")
 
     // WS health timestamps per flowTag (plaintext JSON map: flowTag -> lastConnectedEpochSec)
     val WS_HEALTH_JSON = stringPreferencesKey("sitx.ws_health_json")

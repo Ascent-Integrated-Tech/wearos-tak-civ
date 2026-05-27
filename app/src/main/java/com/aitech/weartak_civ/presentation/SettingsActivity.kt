@@ -147,6 +147,7 @@ import com.aitech.weartak_civ.FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELE
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
@@ -352,9 +353,11 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastProto
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastProtocolSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastPort
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.multicastPortSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxAvailableGroupList
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxAvailableGroupListState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxRepo
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakClientId
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakClientIdSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakGroup
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakGroupSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakUrl
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakUrlSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.tabletCommandApikey
@@ -369,6 +372,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingR
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingReportingIntervalState
 import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
+import com.aitech.weartak_civ.service.SitxTakService
 import com.aitech.weartak_civ.service.sitx.SitxServiceCommand
 import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
@@ -394,6 +398,7 @@ class SettingsActivity : ComponentActivity() {
     companion object Constants {
         val TAG = "WearTAK-" + SettingsActivity::class.java.simpleName
         lateinit var settingsActivity: SettingsActivity
+        lateinit var sitxRepo: SitxSecretsRepository
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
         val sexOptionsList : List<String> = listOf("N/A", "Male", "Female")
@@ -734,13 +739,11 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             ManageOutputsSitxSetting(navController, sitxVm = sitxVm)
         }
         composable("sitx_tak_url_screen") {
-            StringEntryPage(
-                navController,
-                sitxTakUrlSettingsState,
-                stringResource(R.string.address_url),
-                stringResource(R.string.address_url),
-                "sitx_tak_screen"
-            )
+            SitxUrlEntryPage(navController)
+        }
+        composable("sitx_tak_group_screen"){
+            val loadingDialog = remember{ mutableStateOf(false)}
+            SitxGroupSetting (navController, loadingDialog)
         }
         /*
         composable("sitx_tak_client_id_screen") {
@@ -3404,6 +3407,13 @@ fun SitxStatusAuthorizationScreen(navController: NavController, sitxVm: SitxView
                     Button(
                         onClick = {
                             SitxServiceCommandBus.trySend(SitxServiceCommand.PollDeviceToken)
+                            //TODO: Might be a better method of this but it works for now
+                            sitxTakGroupSettingsState.postValue(null)
+                            navController.navigate("sitx_tak_group_screen") {
+                                popUpTo(("sitx_tak_group_screen")) {
+                                    inclusive = true
+                                }
+                            }
                         },
                         contentPadding = PaddingValues(10.dp),
                         colors = ButtonDefaults.buttonColors(colors.primary),
@@ -3461,6 +3471,295 @@ fun sitxStatusText(sitxEvent: SitxServiceEvent?): String {
 }
 
 @Composable
+fun SitxGroupSetting (
+    navController: NavController,
+    loadingDialog: MutableState<Boolean>
+) {
+    val groupChanged = remember { mutableStateOf(false) }
+    Log.d(TAG, "loadingDialog: $loadingDialog")
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(top = 20.dp, bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val dataList by dataRepository
+            .sitxGroups
+            .collectAsStateWithLifecycle(initialValue = emptyList())
+        val index = findSitxGroupIndex(sitxTakGroupSettingsState.value, dataList)
+        var selectedRadioIndex by remember(index) { mutableStateOf(index) }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp)
+                .padding(bottom = 40.dp)
+                .verticalScroll(state = rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Sit(x) Group",
+                fontSize = if ("Sit(x) Group".length < 20) 15.sp else 13.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(vertical = 10.dp, horizontal = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+            if (dataList.isNullOrEmpty()) {
+                CircularProgressIndicator()
+                Text(
+                    text = "Loading Sit(x) Groups",
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(vertical = 10.dp, horizontal = 20.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+            }
+                dataList.forEachIndexed { index, dataItem ->
+                run {
+                    SelectableChip(
+                        modifier = Modifier.fillMaxWidth(),
+                        selected = index == selectedRadioIndex,
+                        onClick = { selectedRadioIndex = index},
+                        label = {
+                            // The primary label should have a maximum 3 lines of text
+                            Text(dataItem.name, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        },
+                        enabled = true,
+                        shape =
+                            if (dataItem == dataList.first())
+                                RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp)
+                            else if (dataItem == dataList.last())
+                                RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp)
+                            else
+                                RoundedCornerShape(0.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+        }
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            if (dataList.isNullOrEmpty()){
+                BackButton { Log.d(TAG, "RadioChoiceSetting Settings NOT saved: Sit(x) Group")
+                    groupChanged.value = false
+                    navController.navigate("sitx_tak_screen") {
+                        popUpTo(("sitx_tak_screen")) {
+                            inclusive = true
+                        }
+                    } }
+            }else {
+                ConfirmCancelButtons(
+                    onClickCancel = {
+                        Log.d(TAG, "RadioChoiceSetting Settings NOT saved: Sit(x) Group")
+                        groupChanged.value = false
+                        navController.navigate("sitx_tak_screen") {
+                            popUpTo(("sitx_tak_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onClickConfirm = {
+                        if (selectedRadioIndex != -1) {
+                            if (sitxTakGroupSettingsState.value?.flowTag != dataList[selectedRadioIndex].flowTag) {
+                                groupChanged.value = true
+                                runBlocking {
+                                    SitxServiceCommandBus.trySend(
+                                        SitxServiceCommand.SwitchGroup(dataList[selectedRadioIndex].flowTag)
+                                    )
+                                }
+                                Log.d(
+                                    TAG,
+                                    "RadioChoiceSetting Settings saved (Sit(x) Group): ${sitxTakGroupSettingsState.value}"
+                                )
+                            } else {
+                                navController.navigate("sitx_tak_screen") {
+                                    popUpTo(("sitx_tak_screen")) {
+                                        inclusive = true
+                                    }
+                                }
+                            }
+                        } else {
+                            Toast.makeText(mainActivity, "Please select a group", Toast.LENGTH_LONG).show()
+                        }
+                    })
+            }
+            Log.d(TAG, "groupChanged: ${groupChanged.value}")
+            if (groupChanged.value) {
+                val loadingDialog by dataRepository
+                    .sitxGroupStatus
+                    .collectAsStateWithLifecycle(initialValue = null)
+                Log.d(TAG, "loadingDialog: $loadingDialog")
+                val shouldShowLoadingDialog = remember { mutableStateOf(false) }
+                val shouldShowConfirmDialog = remember { mutableStateOf(false) }
+                val isGroupConnected = remember { mutableStateOf(false) }
+
+                displaySitxGroupDialog(loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isGroupConnected)
+                LoadingDialog(shouldShowLoadingDialog, "Selecting Group")
+                SitxGroupRegistrationDialog( shouldShowConfirmDialog,shouldShowLoadingDialog, navController, isGroupConnected, groupChanged)
+                if (loadingDialog == DataRepository.SitxGroupStatus.CONNECTED){
+                    sitxTakGroupSettingsState.setValue(dataList[selectedRadioIndex])
+//                    selectedSitxGroupTitle = dataList[selectedRadioIndex].name
+                }
+            }
+        }
+    }
+}
+
+fun findSitxGroupIndex(dataName: SitxTakService.TakServerItem?, dataList: List<SitxTakService.TakServerItem>) : Int {
+    if (null == dataName) {
+        return -1
+    }
+    val index = dataList.indexOf(dataName)
+
+    return index
+}
+
+@Composable
+fun SitxGroupRegistrationDialog(
+    shouldShowDialog: MutableState<Boolean>,
+    shouldShowLoadingDialog: MutableState<Boolean>,
+    navController: NavController,
+    isGroupConnected: MutableState<Boolean>,
+    groupChanged: MutableState<Boolean>
+) {
+    val retryText = stringResource(R.string.retry)
+    if (shouldShowDialog.value) {
+        shouldShowLoadingDialog.value = false
+        AlertDialog(
+            modifier = Modifier.wrapContentHeight(),
+            containerColor = Color.DarkGray,
+            onDismissRequest = {
+                Log.d(TAG, "onDismissRequest")
+                shouldShowDialog.value = false
+            },
+            title = {
+                if (isGroupConnected.value) {
+                    Text("Group Connected", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                } else {
+                    Text("Group Connection Failed", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 15.dp))
+                }
+            },
+            confirmButton = {
+                if (!isGroupConnected.value) {
+                    Button(
+                        onClick = { shouldShowDialog.value = false
+                            groupChanged.value = false
+                        },
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.LightGray,
+                        ),
+                    ) {
+                        Text(text = retryText, fontSize = if(retryText.length!!<9) 15.sp else 13.sp, color = Color.Black)
+                    }
+                } else {
+                    Log.d(TAG, "SitxGroupRegistrationDialog confirmButton: RetryButton is NOT shown")
+                }
+            },
+
+            dismissButton = {
+                Button(
+                    onClick = {
+                        shouldShowDialog.value = false
+                        groupChanged.value = false
+                        navController.navigate("sitx_tak_screen") {
+                            popUpTo(("sitx_tak_screen")) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = if (isGroupConnected.value) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(0.45f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                    )
+                ) {
+                    if (isGroupConnected.value) {
+                        Text(text = stringResource(R.string.okay))
+                    } else {
+                        Text(text = stringResource(R.string.cancel))
+                    }
+                }
+            }
+        )
+    }
+}
+
+//TODO: WEAR-515-UI: Fix wonky behavior
+fun displaySitxGroupDialog(
+    loadingDialog: DataRepository.SitxGroupStatus?,
+    shouldShowLoadingDialog: MutableState<Boolean>,
+    shouldShowConfirmDialog: MutableState<Boolean>,
+    isGroupConnected: MutableState<Boolean>
+) {
+    if (loadingDialog == DataRepository.SitxGroupStatus.CONNECTING) {
+            Log.d(TAG, "displaySitxGroupDialog: CONNECTING")
+            shouldShowLoadingDialog.value = true
+            shouldShowConfirmDialog.value = false
+        } else if (loadingDialog == DataRepository.SitxGroupStatus.CONNECTED) {
+            Log.d(TAG, "displaySitxGroupDialog: CONNECTED")
+            shouldShowLoadingDialog.value = false
+            shouldShowConfirmDialog.value = true
+            isGroupConnected.value = true
+        } else if ((loadingDialog == DataRepository.SitxGroupStatus.FAILED) ||
+            (loadingDialog == DataRepository.SitxGroupStatus.DISCONNECTED)
+        ) {
+            Log.d(TAG, "displaySitxGroupDialog: $loadingDialog")
+            shouldShowLoadingDialog.value = false
+            shouldShowConfirmDialog.value = true
+            isGroupConnected.value = false
+        }
+        Log.d(TAG, "displaySitxGroupDialog: $loadingDialog")
+}
+
+@Composable
+fun SitxUrlEntryPage(
+    navController: NavController,
+) {
+    val label = "Address/URL"
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val textField = GenericOutlinedTextField(sitxTakUrlSettingsState, label, label)
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "$label Settings NOT saved")
+                    navController.navigate("sitx_tak_screen") {
+                        popUpTo(("sitx_tak_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    if (textField.text.contains(".sitx.io")) {
+                        val replaceText = textField.text.replace(".sitx.io", "")
+                        sitxTakUrlSettingsState.setValue(replaceText)
+                    } else {
+                        sitxTakUrlSettingsState.setValue(textField.text)
+                    }
+                    Log.d(TAG, "Settings saved with $label: ${sitxTakUrlSettingsState.value}")
+                    navController.navigate("sitx_tak_screen") {
+                        popUpTo(("sitx_tak_screen")) {
+                            inclusive = true
+                        }
+                    }
+                })
+        }
+    }
+}
+
+@Composable
 fun ManageOutputsSitxSetting(navController: NavController, sitxVm: SitxViewModel) {
     Log.d(TAG, "ManageOutputsSitxSetting called")
     val sitxServiceCheckedLive by enableSitxServiceSettingsState.observeAsState()
@@ -3476,7 +3775,14 @@ fun ManageOutputsSitxSetting(navController: NavController, sitxVm: SitxViewModel
                 stringResource(R.string.on_off)
             )
 
-            DataMetricsChip("sitx_tak_url_screen", stringResource(R.string.address), sitxTakUrlSettingsState.value.toString(), navController)
+            DataMetricsChip("sitx_tak_url_screen", stringResource(R.string.address), sitxTakUrlSettingsState.value.toString() + ".sitx.io", navController)
+
+            if (sitxStatusText(sitxEvent) == "Connected") {
+                DataMetricsChip(
+                    "sitx_tak_group_screen", stringResource(R.string.group),
+                    sitxTakGroupSettingsState.value?.name ?: "No Group Selected", navController
+                )
+            }
             //DataMetricsChip("sitx_tak_client_id_screen", stringResource(R.string.client_id), sitxTakClientIdSettingsState.value.toString(), navController)
             if (true == enableSitxServiceSettingsState.value) {
                 val nameSecondary = if (enableSitxService) sitxStatusText(sitxEvent) else "Service not enabled"
@@ -4136,8 +4442,6 @@ fun RadioChoiceSetting (
     ) {
         val index = findRadioIndex(metricSettingState.value, dataList)
         var selectedRadioIndex by remember { mutableStateOf(index) }
-//TODO: DUPLICATE CODE - Same column and title credentials vvv
-        //TODO: Convert to a lazyColumn
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -4156,7 +4460,6 @@ fun RadioChoiceSetting (
                     .padding(vertical = 10.dp, horizontal = 20.dp)
                     .align(Alignment.CenterHorizontally)
             )
-            //TODO: DUPLICATE CODE - Same column and title credentials ^^^
 
             dataList.forEachIndexed { index, dataItem ->
                 run {
@@ -5350,6 +5653,7 @@ fun SettingsScreen(
                     var esriEndpointChanged = false
                     var sitxCheckedChanged = false
                     var sitxUrlChanged = false
+                    var sitxGroupChanged = false
                     //var sitxClientIdChanged = false
                     var heightFeetChanged: Boolean = false
                     var heightInchesChanged: Boolean = false
@@ -5653,6 +5957,10 @@ fun SettingsScreen(
                         settingsChanged = true; sitxUrlChanged = true
                         sitxTakUrl = sitxTakUrlSettingsState.value ?: sitxTakUrl
                     }
+                    if (sitxTakGroup != sitxTakGroupSettingsState.value) {
+                        settingsChanged = true; sitxGroupChanged = true
+                        sitxTakGroup = sitxTakGroupSettingsState.value ?: sitxTakGroup
+                    }
                     /*
                     if (sitxTakClientId != sitxTakClientIdSettingsState.value) {
                         settingsChanged = true; sitxClientIdChanged = true
@@ -5844,289 +6152,254 @@ fun SettingsScreen(
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
-                            if (birthYearChanged) {
-                                Log.d(TAG, "Storing Birth Year ($birthYearValue)")
-                                dataRepository.storeYearOfBirth(birthYearValue)
-                            }
-                            if (heightFeetChanged) {
-                                Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
-                                dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
-                            }
-                            if (heightInchesChanged) {
-                                Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
-                                dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
-                            }
-                            if (weightChanged) {
-                                Log.d(TAG, "Storing Weight ($weightValue)")
-                                dataRepository.storePhysiologicalMetricWeight(weightValue)
-                            }
-                            if (sexChanged) {
-                                Log.d(TAG, "Storing Sex ($sexValue)")
-                                dataRepository.storePhysiologicalMetricSex(sexValue)
-                            }
-                            if (bloodTypeChanged) {
-                                Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
-                                dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
-                            }
-                            if (allergiesChanged) {
-                                Log.d(TAG, "Storing Allergy List ($allergyList)")
-                                dataRepository.storePhysiologicalMetricAllergyList(allergyList)
-                            }
-                            if (userTypeChanged) {
-                                Log.d(TAG, "Storing User Type ($userTypeValue)")
-                                dataRepository.storePhysiologicalMetricUserType(userTypeValue)
-                            }
-                            if (restingHeartRateChanged) {
-                                Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
-                                dataRepository.storeRestingHeartRate(restingHeartRate)
-                            }
-                            if (uniformWaistSizeChanged) {
-                                Log.d(TAG, "Storing Uniform Waist Size ($uniformWaistSize)")
-                                dataRepository.storePhysiologicalMetricUniformWaistSize(uniformWaistSize)
-                            }
-                            if (strideLengthChanged) {
-                                Log.d(TAG, "Storing Stride Length ($strideLength)")
-                                dataRepository.storePhysiologicalMetricStrideLength(strideLength)
-                            }
-                            if (uniformPantsLengthChanged) {
-                                Log.d(TAG, "Storing Uniform Pants Length ($uniformPantsLength)")
-                                dataRepository.storePhysiologicalMetricUniformPantsLength(uniformPantsLength)
-                            }
-                            if (loadoutWeightChanged) {
-                                Log.d(TAG, "Storing Loadout Weight ($loadoutWeight)")
-                                dataRepository.storePhysiologicalMetricLoadoutWeight(loadoutWeight)
-                            }
-                            if (dynamicReportingChanged){
-                                dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy)
-                            }
-                            if (constantReportingIntervalChanged){
-                                dataRepository.storeConstantReportingInterval(constantReportingInterval)
-                            }
-                            if (stationaryReportingIntervalChanged){
-                                dataRepository.storeStationaryReportingInterval(stationaryReportingInterval)
-                            }
-                            if (onFootReportingIntervalChanged){
-                                dataRepository.storeOnFootReportingInterval(onFootReportingInterval)
-                            }
-                            if (vehicleReportingIntervalChanged){
-                                dataRepository.storeVehicleReportingInterval(vehicleReportingInterval)
-                            }
-                            if (whileAlertingReportingIntervalChanged){
-                                dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingInterval)
-                            }
-                            if (saveBattOnWifiChanged) {
-                                Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
-                                runBlocking {
-                                    dataRepository.storeEnableWifiBatteryOptimization(
-                                        enableWifiBatteryOptimization
-                                    )
-                                    dataRepository.storeEnableAllWifiBatteryOptimization(
-                                        enableAllWifiBatteryOptimization
-                                    )
-                                    dataRepository.storeWifiSsidList(wifiSsidList)
-                                }
-                                EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
-                            }
-                            if (takServerListChanged) {
-                                Log.d(TAG, "Storing updated TAK Server List: $takServerList")
-                                dataRepository.storeTakServerList(takServerList)
-                            }
-                            if(enableMulticastChanged){
-                                Log.d(TAG, "Storing updated Enable Multicast: $enableMulticastOnWifi")
-                                dataRepository.storeEnableMulticast(enableMulticastOnWifi)
-                            }
-                            if (multicastAddressChanged) {
-                                Log.d(TAG, "Storing updated Multicast Address: $multicastAddress")
-                                dataRepository.storeMulticastAddress(multicastAddress)
-                            }
-                            if (multicastOutputProtocolChanged) {
-                                Log.d(TAG, "Storing updated Multicast Output Protocol: $multicastProtocol")
-                                dataRepository.storeMulticastProtocol(multicastProtocol)
-                            }
-                            if (multicastServerPortChanged) {
-                                Log.d(TAG, "Storing updated Multicast Server Port: $multicastPort")
-                                dataRepository.storeMulticastPort(multicastPort)
-                            }
-                            if (enableTabletCommandChanged){
-                                Log.d(TAG, "Storing updated Enable Tablet Command: $enableTabletCommandEndpoint")
-                                dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint)
-                            }
-                            if (tabletCommandEndpointChanged) {
-                                Log.d(TAG, "Storing updated Tablet Command Endpoint: $tabletCommandEndpoint")
-                                dataRepository.storeTabletCommandEndpoint(tabletCommandEndpoint)
-                            }
-                            if (tabletCommandAPIKeyChanged) {
-                                Log.d(TAG, "Storing updated Tablet Command API Key: $tabletCommandApikey")
-                                dataRepository.storeTabletCommandApikey(tabletCommandApikey)
-                            }
-                            if (enableEsriChanged){
-                                Log.d(TAG, "Storing updated Enable Esri: $enableEsriEndpoint")
-                                dataRepository.storeEnableEsriEndpoint(enableEsriEndpoint)
-                            }
-                            if (esriEndpointChanged) {
-                                Log.d(TAG, "Storing updated ESRI Endpoint: $esriEndpoint")
-                                dataRepository.storeEsriEndpoint(esriEndpoint)
-                            }
-                            if (locationCheckedChanged) {
-                                Log.d(TAG, "Storing enableLocationService $enableLocationService")
-                                dataRepository.storeEnableLocationService(enableLocationService)
-                            }
-                            if (dittoCheckedChanged) {
-                                Log.d(TAG, "Storing enableDittoService $enableDittoService")
-                                dataRepository.storeEnableDittoService(enableDittoService)
-                            }
-                            if (sitxCheckedChanged) {
-                                Log.d(TAG, "Storing enableSitxService $enableSitxService")
-                                dataRepository.storeEnableSitxService(enableSitxService)
-                            }
-                            if (sitxUrlChanged) {
-                                Log.d(TAG, "Storing Sitx URL: $sitxTakUrl")
-                                sitxRepo.setBaseUrl(sitxTakUrl)
-                                // TODO Senni: Need to restart the device authorization
+                             if (birthYearChanged) {
+                                 Log.d(TAG, "Storing Birth Year ($birthYearValue)")
+                                 dataRepository.storeYearOfBirth(birthYearValue)
+                             }
+                             if (heightFeetChanged) {
+                                 Log.d(TAG, "Storing Height(Feet) ($heightFeetValue)")
+                                 dataRepository.storePhysiologicalMetricHeightFeet(heightFeetValue)
+                             }
+                             if (heightInchesChanged) {
+                                 Log.d(TAG, "Storing Height(Inches) ($heightInchesValue)")
+                                 dataRepository.storePhysiologicalMetricHeightInches(heightInchesValue)
+                             }
+                             if (weightChanged) {
+                                 Log.d(TAG, "Storing Weight ($weightValue)")
+                                 dataRepository.storePhysiologicalMetricWeight(weightValue)
+                             }
+                             if (sexChanged) {
+                                 Log.d(TAG, "Storing Sex ($sexValue)")
+                                 dataRepository.storePhysiologicalMetricSex(sexValue)
+                             }
+                             if (bloodTypeChanged) {
+                                 Log.d(TAG, "Storing Blood Type ($bloodTypeValue)")
+                                 dataRepository.storePhysiologicalMetricBloodType(bloodTypeValue)
+                             }
+                             if (allergiesChanged) {
+                                 Log.d(TAG, "Storing Allergy List ($allergyList)")
+                                 dataRepository.storePhysiologicalMetricAllergyList(allergyList)
+                             }
+                             if (userTypeChanged) {
+                                 Log.d(TAG, "Storing User Type ($userTypeValue)")
+                                 dataRepository.storePhysiologicalMetricUserType(userTypeValue)
+                             }
+                             if (restingHeartRateChanged) {
+                                 Log.d(TAG, "Storing Resting Heart Rate ($restingHeartRate)")
+                                 dataRepository.storeRestingHeartRate(restingHeartRate)
+                             }
+                             if (uniformWaistSizeChanged) {
+                                 Log.d(TAG, "Storing Uniform Waist Size ($uniformWaistSize)")
+                                 dataRepository.storePhysiologicalMetricUniformWaistSize(uniformWaistSize)
+                             }
+                             if (strideLengthChanged) {
+                                 Log.d(TAG, "Storing Stride Length ($strideLength)")
+                                 dataRepository.storePhysiologicalMetricStrideLength(strideLength)
+                             }
+                             if (uniformPantsLengthChanged) {
+                                 Log.d(TAG, "Storing Uniform Pants Length ($uniformPantsLength)")
+                                 dataRepository.storePhysiologicalMetricUniformPantsLength(uniformPantsLength)
+                             }
+                             if (loadoutWeightChanged) {
+                                 Log.d(TAG, "Storing Loadout Weight ($loadoutWeight)")
+                                 dataRepository.storePhysiologicalMetricLoadoutWeight(loadoutWeight)
+                             }
+                             if (dynamicReportingChanged){
+                                 dataRepository.storeEnableDynamicReportingStrategy(enableDynamicReportingStrategy)
+                             }
+                             if (constantReportingIntervalChanged){
+                                 dataRepository.storeConstantReportingInterval(constantReportingInterval)
+                             }
+                             if (stationaryReportingIntervalChanged){
+                                 dataRepository.storeStationaryReportingInterval(stationaryReportingInterval)
+                             }
+                             if (onFootReportingIntervalChanged){
+                                 dataRepository.storeOnFootReportingInterval(onFootReportingInterval)
+                             }
+                             if (vehicleReportingIntervalChanged){
+                                 dataRepository.storeVehicleReportingInterval(vehicleReportingInterval)
+                             }
+                             if (whileAlertingReportingIntervalChanged){
+                                 dataRepository.storeWhileAlertingReportingInterval(whileAlertingReportingInterval)
+                             }
+                             if (saveBattOnWifiChanged) {
+                                  Log.d(TAG, "Storing batt optimization on wifi: enable($enableWifiBatteryOptimization), allWifi($enableAllWifiBatteryOptimization), wifiSsidList=($wifiSsidList)")
+                                  runBlocking {
+                                      dataRepository.storeEnableWifiBatteryOptimization(
+                                          enableWifiBatteryOptimization
+                                      )
+                                      dataRepository.storeEnableAllWifiBatteryOptimization(
+                                          enableAllWifiBatteryOptimization
+                                      )
+                                      dataRepository.storeWifiSsidList(wifiSsidList)
+                                  }
+                                  EventBus.getDefault().post(MessageEvent(OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED, 0))
+                             }
+                             if (takServerListChanged) {
+                                 Log.d(TAG, "Storing updated TAK Server List: $takServerList")
+                                 dataRepository.storeTakServerList(takServerList)
+                             }
+
+                             if(enableMulticastChanged){
+                                 Log.d(TAG, "Storing updated Enable Multicast: $enableMulticastOnWifi")
+                                 dataRepository.storeEnableMulticast(enableMulticastOnWifi)
+                             }
+                             if (multicastAddressChanged) {
+                                 Log.d(TAG, "Storing updated Multicast Address: $multicastAddress")
+                                 dataRepository.storeMulticastAddress(multicastAddress)
+                             }
+                             if (multicastOutputProtocolChanged) {
+                                 Log.d(TAG, "Storing updated Multicast Output Protocol: $multicastProtocol")
+                                 dataRepository.storeMulticastProtocol(multicastProtocol)
+                             }
+                             if (multicastServerPortChanged) {
+                                 Log.d(TAG, "Storing updated Multicast Server Port: $multicastPort")
+                                 dataRepository.storeMulticastPort(multicastPort)
+                             }
+                             if (enableTabletCommandChanged){
+                                 Log.d(TAG, "Storing updated Enable Tablet Command: $enableTabletCommandEndpoint")
+                                 dataRepository.storeEnableTabletCommandEndpoint(enableTabletCommandEndpoint)
+                             }
+                             if (tabletCommandEndpointChanged) {
+                                 Log.d(TAG, "Storing updated Tablet Command Endpoint: $tabletCommandEndpoint")
+                                 dataRepository.storeTabletCommandEndpoint(tabletCommandEndpoint)
+                             }
+                             if (tabletCommandAPIKeyChanged) {
+                                 Log.d(TAG, "Storing updated Tablet Command API Key: $tabletCommandApikey")
+                                 dataRepository.storeTabletCommandApikey(tabletCommandApikey)
+                             }
+                             if (enableEsriChanged){
+                                 Log.d(TAG, "Storing updated Enable Esri: $enableEsriEndpoint")
+                                 dataRepository.storeEnableEsriEndpoint(enableEsriEndpoint)
+                             }
+                             if (esriEndpointChanged) {
+                                 Log.d(TAG, "Storing updated ESRI Endpoint: $esriEndpoint")
+                                 dataRepository.storeEsriEndpoint(esriEndpoint)
+                             }
+                             if (locationCheckedChanged) {
+                                 Log.d(TAG, "Storing enableLocationService $enableLocationService")
+                                 dataRepository.storeEnableLocationService(enableLocationService)
+                             }
+                             if (dittoCheckedChanged) {
+                                 Log.d(TAG, "Storing enableDittoService $enableDittoService")
+                                 dataRepository.storeEnableDittoService(enableDittoService)
+                             }
+                             if (sitxCheckedChanged) {
+                                 Log.d(TAG, "Storing enableSitxService $enableSitxService")
+                                 dataRepository.storeEnableSitxService(enableSitxService)
+                             }
+                             if (sitxUrlChanged) {
+                                 Log.d(TAG, "Storing Sitx URL: $sitxTakUrl")
+                                 sitxRepo.setBaseUrl(sitxTakUrl)
+                                 // TODO Senni: Need to restart the device authorization
+                             }
+                            if (sitxGroupChanged) {
+                                Log.d(TAG, "Storing Sitx Group: $sitxTakGroup")
+                                dataRepository.setSelectedSitxGroup(sitxTakGroup)
                             }
                             /*
-                            if (sitxClientIdChanged) {
-                                Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
-                                sitxRepo.setClientId(sitxTakClientId)
-                                // TODO Senni: Need to restart the device authorization
-                            }
-
+                             if (sitxClientIdChanged) {
+                                 Log.d(TAG, "Storing Sitx Client ID: $sitxTakClientId")
+                                 sitxRepo.setClientId(sitxTakClientId)
+                                 // TODO Senni: Need to restart the device authorization
+                             }
                              */
-                            if (companionAppCheckedChanged) {
-                                Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
-                                dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
-                            }
-                            if (chatCheckedChanged) {
-                                Log.d(TAG, "Storing enableChatService $enableChatService")
-                                dataRepository.storeEnableChatService(enableChatService)
-                            }
-                            if (immersionAlertsChanged) {
-                                Log.d(TAG, "Storing enableImmersionAlerts $enableImmersionAlerts")
-                                dataRepository.storeEnableImmersionAlerts(enableImmersionAlerts)
-                            }
-                            if (lowPressureAlertChanged) {
-                                Log.d(TAG, "Storing enableLowAtmPressureAlert $enableLowAtmPressureAlert")
-                                dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlert)
-                            }
-                            if (lowPressureAlertThresholdChanged) {
-                                Log.d(TAG, "Storing lowAtmPressureAlertThreshold $lowAtmPressureAlertThreshold")
-                                dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThreshold)
-                            }
-                            if (highPressureAlertChanged) {
-                                Log.d(TAG, "Storing enableHighAtmPressureAlert $enableHighAtmPressureAlert")
-                                dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlert)
-                            }
-                            if (highPressureAlertThresholdChanged) {
-                                Log.d(TAG, "Storing highAtmPressureAlertThreshold $highAtmPressureAlertThreshold")
-                                dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
-                            }
-                            if (onnxGunThresholdChanged) {
-                                Log.d(TAG, "Storing onnxGunshotTriggerThresholdPercent $onnxGunshotTriggerThresholdPercent")
-                                dataRepository.storeOnnxGunshotTriggerThresholdPercent(onnxGunshotTriggerThresholdPercent)
-                            }
-                            if (onnxGunDetectChanged) {
-                                Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
-                                dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
-                            }
-                            if (onnxUasThresholdChanged) {
-                                Log.d(TAG, "Storing onnxUasTriggerThresholdPercent $onnxUasTriggerThresholdPercent")
-                                dataRepository.storeOnnxUasTriggerThresholdPercent(onnxUasTriggerThresholdPercent)
-                            }
-                            if (onnxUasDetectChanged) {
-                                Log.d(TAG, "Storing enableOnnxUasService $enableOnnxUasService")
-                                dataRepository.storeEnableOnnxUasService(enableOnnxUasService)
-                            }
-                            if (batteryAlertsCheckedChanged) {
-                                Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
-                                dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
-                            }
-                            if (bloodhoundCompassCheckedChanged) {
-                                Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
-                                dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
-                            }
-                            if (bloodhoundProximityVibrationChanged) {
-                                Log.d(TAG, "Storing enableBloodhoundProximityVibration $enableBloodhoundProximityVibration")
-                                dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibration)
-                            }
-                            if (bloodhoundProximityRadiusChanged) {
-                                Log.d(TAG, "Storing bloodhoundProximityRadiusMeters $bloodhoundProximityRadiusMeters")
-                                dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMeters)
-                            }
-                            if (bloodhoundProximityIntensityChanged) {
-                                Log.d(TAG, "Storing bloodhoundProximityIntensity $bloodhoundProximityIntensity")
-                                dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensity)
-                            }
-                            if (hailCheckedChanged) {
-                                Log.d(TAG, "Storing enableHailService $enableHailService")
-                                dataRepository.storeEnableHailService(enableHailService)
-                            }
-                            if (batdokCheckedChanged) {
-                                Log.d(TAG, "Storing enableBatdokCot $enableBatdokCot")
-                                dataRepository.storeEnableBatdokCot(enableBatdokCot)
-                            }
-                            if (smsAlertsCheckedChanged) {
-                                Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
-                                dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
-                            }
-                            if (smsNumbersChanged){
-                                val smsNumbersListConversion: List<DataRepository.SmsNumber> =
-                                    smsNumbersListString.split(",")
-                                        .map { it.trim() } // Trim whitespace from each SSID
-                                        .filter { it.isNotEmpty() } // Remove any empty values
-                                        .map { DataRepository.SmsNumber(it) }
-                                Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
-                                dataRepository.storeSmsNumbersList(smsNumbersListConversion)
-                                smsNumbersList = smsNumbersListConversion
-                            }
-                            if (physioCheckedChanged) {
-                                Log.d(TAG, "Storing enablePhysiologicalServices $enablePhysiologicalServices")
-                                dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServices)
-                            }
-                            if (physiologicalAlertsCheckedChanged) {
-                                Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
-                                dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
-                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
-                            }
-                            if (restingHeartRateHighThresholdChanged) {
-                                Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
-                                dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
-                            }
-                            if (highRestingHrWarningThresholdLengthChanged) {
-                                Log.d(TAG, "Storing highRestingHrWarningThresholdLength $highRestingHrWarningThresholdLength")
-                                dataRepository.storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLength)
-                            }
-                            if (highRestingHrAlertThresholdLengthChanged) {
-                                Log.d(TAG, "Storing highRestingHrAlertThresholdLength $highRestingHrAlertThresholdLength")
-                                dataRepository.storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLength)
-                            }
-                            if (restingHeartRateLowThresholdChanged) {
-                                Log.d(TAG, "Storing hrHighAlertBpmThreshold $restingHrLowAlertBpmThreshold")
-                                dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold)
-                            }
-                            if (lowRestingHrWarningThresholdLengthChanged) {
-                                Log.d(TAG, "Storing lowRestingHrWarningThresholdLength $lowRestingHrWarningThresholdLength")
-                                dataRepository.storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLength)
-                            }
-                            if (lowRestingHrAlertThresholdLengthChanged) {
-                                Log.d(TAG, "Storing lowRestingHrAlertThresholdLength $lowRestingHrAlertThresholdLength")
-                                dataRepository.storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength)
-                            }
-                            if (exertionWarningThresholdChanged) {
-                                Log.d(TAG, "Storing exertionThresholdWarning $exertionThresholdWarning")
-                                dataRepository.storeExertionThresholdWarning(exertionThresholdWarning)
-                            }
-                            if (exertionWarningThresholdLengthChanged) {
-                                Log.d(TAG, "Storing exertionWarningThresholdLength $exertionWarningThresholdLength")
-                                dataRepository.storeExertionWarningThresholdLength(exertionWarningThresholdLength)
-                            }
-                            if (exertionAlertThresholdChanged) {
-                                Log.d(TAG, "Storing exertionThresholdAlert $exertionThresholdAlert")
-                                dataRepository.storeExertionThresholdAlert(exertionThresholdAlert)
-                            }
-                            if (exertionAlertThresholdLengthChanged) {
-                                Log.d(TAG, "Storing exertionAlertThresholdLength $exertionAlertThresholdLength")
-                                dataRepository.storeExertionAlertThresholdLength(exertionAlertThresholdLength)
-                            }
+
+                             if (companionAppCheckedChanged) {
+                                 Log.d(TAG, "Storing enableCompanionAppService $enableCompanionAppService")
+                                 dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
+                             }
+                             if (chatCheckedChanged) {
+                                 Log.d(TAG, "Storing enableChatService $enableChatService")
+                                 dataRepository.storeEnableChatService(enableChatService)
+                             }
+                             if (onnxGunDetectChanged) {
+                                 Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
+                                 dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
+                             }
+                             if (batteryAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")
+                                 dataRepository.storeEnableBatteryAlerts(enableBatteryAlerts)
+                             }
+                             if (bloodhoundCompassCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBloodhoundCompassService $enableBloodhoundCompassService")
+                                 dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
+                             }
+                             if (hailCheckedChanged) {
+                                 Log.d(TAG, "Storing enableHailService $enableHailService")
+                                 dataRepository.storeEnableHailService(enableHailService)
+                             }
+                             if (batdokCheckedChanged) {
+                                 Log.d(TAG, "Storing enableBatdokCot $enableBatdokCot")
+                                 dataRepository.storeEnableBatdokCot(enableBatdokCot)
+                             }
+                             if (smsAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enableSmsForAlerts ${enableSmsForAlerts}")
+                                 dataRepository.storeEnableSmsForAlerts(enableSmsForAlerts)
+                             }
+                             if (smsNumbersChanged){
+                                 val smsNumbersListConversion: List<DataRepository.SmsNumber> =
+                                        smsNumbersListString.split(",")
+                                            .map { it.trim() } // Trim whitespace from each SSID
+                                            .filter { it.isNotEmpty() } // Remove any empty values
+                                            .map { DataRepository.SmsNumber(it) }
+                                 Log.d(TAG, "Storing smsNumbersList ${smsNumbersListConversion}")
+
+                                 dataRepository.storeSmsNumbersList(smsNumbersListConversion)
+                                 smsNumbersList = smsNumbersListConversion
+                             }
+
+                             if (physioCheckedChanged) {
+                                 Log.d(TAG, "Storing enablePhysiologicalServices $enablePhysiologicalServices")
+                                 dataRepository.storeEnablePhysiologicalServices(enablePhysiologicalServices)
+                             }
+
+                             if (physiologicalAlertsCheckedChanged) {
+                                 Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
+                                 dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
+                                 Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
+                             }
+
+                             if (restingHeartRateHighThresholdChanged) {
+                                 Log.d(TAG, "Storing restingHrHighAlertBpmThreshold $restingHrHighAlertBpmThreshold")
+                                 dataRepository.storeRestingHrHighAlertBpmThreshold(restingHrHighAlertBpmThreshold)
+                             }
+                             if (highRestingHrWarningThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing highRestingHrWarningThresholdLength $highRestingHrWarningThresholdLength")
+                                 dataRepository.storeHighRestingHrWarningThresholdLength(highRestingHrWarningThresholdLength)
+                             }
+                             if (highRestingHrAlertThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing highRestingHrAlertThresholdLength $highRestingHrAlertThresholdLength")
+                                 dataRepository.storeHighRestingHrAlertThresholdLength(highRestingHrAlertThresholdLength)
+                             }
+                             if (restingHeartRateLowThresholdChanged) {
+                                 Log.d(TAG, "Storing hrHighAlertBpmThreshold $restingHrLowAlertBpmThreshold")
+                                 dataRepository.storeRestingHrLowAlertBpmThreshold(restingHrLowAlertBpmThreshold)
+                             }
+                             if (lowRestingHrWarningThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing lowRestingHrWarningThresholdLength $lowRestingHrWarningThresholdLength")
+                                 dataRepository.storeLowRestingHrWarningThresholdLength(lowRestingHrWarningThresholdLength)
+                             }
+                             if (lowRestingHrAlertThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing lowRestingHrAlertThresholdLength $lowRestingHrAlertThresholdLength")
+                                 dataRepository.storeLowRestingHrAlertThresholdLength(lowRestingHrAlertThresholdLength)
+                             }
+                             if (exertionWarningThresholdChanged) {
+                                 Log.d(TAG, "Storing exertionThresholdWarning $exertionThresholdWarning")
+                                 dataRepository.storeExertionThresholdWarning(exertionThresholdWarning)
+                             }
+                             if (exertionWarningThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing exertionWarningThresholdLength $exertionWarningThresholdLength")
+                                 dataRepository.storeExertionWarningThresholdLength(exertionWarningThresholdLength)
+                             }
+                             if (exertionAlertThresholdChanged) {
+                                 Log.d(TAG, "Storing exertionThresholdAlert $exertionThresholdAlert")
+                                 dataRepository.storeExertionThresholdAlert(exertionThresholdAlert)
+                             }
+                             if (exertionAlertThresholdLengthChanged) {
+                                 Log.d(TAG, "Storing exertionAlertThresholdLength $exertionAlertThresholdLength")
+                                 dataRepository.storeExertionAlertThresholdLength(exertionAlertThresholdLength)
+                             }
 
                             if (restingHeartRateChanged ||
                                 restingHeartRateHighThresholdChanged ||
