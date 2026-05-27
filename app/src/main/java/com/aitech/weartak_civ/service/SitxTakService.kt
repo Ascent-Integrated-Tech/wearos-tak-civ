@@ -153,6 +153,7 @@ class SitxTakService : Service() {
         serviceScope.launch {
             SitxServiceCommandBus.commands.collectLatest { cmd ->
                 when (cmd) {
+
                     is SitxServiceCommand.BeginAuth -> {
                         Log.i(TAG, "Received SitxServiceCommand.BeginAuth")
                         sitxRepo.setRefreshToken(null)
@@ -172,7 +173,24 @@ class SitxTakService : Service() {
 
                     SitxServiceCommand.ConnectSockets -> {
                         Log.i(TAG, "Received SitxServiceCommand.ConnectSockets")
-                        ensureSessionsAndConnectSockets()
+                        val existingSessions = sitxRepo.takSessions.first()
+
+                        if (existingSessions.isNotEmpty()) {
+                            connectAllSessions(existingSessions)
+                        }
+                    }
+                    SitxServiceCommand.FetchAvailableGroups -> {
+                        Log.i(TAG, "Fetching available TAK groups")
+                        fetchAndEmitAvailableGroups()
+                    }
+
+                    is SitxServiceCommand.SwitchGroup -> {
+                        Log.i(TAG, "Switching TAK group=${cmd.flowTag}")
+                        switchTakGroup(cmd.flowTag)
+                    }
+                    is SitxServiceCommand.ConnectSelectedGroups -> {
+                        Log.i(TAG, "Received ConnectSelectedGroups")
+                        connectSelectedGroups(cmd.groups)
                     }
 
                     is SitxServiceCommand.SendCot -> {
@@ -230,7 +248,11 @@ class SitxTakService : Service() {
 
         reconnectJob = serviceScope.launch {
             delay(delayMs)
-            ensureSessionsAndConnectSockets(false)
+            val existingSessions = sitxRepo.takSessions.first()
+
+            if (existingSessions.isNotEmpty()) {
+                connectAllSessions(existingSessions)
+            }
         }
     }
 
@@ -276,7 +298,7 @@ class SitxTakService : Service() {
         deviceName: String,
         deviceId: String
     ) {
-        val baseUrl = normalizeBaseUrl(baseUrlInput)
+        val baseUrl = resolveOrganizationUrl(baseUrlInput)
         if (baseUrl.isBlank() || clientId.isBlank()) {
             SitxServiceEventBus.tryEmit(SitxServiceEvent.Error("Missing baseUrl or clientId"))
             dataRepo.setSitxDisconnected()
@@ -287,14 +309,42 @@ class SitxTakService : Service() {
 
         // If refresh token still valid -> skip Step 1/2/3A and go to 3B->4->5->connect
         val refreshExp = sitxRepo.refreshTokenExpiresAtEpochSec.first()
-        val refreshTok = sitxRepo.refreshToken.first()
+        val refreshTok = sitxRepo.refreshToken.first().orEmpty()
         val refreshTokBaseUrl = sitxRepo.refreshTokenBaseUrl.first()
         val refreshTokClientId = sitxRepo.refreshTokenClientId.first()
 
         if (!refreshTok.isNullOrBlank() && isEpochValid(refreshExp) && (baseUrl == refreshTokBaseUrl) && (clientId == refreshTokClientId)) {
             SitxServiceEventBus.tryEmit(SitxServiceEvent.Info("Refresh token valid; skipping device grant"))
-            Log.i(TAG, "Refresh token valid ($refreshExp (>now(${nowEpochSec()})): ${refreshTok.take(12)}...(${refreshTok.length}); skipping device grant... Going to connect")
-            ensureSessionsAndConnectSockets()
+            Log.i(
+                TAG,
+                "Refresh token valid ($refreshExp (>now(${nowEpochSec()})): ${refreshTok.take(12)}...(${refreshTok.length}); skipping device grant... Going to connect"
+            )
+
+            fetchAndEmitAvailableGroups()
+
+            val groups = takServers(baseUrl, refreshTok)
+
+            val savedFlowTag = sitxRepo.selectedTakGroup.first()
+
+            if (!savedFlowTag.isNullOrBlank()) {
+
+                val savedGroup = groups.firstOrNull {
+                    it.flowTag == savedFlowTag
+                }
+
+                if (savedGroup != null) {
+
+                    Log.i(
+                        TAG,
+                        "Restoring previously selected TAK group=$savedFlowTag"
+                    )
+
+                    connectSelectedGroups(
+                        listOf(savedGroup)
+                    )
+                }
+            }
+
             return
         }
 
@@ -363,7 +413,7 @@ class SitxTakService : Service() {
     }
 
     private suspend fun pollDeviceTokenUntilAuthorized() {
-        val baseUrl = normalizeBaseUrl(sitxRepo.refreshTokenBaseUrl.first())
+        val baseUrl = resolveOrganizationUrl(sitxRepo.refreshTokenBaseUrl.first())
         val clientId = sitxRepo.refreshTokenClientId.first().orEmpty()
         val deviceCode = sitxRepo.deviceCode.first().orEmpty()
 
@@ -371,10 +421,24 @@ class SitxTakService : Service() {
         val baseIntervalSec = sitxRepo.devicePollIntervalSec.first().coerceAtLeast(1L)
 
         if (baseUrl.isBlank() || clientId.isBlank() || deviceCode.isBlank()) {
-            SitxServiceEventBus.tryEmit(SitxServiceEvent.Error("Missing baseUrl/clientId/deviceCode: Reauthorize device"))
+
+            SitxServiceEventBus.tryEmit(
+                SitxServiceEvent.Error(
+                    "Missing baseUrl/clientId/deviceCode: Reauthorize device"
+                )
+            )
+
             dataRepo.setSitxDisconnected()
             requestStatusIconsComplicationUpdate(applicationContext)
-            Log.e(TAG, "Missing baseUrl/clientId/deviceCode (baseUrlBlank=${baseUrl.isBlank()}, clientIdBlank=${clientId.isBlank()}, deviceCodeBlank=${deviceCode.isBlank()})")
+
+            Log.e(
+                TAG,
+                "Missing baseUrl/clientId/deviceCode " +
+                        "(baseUrlBlank=${baseUrl.isBlank()}, " +
+                        "clientIdBlank=${clientId.isBlank()}, " +
+                        "deviceCodeBlank=${deviceCode.isBlank()})"
+            )
+
             return
         }
 
@@ -435,12 +499,69 @@ class SitxTakService : Service() {
                         // Device flow complete
                         sitxRepo.clearDeviceGrantCache()
 
-                        SitxServiceEventBus.tryEmit(SitxServiceEvent.Authorized("Device authorized; building sessions"))
+                        SitxServiceEventBus.tryEmit(
+                            SitxServiceEvent.Authorized(
+                                "Device authorized"
+                            )
+                        )
+
                         dataRepo.setSitxConnecting()
                         requestStatusIconsComplicationUpdate(applicationContext)
-                        Log.i(TAG, "Device authorized; building sessions")
-                        ensureSessionsAndConnectSockets()
+
+                        Log.i(TAG, "Device authorized; fetching TAK groups")
+
+                        val groups = fetchAuthorizedTakGroups(
+                            baseUrl = baseUrl,
+                            refreshToken = tokenResp.refreshToken
+                        )
+
+                        if (groups.isEmpty()) {
+
+                            SitxServiceEventBus.tryEmit(
+                                SitxServiceEvent.NoAuthorizedGroups
+                            )
+
+                            dataRepo.setSitxDisconnected()
+
+                            requestStatusIconsComplicationUpdate(applicationContext)
+
+                            Log.w(
+                                TAG,
+                                "Authenticated successfully but no TAK groups are authorized"
+                            )
+
+                            return
+                        }
+
+                        SitxServiceEventBus.tryEmit(
+                            SitxServiceEvent.GroupsAvailable(groups)
+                        )
+
+                        dataRepo.setSitxGroups(groups)
+
+
+                        val savedFlowTag = sitxRepo.selectedTakGroup.first()
+
+                        if (!savedFlowTag.isNullOrBlank()) {
+
+                            val savedGroup = groups.firstOrNull {
+                                it.flowTag == savedFlowTag
+                            }
+
+                            if (savedGroup != null) {
+
+                                Log.i(
+                                    TAG,
+                                    "Restoring previously selected TAK group=$savedFlowTag"
+                                )
+
+                                connectSelectedGroups(
+                                    listOf(savedGroup)
+                                )
+                            }
+                        }
                         return
+
                     } else {
                         // If authorization_pending -> stay on UI, wait, and retry
                         val err = runCatching {
@@ -509,8 +630,11 @@ class SitxTakService : Service() {
         }
     }
 
-    private suspend fun ensureSessionsAndConnectSockets(refresh: Boolean = true): Unit = ensureMutex.withLock {
-        val baseUrl = normalizeBaseUrl(sitxRepo.refreshTokenBaseUrl.first())
+    private suspend fun connectSelectedGroups(
+        selectedGroups: List<TakServerItem>,
+        refresh: Boolean = true
+    ): Unit = ensureMutex.withLock {
+        val baseUrl = resolveOrganizationUrl(sitxRepo.refreshTokenBaseUrl.first())
         val refreshToken = sitxRepo.refreshToken.first()
 
         if (baseUrl.isBlank()) {
@@ -551,8 +675,7 @@ class SitxTakService : Service() {
         val effectiveRefreshToken = sitxRepo.refreshToken.first().orEmpty()
 
         // STEP 4: Get TAK servers
-        val servers = takServers(baseUrl, effectiveRefreshToken)
-        if (servers.isEmpty()) {
+        if (selectedGroups.isEmpty()) {
             SitxServiceEventBus.tryEmit(SitxServiceEvent.Error("No TAK servers returned"))
             dataRepo.setSitxDisconnected()
             requestStatusIconsComplicationUpdate(applicationContext)
@@ -561,7 +684,7 @@ class SitxTakService : Service() {
         }
 
         // STEP 5: access token for each server + store sessions
-        val sessions = servers.mapNotNull { server ->
+        val sessions = selectedGroups.mapNotNull { server ->
             val flowTag = server.flowTag
             val access = accessToken(baseUrl, effectiveRefreshToken, flowTag) ?: return@mapNotNull null
             TakSession(
@@ -629,12 +752,12 @@ class SitxTakService : Service() {
         }
     }
 
+    //Sends Authorization: Bearer <refresh_token> - backend checks who auth user is, what groups they can access, only returns groups you aer allowed to access.
     private fun takServers(baseUrl: String, refreshToken: String): List<TakServerItem> {
         val url = baseUrl.trimEnd('/') + "/api/v1/tak_servers"
         Log.d(TAG, "takServers: $url")
         Log.d(TAG, "refreshToken: ${refreshToken.take(12)}...(${refreshToken.length})")
-
-        val request = Request.Builder()
+               val request = Request.Builder()
             .url(url)
             .get()
             .addHeader("Accept", "*/*")
@@ -666,10 +789,115 @@ class SitxTakService : Service() {
             }
         }
     }
+    private suspend fun fetchAuthorizedTakGroups(
+        baseUrl: String,
+        refreshToken: String
+    ): List<TakServerItem> {
 
+        val groups = takServers(baseUrl, refreshToken)
+
+        Log.i(TAG, "Authorized TAK groups count=${groups.size}")
+
+        return groups
+    }
+    private suspend fun fetchAndEmitAvailableGroups() {
+
+        val baseUrl = resolveOrganizationUrl(
+            sitxRepo.refreshTokenBaseUrl.first()
+        )
+
+        val refreshToken = sitxRepo.refreshToken.first().orEmpty()
+
+        if (baseUrl.isBlank() || refreshToken.isBlank()) {
+
+            SitxServiceEventBus.tryEmit(
+                SitxServiceEvent.Error(
+                    "Missing baseUrl or refresh token"
+                )
+            )
+
+            return
+        }
+
+        val groups = takServers(baseUrl, refreshToken)
+
+        Log.i(TAG, "Available TAK groups count=${groups.size}")
+
+        SitxServiceEventBus.tryEmit(
+            SitxServiceEvent.GroupsAvailable(groups)
+        )
+        dataRepo.setSitxGroups(groups)
+    }
+
+    private suspend fun switchTakGroup(
+        flowTag: String
+    ) {
+
+
+        val baseUrl = resolveOrganizationUrl(
+            sitxRepo.refreshTokenBaseUrl.first()
+        )
+
+        val refreshToken = sitxRepo.refreshToken.first().orEmpty()
+
+        if (baseUrl.isBlank() || refreshToken.isBlank()) {
+
+            SitxServiceEventBus.tryEmit(
+                SitxServiceEvent.Error(
+                    "Missing credentials"
+                )
+            )
+
+
+            return
+        }
+
+        val groups = takServers(baseUrl, refreshToken)
+
+        val selectedGroup = groups.firstOrNull {
+            it.flowTag == flowTag
+        }
+
+        if (selectedGroup == null) {
+
+            SitxServiceEventBus.tryEmit(
+                SitxServiceEvent.Error(
+                    "Selected group not found"
+                )
+            )
+
+
+            return
+        }
+
+        sitxRepo.setSelectedTakGroup(flowTag)
+
+        closeWebsockets()
+        dataRepo.setSitxConnecting()
+
+        requestStatusIconsComplicationUpdate(applicationContext)
+        connectSelectedGroups(
+            listOf(selectedGroup)
+        )
+
+        SitxServiceEventBus.tryEmit(
+            SitxServiceEvent.GroupSwitched(flowTag)
+        )
+
+    }
     private fun accessToken(baseUrl: String, refreshToken: String, flowTag: String): AccessTokenResponse? {
         val url = baseUrl.trimEnd('/') + "/api/v1/access/token"
-
+//
+//        val form = FormBody.Builder()
+//            .add("grant_type", "access")
+//            .add("resource_type", "TAKSERVER")
+//            .add("resource_key", flowTag)
+//            .build()
+//            val form = FormBody.Builder()
+//            .add("grant_type", "access")
+//            .add("resource_type", "TAKSERVER")
+//            .add("resource_key", "sitx-group-a8eaab3e")
+//            .build()
         val form = FormBody.Builder()
             .add("grant_type", "access")
             .add("resource_type", "TAKSERVER")
@@ -816,7 +1044,24 @@ class SitxTakService : Service() {
 
         // Create sockets missing
         sessions.forEach { s ->
-            if (sockets.containsKey(s.flowTag)) return@forEach
+            val existingSocket = sockets[s.flowTag]
+
+            if (existingSocket != null) {
+
+                Log.i(
+                    TAG,
+                    "Socket already exists for flowTag=${s.flowTag}"
+                )
+
+                return@forEach
+            }
+            SitxServiceEventBus.tryEmit(
+                SitxServiceEvent.SocketStatus(
+                    flowTag = s.flowTag,
+                    status = "CONNECTING"
+                )
+            )
+            dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.CONNECTING)
 
             val req = Request.Builder()
                 .url(s.endPoint)
@@ -828,10 +1073,26 @@ class SitxTakService : Service() {
                     dataRepo.setSitxConnected()
                     requestStatusIconsComplicationUpdate(applicationContext)
                     Log.i(TAG, "WS open flowTag=${s.flowTag}")
+                    SitxServiceEventBus.tryEmit(
+                        SitxServiceEvent.SocketStatus(
+                            flowTag = s.flowTag,
+                            status = "CONNECTED"
+                        )
+                    )
+                    dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.CONNECTED)
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     Log.e(TAG, "WS failure flowTag=${s.flowTag}: ${t.message}")
+                    SitxServiceEventBus.tryEmit(
+                        SitxServiceEvent.SocketStatus(
+                            flowTag = s.flowTag,
+                            status = "FAILED",
+                            message = t.message
+                        )
+                    )
+                    dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.FAILED)
+
                     sockets.remove(s.flowTag)
                     if (sockets.isEmpty()) {
                         dataRepo.setSitxDisconnected()
@@ -841,6 +1102,14 @@ class SitxTakService : Service() {
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     Log.i(TAG, "WS closed flowTag=${s.flowTag} code=$code reason=$reason")
+                    SitxServiceEventBus.tryEmit(
+                        SitxServiceEvent.SocketStatus(
+                            flowTag = s.flowTag,
+                            status = "DISCONNECTED"
+                        )
+                    )
+                    dataRepo.setSitxGroupStatus(DataRepository.SitxGroupStatus.DISCONNECTED)
+
                     sockets.remove(s.flowTag)
                     if (sockets.isEmpty()) {
                         dataRepo.setSitxDisconnected()
@@ -897,11 +1166,23 @@ class SitxTakService : Service() {
         return expiresAtEpochSec > (nowEpochSec() + skewSec)
     }
 
-    private fun normalizeBaseUrl(input: String): String {
+    private fun resolveOrganizationUrl(input: String): String {
         val trimmed = input.trim()
+
         if (trimmed.isBlank()) return ""
-        val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "https://$trimmed"
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
+
+        if (
+            trimmed.startsWith("https://") ||
+            trimmed.startsWith("http://")
+        ) {
+            return trimmed.trimEnd('/')
+        }
+
+        val normalizedOrg = trimmed
+            .lowercase()
+            .replace(" ", "")
+
+        return "https://$normalizedOrg.sitx.io"
     }
 
     // -------------------------
@@ -949,9 +1230,14 @@ class SitxTakService : Service() {
     @Serializable
     data class TakServerItem(
         val id: Long,
-        @SerialName("flow_tag") val flowTag: String
-    )
 
+        @SerialName("flow_tag")
+        val flowTag: String,
+
+        val name: String,
+
+        val description: String? = null
+    )
     private val ListTakServerSerializer =
         kotlinx.serialization.builtins.ListSerializer(TakServerItem.serializer())
 

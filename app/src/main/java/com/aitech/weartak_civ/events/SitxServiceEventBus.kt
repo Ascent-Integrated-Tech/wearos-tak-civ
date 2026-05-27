@@ -1,21 +1,20 @@
-/*
- * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
- *
- * The copyright to the computer software herein is the property of Ascent Integrated Tech.
- * This software may not be used and/or copied without the explicit written permission
- * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
- * in the license agreement and/or contract under which the software has been supplied.
- */
 package com.aitech.weartak_civ.service.sitx
 
+import com.aitech.weartak_civ.service.SitxTakService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 
 sealed class SitxServiceEvent {
+
     data class Info(val message: String) : SitxServiceEvent()
+
     data class Error(val message: String) : SitxServiceEvent()
-    object Disconnected: SitxServiceEvent()
+
+    object Disconnected : SitxServiceEvent()
+
+    object NoAuthorizedGroups : SitxServiceEvent()
+
     data class NeedsUserAction(
         val userCode: String,
         val verificationUriComplete: String
@@ -26,13 +25,33 @@ sealed class SitxServiceEvent {
         val verificationUriComplete: String,
         val message: String
     ) : SitxServiceEvent()
-    data class Authorized(val message: String) : SitxServiceEvent()
 
-    data class SocketsConnected(val count: Int, val message: String) : SitxServiceEvent()
-    data class SocketStatus(val flowTag: String, val status: String, val message: String? = null) : SitxServiceEvent()
+    data class Authorized(
+        val message: String
+    ) : SitxServiceEvent()
+
+    //Retrieves all groups you can connect to
+    data class GroupsAvailable(
+        val groups: List<SitxTakService.TakServerItem>
+    ) : SitxServiceEvent()
+    data class GroupSwitched(
+        val flowTag: String
+    ) : SitxServiceEvent()
+
+    data class SocketsConnected(
+        val count: Int,
+        val message: String
+    ) : SitxServiceEvent()
+
+    data class SocketStatus(
+        val flowTag: String,
+        val status: String,
+        val message: String? = null
+    ) : SitxServiceEvent()
 }
 
 object SitxServiceEventBus {
+
     private val _events = MutableSharedFlow<SitxServiceEvent>(
         replay = 1,
         extraBufferCapacity = 32,

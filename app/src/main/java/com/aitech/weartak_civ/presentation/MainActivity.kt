@@ -293,6 +293,9 @@ import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import java.io.File
+import com.aitech.weartak_civ.service.SitxTakService
+import kotlinx.serialization.SerialName
+import kotlin.Long
 
 
 class MainActivity : ComponentActivity() {
@@ -353,6 +356,19 @@ class MainActivity : ComponentActivity() {
         var enableSitxServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_SITX_SERVICE)
         var sitxTakUrl : String = ""
         var sitxTakUrlSettingsState = MutableLiveData<String>("")
+
+        var sitxTakGroup: SitxTakService.TakServerItem? =
+            SitxTakService.TakServerItem(
+            id = 0L,
+            flowTag = "",
+            name = "",
+            description = ""
+            )
+        var sitxTakGroupSettingsState = MutableLiveData<SitxTakService.TakServerItem?>()
+
+        var sitxAvailableGroupList : List<SitxTakService.TakServerItem> = listOf()
+        val sitxAvailableGroupListState = MutableLiveData<List<SitxTakService.TakServerItem>>(listOf())
+
         var sitxTakClientId : String = ""
         var sitxTakClientIdSettingsState = MutableLiveData<String>("")
         var enableImmersionAlerts: Boolean = DEFAULT_ENABLE_IMMERSION_ALERTS
@@ -940,6 +956,7 @@ class MainActivity : ComponentActivity() {
             // --- Sitx options ---
             sitxTakUrl = sitxRepo.baseUrl.first()
             sitxTakClientId = sitxRepo.clientId.first() ?: ""
+            sitxTakGroup = dataRepository.getSelectedSitxGroup.first()
 
             // --- Reporting intervals / strategy ---
             enableDynamicReportingStrategy = dataRepository.getEnableDynamicReportingStrategy.first()
@@ -1346,7 +1363,7 @@ class MainActivity : ComponentActivity() {
                     )
 
                     // small delay to simulate time between sensor updates
-                    delay(500)
+                    kotlinx.coroutines.delay(500)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "pressure test failed", e)
@@ -1373,6 +1390,8 @@ class MainActivity : ComponentActivity() {
         enableSitxServiceSettingsState.postValue(enableSitxService)
         sitxTakUrlSettingsState.postValue(sitxTakUrl)
         sitxTakClientIdSettingsState.postValue(sitxTakClientId)
+        sitxTakGroupSettingsState.postValue(sitxTakGroup)
+        sitxAvailableGroupListState.postValue(sitxAvailableGroupList)
         enableTabletCommandEndpointSettingsState.postValue(enableTabletCommandEndpoint)
         tabletCommandEndpointSettingsState.postValue(tabletCommandEndpoint)
         tabletCommandApikeySettingsState.postValue(tabletCommandApikey)

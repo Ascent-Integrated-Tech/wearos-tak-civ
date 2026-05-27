@@ -123,10 +123,6 @@ import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
-import com.aitech.weartak_civ.events.LocationUpdateRequired
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import org.greenrobot.eventbus.EventBus
-import org.maplibre.android.style.expressions.Expression.switchCase
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.asBoolean
@@ -144,6 +140,8 @@ import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
 import kotlin.Long
+import org.greenrobot.eventbus.EventBus
+import com.aitech.weartak_civ.events.LocationUpdateRequired
 
 class MapActivity : ComponentActivity() {
 
@@ -460,44 +458,6 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-//    val receivedUserListSetting = listOf(
-//        DataRepository.ReceivedUser(
-//            uid = "0",
-//            team = "Maroon",
-//            title = "User_1",
-//            timeReceived = 0L,
-//            staleTime = 0L,
-//            location = DataRepository.LocationSnapshot(
-//                timeMillis = 0L,
-//                lat = 41.910621323869194,
-//                lon = -87.68529956323195,
-//                hae = 0.0,
-//                ce = 0F,
-//                le = 0F,
-//                course = 0F,
-//                speed = 0F
-//            ),
-//            source = ""
-//        ),
-//        DataRepository.ReceivedUser(
-//            uid = "1",
-//            team = "Blue",
-//            title = "User_2",
-//            timeReceived = 0L,
-//            staleTime = 0L,
-//            location = DataRepository.LocationSnapshot(
-//                timeMillis = 0L,
-//                lat = 41.91079973340626,
-//                lon = -87.68288620460604,
-//                hae = 0.0,
-//                ce = 0F,
-//                le = 0F,
-//                course = 0F,
-//                speed = 0F
-//            ),
-//            source = ""
-//        )
-//    )
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(

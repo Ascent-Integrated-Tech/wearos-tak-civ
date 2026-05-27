@@ -142,6 +142,9 @@ import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
 import com.aitech.weartak_civ.Utils.CotUtils.Point
 import com.aitech.weartak_civ.data.model.PressureReading
 import kotlin.collections.plus
+import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsKeys
+import com.aitech.weartak_civ.service.SitxTakService
+import kotlinx.serialization.builtins.ListSerializer
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -2276,6 +2279,47 @@ class DataRepository(private val context: Context) {
         setEndpointDisconnected(Endpoint.SITX)
         _sitxStatus.value = SitxServerStatus.DISCONNECTED
     }
+    private val _sitxGroups = MutableStateFlow<List<SitxTakService.TakServerItem>>(emptyList())
+    val sitxGroups: StateFlow<List<SitxTakService.TakServerItem>> = _sitxGroups
+
+    fun setSitxGroups(newGroups: List<SitxTakService.TakServerItem>) {
+        _sitxGroups.value = newGroups
+    }
+
+    enum class SitxGroupStatus {
+        CONNECTED,
+        CONNECTING,
+        DISCONNECTED,
+        FAILED
+    }
+    private val _sitxGroupStatus = MutableStateFlow<SitxGroupStatus>(SitxGroupStatus.CONNECTED)
+    val sitxGroupStatus: StateFlow<SitxGroupStatus> = _sitxGroupStatus
+
+    fun setSitxGroupStatus(status: SitxGroupStatus) {
+        _sitxGroupStatus.value = status
+    }
+
+    val getSelectedSitxGroup: Flow<SitxTakService.TakServerItem?> =
+        context.dataStore.data.map { preferences ->
+            val jsonString = preferences[SELECTED_SITX_GROUP]
+            if (jsonString.isNullOrEmpty()) {
+                null
+            } else {
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<SitxTakService.TakServerItem>() {}
+                val type = typeToken.type
+                gson.fromJson<SitxTakService.TakServerItem>(jsonString, type)
+            }
+        }
+
+    suspend fun setSelectedSitxGroup(item: SitxTakService.TakServerItem?) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(item)
+            // Store in DataStore
+            preferences[SELECTED_SITX_GROUP] = jsonString
+        }
+    }
 
 //    val isCompanionConnected: StateFlow<Boolean> =
 //        endpointConnected
@@ -3229,6 +3273,8 @@ class DataRepository(private val context: Context) {
         private val LICENSE = stringPreferencesKey("license")
         private val DITTO_APP_ID = stringPreferencesKey("ditto_app_id")
         private val DITTO_AUTH_TOKEN = stringPreferencesKey("ditto_auth_token")
+
+        private val SELECTED_SITX_GROUP = stringPreferencesKey("selected_sitx_group")
         private val ENABLE_LOCATION_SERVICE = booleanPreferencesKey("enable_location_service")
         private val ENABLE_PHYSIOLOGICAL_SERVICES = booleanPreferencesKey("enable_physiological_services")
         private val ENABLE_SKIN_TEMP_SERVICE = booleanPreferencesKey("enable_skin_temp_service")

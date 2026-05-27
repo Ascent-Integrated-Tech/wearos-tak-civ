@@ -11,6 +11,11 @@
  */
 package com.aitech.weartak_civ.data.secure.sitx
 
+import androidx.datastore.preferences.core.edit
+import com.aitech.weartak_civ.data.DataRepository.WifiSsidItem
+import com.aitech.weartak_civ.service.SitxTakService
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
@@ -20,6 +25,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.text.isNullOrEmpty
 
 @Serializable
 data class TakSession(
@@ -64,9 +70,19 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
             else runCatching { json.decodeFromString(ListSerializer(TakSession.serializer()), enc) }
                 .getOrElse { emptyList() }
         }
-
+    val selectedTakGroup: Flow<String?> =
+        store.encryptedString(SitxSecretsKeys.SELECTED_TAK_GROUP)
     // WS health map (plaintext JSON object)
     // flowTag -> epochSec
+
+//    val takGroups: Flow<List<SitxTakService.TakServerItem>> =
+//        store.encryptedString(SitxSecretsKeys.TAK_GROUPS).map { enc ->
+//            if (enc.isNullOrBlank()) emptyList()
+//            else runCatching { json.decodeFromString(ListSerializer(SitxTakService.TakServerItem.serializer()), enc) }
+//                .getOrElse { emptyList() }
+//        }
+
+
     val wsHealth: Flow<Map<String, Long>> =
         store.plaintextString(SitxSecretsKeys.WS_HEALTH_JSON, default = "{}").map { raw ->
             runCatching {
@@ -84,6 +100,7 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
 
     suspend fun setClientId(clientId: String?) =
         store.setEncryptedString(SitxSecretsKeys.CLIENT_ID, clientId)
+
 
     suspend fun setDeviceGrantCache(
         deviceCode: String?,
@@ -123,7 +140,11 @@ class SitxSecretsRepository(private val store: SitxEncryptedDataStore) {
         val encoded = json.encodeToString(ListSerializer(TakSession.serializer()), list)
         store.setEncryptedString(SitxSecretsKeys.TAK_SESSIONS_JSON, encoded)
     }
-
+    suspend fun setSelectedTakGroup(flowTag: String?) =
+        store.setEncryptedString(
+            SitxSecretsKeys.SELECTED_TAK_GROUP,
+            flowTag
+        )
     suspend fun updateWsHealth(flowTag: String, lastConnectedEpochSec: Long) {
         val current = store.plaintextString(SitxSecretsKeys.WS_HEALTH_JSON, default = "{}")
         // DataStore doesn't give a sync get; this repo is used from service scope.
