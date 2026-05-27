@@ -128,6 +128,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.update
 import java.time.Year
+import java.time.temporal.ChronoUnit
 import java.util.EnumMap
 import java.util.UUID
 import kotlin.collections.component1
@@ -141,6 +142,9 @@ import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
 import com.aitech.weartak_civ.Utils.CotUtils.Point
 import com.aitech.weartak_civ.data.model.PressureReading
+import com.aitech.weartak_civ.ipc.AtosCotPacket
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import kotlin.collections.plus
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsKeys
 import com.aitech.weartak_civ.service.SitxTakService
@@ -595,16 +599,16 @@ class DataRepository(private val context: Context) {
             initialValue = 100
         )
 
-    private val _dockType = MutableStateFlow(BatteryService.DockType.NONE)
-    val dockType: StateFlow<BatteryService.DockType> = _dockType
+    private val _dockType = MutableStateFlow(DockType.NONE)
+    val dockType: StateFlow<DockType> = _dockType
 
-    suspend fun updateDockType(type: BatteryService.DockType) {
+    suspend fun updateDockType(type: DockType) {
         _dockType.emit(type)
     }
 
     val isDocked: StateFlow<Boolean> =
         dockType
-            .map { it != BatteryService.DockType.NONE }
+            .map { it != DockType.NONE }
             .stateIn(
                 scope = repoScope,
                 started = SharingStarted.Eagerly,
@@ -623,26 +627,26 @@ class DataRepository(private val context: Context) {
     // Enable Service Flow Toggles
     // --- Desired state (on/off intent) ---
     private val _serviceStateFlow =
-        MutableStateFlow(EnumMap<ReactiveServiceManager.ServiceType, Boolean>(ReactiveServiceManager.ServiceType::class.java))
+        MutableStateFlow(EnumMap<ServiceType, Boolean>(ServiceType::class.java))
 
-    val serviceStateFlow: StateFlow<EnumMap<ReactiveServiceManager.ServiceType, Boolean>> =
+    val serviceStateFlow: StateFlow<EnumMap<ServiceType, Boolean>> =
         _serviceStateFlow.asStateFlow()
 
-    suspend fun updateServicesStateFlow(map: EnumMap<ReactiveServiceManager.ServiceType, Boolean>) {
+    suspend fun updateServicesStateFlow(map: EnumMap<ServiceType, Boolean>) {
         _serviceStateFlow.emit(map)
     }
 
     // --- Service States Debugging Tools ----
     private val _serviceDebugStateFlow =
-        MutableStateFlow(EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>(
-            ReactiveServiceManager.ServiceType::class.java
+        MutableStateFlow(EnumMap<ServiceType, ReactiveServiceManager.ServiceDebugState?>(
+            ServiceType::class.java
         ))
 
-    val serviceDebugStateFlow: StateFlow<EnumMap<ReactiveServiceManager.ServiceType, ReactiveServiceManager.ServiceDebugState?>> =
+    val serviceDebugStateFlow: StateFlow<EnumMap<ServiceType, ReactiveServiceManager.ServiceDebugState?>> =
         _serviceDebugStateFlow.asStateFlow()
 
     // Merge helpers: update only one stage without losing the others
-    suspend fun updateDebugStageRemoteKnox(knoxMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean?>) {
+    suspend fun updateDebugStageRemoteKnox(knoxMap: EnumMap<ServiceType, Boolean?>) {
         val current = _serviceDebugStateFlow.value.toMutableMap()
         for ((t, v) in knoxMap) {
             val prev = current[t]
@@ -658,7 +662,7 @@ class DataRepository(private val context: Context) {
         _serviceDebugStateFlow.emit(EnumMap(current))
     }
 
-    suspend fun updateDebugStageLocalPersisted(localMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean?>) {
+    suspend fun updateDebugStageLocalPersisted(localMap: EnumMap<ServiceType, Boolean?>) {
         val current = _serviceDebugStateFlow.value.toMutableMap()
         for ((t, v) in localMap) {
             val prev = current[t]
@@ -674,7 +678,7 @@ class DataRepository(private val context: Context) {
         _serviceDebugStateFlow.emit(EnumMap(current))
     }
 
-    suspend fun updateDebugStageConfigUpdate(configMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean?>) {
+    suspend fun updateDebugStageConfigUpdate(configMap: EnumMap<ServiceType, Boolean?>) {
         val current = _serviceDebugStateFlow.value.toMutableMap()
         for ((t, v) in configMap) {
             val prev = current[t]
@@ -690,7 +694,7 @@ class DataRepository(private val context: Context) {
         _serviceDebugStateFlow.emit(EnumMap(current))
     }
 
-    suspend fun updateDebugStageDesired(desiredMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean>) {
+    suspend fun updateDebugStageDesired(desiredMap: EnumMap<ServiceType, Boolean>) {
         val current = _serviceDebugStateFlow.value.toMutableMap()
         for ((t, v) in desiredMap) {
             val prev = current[t]
@@ -706,7 +710,7 @@ class DataRepository(private val context: Context) {
         _serviceDebugStateFlow.emit(EnumMap(current))
     }
 
-    suspend fun updateDebugStageRunning(runningMap: EnumMap<ReactiveServiceManager.ServiceType, Boolean>) {
+    suspend fun updateDebugStageRunning(runningMap: EnumMap<ServiceType, Boolean>) {
         val current = _serviceDebugStateFlow.value.toMutableMap()
         for ((t, v) in runningMap) {
             val prev = current[t]
@@ -1598,6 +1602,122 @@ class DataRepository(private val context: Context) {
             )
         )
     }
+
+
+    private val _receivedAtosTagList = MutableStateFlow<List<AtosCotPacket>>(emptyList())
+    val receivedAtosTagList: StateFlow<List<AtosCotPacket>> = _receivedAtosTagList
+
+    suspend fun upsertReceivedAtosTag(item: AtosCotPacket) {
+        _receivedAtosTagList.update { list ->
+            val existingIndex = list.indexOfFirst { it.uid == item.uid }
+            if (existingIndex < 0) {
+                list + item
+            } else {
+                list.toMutableList().apply { this[existingIndex] = item }
+            }
+        }
+        Log.i(
+            TAG,
+            "ATOS tag upserted uid=${item.uid ?: "null"} type=${item.type ?: "null"} tagType=${item.atosDetail?.tagType ?: "null"} stale=${item.stale ?: "null"} listSize=${_receivedAtosTagList.value.size}"
+        )
+    }
+
+    suspend fun removeReceivedAtosTagByUid(uid: String?) {
+        _receivedAtosTagList.update { list -> list.filterNot { it.uid == uid } }
+        Log.i(TAG, "ATOS tag removed uid=${uid ?: "null"} listSize=${_receivedAtosTagList.value.size}")
+    }
+
+    suspend fun clearReceivedAtosTags() {
+        _receivedAtosTagList.emit(emptyList())
+        Log.i(TAG, "ATOS tags cleared listSize=0")
+    }
+
+    suspend fun applyReceivedAtosTagEvent(
+        event: AtosCotPacket,
+    ): Boolean {
+        val now = System.currentTimeMillis()
+        val staleEpochMillis = parseAtosCotTimeToEpochMillis(event.stale)
+        val eventTimeEpochMillis = parseAtosCotTimeToEpochMillis(event.time)
+        var normalizedEvent = event
+        if (staleEpochMillis != null) {
+            if (staleEpochMillis <= now) {
+                val senderTtlMillis = eventTimeEpochMillis?.let { staleEpochMillis - it }
+                val skewAdjustedStale = senderTtlMillis?.takeIf { it > 0 && it <= ChronoUnit.DAYS.duration.toMillis() }
+                    ?.let { now + it }
+
+                if (skewAdjustedStale != null) {
+                    normalizedEvent = event.copy(stale = Instant.ofEpochMilli(skewAdjustedStale).toString())
+                    Log.w(
+                        TAG,
+                        "ATOS tag stale appears sender-clock-skewed uid=${event.uid ?: "null"} timeRaw=${event.time ?: "null"} staleRaw=${event.stale ?: "null"} staleEpochMillis=$staleEpochMillis now=$now ttlMillis=$senderTtlMillis normalizedStale=${normalizedEvent.stale}"
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "ATOS tag dropped as stale uid=${event.uid ?: "null"} staleRaw=${event.stale ?: "null"} staleEpochMillis=$staleEpochMillis now=$now"
+                    )
+                    removeReceivedAtosTagByUid(event.uid)
+                    return false
+                }
+            }
+        } else if (!event.stale.isNullOrBlank()) {
+            Log.w(
+                TAG,
+                "ATOS tag stale value could not be parsed uid=${event.uid ?: "null"} staleRaw=${event.stale}"
+            )
+        }
+        upsertReceivedAtosTag(
+            AtosCotPacket(
+                version = normalizedEvent.version,
+                uid = normalizedEvent.uid,
+                type = normalizedEvent.type,
+                time = normalizedEvent.time,
+                start = normalizedEvent.start,
+                stale = normalizedEvent.stale,
+                how = normalizedEvent.how,
+                point = normalizedEvent.point,
+                contact = normalizedEvent.contact,
+                track = normalizedEvent.track,
+                atosDetail = normalizedEvent.atosDetail,
+                link = normalizedEvent.link,
+                hasArchive = normalizedEvent.hasArchive,
+                rawXmlLength = normalizedEvent.rawXmlLength,
+                warnings = normalizedEvent.warnings
+            )
+        )
+        Log.i(
+            TAG,
+            "ATOS tag accepted uid=${normalizedEvent.uid ?: "null"} lat=${normalizedEvent.point?.lat ?: "null"} lon=${normalizedEvent.point?.lon ?: "null"} stale=${normalizedEvent.stale ?: "null"} warnings=${normalizedEvent.warnings.joinToString(separator = " | ")}"
+        )
+        return true
+    }
+
+    private fun parseAtosCotTimeToEpochMillis(raw: String?): Long? {
+        val value = raw?.trim().orEmpty()
+        if (value.isEmpty()) return null
+
+        value.toLongOrNull()?.let { numeric ->
+            return if (numeric < 100_000_000_000L) numeric * 1000 else numeric
+        }
+
+        return try {
+            Instant.parse(value).toEpochMilli()
+        } catch (_: Exception) {
+            val withZ = if (value.endsWith("Z", ignoreCase = true)) value else "${value}Z"
+            try {
+                Instant.parse(withZ).toEpochMilli()
+            } catch (_: Exception) {
+                val trimmedFraction = withZ.substringBefore('.', withZ)
+                try {
+                    Instant.parse(trimmedFraction).toEpochMilli()
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
+    }
+
+
 
     suspend fun requestClearSpecific(uid: String) =
         _clearMarkerRequests.emit(ClearRequest.Specific(uid))
@@ -3215,7 +3335,7 @@ class DataRepository(private val context: Context) {
     private fun parseCepSustainOverrides(json: String?): CepSustainOverrides {
         if (json.isNullOrBlank()) return CepSustainOverrides(emptyMap(), emptyMap())
         return try {
-            val el = gson.fromJson(json, com.google.gson.JsonElement::class.java) ?: return CepSustainOverrides(emptyMap(), emptyMap())
+            val el = gson.fromJson(json, JsonElement::class.java) ?: return CepSustainOverrides(emptyMap(), emptyMap())
             if (el.isJsonObject && el.asJsonObject.has("main")) {
                 val obj = el.asJsonObject
                 val main = gson.fromJson<Map<String, Long>>(obj.getAsJsonObject("main"), cepSustainOverridesType)?.mapValues { (_, v) -> v.coerceAtLeast(0L) } ?: emptyMap()
@@ -3251,7 +3371,7 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             val mainSanitized = main.mapValues { (_, v) -> v.coerceAtLeast(0L) }
             val warnSanitized = warn.mapValues { (_, v) -> v.coerceAtLeast(0L) }
-            val root = com.google.gson.JsonObject().apply {
+            val root = JsonObject().apply {
                 add("main", gson.toJsonTree(mainSanitized))
                 add("warn", gson.toJsonTree(warnSanitized))
             }

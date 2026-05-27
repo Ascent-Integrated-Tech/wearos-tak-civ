@@ -1,0 +1,145 @@
+/*
+ * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
+package com.aitech.weartak_civ.ipc
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class AtosCotModelsTest {
+    @Test
+    fun toAtosMapMarkerPrefersAtosTagTypeWhenPacketCotTypeDisagrees() {
+        val packet = AtosCotPacket(
+            version = "2.0",
+            uid = "atos-1",
+            type = "a-f-G-c",
+            time = null,
+            start = null,
+            stale = null,
+            how = null,
+            point = CotPoint(lat = 35.0, lon = -78.0, hae = 10.0, ce = null, le = null),
+            contact = CotContact(callsign = "ATOS-1"),
+            track = null,
+            atosDetail = AtosDetail(
+                tagType = "K9",
+                color = "Maroon",
+                tagUid = 1,
+                commandLink = null,
+                tempC = null,
+                voltage = null,
+                alarm = null,
+                manifest = null,
+                attributes = emptyMap(),
+            ),
+            link = null,
+            hasArchive = false,
+            rawXmlLength = 0,
+        )
+
+        val marker = packet.toAtosMapMarkerOrNull()
+
+        requireNotNull(marker)
+        assertEquals("a-f-G-A", marker.iconCotType)
+        assertEquals("ATOS-1", marker.title)
+        assertEquals("Maroon", marker.color)
+    }
+
+    @Test
+    fun toAtosMapMarkerFallsBackFromTagTypeWhenCotTypeMissing() {
+        val packet = AtosCotPacket(
+            version = "2.0",
+            uid = "atos-2",
+            type = null,
+            time = null,
+            start = null,
+            stale = null,
+            how = null,
+            point = CotPoint(lat = 35.0, lon = -78.0, hae = 9999999.0, ce = null, le = null),
+            contact = CotContact(callsign = "ATOS-2"),
+            track = null,
+            atosDetail = AtosDetail(
+                tagType = "Personnel",
+                color = "Blue",
+                tagUid = 2,
+                commandLink = null,
+                tempC = null,
+                voltage = null,
+                alarm = null,
+                manifest = null,
+                attributes = emptyMap(),
+            ),
+            link = null,
+            hasArchive = false,
+            rawXmlLength = 0,
+        )
+
+        val marker = packet.toAtosMapMarkerOrNull()
+
+        requireNotNull(marker)
+        assertEquals("a-f-G-U-C-I", marker.iconCotType)
+    }
+
+    @Test
+    fun toAtosMapMarkerFallsBackToPacketCotTypeWhenTagTypeUnknown() {
+        val packet = AtosCotPacket(
+            version = "2.0",
+            uid = "atos-unknown",
+            type = "a-f-A-C-H",
+            time = null,
+            start = null,
+            stale = null,
+            how = null,
+            point = CotPoint(lat = 35.0, lon = -78.0, hae = 9999999.0, ce = null, le = null),
+            contact = CotContact(callsign = "ATOS-UNKNOWN"),
+            track = null,
+            atosDetail = AtosDetail(
+                tagType = "Something Else",
+                color = "Blue",
+                tagUid = 2,
+                commandLink = null,
+                tempC = null,
+                voltage = null,
+                alarm = null,
+                manifest = null,
+                attributes = emptyMap(),
+            ),
+            link = null,
+            hasArchive = false,
+            rawXmlLength = 0,
+        )
+
+        val marker = packet.toAtosMapMarkerOrNull()
+
+        requireNotNull(marker)
+        assertEquals("a-f-A-C-H", marker.iconCotType)
+    }
+
+    @Test
+    fun toAtosMapMarkerRejectsPacketsWithoutCoordinates() {
+        val packet = AtosCotPacket(
+            version = "2.0",
+            uid = "atos-3",
+            type = "a-f-G",
+            time = null,
+            start = null,
+            stale = null,
+            how = null,
+            point = CotPoint(lat = null, lon = -78.0, hae = null, ce = null, le = null),
+            contact = CotContact(callsign = "ATOS-3"),
+            track = null,
+            atosDetail = null,
+            link = null,
+            hasArchive = false,
+            rawXmlLength = 0,
+        )
+
+        assertNull(packet.toAtosMapMarkerOrNull())
+    }
+}
