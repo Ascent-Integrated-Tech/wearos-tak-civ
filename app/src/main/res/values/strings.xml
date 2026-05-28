@@ -16,6 +16,8 @@
     <string name="save_battery_on_wifi">Save Battery on WiFi</string>
     <string name="license_key">License Key</string>
     <string name="general_settings">General Settings</string>
+    <string name="plugins">Plugins</string>
+    <string name="plugins_desc">Launch supported plugins</string>
     <string name="location_service">Location Service</string>
     <string name="service_on_off">Service ON/OFF</string>
     <string name="biometrics">Biometrics</string>
@@ -673,4 +675,8 @@
     <string name="server_connected_multicast">Server Connected Multicast</string>
     <string name="marker_stored_error_msg">Marker details stored and will be sent when connected and/or location is updated</string>
     <string name="group">Group</string>
+    <string name="no_plugins_installed">No supported plugins are installed on this watch.</string>
+    <string name="plugin_launch_ready">Tap to launch</string>
+    <string name="plugin_launch_unavailable">Launch unavailable</string>
+    <string name="plugin_launch_failed">Unable to launch plugin</string>
 </resources>

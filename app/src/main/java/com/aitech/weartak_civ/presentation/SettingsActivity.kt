@@ -10,11 +10,14 @@
 package com.aitech.weartak_civ.presentation
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.util.Log
 import android.view.MotionEvent
 import android.view.Gravity
@@ -83,6 +86,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
@@ -137,6 +141,7 @@ import androidx.wear.compose.material.rememberPickerState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import androidx.core.graphics.drawable.toBitmap
 import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.R
@@ -606,6 +611,9 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable(
             "settings_screen") {
             SettingsScreen(navController, callsignLiveDataState, licenseLiveDataState, context)
+        }
+        composable("plugins_screen") {
+            PluginsSetting(navController)
         }
         composable(
             "callsign_screen") {
@@ -4919,6 +4927,157 @@ fun HailSetting(navController: NavController) {
     )
 }
 
+@Composable
+fun PluginsSetting(navController: NavController) {
+    val context = LocalContext.current
+    val installedPlugins = remember(context) { WearTakPluginCatalog.discoverInstalledPlugins(context) }
+
+    WearTakCivScreenDimensions(
+        columnContent = {
+            if (installedPlugins.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_plugins_installed),
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                )
+            } else {
+                installedPlugins.forEach { plugin ->
+                    PluginLaunchChip(
+                        plugin = plugin,
+                        onClick = {
+                            Log.i(
+                                TAG,
+                                buildString {
+                                    append("Plugin launch click package=").append(plugin.packageName)
+                                    append(" component=").append(plugin.launcherComponent)
+                                    append(" launchIntentFlags=")
+                                    append(
+                                        plugin.launchIntent?.flags?.let { "0x${it.toString(16)}" }
+                                            ?: "null"
+                                    )
+                                    append("\n")
+                                    append(Throwable().stackTrace.take(12).joinToString("\n"))
+                                }
+                            )
+                            if (!launchPluginFromWearTak(context, plugin)) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.plugin_launch_failed),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                    )
+                }
+            }
+        },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    }
+                },
+            )
+        },
+        text = stringResource(R.string.plugins)
+    )
+}
+
+@Composable
+private fun PluginLaunchChip(
+    plugin: InstalledWearTakPlugin,
+    onClick: () -> Unit,
+) {
+    Chip(
+        onClick = onClick,
+        enabled = plugin.isLaunchable,
+        label = {
+            Text(
+                text = plugin.displayName,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        secondaryLabel = {
+            Text(
+                text = if (plugin.isLaunchable) {
+                    stringResource(R.string.plugin_launch_ready)
+                } else {
+                    stringResource(R.string.plugin_launch_unavailable)
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        colors = ChipDefaults.chipColors(
+            backgroundColor = Color.DarkGray,
+            contentColor = Color.White,
+            secondaryContentColor = Color.LightGray
+        ),
+        icon = {
+            plugin.icon?.let {
+                PluginLaunchIcon(icon = it, contentDescription = plugin.displayName)
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+private fun PluginLaunchIcon(
+    icon: android.graphics.drawable.Drawable,
+    contentDescription: String,
+) {
+    val imageBitmap = remember(icon) { icon.toBitmap(width = 48, height = 48).asImageBitmap() }
+
+    Image(
+        bitmap = imageBitmap,
+        contentDescription = contentDescription,
+        modifier = Modifier.size(20.dp)
+    )
+}
+
+private fun launchPluginFromWearTak(
+    context: Context,
+    plugin: InstalledWearTakPlugin,
+): Boolean {
+    Log.i(
+        TAG,
+        "launchPlugin called package=${plugin.packageName} component=${plugin.launcherComponent} launchIntent=${plugin.launchIntent?.component}"
+    )
+    val launcherApps = context.getSystemService(LauncherApps::class.java)
+    val launcherComponent = plugin.launcherComponent
+    if (launcherApps != null && launcherComponent != null) {
+        try {
+            launcherApps.startMainActivity(launcherComponent, Process.myUserHandle(), null, null)
+            Log.i(TAG, "Plugin launch via LauncherApps package=${plugin.packageName} component=$launcherComponent")
+            return true
+        } catch (_: SecurityException) {
+            Log.w(TAG, "LauncherApps denied launch for ${plugin.packageName}; falling back to explicit intent")
+        } catch (_: ActivityNotFoundException) {
+            Log.w(TAG, "LauncherApps could not launch ${plugin.packageName}; falling back to explicit intent")
+        } catch (_: IllegalStateException) {
+            Log.w(TAG, "LauncherApps could not launch ${plugin.packageName}; user may be locked")
+        }
+    }
+
+    val launchIntent = plugin.launchIntent ?: return false
+    return try {
+        context.startActivity(launchIntent)
+        Log.i(TAG, "Plugin launch via fallback startActivity package=${plugin.packageName} component=${launchIntent.component}")
+        true
+    } catch (_: ActivityNotFoundException) {
+        Log.w(TAG, "Plugin launch failed package=${plugin.packageName} component=${launchIntent.component}")
+        false
+    }
+}
+
 // ^^ No longer used
 
 @SuppressLint("StateFlowValueCalledInComposition")
@@ -5317,6 +5476,25 @@ fun SettingsScreen(
                 {},
                 stringResource(R.string.companion_app),
                 stringResource(R.string.service_on_off)
+            )
+
+            Chip(
+                onClick = {
+                    navController.navigate("plugins_screen") {
+                        popUpTo("plugins_screen") { inclusive = true }
+                    }
+                },
+                enabled = true,
+                label = { Text(text = stringResource(R.string.plugins)) },
+                secondaryLabel = { Text(text = stringResource(R.string.plugins_desc)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 3.dp)
             )
 
             SettingSwitchToggleLiveData(
