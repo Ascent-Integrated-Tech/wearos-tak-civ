@@ -196,6 +196,7 @@ import com.aitech.weartak_civ.DEFAULT_BATT_WARNING_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_BLOOD_TYPE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BETA_FEATURES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -318,6 +319,8 @@ class MainActivity : ComponentActivity() {
         )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
         var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
+        var enableBetaFeaturesSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BETA_FEATURES)
+        var enableBetaFeatures : Boolean = DEFAULT_ENABLE_BETA_FEATURES
         var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
         var onnxGunshotTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT)
@@ -941,6 +944,7 @@ class MainActivity : ComponentActivity() {
             enableBloodhoundProximityVibration = dataRepository.getEnableBloodhoundProximityVibration.first()
             bloodhoundProximityRadiusMeters = dataRepository.getBloodhoundProximityRadiusMeters.first()
             bloodhoundProximityIntensity = dataRepository.getBloodhoundProximityIntensity.first()
+            enableBetaFeatures             = dataRepository.getEnableBetaFeatures.first()
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
             onnxGunshotTriggerThresholdPercent = dataRepository.getOnnxGunshotTriggerThresholdPercent.first()
             enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
@@ -1421,6 +1425,7 @@ class MainActivity : ComponentActivity() {
         wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
         saveBattOnWifiStringState.postValue(saveBattOnWifiString)
         enableLocationServiceSettingsState.postValue(enableLocationService)
+        enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
         enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
         enableBloodhoundProximityVibrationSettingsState.postValue(enableBloodhoundProximityVibration)
         bloodhoundProximityRadiusMetersSettingsState.postValue(bloodhoundProximityRadiusMeters)
