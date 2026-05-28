@@ -697,11 +697,18 @@ fun MapApp(exitActivity: () -> Unit) {
         }
     }
 
+    val renderedAtosUids = remember(receivedAtosTags) {
+        receivedAtosTags.mapNotNull { it.uid }.toSet()
+    }
 
-    val receivedMapUsers = remember(receivedUserListSetting) {
+    val receivedMapUsers = remember(receivedUserListSetting, renderedAtosUids) {
         buildList {
             addAll(
                 receivedUserListSetting.mapNotNull { user ->
+                    if (user.uid in renderedAtosUids) {
+                        Log.d(TAG, "Suppressing generic user render for ATOS uid=${user.uid}")
+                        return@mapNotNull null
+                    }
                     val location = user.location ?: return@mapNotNull null
                         MapUserItem(
                             uid = user.uid,
