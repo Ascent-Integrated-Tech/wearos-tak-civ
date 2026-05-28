@@ -40,6 +40,7 @@ import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_AUDIO_CAP_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_BETA_FEATURES
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -2028,6 +2029,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableBetaFeatures: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_BETA_FEATURES] ?: DEFAULT_ENABLE_BETA_FEATURES
+    }
+
+    suspend fun storeEnableBetaFeatures(enableBetaFeatures: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_BETA_FEATURES] = enableBetaFeatures
+        }
+    }
+
     val getEnableOnnxGunshotService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_ONNX_GUNSHOT_SERVICE] ?: DEFAULT_ENABLE_ONNX_GUNSHOT
     }
@@ -3408,6 +3419,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_DITTO_SERVICE = booleanPreferencesKey("enable_ditto_service")
         private val ENABLE_CHAT_SERVICE = booleanPreferencesKey("enable_chat_service")
         private val ENABLE_AUDIO_CAP_SERVICE = booleanPreferencesKey("enable_audio_capture_service")
+        private val ENABLE_BETA_FEATURES = booleanPreferencesKey("enable_beta_features")
         private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
         private val ENABLE_ONNX_UAS_SERVICE = booleanPreferencesKey("enable_onnx_uas_service")
         private val ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_gunshot_trigger_threshold_percent")

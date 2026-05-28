@@ -266,6 +266,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCotSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlertsSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBetaFeatures
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBetaFeaturesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundProximityVibration
@@ -493,6 +495,7 @@ private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
 
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
+    enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
     enableDittoServiceSettingsState.postValue(enableDittoService)
@@ -5144,14 +5147,11 @@ fun SettingsScreen(
     val hailCheckedLive by enableHailServiceSettingsState.observeAsState()
     val hailLicenseState = dataRepository.hailLicenseState.collectAsState(initial = null).value
     val batdokCheckedLive by enableBatdokCotSettingsState.observeAsState()
+    val betaFeaturesCheckedLive by enableBetaFeaturesSettingsState.observeAsState()
     val bloodhoundCompassCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     val onnxGunshotDetectCheckedLive by enableOnnxGunshotServiceSettingsState.observeAsState()
     val onnxUasDetectCheckedLive by enableOnnxUasServiceSettingsState.observeAsState()
-    val wearTakDevModeEnabled by dataRepository.getEnableWearTakDevMode
-        .collectAsStateWithLifecycle(initialValue = false)
-
-    // WearTAK Developer Debug
     val coroutineScope = rememberCoroutineScope()
     var versionTapCount by remember { mutableStateOf(0) }
     var lastVersionTapTime by remember { mutableStateOf(0L) }
@@ -5368,7 +5368,7 @@ fun SettingsScreen(
                     .padding(bottom = 3.dp)
             )
 
-            if (wearTakDevModeEnabled) {
+            if (betaFeaturesCheckedLive == true) {
                 SettingsToggleWithClickOnEnabledChip(
                     onnxGunshotDetectCheckedLive,
                     { enableOnnxGunshotServiceSettingsState.postValue(it) },
@@ -5458,6 +5458,14 @@ fun SettingsScreen(
                 {},
                 stringResource(R.string.battery_alerts),
                 stringResource(R.string.on_off)
+            )
+
+            SettingSwitchToggleLiveData(
+                betaFeaturesCheckedLive,
+                { enableBetaFeaturesSettingsState.postValue(it) },
+                {},
+                stringResource(R.string.beta_features),
+                stringResource(R.string.beta_features_desc)
             )
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -5615,6 +5623,7 @@ fun SettingsScreen(
                     var onnxGunThresholdChanged: Boolean = false
                     var onnxUasDetectChanged: Boolean = false
                     var onnxUasThresholdChanged: Boolean = false
+                    var betaFeaturesChanged: Boolean = false
                     var batteryAlertsCheckedChanged: Boolean = false
                     var bloodhoundCompassCheckedChanged: Boolean = false
                     var bloodhoundProximityVibrationChanged: Boolean = false
@@ -6046,6 +6055,14 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (enableBetaFeatures != enableBetaFeaturesSettingsState.value) {
+                        settingsChanged = true; betaFeaturesChanged = true
+                        enableBetaFeatures = enableBetaFeaturesSettingsState.value ?: enableBetaFeatures
+                        runBlocking {
+                            enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
+                        }
+                    }
+
                     if (enableBatteryAlerts != enableBatteryAlertsSettingsState.value) {
                         settingsChanged = true; batteryAlertsCheckedChanged = true
                         enableBatteryAlerts = enableBatteryAlertsSettingsState.value
@@ -6316,6 +6333,10 @@ fun SettingsScreen(
                              if (onnxGunDetectChanged) {
                                  Log.d(TAG, "Storing enableOnnxGunshotService $enableOnnxGunshotService")
                                  dataRepository.storeEnableOnnxGunshotService(enableOnnxGunshotService)
+                             }
+                             if (betaFeaturesChanged) {
+                                 Log.d(TAG, "Storing enableBetaFeatures $enableBetaFeatures")
+                                 dataRepository.storeEnableBetaFeatures(enableBetaFeatures)
                              }
                              if (batteryAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enableBatteryAlerts $enableBatteryAlerts")

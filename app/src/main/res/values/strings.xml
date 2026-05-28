@@ -21,6 +21,8 @@
     <string name="biometrics">Biometrics</string>
     <string name="ditto">Ditto</string>
     <string name="companion_app" translatable="false">Companion Plugin</string>
+    <string name="beta_features">Beta Features</string>
+    <string name="beta_features_desc">Show settings for beta features</string>
     <string name="gunshot_detection" translatable="false">Gunshot Detect</string>
     <string name="uas_detection" translatable="false">UAS Detect</string>
     <string name="audio_detection_trigger_threshold">Trigger Threshold</string>
