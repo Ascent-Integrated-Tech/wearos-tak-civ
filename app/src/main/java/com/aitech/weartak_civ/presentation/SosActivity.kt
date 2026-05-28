@@ -88,6 +88,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.collections.List
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+
 
 
 class SosActivity : ComponentActivity() {
@@ -95,9 +98,17 @@ companion object Constants{
     lateinit var sosActivity : SosActivity
     val TAG = "WearTAK-" + SosActivity::class.java.simpleName
     val isAlertingLiveData = MutableLiveData<Boolean>(false)
+//    val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
+//        Utils.TextSelectionButton("GATERU", "Gate Runner"),
+//        Utils.TextSelectionButton("GNSHOT", "Gunshot"),
+//        Utils.TextSelectionButton("INJURY", "Injury"),
+//        Utils.TextSelectionButton("UAS", "UAS"),
+//        Utils.TextSelectionButton("VEH", "Vehicle")
+//    )
     val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
         Utils.TextSelectionButton("GATERU", "Gate Runner"),
         Utils.TextSelectionButton("GNSHOT", "Gunshot"),
+        Utils.TextSelectionButton("GSINJ", "Gunshot Injury"),
         Utils.TextSelectionButton("INJURY", "Injury"),
         Utils.TextSelectionButton("UAS", "UAS"),
         Utils.TextSelectionButton("VEH", "Vehicle")
@@ -210,7 +221,10 @@ fun ConfirmationAlertPage(
                         else -> {"ERROR"} // Note: This will never be reached
                     },
                     textAlign = TextAlign.Center,
+                    fontSize = 10.sp,
                     color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(),
                 )
             },
@@ -228,6 +242,8 @@ fun ConfirmationAlertPage(
                 ) {
                     androidx.compose.material3.Text(
                         text = stringResource(R.string.confirm),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = if (isAlerting.value == true) Color.White else Color.Black
                     )
                 }
@@ -250,6 +266,8 @@ fun ConfirmationAlertPage(
                 ) {
                     androidx.compose.material3.Text(
                         text = stringResource(R.string.cancel),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -426,26 +444,30 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
                     manualAlertOptions,
                     manualAlertType,
                     "Manual Alert",
-                    { shouldShowConfirm.value = true
+                    {
                         manualAlertTypeSaved.value = manualAlertType.value
+                        successBoolean.value = locationEnabled && anyEndpointConnected
+                        manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
+                        isConfirmed.value = true
                     },
                     {
                         manualAlertType.value = ""
-                        exitActivity()})
+                        exitActivity()
+                    }
+                )
             } else {
                 shouldShowConfirm.value = true
             }
 
             ConfirmationAlertPage(
-                shouldShowConfirm,
-                isConfirmed,
-                isAlertingLiveData,
-                {
-                    successBoolean.value = (locationEnabled && anyEndpointConnected)
-                    Log.i(TAG, "successBoolean.value=${successBoolean}")
-                    manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
+                shouldShowDialog = shouldShowConfirm,
+                isConfirmed = isConfirmed,
+                isAlerting = isAlertingLiveData,
+                confirmFunction = {
+                    successBoolean.value = locationEnabled && anyEndpointConnected
+                    manualAlertOrClearRequest(true)
                 },
-                {exitActivity()}
+                exitActivity = { exitActivity() }
             )
 
             SuccessfulCotSentCheck(

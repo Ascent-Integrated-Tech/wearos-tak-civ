@@ -662,10 +662,10 @@ fun TextSelectionScreen(
                         shape = RoundedCornerShape(size = 10.dp)
                     ) {
                         Text(
-                            text = replyOption.shortenedText,
+                            text = replyOption.longText,
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
