@@ -2,6 +2,13 @@ package com.aitech.weartak_civ.cep.engine
 
 import android.content.Context
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.cep.metric.MetricBaselinePolicy
+import com.aitech.weartak_civ.cep.metric.MetricConfidenceThresholds
+import com.aitech.weartak_civ.cep.metric.MetricGatingPolicy
+import com.aitech.weartak_civ.cep.metric.MetricProcessorType
+import com.aitech.weartak_civ.cep.metric.MetricSelectedOutputMapping
+import com.aitech.weartak_civ.cep.metric.MetricSpec
+import com.aitech.weartak_civ.cep.metric.MetricTrendPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,6 +40,61 @@ object RuleCompiler {
      * shared entry points so malformed payloads surface as validation errors.
      */
     fun parse(root: JSONObject): CepConfig {
+        val engine = root.optJSONObject("engine")
+        val tickMs = engine?.optInt("window_tick_ms", 1000) ?: 1000
+        val tickHz = (1000 / tickMs).coerceAtLeast(1)
+        val ruleEvalIntervalMs = engine?.optInt("rule_eval_interval_ms", tickMs) ?: tickMs
+        val features = parseFeatures(root.optJSONArray("features"))
+        val rules = if (root.has("rules")) parseRules(root.optJSONArray("rules")) else emptyList()
+        val metrics = if (root.has("metrics")) parseMetrics(root.optJSONArray("metrics")) else emptyList()
+        return CepConfig(tickHz, features, rules, metrics, ruleEvalIntervalMs)
+    }
+
+    private fun parseMetrics(arr: JSONArray?): List<MetricSpec> {
+        if (arr == null) return emptyList()
+        val out = mutableListOf<MetricSpec>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val confidence = o.getJSONObject("baseline").getJSONObject("confidence_thresholds")
+            val selectedObj = o.getJSONObject("selected_outputs")
+            val selectedMap = mutableMapOf<String, String>()
+            selectedObj.keys().forEach { slot -> selectedMap[slot] = selectedObj.getString(slot) }
+            out += MetricSpec(
+                id = o.getString("id"),
+                source = o.getString("source"),
+                processor = MetricProcessorType.fromJson(o.getString("processor")),
+                sourceHookId = if (o.has("source_hook") && !o.isNull("source_hook")) o.getString("source_hook") else null,
+                gating = o.optJSONObject("gating")?.let { gating ->
+                    MetricGatingPolicy(
+                        onWrist = gating.optBoolean("on_wrist", false),
+                        stillOrSleeping = gating.optBoolean("still_or_sleeping", false),
+                        freshWithinSec = if (gating.has("fresh_within_sec") && !gating.isNull("fresh_within_sec")) {
+                            gating.getInt("fresh_within_sec")
+                        } else {
+                            null
+                        }
+                    )
+                } ?: MetricGatingPolicy(),
+                baseline = MetricBaselinePolicy(
+                    estimator = o.getJSONObject("baseline").optString("estimator", "trimmed_mean"),
+                    windowSec = o.getJSONObject("baseline").getInt("window_sec"),
+                    minSamples = o.getJSONObject("baseline").getInt("min_samples"),
+                    maxStalenessSec = o.getJSONObject("baseline").getInt("max_staleness_sec"),
+                    confidenceThresholds = MetricConfidenceThresholds(
+                        warming = confidence.getInt("warming"),
+                        readyLow = confidence.getInt("ready_low"),
+                        medium = confidence.getInt("medium"),
+                        high = confidence.getInt("high")
+                    )
+                ),
+                trend = MetricTrendPolicy(
+                    shortWindowSec = o.getJSONObject("trend").getInt("short_window_sec"),
+                    longWindowSec = o.getJSONObject("trend").getInt("long_window_sec"),
+                    enterPercent = o.getJSONObject("trend").getDouble("enter_percent"),
+                    returnToStableInnerPercent = o.getJSONObject("trend").getDouble("return_to_stable_inner_percent")
+                ),
+                selectedOutputs = MetricSelectedOutputMapping(selectedMap)
+            )
         return try {
             val cadence = parseEngineCadence(root.optJSONObject("engine"))
             val features = try {
@@ -50,6 +112,7 @@ object RuleCompiler {
             android.util.Log.e("CEP", "Failed to parse CEP config", t)
             CepConfig(1, emptyList(), emptyList())
         }
+        return out
     }
 
     /**

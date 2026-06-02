@@ -12,6 +12,81 @@
     "rule_eval_interval_ms": 500,
     "_comment": "Phase 1: window_tick_ms sets the ring-buffer resolution; rule_eval_interval_ms controls how often rules are evaluated. Both default to 1000ms (1 Hz). Decoupling them is the Phase 5 goal."
   },
+  "metrics": [
+    {
+      "id": "hrv.rmssd_ms",
+      "source": "hrv.rmssd_ms",
+      "processor": "baseline_trend",
+      "source_hook": "samsung_hrv_rmssd",
+      "gating": {
+        "on_wrist": true,
+        "still_or_sleeping": true,
+        "fresh_within_sec": 10
+      },
+      "baseline": {
+        "estimator": "trimmed_mean",
+        "window_sec": 604800,
+        "min_samples": 20,
+        "max_staleness_sec": 43200,
+        "confidence_thresholds": {
+          "warming": 5,
+          "ready_low": 10,
+          "medium": 20,
+          "high": 40
+        }
+      },
+      "trend": {
+        "short_window_sec": 3600,
+        "long_window_sec": 86400,
+        "enter_percent": 10.0,
+        "return_to_stable_inner_percent": 7.0
+      },
+      "selected_outputs": {
+        "trend_direction": "selected.trends.hrv.direction",
+        "trend_short_term": "selected.trends.hrv.short_term",
+        "trend_long_term": "selected.trends.hrv.long_term",
+        "low_threshold": "selected.thresholds.hrv.low_rmssd_ms",
+        "low_threshold_warn": "selected.thresholds.hrv.low_rmssd_ms_warn",
+        "baseline_confidence": "selected.baseline.hrv.confidence"
+      }
+    },
+    {
+      "id": "hr.resting_bpm",
+      "source": "heart_rate",
+      "processor": "baseline_trend",
+      "gating": {
+        "on_wrist": true,
+        "still_or_sleeping": false,
+        "fresh_within_sec": 5
+      },
+      "baseline": {
+        "estimator": "trimmed_mean",
+        "window_sec": 86400,
+        "min_samples": 20,
+        "max_staleness_sec": 7200,
+        "confidence_thresholds": {
+          "warming": 5,
+          "ready_low": 10,
+          "medium": 20,
+          "high": 40
+        }
+      },
+      "trend": {
+        "short_window_sec": 300,
+        "long_window_sec": 1800,
+        "enter_percent": 6.0,
+        "return_to_stable_inner_percent": 4.0
+      },
+      "selected_outputs": {
+        "trend_direction": "selected.trends.hr.direction",
+        "trend_short_term": "selected.trends.hr.short_term",
+        "trend_long_term": "selected.trends.hr.long_term",
+        "low_threshold": "selected.thresholds.hr.low_bpm",
+        "low_threshold_warn": "selected.thresholds.hr.low_bpm_warn",
+        "baseline_confidence": "selected.baseline.hr.confidence"
+      }
+    }
+  ],
   "features": [
     {
       "type": "window_multi",

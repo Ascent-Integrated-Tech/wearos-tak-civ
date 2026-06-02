@@ -18,19 +18,26 @@ import com.aitech.weartak_civ.cep.model.payloads.Spo2EdgeState
 import com.aitech.weartak_civ.cep.model.payloads.Spo2Tier
 import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.cep.metric.MetricRuntimeOrchestrator
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.cancelAndJoin
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CepEngine(
-    private val appContext: Context,
+    private val appContext: Context?,
     private val scope: CoroutineScope,
     private val config: CepConfig,
     private val dataRepository: DataRepository
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(RingConfig.default())
+    private val metricOrchestrator = MetricRuntimeOrchestrator(
+        dataRepository = dataRepository,
+        metricSpecs = config.metrics,
+        appContext = appContext
+    )
     private val profileStore = CepProvider.getProfile(appContext)
     private val seenTierEventLru = ArrayDeque<String>(32)
     private val seenTierEventSet = mutableSetOf<String>()
@@ -91,6 +98,8 @@ class CepEngine(
         }
         authoritative.set(true)
         Log.d("CEP", "CEP Engine started")
+        runBlocking { metricOrchestrator.initialize() }
+
 
         launchBusCollector()
         launchFeatureLoops()
@@ -99,6 +108,13 @@ class CepEngine(
 
     private fun launchBusCollector() {
         // Subscribe to the bus (no emitters yet; safe)
+        // Phase 1: pass evt.ts so WindowStore timestamps reflect sensor measurement time, not processing time
+        scope.launch {
+            CepBus.events.collect { evt ->
+                windows.ingest(evt, featureStore, evt.ts)
+                metricOrchestrator.onEvent(evt, featureStore)
+            }
+        }
         // Pass evt.ts so WindowStore timestamps reflect sensor measurement time, not processing time.
         scope.launch { CepBus.events.collect { evt -> windows.ingest(evt, featureStore, evt.ts) } }
     }
@@ -133,13 +149,18 @@ class CepEngine(
         scope.launch {
             val tickMs = config.ruleEvalIntervalMs.toLong()
             while (isActive) {
-                featureStore.beginTick()
-                featureStore.logDerivedTick("CEP")
-                ruleEngine.processTick()
-                checkAndClearAlerts()
+                runProductionTick(System.currentTimeMillis())
                 delay(tickMs)
             }
         }
+    }
+
+    private suspend fun runProductionTick(nowMs: Long) {
+        featureStore.beginTick()
+        featureStore.logDerivedTick("CEP")
+        metricOrchestrator.onTick(nowMs, featureStore)
+        ruleEngine.processTick()
+        checkAndClearAlerts()
     }
 
     fun updateHrProfile() {
@@ -231,6 +252,7 @@ class CepEngine(
      * Call from start() and whenever the user changes pressure alert thresholds in settings.
      */
     fun updatePressureProfile() {
+        val repo = dataRepository ?: return
         scope.launch {
             loadPressureProfile()
             if (authoritative.get()) {
@@ -462,9 +484,10 @@ class CepEngine(
      * Call after engine start and whenever UI/settings save overrides (mirror updateHrProfile pattern).
      */
     suspend fun updateSustainOverrides() {
+        val repo = dataRepository ?: return
         Log.d("CEP", "updateSustainOverrides: loading threshold length values from DataRepository")
         try {
-            val loaded = dataRepository.getCepSustainOverridesOnce()
+            val loaded = repo.getCepSustainOverridesOnce()
             val overrideableIds: Set<String> = config.rules.filter { it.allowSustainOverride }.map { it.id }.toSet()
             sustainOverridesMain = loaded.main
                 .filterKeys { it in overrideableIds }
@@ -498,12 +521,12 @@ class CepEngine(
         val alert = AlertRegistry.get(ruleId) ?: return false
 
         if (alert.priority == 1) {
-            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+            repo.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
         } else {
-            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
+            repo.removePhysioAndAutoGenAlertByUid(alert.uid)
         }
         AlertRegistry.clear(ruleId)
-        dataRepository.addAlertClearedEventCep(alert.uid)
+        repo.addAlertClearedEventCep(alert.uid)
         Log.i("CEP", "Cleared active alert for rule=$ruleId reason=${reason ?: "unspecified"} uid=${alert.uid}")
         return true
     }
@@ -571,13 +594,13 @@ class CepEngine(
                     val elapsedSec = (now - since) / 1000L
                     if (elapsedSec >= alert.exitSustainSec) {
                         if (alert.priority == 1) {
-                            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+                            dataRepository?.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
                             AlertRegistry.clear(alert.ruleId)
-                            dataRepository.addAlertClearedEventCep(alert.uid)
+                            dataRepository?.addAlertClearedEventCep(alert.uid)
                         } else {
-                            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
+                            dataRepository?.removePhysioAndAutoGenAlertByUid(alert.uid)
                             AlertRegistry.clear(alert.ruleId)
-                            dataRepository.addAlertClearedEventCep(alert.uid)
+                            dataRepository?.addAlertClearedEventCep(alert.uid)
                         }
                     }
                 }
@@ -617,6 +640,28 @@ class CepEngine(
         }
     }
 
+    internal suspend fun initializeMetricRuntimeForTest() {
+        metricOrchestrator.initialize()
+    }
+
+    internal fun processEventForTest(evt: CepEvent<*>) {
+        windows.ingest(evt, featureStore, evt.ts)
+        metricOrchestrator.onEvent(evt, featureStore)
+    }
+
+    internal fun featureSnapshotForTest(keys: List<String>): Map<String, Any?> {
+        return featureStore.snapshot(keys)
+    }
+
+    internal fun processMetricTickForTest(nowMs: Long) {
+        metricOrchestrator.onTick(nowMs, featureStore)
+    }
+
+    internal suspend fun runProductionTickForTest(nowMs: Long) {
+        runProductionTick(nowMs)
+    }
+
+}
     fun handleTierEvent(p: Spo2TierEventPayload) {
         val dedupeKey = "${p.tier.name}|${p.state.name}|${p.ts}"
         synchronized(seenTierEventLru) {
