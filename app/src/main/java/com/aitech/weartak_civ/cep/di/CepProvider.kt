@@ -5,6 +5,8 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cep.engine.CepEngine
 import com.aitech.weartak_civ.cep.engine.ProfileStore
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
+import com.aitech.weartak_civ.cep.engine.metrics.HrRestingMetricAdapter
+import com.aitech.weartak_civ.cep.engine.metrics.HrvRmssdMetricAdapter
 import com.aitech.weartak_civ.cep.engine.action.CepActionDispatcher
 import com.aitech.weartak_civ.cep.engine.action.LogActionHandler
 import com.aitech.weartak_civ.cep.engine.action.WarnActionHandler
@@ -14,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 object CepProvider {
     private lateinit var appCtx: Context
@@ -61,7 +64,19 @@ object CepProvider {
             dataRepo.getYearOfBirth.first()
         }
 
-        return CepEngine(context.applicationContext, scope, config, yearOfBirth = yearOfBirth, dataRepo)
+        val hrvConfig = runBlocking { dataRepo.getHrvCepConfigOnce() }
+
+        return CepEngine(
+            context.applicationContext,
+            scope,
+            config,
+            yearOfBirth = yearOfBirth,
+            dataRepository = dataRepo,
+            metricAdaptersOverride = listOf(
+                HrRestingMetricAdapter(),
+                HrvRmssdMetricAdapter(hrvConfig)
+            )
+        )
     }
 }
 

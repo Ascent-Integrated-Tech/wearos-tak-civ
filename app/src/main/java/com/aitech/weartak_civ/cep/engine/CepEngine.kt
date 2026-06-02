@@ -10,6 +10,8 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
+import com.aitech.weartak_civ.cep.engine.metrics.HrRestingMetricAdapter
+import com.aitech.weartak_civ.cep.engine.metrics.HrvRmssdMetricAdapter
 import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
@@ -21,10 +23,22 @@ class CepEngine(
     private val scope: CoroutineScope,
     private val config: CepConfig,
     private val yearOfBirth: Int,
-    private val dataRepository: DataRepository
+    private val dataRepository: DataRepository,
+    metricAdaptersOverride: List<BaselineMetricAdapter>? = null,
 ) {
+    private data class MetricAggregationState(
+        val data: MetricAggregationStateData = MetricAggregationStateData()
+    )
+
     private val featureStore = FeatureStore()
     private val windows = WindowStore(RingConfig.default())
+    private val profileStore = ProfileStore(appContext)
+    private val metricState = mutableMapOf<String, MetricAggregationState>()
+
+    private val metricAdapters: List<BaselineMetricAdapter> = metricAdaptersOverride ?: listOf(
+        HrRestingMetricAdapter(),
+        HrvRmssdMetricAdapter()
+    )
 
     @Volatile
     private var sustainOverridesMain: Map<String, Long> = emptyMap()
@@ -45,6 +59,8 @@ class CepEngine(
 
     fun start() {
         Log.d("CEP", "CEP Engine started")
+        profileStore.upsertLegacyHrBaselineKeysForCompatibility()
+        warmStartMetricBaselines()
 
         //Call this fn whenever the yob is changed
         updateHrProfile()
@@ -90,6 +106,7 @@ class CepEngine(
             val tickMs = config.ruleEvalIntervalMs.toLong().coerceAtLeast(1L)
             while (isActive) {
                 featureStore.beginTick()
+                updateBaselineAndDynamicThresholds()
                 featureStore.logDerivedTick("CEP")
                 ruleEngine.processTick()
                 checkAndClearAlerts()
@@ -174,8 +191,6 @@ class CepEngine(
                 featureStore.put("settings.pressure.immersion_alerts_enabled", if (immersionOn) 1.0 else 0.0)
                 featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
                 featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
-
-                clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn)
 
                 Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
                             "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
@@ -270,34 +285,186 @@ class CepEngine(
     // Note: computeFeaturesSafely() was removed in Phase 3.
     // Feature compute is now done by per-feature coroutines launched in start().
 
-    private suspend fun clearActiveAlertByRuleId(ruleId: String, reason: String? = null): Boolean {
-        val alert = AlertRegistry.get(ruleId) ?: return false
-
-        if (alert.priority == 1) {
-            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
-        } else {
-            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
-        }
-        AlertRegistry.clear(ruleId)
-        dataRepository.addAlertClearedEventCep(alert.uid)
-        Log.i("CEP", "Cleared active alert for rule=$ruleId reason=${reason ?: "unspecified"} uid=${alert.uid}")
-        return true
+    private suspend fun updateBaselineAndDynamicThresholds(nowMs: Long = System.currentTimeMillis()) {
+        metricAdapters.forEach { adapter -> updateMetricBaselineAndTrends(adapter, nowMs) }
+        publishHrDynamicThresholdFeatures(nowMs)
     }
 
-    private suspend fun clearDisabledPressureAlerts(lowAtmOn: Boolean, highAtmOn: Boolean) {
-        if (!lowAtmOn) {
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_low_atm",
-                reason = "settings.pressure.low_atm_alert_enabled=0"
-            )
-        }
-        if (!highAtmOn) {
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_high_atm",
-                reason = "settings.pressure.high_atm_alert_enabled=0"
-            )
+    private fun updateMetricBaselineAndTrends(adapter: BaselineMetricAdapter, nowMs: Long) {
+        val state = metricState.getOrPut(adapter.metricId) { MetricAggregationState() }
+        MetricBaselineTick.updateMetricBaselineAndTrends(
+            adapter = adapter,
+            stateData = state.data,
+            featureStore = featureStore,
+            profileStore = profileStore,
+            nowMs = nowMs
+        )
+    }
+
+    private fun warmStartMetricBaselines(nowMs: Long = System.currentTimeMillis()) {
+        metricAdapters.forEach { adapter ->
+            val snapshot = profileStore.metricBaseline(adapter.metricId) ?: return@forEach
+            val restoredStatus = MetricBaselineCalculator.restoredStatus(adapter, snapshot, nowMs)
+            MetricFeaturePublisher.baselineMap(
+                metricId = adapter.metricId,
+                value = snapshot.value,
+                sampleCount = snapshot.sampleCount,
+                confidence = snapshot.confidence,
+                status = restoredStatus
+            ).forEach { (k, v) -> if (v != null) featureStore.put(k, v, nowMs) }
         }
     }
+
+    private fun publishHrDynamicThresholdFeatures(nowMs: Long) {
+        val metricBaseline = profileStore.metricBaseline("hr.resting_bpm")
+        val restoredStatus = metricBaseline?.let { MetricBaselineCalculator.restoredStatus(HrRestingMetricAdapter(), it, nowMs) }
+        val usePersisted = metricBaseline?.value != null && restoredStatus != BaselineStatus.STALE
+        val restingBaseline = if (usePersisted) metricBaseline?.value else featureStore.double("profile.hr_rest_bpm")
+        val baselineValue = restingBaseline ?: return
+
+        featureStore.put("baseline.hr.resting_bpm", baselineValue, nowMs)
+        metricBaseline?.sampleCount?.let { featureStore.put("baseline.hr.resting_bpm.sample_count", it.toDouble(), nowMs) }
+        metricBaseline?.lastUpdatedMs?.takeIf { it > 0L }?.let { featureStore.put("baseline.hr.resting_bpm.updated_ms", it.toDouble(), nowMs) }
+
+        val dynamicHigh = baselineValue + HR_DYNAMIC_HIGH_OFFSET_BPM
+        val dynamicLow = (baselineValue - HR_DYNAMIC_LOW_OFFSET_BPM).coerceAtLeast(HR_DYNAMIC_MIN_FLOOR_BPM)
+        featureStore.put("thresholds.hr.high.dynamic_bpm", dynamicHigh, nowMs)
+        featureStore.put("thresholds.hr.low.dynamic_bpm", dynamicLow, nowMs)
+        featureStore.put("selected.thresholds.hr.high_bpm", dynamicHigh, nowMs)
+        featureStore.put("selected.thresholds.hr.low_bpm", dynamicLow, nowMs)
+
+        val onWrist = (featureStore.double("offbody.on_wrist") ?: 0.0) >= 0.5
+        if (!onWrist) {
+            featureStore.clear("features.hr.above_dynamic_high")
+            featureStore.clear("features.hr.below_dynamic_low")
+            featureStore.put("trend.hr.direction", TrendDirection.UNKNOWN.name, nowMs)
+            featureStore.clear("trend.hr.deviation_from_baseline_bpm")
+            return
+        }
+
+        val hr = featureStore.doubleIfFresh("heart_rate", maxAgeSec = 10.0, nowMs = nowMs) ?: return
+        featureStore.putDerived("features.hr.above_dynamic_high", hr > dynamicHigh, nowMs)
+        featureStore.putDerived("features.hr.below_dynamic_low", hr < dynamicLow, nowMs)
+        featureStore.putDerived("trend.hr.deviation_from_baseline_bpm", hr - baselineValue, nowMs)
+    }
+
+    fun injectHrRestingBaselineForTest(restBpm: Double, sampleCount: Int = 100) {
+        profileStore.injectHrRestingBaselineForTest(value = restBpm, sampleCount = sampleCount)
+        val nowMs = System.currentTimeMillis()
+        featureStore.put("baseline.hr.resting_bpm", restBpm, nowMs)
+        featureStore.put("baseline.hr.resting_bpm.sample_count", sampleCount.toDouble(), nowMs)
+    }
+
+    fun injectMetricBaselineForTest(
+        metricId: String,
+        value: Double?,
+        sampleCount: Int,
+        confidence: BaselineConfidence,
+        status: BaselineStatus,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        profileStore.putMetricBaseline(
+            ProfileStore.MetricBaselineSnapshot(
+                metricId = metricId,
+                value = value,
+                sampleCount = sampleCount,
+                confidence = confidence,
+                status = status,
+                windowStartTs = null,
+                windowEndTs = nowMs,
+                lastUpdatedMs = nowMs
+            )
+        )
+        MetricFeaturePublisher.baselineMap(metricId, value, sampleCount, confidence, status)
+            .forEach { (k, v) -> if (v != null) featureStore.put(k, v, nowMs) }
+    }
+
+    fun warmStartMetricBaselinesForTest(nowMs: Long = System.currentTimeMillis()) {
+        warmStartMetricBaselines(nowMs)
+    }
+
+    fun clearHrBaselineStateForTest() {
+        profileStore.clearHrRestingBaseline()
+        profileStore.clearMetricBaseline("hrv.rmssd_ms")
+        metricState.clear()
+        clearHrDynamicFeatureKeysForTest()
+    }
+
+    fun clearHrDynamicFeatureKeysForTest() {
+        listOf(
+            "baseline.hr.resting_bpm",
+            "baseline.hr.resting_bpm.sample_count",
+            "baseline.hr.resting_bpm.updated_ms",
+            "thresholds.hr.high.dynamic_bpm",
+            "thresholds.hr.low.dynamic_bpm",
+            "selected.thresholds.hr.high_bpm",
+            "selected.thresholds.hr.low_bpm",
+            "features.hr.above_dynamic_high",
+            "features.hr.below_dynamic_low",
+            "trend.hr.deviation_from_baseline_bpm",
+            "trend.hr.direction",
+            "baseline.hrv.rmssd_ms",
+            "baseline.hrv.rmssd_ms.sample_count",
+            "baseline.hrv.rmssd_ms.confidence",
+            "baseline.hrv.rmssd_ms.status",
+            "trend.hrv.rmssd_ms.deviation_from_baseline",
+            "trend.hrv.rmssd_ms.percent_deviation_from_baseline",
+            "trend.hrv.rmssd_ms.short_term",
+            "trend.hrv.rmssd_ms.long_term",
+            "trend.hrv.rmssd_ms.direction",
+            "selected.thresholds.hrv.low_rmssd_ms",
+            "selected.thresholds.hrv.low_rmssd_ms_warn",
+            "selected.trends.hrv.short_term",
+            "selected.trends.hrv.long_term",
+            "selected.trends.hrv.direction"
+        ).forEach { featureStore.clear(it) }
+    }
+
+    fun hrDynamicFeatureSnapshot(): Map<String, Any?> = featureStore.snapshot(
+        listOf(
+            "heart_rate",
+            "profile.hr_rest_bpm",
+            "baseline.hr.resting_bpm",
+            "baseline.hr.resting_bpm.sample_count",
+            "thresholds.hr.high.dynamic_bpm",
+            "thresholds.hr.low.dynamic_bpm",
+            "features.hr.above_dynamic_high",
+            "features.hr.below_dynamic_low",
+            "trend.hr.deviation_from_baseline_bpm",
+            "trend.hr.direction"
+        )
+    )
+
+    fun metricAggregationStateSnapshotForTest(metricId: String): Map<String, Any> {
+        val state = metricState[metricId]?.data
+        return mapOf(
+            "activeWindowStartMs" to (state?.activeWindowStartMs ?: -1L),
+            "activeWindowSampleCount" to (state?.activeWindowValues?.size ?: 0),
+            "qualifiedWindowCount" to (state?.qualifiedWindows?.size ?: 0),
+            "lastSampleAcceptedMs" to (state?.lastSampleAcceptedMs ?: 0L),
+            "lastOutputMs" to (state?.lastOutputMs ?: 0L),
+            "lastTrendDirection" to (state?.lastTrendDirection?.name ?: "null")
+        )
+    }
+
+    fun metricFeatureSnapshotForTest(metricId: String): Map<String, Any?> = featureStore.snapshot(
+        listOf(
+            "baseline.$metricId",
+            "baseline.$metricId.sample_count",
+            "baseline.$metricId.confidence",
+            "baseline.$metricId.status",
+            "trend.$metricId.deviation_from_baseline",
+            "trend.$metricId.percent_deviation_from_baseline",
+            "trend.$metricId.short_term",
+            "trend.$metricId.long_term",
+            "trend.$metricId.direction",
+            "selected.thresholds.hrv.low_rmssd_ms",
+            "selected.thresholds.hrv.low_rmssd_ms_warn",
+            "selected.trends.hrv.short_term",
+            "selected.trends.hrv.long_term",
+            "selected.trends.hrv.direction"
+        )
+    )
 
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {
@@ -349,6 +516,17 @@ class CepEngine(
         }
     }
 
+    /** Test/support: write arbitrary feature store values (strings/bools/doubles) used by metric normalization. */
+    internal fun writeFeatureForTest(path: String, value: Any?, tsMs: Long = System.currentTimeMillis()) {
+        if (value == null) return
+        featureStore.put(path, value, tsMs)
+    }
+
+    /** Test/support: run one baseline/trend pass for all registered metric adapters at [nowMs]. */
+    internal fun runMetricBaselineUpdatesForTest(nowMs: Long) {
+        metricAdapters.forEach { updateMetricBaselineAndTrends(it, nowMs) }
+    }
+
     fun ingest(path: String, value: Double, tsMs: Long = System.currentTimeMillis()) {
         try {
             val parts = path.split(".")
@@ -376,5 +554,10 @@ class CepEngine(
         }
     }
 
-}
+    companion object {
+        private const val HR_DYNAMIC_HIGH_OFFSET_BPM = 25.0
+        private const val HR_DYNAMIC_LOW_OFFSET_BPM = 15.0
+        private const val HR_DYNAMIC_MIN_FLOOR_BPM = 30.0
+    }
 
+}

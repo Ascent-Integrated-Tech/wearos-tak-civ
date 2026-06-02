@@ -265,6 +265,28 @@
     },
     {
       "type": "derived",
+      "id": "features.hrv.below_selected_low",
+      "expr": {
+        "lte_keys": [
+          "features.hrv.rmssd_recent_1m",
+          "selected.thresholds.hrv.low_rmssd_ms"
+        ]
+      },
+      "units": "bool"
+    },
+    {
+      "type": "derived",
+      "id": "features.hrv.selected_trend_declining",
+      "expr": {
+        "eq_key": [
+          "selected.trends.hrv.direction",
+          "DECLINING"
+        ]
+      },
+      "units": "bool"
+    },
+    {
+      "type": "derived",
       "id": "features.env.wet_flag",
       "expr": {
         "or": [
@@ -1922,8 +1944,14 @@
         "all": [
           {
             "gte_key": [
-              "features.hrv.rmssd_drop_ratio",
-              0.2
+              "features.hrv.below_selected_low",
+              1.0
+            ]
+          },
+          {
+            "gte_key": [
+              "features.hrv.selected_trend_declining",
+              1.0
             ]
           },
           {
@@ -2072,8 +2100,13 @@
             "feature": "features.pressure.mean_n5",
             "exit_above": "thresholds.pressure.low",
             "hysteresis": 1.0
+          },
+          {
+            "feature": "settings.pressure.low_atm_alert_enabled",
+            "exit_below": 1.0
           }
         ],
+        "exit_logic": "OR",
         "exit_sustain_sec": 5
       }
     },
@@ -2102,8 +2135,13 @@
             "feature": "features.pressure.mean_n5",
             "exit_below": "thresholds.pressure.high",
             "hysteresis": 1.0
+          },
+          {
+            "feature": "settings.pressure.high_atm_alert_enabled",
+            "exit_below": 1.0
           }
         ],
+        "exit_logic": "OR",
         "exit_sustain_sec": 5
       }
     }

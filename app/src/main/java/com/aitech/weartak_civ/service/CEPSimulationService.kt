@@ -23,6 +23,8 @@ import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.di.CepProvider
+import com.aitech.weartak_civ.cep.engine.BaselineConfidence
+import com.aitech.weartak_civ.cep.engine.BaselineStatus
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
@@ -325,8 +327,48 @@ class CEPSimulationService : Service() {
                 delay(3_000)
             }
             Log.i(TAG, "[SIM] === PHASE 6 COMPLETE ===")
-            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 + P6 testing complete")
-            updateNotification("[ALL] P1–P6 complete")
+            updateNotification("[P6] Complete – P7 starting in 3 s")
+            delay(3_000)
+
+            // ── Phase 7: Baseline / dynamic threshold verification ──────────
+            val phase7Scenarios = listOf(
+                Scenario.P7_T1_HR_BASELINE_CONVERGENCE,
+                Scenario.P7_T2_HR_DYNAMIC_THRESHOLD_PUBLICATION,
+                Scenario.P7_T3_HR_BASELINE_WARM_START
+            )
+            Log.i(TAG, "[SIM] === PHASE 7 START === baseline + dynamic thresholds")
+            for (scenario in phase7Scenarios) {
+                Log.i(TAG, "[P7] ▶ Starting: $scenario")
+                updateNotification("[P7] Running: $scenario")
+                runPhase7Scenario(scenario)
+                Log.i(TAG, "[P7] ✓ Completed: $scenario")
+                updateNotification("[P7] Done: $scenario")
+                delay(3_000)
+            }
+            Log.i(TAG, "[SIM] === PHASE 7 COMPLETE ===")
+            updateNotification("[P7] Complete – P8 starting in 3 s")
+            delay(3_000)
+
+            // ── Phase 8: HRV baseline/trend modular-path verification ────────
+            val phase8Scenarios = listOf(
+                Scenario.P8_T1_HRV_BASELINE_WARMUP_INSUFFICIENT,
+                Scenario.P8_T2_HRV_BASELINE_READY,
+                Scenario.P8_T3_HRV_DECLINE_TREND,
+                Scenario.P8_T4_HRV_RECOVERY_TREND,
+                Scenario.P8_T5_HRV_OFFWRIST_UNKNOWN
+            )
+            Log.i(TAG, "[SIM] === PHASE 8 START === hrv baseline + trend")
+            for (scenario in phase8Scenarios) {
+                Log.i(TAG, "[P8] ▶ Starting: $scenario")
+                updateNotification("[P8] Running: $scenario")
+                runPhase8Scenario(scenario)
+                Log.i(TAG, "[P8] ✓ Completed: $scenario")
+                updateNotification("[P8] Done: $scenario")
+                delay(2_000)
+            }
+            Log.i(TAG, "[SIM] === PHASE 8 COMPLETE ===")
+            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 + P6 + P7 + P8 testing complete")
+            updateNotification("[ALL] P1–P8 complete")
         }
     }
 
@@ -507,7 +549,19 @@ class CEPSimulationService : Service() {
         // P6-T6: Stale data suppression — emit dunk trigger, clear, then pause 35 s (>max_age_sec=30).
         //         During and after the gap no stale-triggered alert should fire; verifies that
         //         max_age_sec freshness guard suppresses sample-window features during dropout.
-        P6_T6_STALE_DATA_SUPPRESSION
+        P6_T6_STALE_DATA_SUPPRESSION,
+
+        // ── Phase 7: Baseline / dynamic threshold verification ──────────────
+        P7_T1_HR_BASELINE_CONVERGENCE,
+        P7_T2_HR_DYNAMIC_THRESHOLD_PUBLICATION,
+        P7_T3_HR_BASELINE_WARM_START,
+
+        // ── Phase 8: HRV baseline/trend verification ───────────────────────
+        P8_T1_HRV_BASELINE_WARMUP_INSUFFICIENT,
+        P8_T2_HRV_BASELINE_READY,
+        P8_T3_HRV_DECLINE_TREND,
+        P8_T4_HRV_RECOVERY_TREND,
+        P8_T5_HRV_OFFWRIST_UNKNOWN
     }
 
     private data class ScenarioConfig(
@@ -1201,6 +1255,249 @@ class CEPSimulationService : Service() {
             Scenario.P6_T6_STALE_DATA_SUPPRESSION -> runP6T6StaleDataSuppression()
             else -> { /* non-P6 scenario, no-op */ }
         }
+    }
+
+    // ── Phase 7: Baseline / dynamic threshold tests ─────────────────────────
+
+    private fun resetP7HrBaselineState() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.clearHrBaselineStateForTest()
+        AlertRegistry.clearAll()
+    }
+
+    private suspend fun runPhase7Scenario(scenario: Scenario) {
+        when (scenario) {
+            Scenario.P7_T1_HR_BASELINE_CONVERGENCE -> {
+                resetP7HrBaselineState()
+                delay(200L)
+                runP7T1HrBaselineConvergence()
+            }
+            Scenario.P7_T2_HR_DYNAMIC_THRESHOLD_PUBLICATION -> {
+                resetP7HrBaselineState()
+                delay(200L)
+                runP7T2HrDynamicThresholdPublication()
+            }
+            Scenario.P7_T3_HR_BASELINE_WARM_START -> {
+                resetP7HrBaselineState()
+                delay(200L)
+                runP7T3HrBaselineWarmStart()
+            }
+            else -> { /* non-P7 scenario, no-op */ }
+        }
+    }
+
+    private fun resetP8HrvState() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.clearHrBaselineStateForTest()
+        AlertRegistry.clearAll()
+    }
+
+    private suspend fun runPhase8Scenario(scenario: Scenario) {
+        resetP8HrvState()
+        delay(200L)
+        when (scenario) {
+            Scenario.P8_T1_HRV_BASELINE_WARMUP_INSUFFICIENT -> runP8T1HrvBaselineWarmupInsufficient()
+            Scenario.P8_T2_HRV_BASELINE_READY -> runP8T2HrvBaselineReady()
+            Scenario.P8_T3_HRV_DECLINE_TREND -> runP8T3HrvDeclineTrend()
+            Scenario.P8_T4_HRV_RECOVERY_TREND -> runP8T4HrvRecoveryTrend()
+            Scenario.P8_T5_HRV_OFFWRIST_UNKNOWN -> runP8T5HrvOffWristUnknown()
+            else -> { /* non-P8 scenario */ }
+        }
+    }
+
+    private suspend fun emitHrvSample(
+        rmssdMs: Double,
+        onWrist: Int = 1,
+        activity: String = "STILL",
+        sleeping: Boolean = false,
+        tsMs: Long = System.currentTimeMillis()
+    ) {
+        CepBus.emit(CepEvent(Topics.ACTIVITY, ActivityPayload(activity), ts = tsMs))
+        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(onWrist), ts = tsMs))
+        CepBus.emit(CepEvent(Topics.SLEEP, SleepPayload(is_sleeping = sleeping), ts = tsMs))
+        CepBus.emit(CepEvent(Topics.HRV, HrvPayload(rmssd_ms = rmssdMs), ts = tsMs))
+    }
+
+    private suspend fun runP8T1HrvBaselineWarmupInsufficient() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectMetricBaselineForTest(
+            metricId = "hrv.rmssd_ms",
+            value = 34.0,
+            sampleCount = 3,
+            confidence = BaselineConfidence.LOW,
+            status = BaselineStatus.INSUFFICIENT_DATA
+        )
+        repeat(3) {
+            emitHrvSample(rmssdMs = 32.0)
+            delay(600L)
+        }
+        delay(1_000L)
+        val snap = engine.metricFeatureSnapshotForTest("hrv.rmssd_ms")
+        val status = snap["baseline.hrv.rmssd_ms.status"]
+        val pass = status == BaselineStatus.INSUFFICIENT_DATA.name
+        Log.i("CEP", "[P8-T1] ASSERT ${if (pass) "PASS" else "FAIL"} status=$status expected=${BaselineStatus.INSUFFICIENT_DATA.name} SNAPSHOT=$snap")
+    }
+
+    private suspend fun runP8T2HrvBaselineReady() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectMetricBaselineForTest(
+            metricId = "hrv.rmssd_ms",
+            value = 40.0,
+            sampleCount = 24,
+            confidence = BaselineConfidence.MEDIUM,
+            status = BaselineStatus.READY_MEDIUM_CONFIDENCE
+        )
+        repeat(3) {
+            emitHrvSample(rmssdMs = 40.0)
+            delay(600L)
+        }
+        delay(1_000L)
+        val snap = engine.metricFeatureSnapshotForTest("hrv.rmssd_ms")
+        val status = snap["baseline.hrv.rmssd_ms.status"]
+        val threshold = (snap["selected.thresholds.hrv.low_rmssd_ms"] as? Number)?.toDouble()
+        val pass = status == BaselineStatus.READY_MEDIUM_CONFIDENCE.name && threshold == 32.0
+        Log.i("CEP", "[P8-T2] ASSERT ${if (pass) "PASS" else "FAIL"} status=$status threshold=$threshold expectedStatus=${BaselineStatus.READY_MEDIUM_CONFIDENCE.name} expectedThreshold=32.0 SNAPSHOT=$snap")
+    }
+
+    private suspend fun runP8T3HrvDeclineTrend() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectMetricBaselineForTest(
+            metricId = "hrv.rmssd_ms",
+            value = 40.0,
+            sampleCount = 30,
+            confidence = BaselineConfidence.MEDIUM,
+            status = BaselineStatus.READY_MEDIUM_CONFIDENCE
+        )
+        repeat(3) {
+            emitHrvSample(rmssdMs = 28.0)
+            delay(700L)
+        }
+        delay(1_000L)
+        val snap = engine.metricFeatureSnapshotForTest("hrv.rmssd_ms")
+        val direction = snap["selected.trends.hrv.direction"]
+        val pass = direction == "DECLINING"
+        Log.i("CEP", "[P8-T3] ASSERT ${if (pass) "PASS" else "FAIL"} direction=$direction expected=DECLINING SNAPSHOT=$snap")
+    }
+
+    private suspend fun runP8T4HrvRecoveryTrend() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectMetricBaselineForTest(
+            metricId = "hrv.rmssd_ms",
+            value = 40.0,
+            sampleCount = 30,
+            confidence = BaselineConfidence.MEDIUM,
+            status = BaselineStatus.READY_MEDIUM_CONFIDENCE
+        )
+        repeat(3) {
+            emitHrvSample(rmssdMs = 48.0)
+            delay(700L)
+        }
+        delay(1_000L)
+        val snap = engine.metricFeatureSnapshotForTest("hrv.rmssd_ms")
+        val direction = snap["selected.trends.hrv.direction"]
+        val pass = direction == "IMPROVING" || direction == "STABLE"
+        Log.i("CEP", "[P8-T4] ASSERT ${if (pass) "PASS" else "FAIL"} direction=$direction expected=IMPROVING|STABLE SNAPSHOT=$snap")
+    }
+
+    private suspend fun runP8T5HrvOffWristUnknown() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectMetricBaselineForTest(
+            metricId = "hrv.rmssd_ms",
+            value = 40.0,
+            sampleCount = 30,
+            confidence = BaselineConfidence.MEDIUM,
+            status = BaselineStatus.READY_MEDIUM_CONFIDENCE
+        )
+        emitHrvSample(rmssdMs = 40.0, onWrist = 1)
+        delay(1_000L)
+        repeat(3) {
+            emitHrvSample(rmssdMs = 40.0, onWrist = 0)
+            delay(1_000L)
+        }
+        delay(2_000L)
+        val snap = engine.metricFeatureSnapshotForTest("hrv.rmssd_ms")
+        val direction = snap["selected.trends.hrv.direction"]
+        val pass = direction == "UNKNOWN" || direction == "STABLE"
+        Log.i("CEP", "[P8-T5] ASSERT ${if (pass) "PASS" else "FAIL"} direction=$direction expected=UNKNOWN|STABLE SNAPSHOT=$snap")
+    }
+
+    private suspend fun emitHrBaselineSample(
+        bpm: Double,
+        activity: String = "STILL",
+        onWrist: Int = 1,
+        sleeping: Boolean = false,
+        tsMs: Long = System.currentTimeMillis()
+    ) {
+        CepBus.emit(CepEvent(Topics.ACTIVITY, ActivityPayload(activity), ts = tsMs))
+        CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(onWrist), ts = tsMs))
+        CepBus.emit(CepEvent(Topics.SLEEP, SleepPayload(is_sleeping = sleeping), ts = tsMs))
+        CepBus.emit(CepEvent(Topics.HEART_RATE, HeartRatePayload(bpm = bpm), ts = tsMs))
+    }
+
+    private suspend fun runP7T1HrBaselineConvergence() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        Log.i(TAG, "[P7-T1] ▶ Establishing HR resting baseline with eligible samples at 60 bpm")
+        repeat(12) {
+            emitHrBaselineSample(bpm = 60.0)
+            delay(600L)
+        }
+        delay(1_500L)
+
+        val snap = engine.hrDynamicFeatureSnapshot()
+        val baseline = (snap["baseline.hr.resting_bpm"] as? Number)?.toDouble()
+        val sampleCount = (snap["baseline.hr.resting_bpm.sample_count"] as? Number)?.toInt()
+        val pass = baseline != null && baseline in 59.0..61.0 && (sampleCount ?: 0) >= 8
+        Log.i(
+            "CEP",
+            "[P7-T1] ASSERT ${if (pass) "PASS" else "FAIL"} baseline.hr.resting_bpm=$baseline sampleCount=$sampleCount expectedBaseline=59..61 expectedSamples>=8 SNAPSHOT=$snap"
+        )
+    }
+
+    private suspend fun runP7T2HrDynamicThresholdPublication() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectHrRestingBaselineForTest(restBpm = 60.0, sampleCount = 100)
+        Log.i(TAG, "[P7-T2] ▶ Publishing dynamic HR thresholds from injected baseline=60 bpm with HR=92 bpm")
+
+        repeat(4) {
+            emitHrBaselineSample(bpm = 92.0)
+            delay(600L)
+        }
+        delay(1_500L)
+
+        val snap = engine.hrDynamicFeatureSnapshot()
+        val high = (snap["thresholds.hr.high.dynamic_bpm"] as? Number)?.toDouble()
+        val low = (snap["thresholds.hr.low.dynamic_bpm"] as? Number)?.toDouble()
+        val above = snap["features.hr.above_dynamic_high"] as? Boolean
+        val below = snap["features.hr.below_dynamic_low"] as? Boolean
+        val deviation = (snap["trend.hr.deviation_from_baseline_bpm"] as? Number)?.toDouble()
+        val pass = high == 85.0 && low == 45.0 && above == true && below == false && deviation == 32.0
+        Log.i(
+            "CEP",
+            "[P7-T2] ASSERT ${if (pass) "PASS" else "FAIL"} high=$high low=$low above=$above below=$below deviation=$deviation expectedHigh=85.0 expectedLow=45.0 expectedAbove=true expectedBelow=false expectedDeviation=32.0 SNAPSHOT=$snap"
+        )
+    }
+
+    private suspend fun runP7T3HrBaselineWarmStart() {
+        val engine = CepProvider.getOrCreateEngine(applicationContext)
+        engine.injectHrRestingBaselineForTest(restBpm = 58.0, sampleCount = 120)
+        engine.clearHrDynamicFeatureKeysForTest()
+        Log.i(TAG, "[P7-T3] ▶ Verifying persisted HR baseline repopulates FeatureStore after key clear")
+
+        repeat(3) {
+            emitHrBaselineSample(bpm = 58.0)
+            delay(600L)
+        }
+        delay(1_500L)
+
+        val snap = engine.hrDynamicFeatureSnapshot()
+        val baseline = (snap["baseline.hr.resting_bpm"] as? Number)?.toDouble()
+        val high = (snap["thresholds.hr.high.dynamic_bpm"] as? Number)?.toDouble()
+        val low = (snap["thresholds.hr.low.dynamic_bpm"] as? Number)?.toDouble()
+        val pass = baseline == 58.0 && high == 83.0 && low == 43.0
+        Log.i(
+            "CEP",
+            "[P7-T3] ASSERT ${if (pass) "PASS" else "FAIL"} baseline=$baseline high=$high low=$low expectedBaseline=58.0 expectedHigh=83.0 expectedLow=43.0 SNAPSHOT=$snap"
+        )
     }
 
     /**

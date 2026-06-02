@@ -795,6 +795,42 @@ class DataRepository(private val context: Context) {
         _restingHeartRate.emit(restHr)
     }
 
+    /** Design key: `hrv.baseline.window_days`. */
+    val getHrvBaselineWindowDays: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HRV_BASELINE_WINDOW_DAYS] ?: HrvCepConfig.Defaults.BASELINE_WINDOW_DAYS
+    }
+
+    /** Design key: `hrv.baseline.min_samples`. */
+    val getHrvBaselineMinSamples: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HRV_BASELINE_MIN_SAMPLES] ?: HrvCepConfig.Defaults.BASELINE_MIN_SAMPLES
+    }
+
+    /** Design key: `hrv.trend.short_window_minutes`. */
+    val getHrvTrendShortWindowMinutes: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HRV_TREND_SHORT_WINDOW_MINUTES] ?: HrvCepConfig.Defaults.TREND_SHORT_WINDOW_MINUTES
+    }
+
+    /** Design key: `hrv.low_deviation_warn_percent`. */
+    val getHrvLowDeviationWarnPercent: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HRV_LOW_DEVIATION_WARN_PERCENT] ?: HrvCepConfig.Defaults.LOW_DEVIATION_WARN_PERCENT
+    }
+
+    /** Design key: `hrv.low_deviation_alert_percent`. */
+    val getHrvLowDeviationAlertPercent: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[HRV_LOW_DEVIATION_ALERT_PERCENT] ?: HrvCepConfig.Defaults.LOW_DEVIATION_ALERT_PERCENT
+    }
+
+    suspend fun getHrvCepConfigOnce(): HrvCepConfig {
+        val prefs = context.dataStore.data.first()
+        return HrvCepConfig(
+            baselineWindowDays = prefs[HRV_BASELINE_WINDOW_DAYS] ?: HrvCepConfig.Defaults.BASELINE_WINDOW_DAYS,
+            baselineMinSamples = prefs[HRV_BASELINE_MIN_SAMPLES] ?: HrvCepConfig.Defaults.BASELINE_MIN_SAMPLES,
+            trendShortWindowMinutes = prefs[HRV_TREND_SHORT_WINDOW_MINUTES] ?: HrvCepConfig.Defaults.TREND_SHORT_WINDOW_MINUTES,
+            lowDeviationWarnPercent = prefs[HRV_LOW_DEVIATION_WARN_PERCENT] ?: HrvCepConfig.Defaults.LOW_DEVIATION_WARN_PERCENT,
+            lowDeviationAlertPercent = prefs[HRV_LOW_DEVIATION_ALERT_PERCENT] ?: HrvCepConfig.Defaults.LOW_DEVIATION_ALERT_PERCENT,
+        )
+    }
+
     suspend fun snapshotLocation(): LocationSnapshot? {
         val baseLoc = latestLocation.value ?: return null
 
@@ -3255,5 +3291,11 @@ class DataRepository(private val context: Context) {
         private val TABLET_COMMAND_APIKEY = stringPreferencesKey("tablet_command_apikey")
         private val TABLET_COMMAND_REPORTING_UPDATE_INTERVAL = intPreferencesKey("tablet_command_reporting_update_interval")
         private val YEAR_OF_BIRTH = intPreferencesKey("year_of_birth")
+
+        private val HRV_BASELINE_WINDOW_DAYS = intPreferencesKey("hrv_baseline_window_days")
+        private val HRV_BASELINE_MIN_SAMPLES = intPreferencesKey("hrv_baseline_min_samples")
+        private val HRV_TREND_SHORT_WINDOW_MINUTES = intPreferencesKey("hrv_trend_short_window_minutes")
+        private val HRV_LOW_DEVIATION_WARN_PERCENT = intPreferencesKey("hrv_low_deviation_warn_percent")
+        private val HRV_LOW_DEVIATION_ALERT_PERCENT = intPreferencesKey("hrv_low_deviation_alert_percent")
     }
 }
