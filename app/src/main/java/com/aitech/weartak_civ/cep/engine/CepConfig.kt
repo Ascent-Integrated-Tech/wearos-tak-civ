@@ -1,9 +1,12 @@
 package com.aitech.weartak_civ.cep.engine
 
+import com.aitech.weartak_civ.cep.metric.MetricSpec
+
 data class CepConfig(
     val tickHz: Int,
     val features: List<FeatureDef>,
     val rules: List<RuleDef>,
+    val metrics: List<MetricSpec> = emptyList(),
     // Phase 1: explicit rule-evaluation interval (may differ from ingest tick in later phases)
     val ruleEvalIntervalMs: Int = 1000
 )
