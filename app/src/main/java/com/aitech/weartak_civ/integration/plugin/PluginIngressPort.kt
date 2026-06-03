@@ -13,12 +13,16 @@ import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.engine.config.ReasonCodes
 import com.aitech.weartak_civ.cep.plugin.PluginIngestRateLimiter
 import com.aitech.weartak_civ.cep.plugin.PluginOverlaySubmissionLimiter
+import com.weartak.plugin.sdk.model.CepRuleEventParcel
+import com.weartak.plugin.sdk.model.CepRuleOperation
 import com.weartak.plugin.sdk.model.SensorEventParcel
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Single façade for plugin-originated traffic: AIDL callbacks, host control merges, and
@@ -28,6 +32,7 @@ class PluginIngressPort(
     private val app: WearTakApplication,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val lastCepSequenceByStream = ConcurrentHashMap<String, Long>()
 
     fun packagesForUid(context: Context, uid: Int): Set<String> = runCatching {
         context.packageManager.getPackagesForUid(uid)?.toSet().orEmpty()
@@ -330,6 +335,86 @@ class PluginIngressPort(
             )
             CepProvider.applyPluginOverlay(merged, senderUid, senderPackages)
         }
+    }
+
+    fun applyCepRuleEventBlocking(
+        pluginId: String,
+        event: CepRuleEventParcel,
+        senderUid: Int,
+        senderPackages: Set<String>,
+    ): CepProvider.ApplyResult {
+        val resolvedPluginId = pluginId.trim()
+        if (resolvedPluginId.isEmpty()) {
+            return CepProvider.ApplyResult.Rejected(ReasonCodes.PLUGIN_ID_PACKAGE_MISMATCH, "empty pluginId")
+        }
+        if (resolvedPluginId !in senderPackages) {
+            CepProvider.recordPluginSenderRejection(
+                action = "aidl:applyCepRuleEvent",
+                claimedPluginId = resolvedPluginId,
+                senderUid = senderUid,
+                senderPackages = senderPackages,
+                reasonCode = ReasonCodes.PLUGIN_ID_PACKAGE_MISMATCH,
+            )
+            return CepProvider.ApplyResult.Rejected(
+                ReasonCodes.PLUGIN_ID_PACKAGE_MISMATCH,
+                "sender uid=$senderUid does not own pluginId=$resolvedPluginId"
+            )
+        }
+
+        val sensorKey = event.sensorKey.trim()
+        val streamKey = "$resolvedPluginId|$sensorKey"
+        val lastSeq = lastCepSequenceByStream[streamKey]
+        if (lastSeq != null && event.sequence <= lastSeq) {
+            return CepProvider.ApplyResult.NoOp
+        }
+
+        val merged = try {
+            val existing = runBlocking { app.repo.getCepPluginOverlaysOnce()[resolvedPluginId] }
+            when (event.operation) {
+                CepRuleOperation.ADD, CepRuleOperation.UPDATE -> {
+                    val rulesJson = event.rulesJson
+                        ?: return CepProvider.ApplyResult.Rejected(
+                            ReasonCodes.MALFORMED_JSON,
+                            "rulesJson required for add/update"
+                        )
+                    val now = System.currentTimeMillis()
+                    if (!PluginOverlaySubmissionLimiter.tryAcquire(resolvedPluginId, now)) {
+                        return CepProvider.ApplyResult.Rejected(
+                            ReasonCodes.PLUGIN_OVERLAY_RATE_LIMITED,
+                            "rate limited"
+                        )
+                    }
+                    PluginCepRulesMerge.mergeRegister(
+                        pluginId = resolvedPluginId,
+                        sensorKey = sensorKey,
+                        rulesJson = JSONObject(rulesJson),
+                        existingRaw = existing,
+                    )
+                }
+                CepRuleOperation.REMOVE -> {
+                    PluginCepRulesMerge.mergeUnregister(
+                        pluginId = resolvedPluginId,
+                        sensorKey = sensorKey,
+                        existingRaw = existing,
+                    )
+                }
+                else -> return CepProvider.ApplyResult.Rejected(
+                    ReasonCodes.UNSUPPORTED_OPERATOR,
+                    "unsupported CEP stream operation=${event.operation}"
+                )
+            }
+        } catch (e: Exception) {
+            return CepProvider.ApplyResult.Rejected(
+                ReasonCodes.MALFORMED_JSON,
+                e.message ?: "merge failed"
+            )
+        }
+
+        val outcome = runBlocking { CepProvider.applyPluginOverlay(merged, senderUid, senderPackages) }
+        if (outcome is CepProvider.ApplyResult.Applied || outcome is CepProvider.ApplyResult.NoOp) {
+            lastCepSequenceByStream[streamKey] = event.sequence
+        }
+        return outcome
     }
 
     private fun recordSenderRejection(

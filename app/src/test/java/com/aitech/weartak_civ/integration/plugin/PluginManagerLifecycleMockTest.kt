@@ -49,10 +49,15 @@ class PluginManagerLifecycleMockTest {
         every { ingress.packagesForUid(any(), any()) } returns pkgs
     }
 
-    private fun resolveInfoFor(pkg: String, className: String): ResolveInfo {
+    private fun resolveInfoFor(
+        pkg: String,
+        className: String,
+        permission: String? = com.weartak.plugin.sdk.WearTakPluginContract.PERMISSION_BIND_PLUGIN,
+    ): ResolveInfo {
         val si = ServiceInfo().apply {
             packageName = pkg
             name = className
+            this.permission = permission
         }
         return ResolveInfo().apply { serviceInfo = si }
     }

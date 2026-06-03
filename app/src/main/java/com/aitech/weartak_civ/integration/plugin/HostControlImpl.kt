@@ -1,18 +1,27 @@
 package com.aitech.weartak_civ.integration.plugin
 
 import android.os.Binder
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.TAKConnectService
+import com.weartak.plugin.sdk.DeviceStatusContract
 import com.weartak.plugin.sdk.aidl.IWearTakPluginControl
 import com.weartak.plugin.sdk.model.AlertRequestParcel
+import com.weartak.plugin.sdk.model.CepRuleEventParcel
 import com.weartak.plugin.sdk.model.CotRequestParcel
 import com.weartak.plugin.sdk.model.DeviceStatusParcel
 import com.weartak.plugin.sdk.model.HostCapabilitiesParcel
 import com.weartak.plugin.sdk.model.MarkerParcel
+import com.weartak.plugin.sdk.model.ToastRequestParcel
+import com.weartak.plugin.sdk.validation.ControlPlanePayloadValidator
 import com.weartak.plugin.sdk.validation.CepRulesValidator
 import com.weartak.plugin.sdk.validation.ContractValidationResult
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
 
@@ -40,6 +49,29 @@ class HostControlImpl(
 
     private fun senderPackages(): Set<String> = ingress.packagesForUid(app, Binder.getCallingUid())
 
+    override fun requestToast(request: ToastRequestParcel?) {
+        if (!verifyCaller() || request == null) return
+        when (val v = ControlPlanePayloadValidator.validateToast(request)) {
+            is ContractValidationResult.Err -> {
+                Log.w(TAG, "requestToast validation: ${v.issues}")
+                return
+            }
+            is ContractValidationResult.Ok -> {
+                PluginDiagnostics.recordToast(pluginPackage, v.value)
+                val duration = if (v.value.duration == ToastRequestParcel.DURATION_LONG) {
+                    Toast.LENGTH_LONG
+                } else {
+                    Toast.LENGTH_SHORT
+                }
+                Handler(Looper.getMainLooper()).post {
+                    runCatching {
+                        Toast.makeText(app.applicationContext, v.value.message, duration).show()
+                    }.onFailure { Log.e(TAG, "requestToast failed", it) }
+                }
+            }
+        }
+    }
+
     override fun requestCotDispatch(request: CotRequestParcel?) {
         if (!verifyCaller() || request == null) return
         val xml = when (request.payloadFormat.lowercase()) {
@@ -58,36 +90,119 @@ class HostControlImpl(
 
     override fun requestAlert(request: AlertRequestParcel?) {
         if (!verifyCaller() || request == null) return
-        runBlocking {
-            runCatching {
-                app.repo.addPhysioAndAutoGenAlertRequest(
-                    uid = UUID.randomUUID().toString(),
-                    category = request.title.ifBlank { "PLUGIN" },
-                    description = request.message,
-                    priority = request.severity.coerceAtLeast(0),
-                    sendSms = false,
-                    timeMillis = System.currentTimeMillis(),
+        when (val v = ControlPlanePayloadValidator.validateAlert(request)) {
+            is ContractValidationResult.Err -> {
+                Log.w(TAG, "requestAlert validation: ${v.issues}")
+                return
+            }
+            is ContractValidationResult.Ok -> {
+                val alert = v.value
+                val category = alert.title.ifBlank { "PLUGIN" }
+                val description = formatPluginAlertDescription(alert.message, alert.channelId)
+                Log.i(
+                    TAG,
+                    "requestAlert received pkg=$pluginPackage category=$category severity=${alert.severity} " +
+                        "channelId=${alert.channelId}",
                 )
-            }.onFailure { Log.e(TAG, "requestAlert failed", it) }
+                runBlocking {
+                    runCatching {
+                        app.repo.addPhysioAndAutoGenAlertRequest(
+                            uid = UUID.randomUUID().toString(),
+                            category = category,
+                            description = description,
+                            priority = alert.severity.coerceAtLeast(0),
+                            sendSms = false,
+                            timeMillis = System.currentTimeMillis(),
+                        )
+                        Log.i(TAG, "requestAlert enqueued pkg=$pluginPackage category=$category")
+                    }.onFailure { Log.e(TAG, "requestAlert failed", it) }
+                }
+            }
         }
     }
 
     override fun requestMarkerPublish(marker: MarkerParcel?) {
         if (!verifyCaller() || marker == null) return
-        val typeRaw = marker.attributes.getString("markerType") ?: "UNKNOWN"
-        val title = marker.title?.ifBlank { marker.markerId } ?: marker.markerId
-        val remark = marker.attributes.getString("remark") ?: ""
-        runBlocking {
-            val ok = app.repo.requestMarkerDrop(
-                markerTypeRaw = typeRaw,
-                title = title,
-                remark = remark,
-                timeMillis = System.currentTimeMillis(),
-                lat = if (marker.attributes.containsKey("lat")) marker.attributes.getDouble("lat") else null,
-                lon = if (marker.attributes.containsKey("lon")) marker.attributes.getDouble("lon") else null,
-                uid = marker.markerId,
-            )
-            if (!ok) Log.w(TAG, "requestMarkerPublish: marker type not parsed typeRaw=$typeRaw")
+        dispatchMarkerLifecycle(marker, MarkerLifecycle.PUBLISH)
+    }
+
+    override fun requestMarkerUpdate(marker: MarkerParcel?) {
+        if (!verifyCaller() || marker == null) return
+        dispatchMarkerLifecycle(marker, MarkerLifecycle.UPDATE)
+    }
+
+    override fun requestMarkerClear(marker: MarkerParcel?) {
+        if (!verifyCaller() || marker == null) return
+        dispatchMarkerLifecycle(marker, MarkerLifecycle.CLEAR)
+    }
+
+    private enum class MarkerLifecycle { PUBLISH, UPDATE, CLEAR }
+
+    private fun dispatchMarkerLifecycle(marker: MarkerParcel, lifecycle: MarkerLifecycle) {
+        when (val v = ControlPlanePayloadValidator.validateMarker(marker)) {
+            is ContractValidationResult.Err -> {
+                Log.w(TAG, "${lifecycle.name} validation: ${v.issues}")
+                return
+            }
+            is ContractValidationResult.Ok -> {
+                val parsed = PluginMarkerMapping.fromParcel(v.value)
+                val timeMillis = System.currentTimeMillis()
+                runBlocking {
+                    when (lifecycle) {
+                        MarkerLifecycle.PUBLISH -> {
+                            val ok = app.repo.requestMarkerDrop(
+                                markerTypeRaw = parsed.markerTypeRaw,
+                                title = parsed.title,
+                                remark = parsed.remark,
+                                timeMillis = timeMillis,
+                                lat = parsed.lat,
+                                lon = parsed.lon,
+                                uid = parsed.uid,
+                            )
+                            if (!ok) {
+                                Log.w(
+                                    TAG,
+                                    "requestMarkerPublish: marker type not parsed typeRaw=${parsed.markerTypeRaw}",
+                                )
+                            }
+                        }
+                        MarkerLifecycle.UPDATE -> {
+                            val ok = app.repo.requestMarkerUpdate(
+                                markerTypeRaw = parsed.markerTypeRaw,
+                                title = parsed.title,
+                                remark = parsed.remark,
+                                timeMillis = timeMillis,
+                                uid = parsed.uid,
+                                lat = parsed.lat,
+                                lon = parsed.lon,
+                            )
+                            if (!ok) {
+                                Log.w(
+                                    TAG,
+                                    "requestMarkerUpdate: failed uid=${parsed.uid} typeRaw=${parsed.markerTypeRaw}",
+                                )
+                            }
+                        }
+                        MarkerLifecycle.CLEAR -> app.repo.requestMarkerClear(parsed.uid)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun applyCepRuleEvent(event: CepRuleEventParcel?) {
+        if (!verifyCaller() || event == null) return
+        when (val v = CepRulesValidator.validateEvent(event)) {
+            is ContractValidationResult.Err -> {
+                Log.w(TAG, "applyCepRuleEvent validation: ${v.issues}")
+                return
+            }
+            is ContractValidationResult.Ok -> {
+                val uid = Binder.getCallingUid()
+                val pkgs = senderPackages()
+                val outcome = ingress.applyCepRuleEventBlocking(pluginPackage, v.value, uid, pkgs)
+                Log.i(TAG, "applyCepRuleEvent outcome=$outcome pluginId=$pluginPackage sensorKey=${v.value.sensorKey}")
+            }
         }
     }
 
@@ -95,14 +210,47 @@ class HostControlImpl(
         if (!verifyCaller()) {
             return DeviceStatusParcel(online = false, summary = "denied")
         }
+        return runBlocking { buildDeviceStatus() }
+    }
+
+    private suspend fun buildDeviceStatus(): DeviceStatusParcel {
         val tak = TAKConnectService.isAnyTakConnected
         val sitx = runCatching {
             app.repo.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED
         }.getOrDefault(false)
         val online = tak || sitx
+        val telemetry = Bundle()
+        val now = System.currentTimeMillis()
+        telemetry.putLong(DeviceStatusContract.KEY_SNAPSHOT_TIME_MS, now)
+        telemetry.putBoolean(DeviceStatusContract.KEY_TAK_CONNECTED, tak)
+        telemetry.putBoolean(DeviceStatusContract.KEY_SITX_CONNECTED, sitx)
+        app.repo.latestBatteryPercentage.value?.let {
+            telemetry.putInt(DeviceStatusContract.KEY_BATTERY_PERCENT, it)
+        }
+        app.repo.latestHeartRate.value?.let {
+            telemetry.putInt(DeviceStatusContract.KEY_HEART_RATE_BPM, it)
+        }
+        runCatching { app.repo.getCallsign.first() }.getOrNull()?.let {
+            if (it.isNotBlank()) telemetry.putString(DeviceStatusContract.KEY_CALLSIGN, it)
+        }
+        val loc = app.repo.snapshotLocation()
+        if (loc != null) {
+            telemetry.putBoolean(DeviceStatusContract.KEY_LOCATION_AVAILABLE, true)
+            telemetry.putDouble(DeviceStatusContract.KEY_LAT, loc.lat)
+            telemetry.putDouble(DeviceStatusContract.KEY_LON, loc.lon)
+        } else {
+            telemetry.putBoolean(DeviceStatusContract.KEY_LOCATION_AVAILABLE, false)
+        }
+        val summary = when {
+            !online -> "disconnected"
+            tak && sitx -> "tak,sitx"
+            tak -> "tak"
+            else -> "sitx"
+        }
         return DeviceStatusParcel(
             online = online,
-            summary = if (online) "connected" else "disconnected",
+            summary = summary,
+            telemetry = telemetry,
         )
     }
 
@@ -157,9 +305,11 @@ class HostControlImpl(
         return HostCapabilitiesParcel(
             cotDispatch = true,
             alerts = true,
+            toasts = true,
             markers = true,
             cepRules = true,
-            mapLayers = false,
+            cepRuleStreaming = true,
+            mapLayers = mapLayer.isMapLayerSupported,
             sharedMemory = false,
         )
     }
@@ -168,5 +318,10 @@ class HostControlImpl(
 
     companion object {
         private const val TAG = "CEP-HostControl"
+
+        internal fun formatPluginAlertDescription(message: String, channelId: String?): String {
+            val ch = channelId?.trim().orEmpty()
+            return if (ch.isEmpty()) message else "[channel:$ch] $message"
+        }
     }
 }

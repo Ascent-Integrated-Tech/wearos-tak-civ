@@ -27,6 +27,7 @@ internal object PluginServiceQuery {
             val si = ri.serviceInfo ?: continue
             val pkg = si.packageName
             if (pkg == hostPackage) continue
+            if (si.permission != WearTakPluginContract.PERMISSION_BIND_PLUGIN) continue
             out.putIfAbsent(pkg, ComponentName(si.packageName, si.name))
         }
         return out.values.toList()

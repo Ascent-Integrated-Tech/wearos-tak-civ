@@ -10,6 +10,8 @@ import com.aitech.weartak_civ.cep.engine.config.ParserException
 import com.aitech.weartak_civ.cep.plugin.PluginTrust
 import com.weartak.plugin.sdk.WearTakPluginContract
 import com.weartak.plugin.sdk.aidl.IWearTakPlugin
+import com.weartak.plugin.sdk.model.PluginInitParcel
+import com.weartak.plugin.sdk.v2.WearTakPluginV2Contract
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -117,25 +119,38 @@ class PluginConnection(
         }
 
         val api = runCatching { iface.apiVersion }.getOrDefault(-1)
-        if (api != WearTakPluginContract.CONTRACT_API_VERSION) {
-            Log.w(TAG, "plugin apiVersion=$api expected=${WearTakPluginContract.CONTRACT_API_VERSION} pkg=$pluginPackage")
+        if (api != WearTakPluginContract.CONTRACT_API_VERSION && api != WearTakPluginV2Contract.CONTRACT_API_VERSION) {
+            Log.w(TAG, "plugin apiVersion=$api unsupported pkg=$pluginPackage")
+            failBind("api_version_mismatch:$api")
+            return
         }
 
         val control = HostControlImpl(app, ingress, pluginPackage, pluginUid)
-        val callback = HostCallbackImpl(ingress, pluginId = pluginPackage, pluginUid = pluginUid)
+        val callback = HostCallbackImpl(
+            ingress = ingress,
+            settingsCoordinator = manager.settingsCoordinator,
+            pluginId = pluginPackage,
+            pluginUid = pluginUid,
+        )
         hostControl = control
         hostCallback = callback
 
-        val init = com.weartak.plugin.sdk.model.PluginInitParcel(
+        val init = PluginInitParcel(
             hostPackageName = app.packageName,
             hostUid = android.os.Process.myUid(),
             pluginIdExpected = pluginPackage,
             hostExtras = android.os.Bundle(),
         )
         try {
-            iface.initializePlugin(init, control)
+            if (api == WearTakPluginV2Contract.CONTRACT_API_VERSION) {
+                val controlV2 = HostControlV2Impl(app, ingress, pluginPackage, pluginUid)
+                iface.initializePluginV2(init, control, controlV2)
+            } else {
+                iface.initializePlugin(init, control)
+            }
             iface.registerHostCallback(callback)
             iface.startPlugin()
+            manager.settingsCoordinator.onPluginConnected(pluginPackage, iface)
         } catch (e: RemoteException) {
             Log.e(TAG, "plugin lifecycle failed pkg=$pluginPackage", e)
             failBind("remote_exception")
@@ -162,10 +177,12 @@ class PluginConnection(
                 iface.unregisterHostCallback(cb)
             }
         }
+        runCatching { iface?.stopPlugin() }
         runCatching { iface?.shutdownPlugin() }
         runCatching {
             if (binder != null) binder.unlinkToDeath(deathRecipient, 0)
         }
+        manager.settingsCoordinator.unregisterPlugin(pluginPackage)
         plugin = null
         hostControl = null
         hostCallback = null

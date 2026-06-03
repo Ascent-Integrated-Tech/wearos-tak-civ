@@ -14,6 +14,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -34,10 +35,15 @@ class PluginConnectionBindTrustTest {
         PluginDiagnostics.resetForTest()
     }
 
-    private fun resolveInfoFor(pkg: String, className: String = ".Svc"): ResolveInfo {
+    private fun resolveInfoFor(
+        pkg: String,
+        className: String = ".Svc",
+        permission: String? = com.weartak.plugin.sdk.WearTakPluginContract.PERMISSION_BIND_PLUGIN,
+    ): ResolveInfo {
         val si = ServiceInfo().apply {
             packageName = pkg
             name = className
+            this.permission = permission
         }
         return ResolveInfo().apply { serviceInfo = si }
     }
@@ -101,5 +107,58 @@ class PluginConnectionBindTrustTest {
         assertFalse(mgr.hasConnectionForTest(pluginPkg))
         val c = PluginDiagnostics.snapshot().categoryCounts
         assertTrue((c[PluginDiagnostics.AdmissionCategory.UID_PACKAGE_MISMATCH] ?: 0) >= 1)
+    }
+
+    @Test
+    fun bind_rejectsUnsupportedApiVersion() {
+        val ri = resolveInfoFor(pluginPkg)
+        val app = mockHostApp(listOf(ri)) { intent, conn ->
+            conn.onServiceConnected(intent.component!!, FakeWearTakPlugin(pluginPkg, apiVersion = 3).asBinder())
+        }
+        val ingress = mockk<PluginIngressPort>(relaxed = true)
+        every { ingress.packagesForUid(any(), any()) } returns setOf(pluginPkg)
+        val trust = mockk<PluginTrust>(relaxed = true)
+        val mgr = PluginManager(app, ingress, trust)
+        mgr.refreshBindings()
+        assertFalse(mgr.hasConnectionForTest(pluginPkg))
+        val c = PluginDiagnostics.snapshot().categoryCounts
+        assertTrue((c[PluginDiagnostics.AdmissionCategory.BINDER_PROTOCOL] ?: 0) >= 1)
+    }
+
+    @Test
+    fun bind_usesInitializePluginV2ForApiVersion2() {
+        val ri = resolveInfoFor(pluginPkg)
+        lateinit var plugin: FakeWearTakPlugin
+        val app = mockHostApp(listOf(ri)) { intent, conn ->
+            plugin = FakeWearTakPlugin(pluginPkg, apiVersion = 2)
+            conn.onServiceConnected(intent.component!!, plugin.asBinder())
+        }
+        val ingress = mockk<PluginIngressPort>(relaxed = true)
+        every { ingress.packagesForUid(any(), any()) } returns setOf(pluginPkg)
+        val trust = mockk<PluginTrust>(relaxed = true)
+        val mgr = PluginManager(app, ingress, trust)
+        mgr.refreshBindings()
+        assertTrue(mgr.hasConnectionForTest(pluginPkg))
+        assertEquals(1, plugin.initializePluginV2Calls)
+        assertEquals(0, plugin.initializePluginCalls)
+    }
+
+    @Test
+    fun unbind_callsStopBeforeShutdown() {
+        val ri = resolveInfoFor(pluginPkg)
+        lateinit var plugin: FakeWearTakPlugin
+        val app = mockHostApp(listOf(ri)) { intent, conn ->
+            plugin = FakeWearTakPlugin(pluginPkg)
+            conn.onServiceConnected(intent.component!!, plugin.asBinder())
+        }
+        val ingress = mockk<PluginIngressPort>(relaxed = true)
+        every { ingress.packagesForUid(any(), any()) } returns setOf(pluginPkg)
+        val trust = mockk<PluginTrust>(relaxed = true)
+        val mgr = PluginManager(app, ingress, trust)
+        mgr.refreshBindings()
+        mgr.unbindPackage(pluginPkg)
+        assertTrue(plugin.lifecycleCalls.indexOf("stopPlugin") >= 0)
+        assertTrue(plugin.lifecycleCalls.indexOf("shutdownPlugin") >= 0)
+        assertTrue(plugin.lifecycleCalls.indexOf("stopPlugin") < plugin.lifecycleCalls.indexOf("shutdownPlugin"))
     }
 }

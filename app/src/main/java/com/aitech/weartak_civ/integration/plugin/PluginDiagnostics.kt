@@ -2,9 +2,18 @@ package com.aitech.weartak_civ.integration.plugin
 
 import android.util.Log
 import com.aitech.weartak_civ.cep.engine.config.ReasonCodes
+import com.weartak.plugin.sdk.model.CotReadyEventParcel
+import com.weartak.plugin.sdk.model.PluginErrorParcel
+import com.weartak.plugin.sdk.model.PluginStatusParcel
+import com.weartak.plugin.sdk.model.SharedBufferParcel
+import com.weartak.plugin.sdk.model.HostSettingsParcel
+import com.weartak.plugin.sdk.model.SettingsApplyResultParcel
+import com.weartak.plugin.sdk.model.ToastRequestParcel
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Lightweight plugin integration diagnostics (discover / bind / reject / death).
@@ -34,6 +43,7 @@ object PluginDiagnostics {
     private val bound = Collections.synchronizedSet(mutableSetOf<String>())
     private val connected = Collections.synchronizedSet(mutableSetOf<String>())
     private val rejected = Collections.synchronizedSet(mutableSetOf<String>())
+    private val callbackState = MutableStateFlow(HostCallbackState())
 
     private val categoryCounts = ConcurrentHashMap<String, AtomicInteger>()
 
@@ -43,6 +53,7 @@ object PluginDiagnostics {
     val unbindEvents = AtomicInteger(0)
     private val discoveryRefreshes = AtomicInteger(0)
     private val packageRemovals = AtomicInteger(0)
+    private val unsupportedV2CallCountByPlugin = ConcurrentHashMap<String, AtomicInteger>()
 
     /** All [AdmissionCategory] values plus any extra keys that ever appear in [categoryCounts]. */
     fun stableCategoryKeys(): List<String> = listOf(
@@ -90,6 +101,8 @@ object PluginDiagnostics {
             return PluginIntegrationState(snapshot = snap, stableCategories = cats)
         }
     }
+
+    val hostCallbackState: StateFlow<HostCallbackState> get() = callbackState
 
     fun snapshot(): Snapshot {
         synchronized(lock) {
@@ -197,6 +210,130 @@ object PluginDiagnostics {
         Log.i(TAG, "package removed: $packageName")
     }
 
+    fun recordCotReady(pluginId: String, event: CotReadyEventParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastCotReadyEventByPlugin = callbackState.value.lastCotReadyEventByPlugin + (pluginId to event),
+                cotReadyEventCountByPlugin = bumpCount(callbackState.value.cotReadyEventCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "cot ready pluginId=$pluginId event=$event")
+    }
+
+    fun recordPluginStatus(pluginId: String, status: PluginStatusParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastPluginStatusByPlugin = callbackState.value.lastPluginStatusByPlugin + (pluginId to status),
+                pluginStatusCountByPlugin = bumpCount(callbackState.value.pluginStatusCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "plugin status pluginId=$pluginId status=$status")
+    }
+
+    fun recordPluginError(pluginId: String, error: PluginErrorParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastPluginErrorByPlugin = callbackState.value.lastPluginErrorByPlugin + (pluginId to error),
+                pluginErrorCountByPlugin = bumpCount(callbackState.value.pluginErrorCountByPlugin, pluginId),
+            )
+        }
+        Log.w(TAG, "plugin error pluginId=$pluginId error=$error")
+    }
+
+    fun recordSharedBuffer(pluginId: String, buffer: SharedBufferParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastSharedBufferByPlugin = callbackState.value.lastSharedBufferByPlugin + (pluginId to buffer),
+                sharedBufferCountByPlugin = bumpCount(callbackState.value.sharedBufferCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "shared buffer pluginId=$pluginId buffer=$buffer")
+    }
+
+    fun recordUnsupportedV2Call(pluginId: String, method: String, detail: String) {
+        unsupportedV2CallCountByPlugin
+            .computeIfAbsent(pluginId) { AtomicInteger(0) }
+            .incrementAndGet()
+        Log.i(TAG, "unsupported v2 call pluginId=$pluginId method=$method detail=$detail")
+    }
+
+    fun unsupportedV2CallCount(pluginId: String): Int =
+        unsupportedV2CallCountByPlugin[pluginId]?.get() ?: 0
+
+    fun recordToast(pluginId: String, toast: ToastRequestParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastToastByPlugin = callbackState.value.lastToastByPlugin + (pluginId to toast),
+                toastCountByPlugin = bumpCount(callbackState.value.toastCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "toast pluginId=$pluginId toast=$toast")
+    }
+
+    fun recordSettingsCache(pluginId: String, state: PluginSettingsState?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastSettingsStateByPlugin = callbackState.value.lastSettingsStateByPlugin + (pluginId to state),
+            )
+        }
+        Log.i(TAG, "settings cache pluginId=$pluginId supported=${state?.settingsSupported}")
+    }
+
+    fun recordHostSettingsPush(pluginId: String, snapshot: HostSettingsParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastHostSettingsByPlugin = callbackState.value.lastHostSettingsByPlugin + (pluginId to snapshot),
+                hostSettingsPushCountByPlugin = bumpCount(callbackState.value.hostSettingsPushCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "host settings push pluginId=$pluginId revision=${snapshot?.revision}")
+    }
+
+    fun recordSettingsApply(pluginId: String, result: SettingsApplyResultParcel?) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                lastSettingsApplyByPlugin = callbackState.value.lastSettingsApplyByPlugin + (pluginId to result),
+            )
+        }
+        Log.i(TAG, "settings apply pluginId=$pluginId success=${result?.success}")
+    }
+
+    fun recordSettingsSchemaChanged(pluginId: String) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                settingsSchemaChangeCountByPlugin = bumpCount(callbackState.value.settingsSchemaChangeCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "settings schema changed pluginId=$pluginId")
+    }
+
+    fun recordSettingsValuesChanged(pluginId: String) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                settingsValuesChangeCountByPlugin = bumpCount(callbackState.value.settingsValuesChangeCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "settings values changed pluginId=$pluginId")
+    }
+
+    fun recordMainUiSchemaChanged(pluginId: String) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                mainUiSchemaChangeCountByPlugin = bumpCount(callbackState.value.mainUiSchemaChangeCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "main ui schema changed pluginId=$pluginId")
+    }
+
+    fun recordMainUiStateChanged(pluginId: String) {
+        synchronized(lock) {
+            callbackState.value = callbackState.value.copy(
+                mainUiStateChangeCountByPlugin = bumpCount(callbackState.value.mainUiStateChangeCountByPlugin, pluginId),
+            )
+        }
+        Log.i(TAG, "main ui state changed pluginId=$pluginId")
+    }
+
     /** Clears counters and sets for deterministic unit/Robolectric tests. */
     fun resetForTest() {
         synchronized(lock) {
@@ -204,6 +341,7 @@ object PluginDiagnostics {
             bound.clear()
             connected.clear()
             rejected.clear()
+            callbackState.value = HostCallbackState()
         }
         categoryCounts.clear()
         bindFailures.set(0)
@@ -212,6 +350,12 @@ object PluginDiagnostics {
         unbindEvents.set(0)
         discoveryRefreshes.set(0)
         packageRemovals.set(0)
+        unsupportedV2CallCountByPlugin.clear()
+    }
+
+    private fun bumpCount(map: Map<String, Int>, pluginId: String): Map<String, Int> {
+        val next = (map[pluginId] ?: 0) + 1
+        return map + (pluginId to next)
     }
 
     data class Snapshot(
@@ -255,4 +399,25 @@ object PluginDiagnostics {
             }
         }
     }
+
+    data class HostCallbackState(
+        val lastCotReadyEventByPlugin: Map<String, CotReadyEventParcel?> = emptyMap(),
+        val lastPluginStatusByPlugin: Map<String, PluginStatusParcel?> = emptyMap(),
+        val lastPluginErrorByPlugin: Map<String, PluginErrorParcel?> = emptyMap(),
+        val lastSharedBufferByPlugin: Map<String, SharedBufferParcel?> = emptyMap(),
+        val lastToastByPlugin: Map<String, ToastRequestParcel?> = emptyMap(),
+        val cotReadyEventCountByPlugin: Map<String, Int> = emptyMap(),
+        val pluginStatusCountByPlugin: Map<String, Int> = emptyMap(),
+        val pluginErrorCountByPlugin: Map<String, Int> = emptyMap(),
+        val sharedBufferCountByPlugin: Map<String, Int> = emptyMap(),
+        val toastCountByPlugin: Map<String, Int> = emptyMap(),
+        val lastSettingsStateByPlugin: Map<String, PluginSettingsState?> = emptyMap(),
+        val lastHostSettingsByPlugin: Map<String, HostSettingsParcel?> = emptyMap(),
+        val lastSettingsApplyByPlugin: Map<String, SettingsApplyResultParcel?> = emptyMap(),
+        val hostSettingsPushCountByPlugin: Map<String, Int> = emptyMap(),
+        val settingsSchemaChangeCountByPlugin: Map<String, Int> = emptyMap(),
+        val settingsValuesChangeCountByPlugin: Map<String, Int> = emptyMap(),
+        val mainUiSchemaChangeCountByPlugin: Map<String, Int> = emptyMap(),
+        val mainUiStateChangeCountByPlugin: Map<String, Int> = emptyMap(),
+    )
 }

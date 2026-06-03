@@ -22,6 +22,7 @@ open class PluginManager(
     private val app: WearTakApplication,
     private val ingress: PluginIngressPort,
     private val pluginTrust: PluginTrust = CepProvider.pluginTrust(),
+    val settingsCoordinator: PluginSettingsCoordinator = PluginSettingsCoordinator(app),
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val connections = ConcurrentHashMap<String, PluginConnection>()

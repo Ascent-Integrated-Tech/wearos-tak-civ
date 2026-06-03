@@ -10,6 +10,7 @@ import com.weartak.plugin.sdk.model.SharedBufferParcel
 
 class HostCallbackImpl(
     private val ingress: PluginIngressPort,
+    private val settingsCoordinator: PluginSettingsCoordinator,
     private val pluginId: String,
     private val pluginUid: Int,
 ) : IWearTakHostCallback.Stub() {
@@ -27,35 +28,37 @@ class HostCallbackImpl(
     }
 
     override fun onCotReadyEvent(event: CotReadyEventParcel?) {
-        Log.i(TAG, "onCotReadyEvent ready=${event?.ready} detail=${event?.detail}")
+        PluginDiagnostics.recordCotReady(pluginId, event)
     }
 
     override fun onPluginSettingsSchemaChanged() {
-        Log.i(TAG, "onPluginSettingsSchemaChanged pluginId=$pluginId")
+        PluginDiagnostics.recordSettingsSchemaChanged(pluginId)
+        settingsCoordinator.onPluginSettingsSchemaChanged(pluginId)
     }
 
     override fun onPluginSettingsValuesChanged() {
-        Log.i(TAG, "onPluginSettingsValuesChanged pluginId=$pluginId")
+        PluginDiagnostics.recordSettingsValuesChanged(pluginId)
+        settingsCoordinator.onPluginSettingsValuesChanged(pluginId)
     }
 
     override fun onPluginMainUiSchemaChanged() {
-        Log.i(TAG, "onPluginMainUiSchemaChanged pluginId=$pluginId")
+        PluginDiagnostics.recordMainUiSchemaChanged(pluginId)
     }
 
     override fun onPluginMainUiStateChanged() {
-        Log.i(TAG, "onPluginMainUiStateChanged pluginId=$pluginId")
+        PluginDiagnostics.recordMainUiStateChanged(pluginId)
     }
 
     override fun onPluginStatusChanged(status: PluginStatusParcel?) {
-        Log.i(TAG, "onPluginStatusChanged pluginId=$pluginId status=$status")
+        PluginDiagnostics.recordPluginStatus(pluginId, status)
     }
 
     override fun onPluginError(error: PluginErrorParcel?) {
-        Log.w(TAG, "onPluginError pluginId=$pluginId code=${error?.code} msg=${error?.message} fatal=${error?.fatal}")
+        PluginDiagnostics.recordPluginError(pluginId, error)
     }
 
     override fun onSharedBufferAvailable(buffer: SharedBufferParcel?) {
-        Log.i(TAG, "onSharedBufferAvailable pluginId=$pluginId buffer=$buffer")
+        PluginDiagnostics.recordSharedBuffer(pluginId, buffer)
     }
 
     companion object {

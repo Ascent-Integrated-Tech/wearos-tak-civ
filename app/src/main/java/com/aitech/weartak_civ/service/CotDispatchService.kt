@@ -477,23 +477,35 @@ class CotDispatchService : Service() {
     }
 
     private fun startPhysioAndAutoGenAlertPipelines() {
+        Log.i(TAG, "Starting physioAndAutoGen alert pipelines")
         startAddPhysioAndAutoGenAlertCollector()
         startClearPhysioAndAutoGenAlertCollector()
     }
 
     private fun startAddPhysioAndAutoGenAlertCollector() {
+        Log.i(TAG, "Subscribing to addPhysioAndAutoGenAlert flow")
         serviceScope.launch {
             dataRepository.addPhysioAndAutoGenAlert.collect { req ->
                 Log.i(TAG, "Received req to add physio and auto generated alert: $req")
+                Log.i(
+                    TAG,
+                    "Alert routing state before dispatch: ready=${readyToSendAlertEvents()} " +
+                        "tak=${TAKConnectService.isAnyTakConnected} ditto=${DittoService.isRunning.get()} " +
+                        "multicast=${dataRepository.multicastPublisherRunning.value} sitx=${sitxAvailable()} " +
+                        "endpoints=${dataRepository.anyEndpointConnected.value}",
+                )
                 val physioAndAutoGenAlert = DataRepository.CustomEmergencyAlert(uuid = req.uuid, alertState = DataRepository.AlertState.ALERT, category = req.category, description = req.description, priority = req.priority, sendSms = req.sendSms, timeMillis = req.timeMillis, enqueuedToBeSent = false)
                 val physioAndAutoGenAlertAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert)
                 physioAndAutoGenAlertMap[physioAndAutoGenAlert.uuid] = physioAndAutoGenAlert
                 if (readyToSendAlertEvents()) {
+                    Log.i(TAG, "Alert is ready to send now: uid=${physioAndAutoGenAlert.uuid}")
                     sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertAlertWithState)
                 } else {
                     if (dataRepository.anyEndpointConnected.value) {
+                        Log.i(TAG, "Alert not ready; requesting location refresh before send uid=${physioAndAutoGenAlert.uuid}")
                         EventBus.getDefault().post(LocationUpdateRequired())
                     }
+                    Log.i(TAG, "Alert queued locally until routing becomes available uid=${physioAndAutoGenAlert.uuid}")
                     enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
                 }
             }
@@ -556,6 +568,7 @@ class CotDispatchService : Service() {
     }
 
     private fun startClearPhysioAndAutoGenAlertCollector() {
+        Log.i(TAG, "Subscribing to clearPhysioAndAutoGenAlert flow")
         serviceScope.launch {
             dataRepository.clearPhysioAndAutoGenAlert.collect { req ->
                 Log.i(TAG, "Received req to clear physio or auto gen alert: $req")
@@ -1964,6 +1977,13 @@ class CotDispatchService : Service() {
 
     private suspend fun sendEmergencyAlert(alertWithSmsSentState: CustomEmergencyAlertWithAddedState): Boolean {
         val alert = alertWithSmsSentState.alert
+        Log.i(
+            TAG,
+            "sendEmergencyAlert start uid=${alert.uuid} state=${alert.alertState} category=${alert.category} " +
+                "priority=${alert.priority} tak=${TAKConnectService.isAnyTakConnected} " +
+                "ditto=${DittoService.isRunning.get()} multicast=${dataRepository.multicastPublisherRunning.value} " +
+                "sitx=${sitxAvailable()} companion=${companionAppAvailable()}",
+        )
         // SMS first (doesn’t depend on location)
         if (MainActivity.enableSmsForAlerts && alert.sendSms && !alertWithSmsSentState.smsSent) {
             SMSManager.sendSMSMessage(numbers = smsNumbersList, description = "${alert.category}: ${alert.description}")
@@ -1999,9 +2019,20 @@ class CotDispatchService : Service() {
         }
 
         if (sent) {
-            Log.i(TAG, "sendEmergencyAlert: Sent alert: $alertWithSmsSentState")
+            Log.i(
+                TAG,
+                "sendEmergencyAlert complete uid=${alert.uuid} sent=true tak=${TAKConnectService.isAnyTakConnected} " +
+                    "ditto=${DittoService.isRunning.get()} multicast=${dataRepository.multicastPublisherRunning.value} " +
+                    "sitx=${sitxAvailable()} companion=${companionAppAvailable()}",
+            )
         } else {
-            Log.i(TAG, "sendEmergencyAlert: Could NOT send alert: $alertWithSmsSentState")
+            Log.i(
+                TAG,
+                "sendEmergencyAlert complete uid=${alert.uuid} sent=false reason=no_route_available " +
+                    "tak=${TAKConnectService.isAnyTakConnected} ditto=${DittoService.isRunning.get()} " +
+                    "multicast=${dataRepository.multicastPublisherRunning.value} sitx=${sitxAvailable()} " +
+                    "companion=${companionAppAvailable()}",
+            )
         }
 
         return sent

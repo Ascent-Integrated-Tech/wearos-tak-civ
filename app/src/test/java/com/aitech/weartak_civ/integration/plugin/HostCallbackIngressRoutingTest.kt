@@ -18,7 +18,7 @@ class HostCallbackIngressRoutingTest {
     @Test
     fun onSensorEvent_nullIsIgnored() {
         val ingress = mockk<PluginIngressPort>(relaxed = true)
-        val cb = HostCallbackImpl(ingress, "com.plugin.pkg", 100)
+        val cb = HostCallbackImpl(ingress, PluginSettingsCoordinator(mockk(relaxed = true)), "com.plugin.pkg", 100)
         cb.onSensorEvent(null)
         verify(exactly = 0) { ingress.onSensorEventFromPlugin(any(), any(), any()) }
     }
@@ -26,7 +26,7 @@ class HostCallbackIngressRoutingTest {
     @Test
     fun onSensorEvent_routesToIngress() {
         val ingress = mockk<PluginIngressPort>(relaxed = true)
-        val cb = HostCallbackImpl(ingress, "com.plugin.pkg", 100)
+        val cb = HostCallbackImpl(ingress, PluginSettingsCoordinator(mockk(relaxed = true)), "com.plugin.pkg", 100)
         val evt = SensorEventParcel(
             sensorKey = "com.plugin.pkg.temp",
             timestampUtcMillis = System.currentTimeMillis(),
@@ -39,7 +39,7 @@ class HostCallbackIngressRoutingTest {
     @Test
     fun onSensorBatchEvent_nullOrEmptyIgnored() {
         val ingress = mockk<PluginIngressPort>(relaxed = true)
-        val cb = HostCallbackImpl(ingress, "com.plugin.pkg", 100)
+        val cb = HostCallbackImpl(ingress, PluginSettingsCoordinator(mockk(relaxed = true)), "com.plugin.pkg", 100)
         cb.onSensorBatchEvent(null)
         cb.onSensorBatchEvent(mutableListOf())
         verify(exactly = 0) { ingress.onSensorBatchFromPlugin(any(), any(), any()) }
@@ -48,7 +48,7 @@ class HostCallbackIngressRoutingTest {
     @Test
     fun onSensorBatchEvent_routesList() {
         val ingress = mockk<PluginIngressPort>(relaxed = true)
-        val cb = HostCallbackImpl(ingress, "com.plugin.pkg", 100)
+        val cb = HostCallbackImpl(ingress, PluginSettingsCoordinator(mockk(relaxed = true)), "com.plugin.pkg", 100)
         val e1 = SensorEventParcel("com.plugin.pkg.a", System.currentTimeMillis(), values = Bundle())
         val e2 = SensorEventParcel("com.plugin.pkg.b", System.currentTimeMillis(), values = Bundle())
         cb.onSensorBatchEvent(mutableListOf(e1, e2))

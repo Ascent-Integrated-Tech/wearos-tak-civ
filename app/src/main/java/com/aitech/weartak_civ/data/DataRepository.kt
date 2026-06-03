@@ -1251,7 +1251,17 @@ class DataRepository(private val context: Context) {
     val clearPhysioAndAutoGenAlert: SharedFlow<ClearRequest> = _clearPhysioAndAutoGenAlert
 
     suspend fun addPhysioAndAutoGenAlertRequest(uid: String, category: String, description: String, priority: Int, sendSms: Boolean, timeMillis: Long) {
+        Log.i(
+            TAG,
+            "addPhysioAndAutoGenAlertRequest emit start uid=$uid category=$category priority=$priority " +
+                "sendSms=$sendSms subscriptionCount=${_addPhysioAndAutoGenAlert.subscriptionCount.value}",
+        )
         _addPhysioAndAutoGenAlert.emit(PhysioAndAutoGenAlertRequest(uid, AlertState.ALERT, category, description, priority, sendSms, timeMillis))
+        Log.i(
+            TAG,
+            "addPhysioAndAutoGenAlertRequest emit complete uid=$uid category=$category priority=$priority " +
+                "sendSms=$sendSms subscriptionCount=${_addPhysioAndAutoGenAlert.subscriptionCount.value}",
+        )
     }
 
     suspend fun clearPhysioAndAutoGenAlertRequestUid(uid: String) {
@@ -1452,6 +1462,60 @@ class DataRepository(private val context: Context) {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
         _markerDropRequests.emit(MarkerDropRequest(parsed, title, remark, timeMillis, uid = uid, lat = lat, lon = lon))
         return true
+    }
+
+    /** Plugin/UI: update an existing dropped marker and enqueue CoT edit. Returns false if type invalid or uid missing. */
+    suspend fun requestMarkerUpdate(
+        markerTypeRaw: String,
+        title: String,
+        remark: String,
+        timeMillis: Long,
+        uid: String,
+        lat: Double? = null,
+        lon: Double? = null,
+    ): Boolean {
+        val parsed = MarkerType.parse(markerTypeRaw) ?: return false
+        if (uid.isBlank()) return false
+        val explicitLoc = if (lat != null && lon != null) {
+            LocationSnapshot(
+                timeMillis = timeMillis,
+                lat = lat,
+                lon = lon,
+                hae = 0.0,
+                ce = 0.0f,
+                le = 0.0f,
+                course = 0.0f,
+                speed = 0.0f,
+            )
+        } else {
+            null
+        }
+        var updatedMarker: DroppedMarker? = null
+        _droppedMarkerList.update { list ->
+            list.map { marker ->
+                if (marker.uid == uid && marker.cotType != MarkerCotType.CLEAR) {
+                    marker.copy(
+                        cotType = MarkerCotType.EDIT,
+                        markerType = parsed,
+                        title = title,
+                        remark = remark,
+                        location = explicitLoc ?: marker.location,
+                        enqueuedToBeSent = true,
+                        waitingForUpdatedLocation = false,
+                    ).also { updatedMarker = it }
+                } else {
+                    marker
+                }
+            }
+        }
+        if (updatedMarker == null) return false
+        emitMarkerEditRequest(updatedMarker)
+        return true
+    }
+
+    suspend fun requestMarkerClear(uid: String) {
+        if (uid.isBlank()) return
+        requestClearSpecific(uid)
     }
 
     suspend fun requestUpdateMarkerLocation(uid: String) {

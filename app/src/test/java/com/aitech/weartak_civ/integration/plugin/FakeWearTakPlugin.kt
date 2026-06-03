@@ -10,16 +10,34 @@ import com.weartak.plugin.sdk.model.PluginInfoParcel
 import com.weartak.plugin.sdk.model.PluginLifecycleState
 import com.weartak.plugin.sdk.model.PluginMainUiSchemaParcel
 import com.weartak.plugin.sdk.model.PluginStatusParcel
+import com.weartak.plugin.sdk.model.HostSettingsParcel
+import com.weartak.plugin.sdk.model.SettingsApplyMode
+import com.weartak.plugin.sdk.model.SettingsApplyResultParcel
 import com.weartak.plugin.sdk.model.SettingsSchemaParcel
+import com.weartak.plugin.sdk.validation.SettingsApplyValidator
+import com.weartak.plugin.sdk.v2.aidl.IWearTakPluginHostControlV2
 
 /**
  * Minimal in-process [IWearTakPlugin] for host bind/lifecycle tests (no plugin APK).
  */
 class FakeWearTakPlugin(
     private val packageName: String,
+    private val apiVersion: Int = WearTakPluginContract.CONTRACT_API_VERSION,
 ) : IWearTakPlugin.Stub() {
 
-    private val caps = PluginCapabilitiesParcel()
+    var pluginCapabilities: PluginCapabilitiesParcel = PluginCapabilitiesParcel(hostedSettingsUi = true)
+    private var settingsSchema: SettingsSchemaParcel = SettingsSchemaParcel()
+    private val settingsValues = Bundle()
+    val hostSettingsReceived = mutableListOf<HostSettingsParcel>()
+    val lifecycleCalls = mutableListOf<String>()
+    var initializePluginCalls = 0
+        private set
+    var initializePluginV2Calls = 0
+        private set
+    var stopCalls = 0
+        private set
+    var shutdownCalls = 0
+        private set
 
     override fun getPluginInfo(): PluginInfoParcel =
         PluginInfoParcel(
@@ -29,32 +47,86 @@ class FakeWearTakPlugin(
             packageName = packageName,
         )
 
-    override fun getCapabilities(): PluginCapabilitiesParcel = caps
+    override fun getCapabilities(): PluginCapabilitiesParcel = pluginCapabilities
 
-    override fun getApiVersion(): Int = WearTakPluginContract.CONTRACT_API_VERSION
+    override fun getApiVersion(): Int = apiVersion
 
     override fun getStatus(): PluginStatusParcel =
         PluginStatusParcel(state = PluginLifecycleState.RUNNING)
 
     override fun initializePlugin(init: com.weartak.plugin.sdk.model.PluginInitParcel?, control: IWearTakPluginControl?) {
-        // no-op
+        initializePluginCalls++
+        lifecycleCalls += "initializePlugin"
     }
 
-    override fun startPlugin() {}
+    override fun initializePluginV2(
+        init: com.weartak.plugin.sdk.model.PluginInitParcel?,
+        control: IWearTakPluginControl?,
+        controlV2: IWearTakPluginHostControlV2?,
+    ) {
+        initializePluginV2Calls++
+        lifecycleCalls += "initializePluginV2"
+    }
 
-    override fun stopPlugin() {}
+    override fun startPlugin() {
+        lifecycleCalls += "startPlugin"
+    }
 
-    override fun shutdownPlugin() {}
+    override fun stopPlugin() {
+        stopCalls++
+        lifecycleCalls += "stopPlugin"
+    }
 
-    override fun registerHostCallback(callback: IWearTakHostCallback?) {}
+    override fun shutdownPlugin() {
+        shutdownCalls++
+        lifecycleCalls += "shutdownPlugin"
+    }
 
-    override fun unregisterHostCallback(callback: IWearTakHostCallback?) {}
+    override fun registerHostCallback(callback: IWearTakHostCallback?) {
+        lifecycleCalls += "registerHostCallback"
+    }
 
-    override fun getSettingsSchema(): SettingsSchemaParcel = SettingsSchemaParcel()
+    override fun unregisterHostCallback(callback: IWearTakHostCallback?) {
+        lifecycleCalls += "unregisterHostCallback"
+    }
 
-    override fun getSettingsValues(): Bundle = Bundle()
+    override fun getSettingsSchema(): SettingsSchemaParcel = settingsSchema
 
-    override fun applySettings(values: Bundle?) {}
+    fun setSettingsSchemaForTest(schema: SettingsSchemaParcel) {
+        settingsSchema = schema
+    }
+
+    override fun getSettingsValues(): Bundle = Bundle(settingsValues)
+
+    override fun applySettings(values: Bundle?) {
+        if (values != null) {
+            val r = SettingsApplyValidator.mergeSettings(settingsSchema, settingsValues, values)
+            if (r is com.weartak.plugin.sdk.validation.ContractValidationResult.Ok) {
+                settingsValues.clear()
+                settingsValues.putAll(r.value.values)
+            }
+        }
+    }
+
+    override fun applySettingsWithResult(values: Bundle?, applyMode: Int): SettingsApplyResultParcel {
+        val prev = Bundle(settingsValues)
+        val result = SettingsApplyValidator.applySettingsWithResult(
+            settingsSchema,
+            prev,
+            values,
+            hostSettingsReceived.lastOrNull(),
+            applyMode,
+        )
+        if (result.success) {
+            settingsValues.clear()
+            settingsValues.putAll(result.values)
+        }
+        return result
+    }
+
+    override fun onHostSettingsChanged(hostSettings: HostSettingsParcel?) {
+        if (hostSettings != null) hostSettingsReceived += hostSettings
+    }
 
     override fun getMainUiSchema(): PluginMainUiSchemaParcel = PluginMainUiSchemaParcel()
 
