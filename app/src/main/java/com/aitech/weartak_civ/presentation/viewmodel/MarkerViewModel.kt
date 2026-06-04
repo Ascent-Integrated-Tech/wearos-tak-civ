@@ -36,6 +36,9 @@ class MarkerViewModel : ViewModel() {
     val droppedMarkerListSetting: StateFlow<List<DataRepository.DroppedMarker>> =
         dataRepository.droppedMarkerList
 
+    val receivedMarkerListSetting: StateFlow<List<DataRepository.ReceivedMarker>> =
+        dataRepository.receivedMarkerList
+
     val licenseKey: StateFlow<String> =
         dataRepository.getLicense.stateIn(
             scope = viewModelScope,
@@ -56,24 +59,31 @@ class MarkerViewModel : ViewModel() {
     )
 
     val location = dataRepository.latestLocation.value
-
-    fun markerVectorUi(index: Int): StateFlow<MarkerVectorUiState?> =
+    private fun <T, L> markerVectorUiInternal(
+        index: Int,
+        markerFlow: StateFlow<List<T>>,
+        markerLocationProvider: (T) -> L?,
+        markerLatProvider: (L) -> Double,
+        markerLonProvider: (L) -> Double,
+        timestampProvider: (T) -> Long
+    ): StateFlow<MarkerVectorUiState?> =
         combine(
-            droppedMarkerListSetting,
+            markerFlow,
             dataRepository.latestLocation,
             dataRepository.azimuthTrueDegSmoothed,
             callsign
         ) { markers, location, azimuth, callsign ->
             val marker = markers.getOrNull(index) ?: return@combine null
-            val markerLocation = marker.location ?: return@combine null
+            val markerLocation = markerLocationProvider(marker) ?: return@combine null
             val currentLocation = location ?: return@combine null
 
             val vector = LocationVectorCalculator.calculate(
                 currentLocation.latitude,
                 currentLocation.longitude,
-                markerLocation.lat,
-                markerLocation.lon
+                markerLatProvider(markerLocation),
+                markerLonProvider(markerLocation)
             )
+
             val orientation = LocationVectorCalculator.needleAngle(vector.bearing, azimuth)
                 ?: vector.bearing
                 ?: 0.0
@@ -82,12 +92,32 @@ class MarkerViewModel : ViewModel() {
                 distance = vector.distance,
                 orientation = orientation.toFloat(),
                 callsign = callsign,
-                timeReceived = utcTimeFormatter.format(Instant.ofEpochMilli(marker.timeDropped))
+                timeReceived = utcTimeFormatter.format(Instant.ofEpochMilli(timestampProvider(marker)))
             )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
+        )
+
+    fun markerVectorUiForReceived(index: Int) =
+        markerVectorUiInternal(
+            index,
+            receivedMarkerListSetting,
+            { it.location },
+            { it.lat },
+            { it.lon },
+            { it.timeReceived }
+        )
+
+    fun markerVectorUi(index: Int) =
+        markerVectorUiInternal(
+            index,
+            droppedMarkerListSetting,
+            { it.location },
+            { it.lat },
+            { it.lon },
+            { it.timeDropped }
         )
 
     suspend fun requestUpdateMarkerLocation(uid: String) {

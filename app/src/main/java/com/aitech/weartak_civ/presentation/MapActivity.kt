@@ -93,7 +93,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
-import org.maplibre.spatialk.geojson.FeatureCollection
 import androidx.compose.runtime.*
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.BlendMode
@@ -145,6 +144,7 @@ import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
 import kotlin.Long
+import org.maplibre.spatialk.geojson.FeatureCollection
 
 class MapActivity : ComponentActivity() {
 
@@ -183,7 +183,7 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
-                            "title" to JsonPrimitive(m.title),
+                            "title" to JsonPrimitive(m.title.ellipsizeMarkerTitle()),
                             "markerType" to JsonPrimitive(m.markerType),
                             "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
                             "cotType" to JsonPrimitive(m.cotType.name))
@@ -192,6 +192,13 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
             }
         )
     }
+fun String.ellipsizeMarkerTitle(maxLength: Int = 12): String {
+    return if (length > maxLength) {
+        take(maxLength) + "..."
+    } else {
+        this
+    }
+}
 
 data class MapMarkerItem(
     val uid: String,
@@ -262,6 +269,7 @@ fun MarkersOnMap(
             iconIgnorePlacement = const(true),
             textAllowOverlap = const(true),
             textIgnorePlacement = const(true),
+            textOptional = const(true),
             onClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
                 onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
@@ -273,14 +281,15 @@ fun MarkersOnMap(
             } else {
                 const("")
             },
-            textSize = const(0.6.em),
+            textSize = const(0.35.em),
+            textMaxWidth = const(4.em),
             textAnchor = const(SymbolAnchor.Bottom),
             textColor = const(Color.White),
             textHaloColor = const(Color.Black),
             textHaloWidth =const(2.dp),
             textOffset = offset(0f.em, (-1f).em),
 
-        )
+            )
     }
 }
 
@@ -599,6 +608,8 @@ fun MapApp(exitActivity: () -> Unit) {
     val userLocationState = rememberUserLocationState(locationProvider)
     var showPopup by remember { mutableStateOf(false) }
     val projection = cameraState.projection
+
+
     val puckScreenOffset: DpOffset? = remember(
         locationFlow,
         projection,
@@ -633,6 +644,10 @@ fun MapApp(exitActivity: () -> Unit) {
         buildList {
             addAll(
                 droppedMarkerListSetting.map { marker ->
+                    Log.d(
+                        TAG,
+                        "raw dropped marker lat=${marker.location?.lat}, lon=${marker.location?.lon}"
+                    )
                     MapMarkerItem(
                         uid = marker.uid,
                         markerType = marker.markerType.type,
@@ -646,11 +661,14 @@ fun MapApp(exitActivity: () -> Unit) {
             )
         }
     }
+
     val receivedMapMarkers = remember(receivedMarkerListSetting) {
         buildList {
             addAll(
                 receivedMarkerListSetting.mapNotNull { marker ->
                     val location = marker.location ?: return@mapNotNull null
+                    Log.d(TAG, "raw received marker lat=${location.lat}, lon=${location.lon}")
+
                     MapMarkerItem(
                         uid = marker.uid,
                         markerType = marker.markerType,
@@ -758,7 +776,7 @@ fun MapApp(exitActivity: () -> Unit) {
                 val time = System.currentTimeMillis()
 
                 Log.d(TAG, "LongClick Map before launch")
-                 markerScope.launch {
+                markerScope.launch {
                     try {
                         Log.d(TAG, "LongClick coroutine started")
                         Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
@@ -839,6 +857,17 @@ fun MapApp(exitActivity: () -> Unit) {
             )
             MarkersOnMap(
                 markers = receivedMapMarkers,
+                onMarkerClick = { id, _ ->
+                    val index = receivedMarkerListSetting.indexOfFirst { it.uid == id }
+                    if (index != -1) {
+                        val intent = Intent(context, MarkerActivity::class.java).apply {
+                            putExtra("marker_index", index)
+                            putExtra("start_route", "received_marker_detail/$index")
+                            putExtra("from_maps", true)
+                        }
+                        context.startActivity(intent)
+                    }
+                },
                 camera = cameraState
             )
             ATOSTagsOnMap(
@@ -849,16 +878,18 @@ fun MapApp(exitActivity: () -> Unit) {
                 users = receivedMapUsers,
                 camera = cameraState
             )
+
         }
         if (showPopup && puckScreenOffset != null) {
-           PopupBox(
-               showPopup = showPopup,
+            PopupBox(
+                showPopup = showPopup,
                 anchor = puckScreenOffset,
-               lat = lat,
-               lon = lon,
+                lat = lat,
+                lon = lon,
                 onClickOutside = { showPopup = false }
             )
         }
+
 //        PopupBox(showPopup = showPopup, onClickOutside = {showPopup = false})
 
         Image(
@@ -1032,7 +1063,7 @@ fun MapUi(
     moveRight: () -> Unit,
     zoomIn: () -> Unit,
     zoomOut: () -> Unit,
-    ){
+){
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -1101,7 +1132,7 @@ fun MapUi(
                 .offset { polarOffset(-90f) }
                 .size(40.dp), // top,
             shape = RoundedCornerShape(0.dp,0.dp,40.dp,40.dp),
-            ) { Text("▲") }
+        ) { Text("▲") }
 
         Button(
 //            interactionSource = interactionSource,
@@ -1110,7 +1141,7 @@ fun MapUi(
                 .offset { polarOffset(90f) }
                 .size(40.dp),  // bottom
             shape = RoundedCornerShape(40.dp,40.dp,0.dp,0.dp),
-            ) { Text("▼") }
+        ) { Text("▼") }
 
         Button(
 //            interactionSource = interactionSource,
@@ -1119,7 +1150,7 @@ fun MapUi(
                 .offset { polarOffset(180f) }
                 .size(40.dp), // left
             shape = RoundedCornerShape(0.dp,40.dp,40.dp,0.dp),
-            ) { Text("◀") }
+        ) { Text("◀") }
 
         Button(
 //            interactionSource = interactionSource,
@@ -1128,7 +1159,7 @@ fun MapUi(
                 .offset { polarOffset(0f) }
                 .size(40.dp),   // right
             shape = RoundedCornerShape(40.dp,0.dp,0.dp,40.dp),
-            ) { Text("▶") }
+        ) { Text("▶") }
 
         // --- + / − on lower-right ---
         // Place a *cluster anchor* on the circle at 315° (lower-right),
@@ -1156,7 +1187,7 @@ fun MapUi(
                 .size(40.dp)
                 .rotate(45f),  // bottom
             shape = RoundedCornerShape(0.dp,0.dp,20.dp,20.dp),
-            ) { Text("−", modifier = Modifier.rotate(-45f)) }
+        ) { Text("−", modifier = Modifier.rotate(-45f)) }
     }
 }
 

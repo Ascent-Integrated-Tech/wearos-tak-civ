@@ -157,6 +157,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.roundToInt
 
 class MarkerActivity : ComponentActivity() {
     companion object Constants{
@@ -424,7 +426,8 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
             ) {
                 Column(
                     modifier = Modifier
-                        .padding(horizontal = 27.dp),
+                        .padding(horizontal = 27.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.SpaceEvenly,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -448,6 +451,26 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
                             textAlign = TextAlign.Center
                         )
                     }
+                    Button(
+                        modifier = Modifier.padding(7.dp),
+                        onClick = {
+                            Log.d(TAG, "View Received Markers clicked")
+                            navController.navigate("received_marker_screen")
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.DarkGray,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text(
+                            text = "View Received Markers",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+
                     //Currently back button, can change to cancel button or another long press if needed
                     IconButton(
                         onClick = { navController.navigate("marker_screen") {
@@ -469,6 +492,7 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
                             tint = Color.Black
                         )
                     }
+
                     Button(
                         modifier = Modifier.padding(7.dp),
                         enabled = (droppedMarkerListSetting.isNotEmpty() && droppedMarkerListSetting.all { it.cotType != MarkerCotType.CLEAR }),
@@ -490,6 +514,7 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
                         )
                     }
                 }
+
             }
         }
     }
@@ -568,6 +593,80 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
             )
         },
         "Clear Dropped Markers"
+    )
+}
+
+@Composable
+fun ReceivedMarkerSetting(
+    navController: NavController,
+    receivedMarkerListSetting: List<DataRepository.ReceivedMarker>
+) {
+    WearTakCivScreenDimensions(
+        columnContent = {
+            LazyColumn(
+                modifier = Modifier.height(200.dp),
+                verticalArrangement = Arrangement.Top,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                itemsIndexed(
+                    items = receivedMarkerListSetting,
+                    key = { _, receivedMarker -> receivedMarker.uid }
+                ) { index, receivedMarker ->
+                    Chip(
+                        onClick = { navController.navigate("received_marker_detail/$index") },
+
+                        icon = {
+                            Icon(
+                                markerIconFromString(receivedMarker.markerType),
+                                contentDescription = "",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(30.dp)
+                            )
+                        },
+                        label = {
+                            Column {
+                                Text(
+                                    text = receivedMarker.title,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = markerTextFromString(receivedMarker.markerType),
+                                    maxLines = 1,
+                                    fontSize = 12.sp,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 3.dp),
+                        colors = ChipDefaults.chipColors(
+                            backgroundColor = Color.DarkGray,
+                            contentColor = Color.White,
+                            secondaryContentColor = Color.LightGray
+                        )
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("long_press_marker_screen") {
+                        popUpTo("long_press_marker_screen") {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
+        },
+        "Received Markers"
     )
 }
 
@@ -753,7 +852,7 @@ fun SwipeableMarkerChip(
 fun utcToHoursMinutesSeconds(time: Long): String {
     val instant = Instant.ofEpochMilli(time)
     val localTime = instant.atZone(ZoneId.systemDefault())
-    val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+    val formatter = DateTimeFormatter.ofPattern("HH:mm:ss a")
     return localTime.format(formatter)
 }
 
@@ -1140,7 +1239,7 @@ fun EditSelectedMarker(
                     modifier = Modifier.size(25.dp),
                 )
                 Text(
-                    text = title,
+                    text = title.ellipsizeMarkerTitle(14),
                     fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
@@ -1279,8 +1378,10 @@ fun MarkerBearingDistance(
     lon: Double,
     orientation: Float
 ) {
-    val distanceText = distance?.let { String.format("%.2f", it) + stringResource(R.string.km) } ?: "--" + stringResource(R.string.km)
-    val orientationText = String.format("%.1f", orientation)
+    val distanceText = distance?.let {
+        String.format("%.2f", it) + stringResource(R.string.km) + " away"
+    } ?: "--" + stringResource(R.string.km) + " away"
+    val orientationText = "${orientation.roundToInt()}° ${bearingToCardinal(orientation)}"
     Row(
         verticalAlignment = Alignment.CenterVertically,
     ){
@@ -1526,16 +1627,19 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
     val shouldShowClearMarkerConfirm = remember { mutableStateOf(false) }
     val anyEndpointConnected by viewModel.anyEndpointConnected.collectAsStateWithLifecycle()
     val droppedMarkerListSetting by viewModel.droppedMarkerListSetting.collectAsStateWithLifecycle()
-
+    val receivedMarkerListSetting by viewModel.receivedMarkerListSetting.collectAsStateWithLifecycle()
     val location = viewModel.location
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val successBoolean = remember { mutableStateOf(false) }
 // react to changes in the license.
     val actualStartDestination = when {
-        route?.contains("edit_marker_screen")== true && index != -1  ->
+        route?.contains("edit_marker_screen") == true && index != -1 ->
             "edit_marker_screen/$index"
+        route?.contains("received_marker_detail") == true && index != -1 ->  // add this
+            "received_marker_detail/$index"
         else ->
             "marker_screen"
+
     }
 
     LaunchedEffect(licenseKey) {
@@ -1546,8 +1650,6 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             !isValid && currentDestination != "invalid_license_screen" -> {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
                 exitActivity()
-            }
-            isValid == true && currentDestination != "marker_screen" -> {
                 navController.navigate(actualStartDestination) {
 //                    popUpTo(0) { inclusive = true } // clears the back stack
                 }
@@ -1752,6 +1854,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                 }
             )
 
+
             SuccessfulCotSentCheck(
                 shouldShowClearAllConfirm,
                 anyEndpointConnected,
@@ -1781,6 +1884,83 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                 {}
             )
         }
+        composable(
+            "received_marker_detail/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            val marker = receivedMarkerListSetting.getOrNull(index)
+
+            if (marker == null) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(colors.background),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.wear.compose.material.CircularProgressIndicator()
+                }
+                return@composable
+            }
+
+            val markerVectorFlow = remember(index) { viewModel.markerVectorUiForReceived(index) }
+            val markerVectorUi by markerVectorFlow.collectAsStateWithLifecycle()
+            val loc = marker.location
+
+            WearTAKCIVTheme {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.background)
+                        .padding(bottom = 16.dp, top = 15.dp)
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.9f)
+                            .align(Alignment.TopCenter)
+                            .padding(bottom = 30.dp)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            painter = markerIconFromString(marker.markerType),
+                            contentDescription = null,
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(25.dp)
+                        )
+                        Text(
+                            text = marker.title.ellipsizeMarkerTitle(14),
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
+                        )
+                        Text(
+                            text = "${markerTextFromString(marker.markerType)} | ${utcToHoursMinutesSeconds(marker.timeReceived)}",
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            color = Color.White,
+                            modifier = Modifier.padding(bottom = 5.dp)
+                        )
+                        if (loc != null) {
+                            MarkerBearingDistance(
+                                distance = markerVectorUi?.distance,
+                                lat = loc.lat,
+                                lon = loc.lon,
+                                orientation = markerVectorUi?.orientation ?: 0F
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                        BackButton(onClick = { exitActivity() })
+                    }
+                }
+            }
+        }
+
+
         composable(
             "edit_marker_screen/{index}",
             arguments = listOf(navArgument("index") { type = NavType.IntType })
@@ -2029,6 +2209,11 @@ fun PreviewDroppedMarkerList() {
     )
 }
 
+fun bearingToCardinal(bearing: Float): String {
+    val directions = listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+    return directions[((bearing + 22.5f) / 45f).toInt() % 8]
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun ClearMarkerConfirmationDialogPreview() {
@@ -2046,6 +2231,7 @@ fun ClearMarkerConfirmationDialogPreview() {
         isConfirmed,
         {}
     )
+
 }
 //@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 //@Composable
