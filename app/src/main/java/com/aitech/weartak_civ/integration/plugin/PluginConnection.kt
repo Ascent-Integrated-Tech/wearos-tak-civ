@@ -126,6 +126,11 @@ class PluginConnection(
         }
 
         val control = HostControlImpl(app, ingress, pluginPackage, pluginUid)
+        val controlV2 = if (api == WearTakPluginV2Contract.CONTRACT_API_VERSION) {
+            HostControlV2Impl(app, ingress, pluginPackage, pluginUid)
+        } else {
+            null
+        }
         val callback = HostCallbackImpl(
             ingress = ingress,
             settingsCoordinator = manager.settingsCoordinator,
@@ -142,12 +147,7 @@ class PluginConnection(
             hostExtras = android.os.Bundle(),
         )
         try {
-            if (api == WearTakPluginV2Contract.CONTRACT_API_VERSION) {
-                val controlV2 = HostControlV2Impl(app, ingress, pluginPackage, pluginUid)
-                iface.initializePluginV2(init, control, controlV2)
-            } else {
-                iface.initializePlugin(init, control)
-            }
+            iface.initializePluginV2(init, control, controlV2)
             iface.registerHostCallback(callback)
             iface.startPlugin()
             manager.settingsCoordinator.onPluginConnected(pluginPackage, iface)
