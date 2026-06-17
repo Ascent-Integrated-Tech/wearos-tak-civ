@@ -52,6 +52,11 @@
 # Useful if you use reflection-based Gson adapters
 -keep class com.aitech.weartak_civ.** { *; }
 
+# Preserve the ATOS shared AIDL contract in release so cross-app binder descriptors
+# remain stable for plugin IPC clients.
+-keep class com.weartak.ipcservice.** { *; }
+-keep interface com.weartak.ipcservice.** { *; }
+
 # ONNX Runtime minify crash prevention in release build (Java API + JNI bindings)
 -keep class ai.onnxruntime.** { *; }
 -keepclassmembers class ai.onnxruntime.** { *; }
