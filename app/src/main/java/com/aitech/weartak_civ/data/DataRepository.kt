@@ -50,6 +50,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
@@ -2069,6 +2070,16 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableCrmService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_CRM_SERVICE] ?: DEFAULT_ENABLE_CRM_SERVICE
+    }
+
+    suspend fun storeEnableCrmService(enableCrmService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_CRM_SERVICE] = enableCrmService
+        }
+    }
+
     val getOnnxUasTriggerThresholdPercent: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[ONNX_UAS_TRIGGER_THRESHOLD_PERCENT] ?: DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
     }
@@ -3422,6 +3433,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_BETA_FEATURES = booleanPreferencesKey("enable_beta_features")
         private val ENABLE_ONNX_GUNSHOT_SERVICE = booleanPreferencesKey("enable_onnx_gunshot_service")
         private val ENABLE_ONNX_UAS_SERVICE = booleanPreferencesKey("enable_onnx_uas_service")
+        private val ENABLE_CRM_SERVICE = booleanPreferencesKey("enable_crm_service")
         private val ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_gunshot_trigger_threshold_percent")
         private val ONNX_UAS_TRIGGER_THRESHOLD_PERCENT = intPreferencesKey("onnx_uas_trigger_threshold_percent")
 

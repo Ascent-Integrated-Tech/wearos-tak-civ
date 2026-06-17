@@ -94,6 +94,13 @@ class ServiceConfiguration(
         }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
         ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()
+        ServiceType.CRM -> combine(
+            dataRepository.getEnablePhysiologicalServices.distinctUntilChanged(),
+            dataRepository.getEnableSkinTempService.distinctUntilChanged(),
+            dataRepository.getEnableCrmService.distinctUntilChanged()
+        ) { physioOn, skinTempOn, crmOn ->
+            physioOn && skinTempOn && crmOn
+        }.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
@@ -169,6 +176,7 @@ class ServiceConfiguration(
         ServiceType.ONNX_UAS -> listOf(
             android.Manifest.permission.RECORD_AUDIO
         )
+        ServiceType.CRM -> requiredPerms(ServiceType.PHYSIO)
 
         ServiceType.SITX_SERVICE -> emptyList()
 

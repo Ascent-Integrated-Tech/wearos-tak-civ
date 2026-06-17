@@ -215,6 +215,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HEART_RATE_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_LOCATION_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_MULTICAST_ON_WIFI
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_GUNSHOT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ONNX_UAS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
@@ -327,6 +328,8 @@ class MainActivity : ComponentActivity() {
         var onnxGunshotTriggerThresholdPercent : Int = DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
         var enableOnnxUasServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_UAS)
         var enableOnnxUasService : Boolean = DEFAULT_ENABLE_ONNX_UAS
+        var enableCrmServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_CRM_SERVICE)
+        var enableCrmService : Boolean = DEFAULT_ENABLE_CRM_SERVICE
         var onnxUasTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT)
         var onnxUasTriggerThresholdPercent : Int = DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
@@ -948,6 +951,7 @@ class MainActivity : ComponentActivity() {
             enableOnnxGunshotService       = dataRepository.getEnableOnnxGunshotService.first()
             onnxGunshotTriggerThresholdPercent = dataRepository.getOnnxGunshotTriggerThresholdPercent.first()
             enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
+            enableCrmService               = dataRepository.getEnableCrmService.first()
             onnxUasTriggerThresholdPercent = dataRepository.getOnnxUasTriggerThresholdPercent.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
@@ -1434,6 +1438,7 @@ class MainActivity : ComponentActivity() {
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
         onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
         enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
+        enableCrmServiceSettingsState.postValue(enableCrmService)
         onnxUasTriggerThresholdPercentSettingsState.postValue(onnxUasTriggerThresholdPercent)
         enableHailServiceSettingsState.postValue(enableHailService)
         enableBatdokCotSettingsState.postValue(enableBatdokCot)
@@ -1783,6 +1788,7 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.DITTO]      = enableDittoService
         localMap[ServiceType.COMPANION_APP] = enableCompanionAppService
         localMap[ServiceType.CHAT]       = enableChatService
+        localMap[ServiceType.CRM]        = enableCrmService
         localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
         localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
         localMap[ServiceType.HAIL]        = enableHailService

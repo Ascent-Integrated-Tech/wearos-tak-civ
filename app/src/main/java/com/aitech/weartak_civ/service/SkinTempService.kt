@@ -23,7 +23,9 @@ import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.RawPpgRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
@@ -78,6 +80,14 @@ class SkinTempService : Service() {
 
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
+
+    private val rawPpgRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).rawPpgRepo
+        } catch (_: Throwable) {
+            RawPpgRepository()
+        }
+    }
 
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
@@ -684,12 +694,14 @@ class SkinTempService : Service() {
         override fun onDataReceived(dataPoints: List<DataPoint>) {
             val now = SystemClock.uptimeMillis()
             if (ppgStartUptimeMs == 0L) ppgStartUptimeMs = now
+            val rawSamples = ArrayList<Int>(dataPoints.size)
             try {
                 dataPoints.forEach { dp ->
                     // Capture raw PPG sample (PPG_GREEN is Int)
                     try {
                         val raw: Int = dp.getValue(ValueKey.PpgSet.PPG_GREEN)
                         lastPpgRaw = raw
+                        rawSamples.add(raw)
                         // Maintain rolling 20s window
                         appendPpgSampleAndPrune(raw)
                         // For on-demand burst, also store in burst buffer
@@ -700,6 +712,17 @@ class SkinTempService : Service() {
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed reading PPG datapoints", t)
+            }
+
+            if (rawSamples.isNotEmpty()) {
+                rawPpgRepo.tryEmit(
+                    RawPpgRepository.RawPpgFrame(
+                        timestampMs = System.currentTimeMillis(),
+                        sampleRateHz = 100,
+                        wavelength = "green",
+                        samples = rawSamples.toIntArray()
+                    )
+                )
             }
 
             // Throttled rolling amplitude compute (useful in continuous mode)

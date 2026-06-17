@@ -35,6 +35,7 @@ const val DEFAULT_ENABLE_CHAT_SERVICE: Boolean = true
 const val DEFAULT_ENABLE_AUDIO_CAP_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_ONNX_GUNSHOT: Boolean = false
 const val DEFAULT_ENABLE_ONNX_UAS: Boolean = false
+const val DEFAULT_ENABLE_CRM_SERVICE: Boolean = false
 const val DEFAULT_ENABLE_BETA_FEATURES: Boolean = false
 const val DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT: Int = 90
 const val DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT: Int = 90

@@ -299,6 +299,12 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
         <service
+            android:name=".service.CrmService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
+        <service
             android:name=".service.PressureService"
             android:enabled="true"
             android:exported="false"
