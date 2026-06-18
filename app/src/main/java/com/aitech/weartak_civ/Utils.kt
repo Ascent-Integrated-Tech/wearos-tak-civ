@@ -1015,6 +1015,7 @@ object Utils {
             val uid: String,
             val team: String,
             val type: String,
+            val role: String,
             val how: String,
             val time: Long,
             val start: Long,
@@ -1022,6 +1023,7 @@ object Utils {
             val access: String?,
             val point: Point,
             val detail: MarkerDetail,
+
         )
 
         data class MarkerMapItem(
@@ -1081,6 +1083,7 @@ object Utils {
                 val startIso = attrOfEvent(rawXml, "start") ?: timeIso
                 val staleIso = attrOfEvent(rawXml, "stale") ?: timeIso
                 val team = groupName(rawXml) ?: ""
+                val role = groupRole(rawXml) ?: ""
 
                 val point = pointOf(rawXml) ?: return null
 
@@ -1104,7 +1107,8 @@ object Utils {
                     stale = parseIsoToEpochMs(staleIso),
                     access = access,
                     point = point,
-                    detail = detail
+                    detail = detail,
+                    role = role
                 )
             }
 
@@ -1136,7 +1140,6 @@ object Utils {
                 val timeEpoch = parseIsoToEpochMs(timeIso)
                 val startEpoch = parseIsoToEpochMs(startIso)
                 val staleEpoch = parseIsoToEpochMs(staleIso)
-
                 // 3) Extract <point .../>
                 val point = pointOf(rawXml) ?: return null
 
@@ -1210,6 +1213,11 @@ object Utils {
             /** Extract _group@name inside <detail>. */
             private fun groupName(xml: String): String? {
                 return extractAttr(xml, "__group", "name")
+            }
+
+            /** Extract _group@role inside <detail>. */
+            private fun groupRole(xml: String): String? {
+                return extractAttr(xml, "__group", "role")
             }
 
             /** Extract <creator .../> attributes. */
