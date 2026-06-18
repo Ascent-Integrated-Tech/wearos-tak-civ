@@ -20,6 +20,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,6 +86,8 @@ import org.maplibre.compose.material3.ScaleBar
 import org.maplibre.compose.style.BaseStyle
 import kotlin.math.cos
 import kotlin.math.min
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import org.maplibre.spatialk.geojson.Point
@@ -94,6 +98,7 @@ import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.ColorFilter
@@ -136,6 +141,8 @@ import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
+import android.content.Context
+import org.json.JSONObject
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
 import org.maplibre.compose.expressions.dsl.condition
@@ -144,7 +151,11 @@ import org.maplibre.compose.expressions.dsl.switch
 import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
 import kotlin.Long
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import org.maplibre.spatialk.geojson.FeatureCollection
+import androidx.compose.ui.text.style.TextOverflow
+import kotlin.String
 
 class MapActivity : ComponentActivity() {
 
@@ -309,7 +320,7 @@ fun rememberATOSFeatures(markers: List<ATOSItem>) =
                             "hae" to JsonPrimitive(m.hae),
                             "gpsOn" to JsonPrimitive((m.hae != 9999999.0).toString())
                         )
-                )
+                    )
                 )
             }
         )
@@ -406,7 +417,7 @@ fun ATOSTagsOnMap(
             textHaloColor = const(Color.Black),
             textHaloWidth =const(2.dp),
             textOffset = offset(0f.em, (-1f).em),
-            )
+        )
     }
 }
 
@@ -493,6 +504,7 @@ data class MapUserItem(
     val title: String,
     val lat: Double?,
     val lon: Double?,
+    val role: String?
 //    val enQueuedToBeSent: Boolean,
 //    val cotType: DataRepository.MarkerCotType
 )
@@ -558,12 +570,12 @@ fun UsersOnMap(
             textHaloColor = const(Color.Black),
             textHaloWidth =const(2.dp),
             textOffset = offset(0f.em, (-1f).em),
-            )
+        )
     }
 }
 
 fun TeamColors(team: String) : Color {
-   val teamColor =  when (team){
+    val teamColor =  when (team){
         "White" -> Color.White
         "Yellow" -> Color.Yellow
         "Orange" -> orange
@@ -582,11 +594,286 @@ fun TeamColors(team: String) : Color {
     }
     return teamColor
 }
+
+fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
+    val raw = context.assets.open("style.json")
+        .bufferedReader().readText()
+
+    if (hiddenLayerIds.isEmpty()) return raw
+
+    val json = JSONObject(raw)
+    val layers = json.getJSONArray("layers")
+    val filtered = org.json.JSONArray()
+
+    for (i in 0 until layers.length()) {
+        val layer = layers.getJSONObject(i)
+        val id = layer.optString("id")
+        if (id !in hiddenLayerIds) {
+            filtered.put(layer)
+        }
+    }
+
+    json.put("layers", filtered)
+    return json.toString()
+}
+data class OverlayToggle(
+    val label: String,
+    val visible: Boolean,
+    val onToggle: () -> Unit
+)
+@Composable
+fun ToggleRow(label: String, visible: Boolean, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(vertical = 2.dp)
+    ) {
+        Image(
+            painter = painterResource(
+                if (visible)
+                    R.drawable.visibility_visible
+                else
+                    R.drawable.visibility_invisible
+            ),
+            contentDescription = if (visible) "Visible" else "Hidden",
+            modifier = Modifier
+                .size(14.dp)
+                .width(16.dp)
+        )
+        Text(label, color = Color.White, fontSize = 10.sp)
+    }
+}
+@Composable
+fun PopupBox(
+    anchor: DpOffset,
+    showPopup: Boolean,
+    lat: Double,
+    lon: Double,
+    onClickOutside: () -> Unit,
+){
+    val density = LocalDensity.current
+
+    if (showPopup) {
+        // full screen background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(10F),
+            contentAlignment = Alignment.Center
+        ) {
+            // popup
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = with(density) {
+                    IntOffset(
+                        x = (anchor.x + 12.dp).roundToPx(), // move popup to the right
+                        y = anchor.y.roundToPx()
+                    )
+                },
+                properties = PopupProperties(
+                    excludeFromSystemGesture = true,
+                ),
+                // to dismiss on click outside
+                onDismissRequest = { onClickOutside() }
+            ) {
+                Box(
+                    Modifier
+                        .wrapContentSize()
+                        .background(Color.Black.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column (modifier = Modifier.padding(5.dp)){
+                        Text(
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            lineHeight = 10.sp,
+                            text = "Lat: $lat\nLon: $lon\n\n${latLonToMgrs(lat, lon)}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+fun LayerTogglePopup(
+    topoLayers: List<Pair<String, String>>,
+    hiddenLayers: Set<String>,
+    onToggle: (String) -> Unit,
+    visibleUserTeams: Set<String>,
+    visibleUserRoles: Set<String>,
+    visibleUserRolesLEO: Set<String>,
+    myRole: String,
+    roleCounts: Map<String, Int>,
+    teamColorCount: Map<String, Int>,
+    onRoleToggle: (String) -> Unit,
+    onLeoRoleToggle: (String) -> Unit,
+    onTeamToggle: (String) -> Unit,
+    overlays: List<OverlayToggle>,
+    availableTeams : Set<String>,
+    availableUserRoles : Set<String>,
+    availableUserRolesLEO : Set<String>,
+    onDismiss: () -> Unit
+)
+{
+    Popup(
+        alignment = Alignment.Center,
+        onDismissRequest = onDismiss
+    ) {
+        Box(
+            Modifier
+                .width(150.dp)
+                .height(165.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    Color.Black.copy(alpha = 0.9f),
+                    RoundedCornerShape(8.dp)
+                ),
+        ) {
+            val scrollState = rememberScrollState()
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(12.dp)
+                    .verticalScroll(scrollState)
+            ) {
+                Text(
+                    "Layers", color = Color.White, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                // style.json layers
+                topoLayers.forEach { (id, label) ->
+
+                    val visible = when (id) {
+                        "water" -> !listOf(
+                            "water-fill",
+                            "water-lines",
+                            "water-outline"
+                        ).all { it in hiddenLayers }
+
+                        "roads" -> !listOf(
+                            "motorway",
+                            "trunk",
+                            "primary",
+                            "secondary",
+                            "tertiary",
+                            "residential",
+                            "roads-bridge-casing",
+                            "roads-bridge-stroke",
+                            "roads-tunnel-overlay",
+                            "paths",
+                            "paths-tunnel"
+                        ).all { it in hiddenLayers }
+
+                        "labels" -> !listOf(
+                            "place-labels",
+                            "road-labels"
+                        ).all { it in hiddenLayers }
+
+                        else -> id !in hiddenLayers
+                    }
+
+                    ToggleRow(
+                        label = label,
+                        visible = visible,
+                        onToggle = { onToggle(id) }
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+
+
+
+                Spacer(Modifier.height(4.dp))
+
+                val userTeams = listOf(
+                    "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
+                    "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
+                    "Green", "Dark Green", "Brown"
+                ).filter { it in availableTeams }
+
+                Text(
+                    text = "Team Colors (${userTeams.size})",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 10.sp
+                )
+
+                userTeams.forEach { team ->
+                    val count = teamColorCount[team] ?: 0
+                    val meSuffix = if (team == MainActivity.Constants.team) ", me" else ""
+                    ToggleRow(
+
+                        "$team ($count$meSuffix)",
+                        visible = team in visibleUserTeams,
+                        onToggle = { onTeamToggle(team) }
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                val userRoles = listOf(
+                    "Forward Observer", "HQ", "K9", "Medic", "RTO", "Sniper", "Team Lead", "Team Member"
+                ).filter { it in availableUserRoles }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Default Roles (${userRoles.size})",
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    fontSize = 10.sp
+                )
+                userRoles.forEach { role ->
+                    val count = teamColorCount[role] ?: 0
+                    val meSuffix = if (role ==  myRole) ", me" else ""
+                    ToggleRow(
+                        label = "$role ($count$meSuffix)",
+                        visible = role in visibleUserRoles,
+                        onToggle = { onRoleToggle(role) }
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                val userRolesLEO = listOf(
+                    "Armed Surveillance", "Assistant Team Leader", "Aviation", "Bomb Tech", "Command Post", "Critical Response", "Hazards", "Negotiator", "Surveilliance", "Tactical Communicator", "TOC"
+                ).filter { it in availableUserRolesLEO }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "LEO / Civil Use Roles (${userRolesLEO.size})",
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    fontSize = 10.sp
+                )
+                userRolesLEO.forEach { role ->
+                    val count = roleCounts[role] ?: 0
+                    val meSuffix = if (role == myRole) ", me" else ""
+                    ToggleRow(
+                        label = "$role ($count$meSuffix)",
+                        visible = role in visibleUserRolesLEO,
+                        onToggle = { onLeoRoleToggle(role) }
+                    )
+                }
+
+            }
+        }
+    }
+}
+
 @Composable
 fun MapApp(exitActivity: () -> Unit) {
     val context = LocalContext.current
     val dataRepository = remember(context) {
         (context.applicationContext as WearTakApplication).repo
+    }
+    var hiddenLayers by remember {
+        mutableStateOf(emptySet<String>())
     }
     val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
@@ -600,13 +887,96 @@ fun MapApp(exitActivity: () -> Unit) {
             zoom = 12.0,
         )
     )
+    val layerGroups = mapOf(
+        "water" to setOf("water-fill", "water-lines", "water-outline"),
+
+        "roads" to setOf(
+            "motorway",
+            "trunk",
+            "primary",
+            "secondary",
+            "tertiary",
+            "residential",
+            "roads-bridge-casing",
+            "roads-bridge-stroke",
+            "roads-tunnel-overlay",
+            "paths",
+            "paths-tunnel"
+        ),
+        "labels" to setOf(
+            "place-labels",
+            "road-labels"
+        ),
+        "land" to setOf(
+            "landcover",
+            "landuse",
+            "landuse-railway",
+            "landuse-railway-outline",
+            "park"
+        )
+    )
+    val topoLayers = remember {
+        listOf(
+            "hillshade" to "Hillshade",
+            "contours" to "Contours",
+            "water" to "Water",
+            "roads" to "Roads",
+            "labels" to "Labels"
+        )
+    }
     val scope = rememberCoroutineScope()
+    val myRole by dataRepository.getRole.collectAsStateWithLifecycle(initialValue = "")
+
     val markerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val locationProvider = remember(scope) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
     val userLocationState = rememberUserLocationState(locationProvider)
     var showPopup by remember { mutableStateOf(false) }
+    var showUsers by remember { mutableStateOf(true) }
+    var showLayerToggle by remember { mutableStateOf(false) }
+    var showMarkers by remember { mutableStateOf(true) }
+    var visibleUserTeams by remember {
+        mutableStateOf(
+            setOf(
+                "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
+                "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
+                "Green", "Dark Green", "Brown"
+            )
+        )
+    }
+    var visibleUserRoles by remember {
+        mutableStateOf(
+            setOf(
+                "Forward Observer",
+                "HQ",
+                "K9",
+                "Medic",
+                "RTO",
+                "Sniper",
+                "Team Lead",
+                "Team Member"
+            )
+        )
+    }
+    var visibleUserRolesLEO by remember {
+        mutableStateOf(
+            setOf(
+                "Armed Surveillance",
+                "Assistant Team Leader",
+                "Aviation",
+                "Bomb Tech",
+                "Command Post",
+                "Critical Response",
+                "Hazards",
+                "Negotiator",
+                "Surveillance",
+                "Tactical Communicator",
+                "TOC"
+            )
+        )
+    }
+    var showAtosTags by remember { mutableStateOf(true) }
     val projection = cameraState.projection
 
 
@@ -635,7 +1005,9 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val receivedAtosTagsSetting by dataRepository.receivedAtosTagList.collectAsStateWithLifecycle(initialValue = emptyList())
+    val receivedAtosTagsSetting by dataRepository.receivedAtosTagList.collectAsStateWithLifecycle(
+        initialValue = emptyList()
+    )
     val receivedUserListSetting by MainActivity.Constants.dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
@@ -702,10 +1074,15 @@ fun MapApp(exitActivity: () -> Unit) {
                                 hae = marker.hae
                             )
                         }
+
                         is AtosMapMarkerResult.Failure -> {
                             Log.w(
                                 TAG,
-                                "ATOS local map render skipped uid=${tag.uid ?: "null"} type=${tag.type ?: "null"} tagType=${tag.atosDetail?.tagType ?: "null"} lat=${tag.point?.lat ?: "null"} lon=${tag.point?.lon ?: "null"} hae=${tag.point?.hae ?: "null"} reason=${markerResult.reason} warnings=${tag.warnings.joinToString(separator = " | ")}"
+                                "ATOS local map render skipped uid=${tag.uid ?: "null"} type=${tag.type ?: "null"} tagType=${tag.atosDetail?.tagType ?: "null"} lat=${tag.point?.lat ?: "null"} lon=${tag.point?.lon ?: "null"} hae=${tag.point?.hae ?: "null"} reason=${markerResult.reason} warnings=${
+                                    tag.warnings.joinToString(
+                                        separator = " | "
+                                    )
+                                }"
                             )
                             null
                         }
@@ -723,24 +1100,72 @@ fun MapApp(exitActivity: () -> Unit) {
         buildList {
             addAll(
                 receivedUserListSetting.mapNotNull { user ->
+                    Log.d(TAG, "raw user = $user")
                     if (user.uid in renderedAtosUids) {
                         Log.d(TAG, "Suppressing generic user render for ATOS uid=${user.uid}")
                         return@mapNotNull null
                     }
                     val location = user.location ?: return@mapNotNull null
-                        MapUserItem(
-                            uid = user.uid,
-                            type = user.type,
-                            team = user.team,
-                            title = user.title,
-                            lat = location.lat,
-                            lon = location.lon
-                        )
+                    MapUserItem(
+                        uid = user.uid,
+                        type = user.type,
+                        team = user.team,
+                        title = user.title,
+                        lat = location.lat,
+                        lon = location.lon,
+                        role = user.role
+                    )
                 }
             )
         }
     }
+    LaunchedEffect(receivedMapUsers) {
+    }
+    val presentTeams = remember(receivedMapUsers, team) {
+        buildSet {
+            receivedMapUsers
+                .map { it.team }
+                .filter { it.isNotBlank() }
+                .forEach { add(it) }
+
+            if (team.isNotBlank()) {
+                add(team)
+            }
+        }
+    }
+    val roleCounts = remember(receivedMapUsers, myRole) {
+        val counts = receivedMapUsers
+            .mapNotNull { it.role }
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
+            .eachCount()
+            .toMutableMap()
+
+        if (myRole.isNotBlank()) {
+            counts[myRole] = (counts[myRole] ?: 0) + 1
+        }
+        counts
+    }
+    val teamColorCount = remember(receivedMapUsers, team) {
+        val counts = receivedMapUsers
+            .map { it.team }
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
+            .eachCount()
+            .toMutableMap()
+
+        if (team.isNotBlank()) {
+            counts[team] = (counts[team] ?: 0) + 1
+        }
+
+        counts
+    }
+    val presentUserRoles = remember(roleCounts) { roleCounts.keys }
+    val presentUserRolesLEO = presentUserRoles
+
+
     Log.d(TAG, receivedMapUsers.toString())
+
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -761,14 +1186,18 @@ fun MapApp(exitActivity: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         var pointerOffset by remember { mutableStateOf<DpOffset?>(null) }
         val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle()
-
+        val styleJson = remember(hiddenLayers) {
+            buildFilteredStyleJson(context, hiddenLayers)
+        }
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
-            baseStyle = BaseStyle.Uri("asset://style.json"),
+//            baseStyle = BaseStyle.Uri("asset://style.json"),
+            baseStyle = BaseStyle.Json(styleJson), // for layers?
             cameraState = cameraState,
             options = MapOptions(
                 ornamentOptions = OrnamentOptions.AllDisabled,
-                gestureOptions = GestureOptions.RotationLocked),
+                gestureOptions = GestureOptions.RotationLocked
+            ),
             zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
             onMapLongClick = { coordinates, offset ->
                 Utils.vibrateWatch(vibDurationMs = 100L, numberOfVibes = 1, timeBtwnVibesMs = 10L)
@@ -779,7 +1208,10 @@ fun MapApp(exitActivity: () -> Unit) {
                 markerScope.launch {
                     try {
                         Log.d(TAG, "LongClick coroutine started")
-                        Log.d(TAG, "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates")
+                        Log.d(
+                            TAG,
+                            "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates"
+                        )
 
                         dataRepository.requestMarkerDrop(
                             markerType,
@@ -810,7 +1242,8 @@ fun MapApp(exitActivity: () -> Unit) {
                     locationState = userLocationState,
                     cameraState = cameraState,
                     colors = LocationPuckColors(
-                        dotFillColorCurrentLocation = TeamColors(team)),
+                        dotFillColorCurrentLocation = TeamColors(team)
+                    ),
                     onClick = {
                         scope.launch {
                             val current = cameraState.position
@@ -839,46 +1272,58 @@ fun MapApp(exitActivity: () -> Unit) {
                     }
                 )
             }
-            MarkersOnMap(
-                markers = droppedMapMarkers.filter{ (null != it.lat) && (null != it.lon) },
-                onMarkerClick = { id, title ->
-                    val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
-                    if (droppedMapMarkers.get(index).cotType != DataRepository.MarkerCotType.CLEAR) {
-                        Log.d(TAG, "Index from map: $index")
-                        val intent = Intent(context, MarkerActivity::class.java).apply {
-                            putExtra("marker_index", index)
-                            putExtra("start_route", "edit_marker_screen/$index")
-                            putExtra("from_maps", true)
+            if (showMarkers) {
+                MarkersOnMap(
+                    markers = droppedMapMarkers.filter { (null != it.lat) && (null != it.lon) },
+                    onMarkerClick = { id, title ->
+                        val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
+                        if (droppedMapMarkers.get(index).cotType != DataRepository.MarkerCotType.CLEAR) {
+                            Log.d(TAG, "Index from map: $index")
+                            val intent = Intent(context, MarkerActivity::class.java).apply {
+                                putExtra("marker_index", index)
+                                putExtra("start_route", "edit_marker_screen/$index")
+                                putExtra("from_maps", true)
+                            }
+                            context.startActivity(intent)
                         }
-                        context.startActivity(intent)
-                    }
-                },
-                cameraState
-            )
-            MarkersOnMap(
-                markers = receivedMapMarkers,
-                onMarkerClick = { id, _ ->
-                    val index = receivedMarkerListSetting.indexOfFirst { it.uid == id }
-                    if (index != -1) {
-                        val intent = Intent(context, MarkerActivity::class.java).apply {
-                            putExtra("marker_index", index)
-                            putExtra("start_route", "received_marker_detail/$index")
-                            putExtra("from_maps", true)
+                    },
+                    cameraState
+                )
+                MarkersOnMap(
+                    markers = receivedMapMarkers,
+                    onMarkerClick = { id, _ ->
+                        val index = receivedMarkerListSetting.indexOfFirst { it.uid == id }
+                        if (index != -1) {
+                            val intent = Intent(context, MarkerActivity::class.java).apply {
+                                putExtra("marker_index", index)
+                                putExtra("start_route", "received_marker_detail/$index")
+                                putExtra("from_maps", true)
+                            }
+                            context.startActivity(intent)
                         }
-                        context.startActivity(intent)
-                    }
-                },
-                camera = cameraState
-            )
-            ATOSTagsOnMap(
-                tags = receivedAtosTags,
-                camera = cameraState
-            )
-            UsersOnMap(
-                users = receivedMapUsers,
-                camera = cameraState
-            )
+                    },
+                    camera = cameraState
+                )
+            }
+            if (showAtosTags) {
+                ATOSTagsOnMap(
+                    tags = receivedAtosTags,
+                    camera = cameraState
+                )
+            }
 
+            if (showUsers) {
+                UsersOnMap(
+                    users = receivedMapUsers.filter {
+                        it.team in visibleUserTeams &&
+                                (
+                                        it.role in visibleUserRoles ||
+                                                it.role in visibleUserRolesLEO
+                                        )
+                    },
+                    camera = cameraState
+                )
+            }
         }
         if (showPopup && puckScreenOffset != null) {
             PopupBox(
@@ -901,11 +1346,12 @@ fun MapApp(exitActivity: () -> Unit) {
             alignment = Alignment.TopCenter
         )
         val current = cameraState.position
-        Box(Modifier
-            .fillMaxSize()
-            .padding(8.dp),
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(8.dp),
             contentAlignment = Alignment.Center
-        ){
+        ) {
 
             ScaleBar(
                 cameraState.metersPerDpAtTarget,
@@ -919,142 +1365,79 @@ fun MapApp(exitActivity: () -> Unit) {
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                 BackButton(
-                    onClick = {
-                        exitActivity()
-                    })
-            }
-        }
-//        MapUi(
-//            moveUp = {
-//                val cur = cameraState.position
-//                val curTarget = cur.target
-//
-//                val stepLat = 14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
-//                val newLat = (curTarget.latitude + stepLat).coerceIn(-90.0, 90.0)
-//                val newTarget = Position(curTarget.longitude, newLat)
-//
-//                scope.launch {
-//                    cameraState.animateTo(
-//                        cur.copy(target = newTarget),
-//                        duration = 120.milliseconds
-//                    )
-//                }
-//            },
-//            moveDown = { val cur = cameraState.position
-//                val curTarget = cur.target
-//
-//                val stepLat = -14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
-//                val newLat = (curTarget.latitude + stepLat).coerceIn(-90.0, 90.0)
-//                val newTarget = Position(curTarget.longitude, newLat)
-//
-//                scope.launch {
-//                    cameraState.animateTo(
-//                        cur.copy(target = newTarget),
-//                        duration = 120.milliseconds
-//                    )
-//                } },
-//            moveLeft = {
-//                val cur = cameraState.position
-//                val curTarget = cur.target
-//
-//                val stepLong = -14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
-//                val newLong = (curTarget.longitude + stepLong).coerceIn(-180.0, 180.0)
-//                val newTarget = Position(newLong, curTarget.latitude)
-//
-//                scope.launch {
-//                    cameraState.animateTo(
-//                        cur.copy(target = newTarget),
-//                        duration = 120.milliseconds
-//                    )
-//                } },
-//            moveRight = {
-//                val cur = cameraState.position
-//                val curTarget = cur.target
-//
-//                val stepLong = 14.0 / (1 shl cur.zoom.toInt().coerceIn(0, 20))  // rough heuristic
-//                val newLong = (curTarget.longitude + stepLong).coerceIn(-180.0, 180.0)
-//                val newTarget = Position(newLong, curTarget.latitude)
-//
-//                scope.launch {
-//                    cameraState.animateTo(
-//                        cur.copy(target = newTarget),
-//                        duration = 120.milliseconds
-//                    )
-//                }
-//            },
-//            zoomIn = {
-//                val nextZoom = (current.zoom + 1f).coerceAtMost(25.5)
-//                scope.launch {
-//                    cameraState.animateTo(
-//                        finalPosition = current.copy(zoom = nextZoom),
-//                        duration = 120.milliseconds
-//                    )
-//                }
-//                Log.d(TAG, "zoom = $nextZoom")
-//            },
-//            zoomOut = { val nextZoom = (current.zoom - 1f).coerceAtLeast(0.0)
-//                scope.launch {
-//                    cameraState.animateTo(
-//                        finalPosition = current.copy(zoom = nextZoom),
-//                        duration = 120.milliseconds
-//                    )
-//                }
-//                Log.d(TAG, "zoom = $nextZoom") }
-//        )
-    }
-}
-@Composable
-fun PopupBox(
-    anchor: DpOffset,
-    showPopup: Boolean,
-    lat: Double,
-    lon: Double,
-    onClickOutside: () -> Unit,
-){
-    val density = LocalDensity.current
-
-    if (showPopup) {
-        // full screen background
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .zIndex(10F),
-            contentAlignment = Alignment.Center
-        ) {
-            // popup
-            Popup(
-                alignment = Alignment.TopStart,
-                offset = with(density) {
-                    IntOffset(
-                        x = (anchor.x + 12.dp).roundToPx(), // move popup to the right
-                        y = anchor.y.roundToPx()
-                    )
-                },
-                properties = PopupProperties(
-                    excludeFromSystemGesture = true,
-                ),
-                // to dismiss on click outside
-                onDismissRequest = { onClickOutside() }
-            ) {
-                Box(
-                    Modifier
-                        .wrapContentSize()
-                        .background(Color.Black.copy(alpha = 0.8f)),
-                    contentAlignment = Alignment.Center
+                    onClick = { exitActivity() }
+                )
+                Button(
+                    onClick = { showLayerToggle = true },
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    Column (modifier = Modifier.padding(5.dp)){
-                        Text(
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp,
-                            lineHeight = 10.sp,
-                            text = "Lat: $lat\nLon: $lon\n\n${latLonToMgrs(lat, lon)}")
-                    }
+                    Image(
+                        painter = painterResource(R.drawable.overlay_manager),
+                        contentDescription = "Layers"
+                    )
                 }
-            }
+            } // closes Row
+        } // closes inner Box
+
+        if (showLayerToggle) {
+
+            LayerTogglePopup(
+
+                topoLayers = topoLayers,
+                hiddenLayers = hiddenLayers,
+                visibleUserTeams = visibleUserTeams,
+                visibleUserRoles = visibleUserRoles,
+                visibleUserRolesLEO = visibleUserRolesLEO,
+                availableTeams = presentTeams,
+                myRole = myRole,
+                roleCounts = roleCounts,
+                teamColorCount = teamColorCount,
+                availableUserRoles = presentUserRoles,
+                availableUserRolesLEO = presentUserRolesLEO,
+                onTeamToggle = { team ->
+                    visibleUserTeams =
+                        if (team in visibleUserTeams) visibleUserTeams - team
+                        else visibleUserTeams + team
+                },
+                onToggle = { id ->
+                    val layers = layerGroups[id] ?: setOf(id)
+
+                    hiddenLayers =
+                        if (layers.all { it in hiddenLayers }) {
+                            hiddenLayers - layers
+                        } else {
+                            hiddenLayers + layers
+                        }
+                },
+                onRoleToggle = { role ->
+                    visibleUserRoles =
+                        if (role in visibleUserRoles) visibleUserRoles - role
+                        else visibleUserRoles + role
+                },
+
+                onLeoRoleToggle = { role ->
+                    visibleUserRolesLEO =
+                        if (role in visibleUserRolesLEO) visibleUserRolesLEO - role
+                        else visibleUserRolesLEO + role
+                },
+
+                overlays = listOf(
+                    OverlayToggle("Markers", showMarkers) { showMarkers = !showMarkers },
+                    OverlayToggle("Users", showUsers) { showUsers = !showUsers },
+                    OverlayToggle("ATOS", showAtosTags) { showAtosTags = !showAtosTags },
+                ),
+                onDismiss = { showLayerToggle = false }
+            )
         }
     }
 }
+
+
+
+
+
+
+
 @Composable
 fun MapUi(
     moveUp: () -> Unit,
@@ -1063,7 +1446,7 @@ fun MapUi(
     moveRight: () -> Unit,
     zoomIn: () -> Unit,
     zoomOut: () -> Unit,
-){
+) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -1116,7 +1499,7 @@ fun MapUi(
 
                 }
             }
-            while(isLongClick){
+            while (isLongClick) {
                 moveUp()
                 delay(5000) // Delay for 5 seconds
                 Log.d(TAG, "isLongClick = $isLongClick")
@@ -1131,7 +1514,7 @@ fun MapUi(
             modifier = Modifier
                 .offset { polarOffset(-90f) }
                 .size(40.dp), // top,
-            shape = RoundedCornerShape(0.dp,0.dp,40.dp,40.dp),
+            shape = RoundedCornerShape(0.dp, 0.dp, 40.dp, 40.dp),
         ) { Text("▲") }
 
         Button(
@@ -1140,7 +1523,7 @@ fun MapUi(
             modifier = Modifier
                 .offset { polarOffset(90f) }
                 .size(40.dp),  // bottom
-            shape = RoundedCornerShape(40.dp,40.dp,0.dp,0.dp),
+            shape = RoundedCornerShape(40.dp, 40.dp, 0.dp, 0.dp),
         ) { Text("▼") }
 
         Button(
@@ -1149,7 +1532,7 @@ fun MapUi(
             modifier = Modifier
                 .offset { polarOffset(180f) }
                 .size(40.dp), // left
-            shape = RoundedCornerShape(0.dp,40.dp,40.dp,0.dp),
+            shape = RoundedCornerShape(0.dp, 40.dp, 40.dp, 0.dp),
         ) { Text("◀") }
 
         Button(
@@ -1158,7 +1541,7 @@ fun MapUi(
             modifier = Modifier
                 .offset { polarOffset(0f) }
                 .size(40.dp),   // right
-            shape = RoundedCornerShape(40.dp,0.dp,0.dp,40.dp),
+            shape = RoundedCornerShape(40.dp, 0.dp, 0.dp, 40.dp),
         ) { Text("▶") }
 
         // --- + / − on lower-right ---
@@ -1177,8 +1560,8 @@ fun MapUi(
                 .offset { polarOffset(33f) }
                 .size(40.dp)
                 .rotate(45f),  // bottom
-            shape = RoundedCornerShape(20.dp,20.dp,0.dp,0.dp),
-        ) { Text("+", modifier = Modifier.rotate(-45f))}
+            shape = RoundedCornerShape(20.dp, 20.dp, 0.dp, 0.dp),
+        ) { Text("+", modifier = Modifier.rotate(-45f)) }
 
         Button(
             onClick = { zoomOut() },
@@ -1186,7 +1569,7 @@ fun MapUi(
                 .offset { polarOffset(57f) }
                 .size(40.dp)
                 .rotate(45f),  // bottom
-            shape = RoundedCornerShape(0.dp,0.dp,20.dp,20.dp),
+            shape = RoundedCornerShape(0.dp, 0.dp, 20.dp, 20.dp),
         ) { Text("−", modifier = Modifier.rotate(-45f)) }
     }
 }
