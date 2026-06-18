@@ -170,15 +170,33 @@ class WearTakCotIpcService : Service() {
                         "ATOS CoT serialization failed route=$route uid=${result.packet.uid}"
                     )
                 } else {
-                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", takXml))
-                    sendDataTAKServers(takXml, true)
-                    Log.i(
-                        AtosIpcConstants.LOG_TAG,
-                        "Forwarded ATOS CoT to TAK route=$route uid=${result.packet.uid} size=${takXml.toByteArray(Charsets.UTF_8).size}"
-                    )
-
+                    try {
+                        EventBus.getDefault().post(DittoDocumentEvent("mapitem", takXml))
+                    } catch (t: Throwable) {
+                        Log.w(
+                            AtosIpcConstants.LOG_TAG,
+                            "ATOS local event dispatch failed route=$route uid=${result.packet.uid} error=${t::class.java.simpleName}: ${t.message ?: "unknown"}"
+                        )
+                    }
+                    forwardToTakServers(route, result.packet.uid, takXml)
                 }
             }
+        }
+    }
+
+    private fun forwardToTakServers(route: AtosIpcRoute, uid: String?, takXml: String) {
+        try {
+            sendDataTAKServers(takXml, true)
+            Log.i(
+                AtosIpcConstants.LOG_TAG,
+                "Forwarded ATOS CoT to TAK route=$route uid=$uid size=${takXml.toByteArray(Charsets.UTF_8).size}"
+            )
+        } catch (t: Throwable) {
+            Log.e(
+                AtosIpcConstants.LOG_TAG,
+                "ATOS TAK forward failed route=$route uid=$uid error=${t::class.java.simpleName}: ${t.message ?: "unknown"}",
+                t
+            )
         }
     }
 
