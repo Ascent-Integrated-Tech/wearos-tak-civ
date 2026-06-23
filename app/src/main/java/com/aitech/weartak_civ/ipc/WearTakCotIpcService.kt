@@ -88,14 +88,6 @@ class WearTakCotIpcService : Service() {
             callerPackages.joinToString(",")
         }
 
-        if (!isCallerAllowed(callerPackages)) {
-            Log.w(
-                AtosIpcConstants.LOG_TAG,
-                "Rejected ATOS bind action=${intent?.action} callerUid=$callingUid callerPackages=$callerLabel"
-            )
-            return null
-        }
-
         Log.i(
             AtosIpcConstants.LOG_TAG,
             "WearTakCotIpcService onBind(action=${intent?.action}) callerUid=$callingUid callerPackages=$callerLabel"
@@ -139,6 +131,15 @@ class WearTakCotIpcService : Service() {
         } else {
             callerPackages.joinToString(",")
         }
+
+        if (!isCallerAllowed(callerPackages)) {
+            Log.w(
+                AtosIpcConstants.LOG_TAG,
+                "Rejected ATOS IPC route=$route callerUid=$callingUid callerPackages=$callerLabel size=$size"
+            )
+            return
+        }
+
         logIncomingPayloadPreview(route, size, callingUid, callerLabel, cotXml)
         logIncomingPayloadFull(route, callingUid, callerLabel, cotXml)
         val result = try {
