@@ -159,6 +159,56 @@ class BloodhoundRepository(private val context: Context) {
             acknowledged = this.state.acknowledged
         )
     }
+    fun addMarkerTarget(
+        uid: String,
+        title: String,
+        markerType: String,
+        lat: Double,
+        lon: Double,
+        time: Long
+    ) {
+        val point = Point(
+            lat = lat,
+            lon = lon,
+            hae = 0.0,
+            ce = 999999.0,
+            le = 999999.0
+        )
+
+        val detail = Utils.CotUtils.MarkerDetail(
+            markerCallsign = title,
+            link = null,
+            creator = null,
+            usericon = null,
+            remarks = null,
+            contact = null
+        )
+
+        val cotEvent = Utils.CotUtils.MarkerCotEvent(
+            version = "2.0",
+            uid = uid,
+            type = markerType,
+            how = "h-g-i-g-o",
+            time = time,
+            start = time,
+            stale = time + 300_000,
+            access = null,
+            point = point,
+            detail = detail
+        )
+
+        val mapItem = MarkerMapItem(cotEvent)
+
+        upsertFromEvent(
+            BloodhoundEvent(
+                mapItem = mapItem,
+                server = "local",
+                timeIssued = time,
+                timeCompleted = null
+            )
+        )
+    }
+
 
     // UI adapter, list to populate chips in the bloodhounds screen
     val listBhItemsUi: StateFlow<List<Utils.BloodhoundItem>> =
@@ -175,6 +225,11 @@ class BloodhoundRepository(private val context: Context) {
     val activeBhItemUi: StateFlow<Utils.BloodhoundItem?> =
         combine(activeUid, _bloodhoundMap) { uid, map ->
             uid?.let { map[it] }?.toUi(isActive = true)
+        }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    val activeBhItemMap: StateFlow<BloodhoundItem?> =
+        combine(activeUid, _bloodhoundMap) { uid, map ->
+            uid?.let { map[it] }
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
     fun Double.round(decimals: Int): Double {
@@ -279,6 +334,8 @@ class BloodhoundRepository(private val context: Context) {
         }
     }
 
+
+
     val getEnableBloodhoundService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE] ?: false
     }
@@ -295,6 +352,7 @@ class BloodhoundRepository(private val context: Context) {
     suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
         _bloodhoundEvent.emit(event)
     }
+
 
     companion object {
         private val ENABLE = booleanPreferencesKey("enable_bloodhound_service")

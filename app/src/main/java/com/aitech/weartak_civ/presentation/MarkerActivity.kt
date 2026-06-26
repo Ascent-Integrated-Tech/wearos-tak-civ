@@ -142,6 +142,7 @@ import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerCotType
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import com.aitech.weartak_civ.presentation.SettingsActivity.Constants
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.TAG
@@ -1197,6 +1198,7 @@ private fun SuccessfulCotSentCheck(
 fun EditSelectedMarker(
     navController: NavController,
     index: Int,
+    context: Context,
     viewModel: MarkerViewModel,
     droppedMarkerListSetting: List<DataRepository.DroppedMarker>,
     showLocationChangeDialog: MutableState<Boolean>,
@@ -1204,15 +1206,19 @@ fun EditSelectedMarker(
     exitActivity: () -> Unit
 ) {
     Log.i(TAG, "Edited marker list: $droppedMarkerListSetting")
+    var uid by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()) }
     var title by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.title.orEmpty()) }
     var locationLat by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lat ?: 0.0) }
     var locationLon by remember { mutableDoubleStateOf(droppedMarkerListSetting.getOrNull(index)?.location?.lon ?: 0.0) }
     val markerType = droppedMarkerListSetting.getOrNull(index)?.markerType?.type.orEmpty()
+    val markerLabel = markerTextFromString(markerType)
     val enQueuedToBeSent = droppedMarkerListSetting.getOrNull(index)?.enqueuedToBeSent
     var remark by remember { mutableStateOf(droppedMarkerListSetting.getOrNull(index)?.remark.orEmpty()) }
     val time = droppedMarkerListSetting.getOrNull(index)?.timeDropped ?: 0L
     val markerVectorFlow = remember(index) { viewModel.markerVectorUi(index) }
     val markerVectorUi by markerVectorFlow.collectAsStateWithLifecycle()
+    val activeBloodhound by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
+
     WearTAKCIVTheme {
         Box(
             modifier = Modifier
@@ -1281,6 +1287,17 @@ fun EditSelectedMarker(
                             .padding(bottom = 5.dp)
                     )
                 }
+                if (activeBloodhound?.uid == uid) {
+                    Text(
+                        text = "Bloodhounding",
+                        fontSize = if ("text".length!! < 20) 13.sp else 11.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(bottom = 5.dp)
+                    )
+                }
                 MarkerBearingDistance(
                     distance = markerVectorUi?.distance,
                     lat = locationLat,
@@ -1288,6 +1305,60 @@ fun EditSelectedMarker(
                     orientation = markerVectorUi?.orientation ?: 0F
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                if (activeBloodhound?.uid == uid) {
+                    Button(
+                        onClick = {
+                            bhRepo.requestInPosition(uid)
+                            requestBloodhoundComplicationUpdate(context)
+                        },
+                        modifier = Modifier.padding(top = 10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.primary,
+                            contentColor = Color.Black
+                        ),
+                    ) {
+                        androidx.wear.compose.material.Text(
+                            text = stringResource(R.string.npos),
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            color = Color.Black,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            bhRepo.addMarkerTarget(
+                                uid = uid,
+                                title = title.ifBlank { markerLabel },
+                                markerType = markerType,
+                                lat = locationLat,
+                                lon = locationLon,
+                                time = time
+                            )
+
+                            bhRepo.requestActivateBloodhound(uid)
+                            requestBloodhoundComplicationUpdate(context)
+
+                            Log.i(BloodhoundActivity.Constants.TAG, "Requesting Ack and Activation of bloodhound")
+                        },
+                        modifier = Modifier.padding(bottom = 10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.primary,
+                            contentColor = Color.Black
+                        ),
+
+                    ) {
+                        androidx.wear.compose.material.Text(
+                            text = "Bloodhound to Marker",
+                            fontSize = 15.sp,
+                            overflow = TextOverflow.Ellipsis,
+                            color = Color.Black,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+
                 Chip(
                     onClick = { navController.navigate("edit_marker_title/$index")},
                     enabled = true,
@@ -1904,6 +1975,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             val markerVectorFlow = remember(index) { viewModel.markerVectorUiForReceived(index) }
             val markerVectorUi by markerVectorFlow.collectAsStateWithLifecycle()
             val loc = marker.location
+            val activeBloodhound by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
 
             WearTAKCIVTheme {
                 Box(
@@ -1951,6 +2023,59 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                                 lon = loc.lon,
                                 orientation = markerVectorUi?.orientation ?: 0F
                             )
+                            if (activeBloodhound?.uid == marker.uid) {
+                                Button(
+                                    onClick = {
+                                        bhRepo.requestInPosition(marker.uid)
+                                        requestBloodhoundComplicationUpdate(context)
+                                    },
+                                    modifier = Modifier.padding(top = 10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = colors.primary,
+                                        contentColor = Color.Black
+                                    ),
+                                ) {
+                                    androidx.wear.compose.material.Text(
+                                        text = stringResource(R.string.npos),
+                                        fontSize = 15.sp,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        bhRepo.addMarkerTarget(
+                                            uid = marker.uid,
+                                            title = marker.title.ifBlank { "Marker" },
+                                            markerType = marker.markerType,
+                                            lat = loc!!.lat,
+                                            lon = loc.lon,
+                                            time = marker.timeReceived
+                                        )
+
+                                        bhRepo.requestActivateBloodhound(marker.uid)
+                                        requestBloodhoundComplicationUpdate(context)
+
+                                        Log.i(BloodhoundActivity.Constants.TAG, "Requesting Ack and Activation of bloodhound")
+                                    },
+                                    modifier = Modifier.padding(bottom = 10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = colors.primary,
+                                        contentColor = Color.Black
+                                    ),
+
+                                    ) {
+                                    androidx.wear.compose.material.Text(
+                                        text = "Bloodhound to Marker",
+                                        fontSize = 15.sp,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
                         }
                     }
                     Row(modifier = Modifier.align(Alignment.BottomCenter)) {
@@ -1970,11 +2095,12 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             val uid = droppedMarkerListSetting.getOrNull(index)?.uid.orEmpty()
             val markerType = droppedMarkerListSetting.getOrNull(index)?.markerType?.type.orEmpty()
             val markerTitle = droppedMarkerListSetting.getOrNull(index)?.title.orEmpty()
-
+            val markerLabel = markerTextFromString(markerType)
 
             EditSelectedMarker(
                 navController,
                 index,
+                context,
                 viewModel,
                 droppedMarkerListSetting,
                 showLocationChangeDialog,

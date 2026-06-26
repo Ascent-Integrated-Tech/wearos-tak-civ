@@ -1449,10 +1449,10 @@ class TAKConnectService: Service() {
                                 val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
                                 if (markerCotEvent != null) {
-                                    if (dataRepository.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
-                                        Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
-                                        continue
-                                    }
+//                                    if (dataRepository.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
+//                                        Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
+//                                        continue
+//                                    }
                                     val shouldTrackMarker = dataRepository.applyReceivedMarkerEvent(
                                         event = markerCotEvent,
                                         source = takServerDetail.address
@@ -1470,6 +1470,7 @@ class TAKConnectService: Service() {
                                         timeCompleted = null,
                                         remark = markerCotEvent.detail.remarks ?: ""
                                     )
+                                    Log.d(TAG, "New bh event: $bhEvent")
                                     bhRepo.updateBloodhoundEvent(bhEvent)
                                 }
                             }

@@ -1004,10 +1004,10 @@ class SitxTakService : Service() {
             val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
 
             if (markerCotEvent != null) {
-                if (dataRepo.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
-                    Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
-                    return
-                }
+//                if (dataRepo.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
+//                    Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
+//                    return
+//                }
                 serviceScope.launch {
                     val shouldTrackMarker = dataRepo.applyReceivedMarkerEvent(
                         event = markerCotEvent,
