@@ -9,6 +9,8 @@
 package com.aitech.weartak_civ.presentation
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Paint
 import androidx.compose.ui.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -17,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -98,14 +101,25 @@ import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathNode
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -130,12 +144,15 @@ import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.events.LocationUpdateRequired
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import org.greenrobot.eventbus.EventBus
+import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.all
 import org.maplibre.compose.expressions.dsl.asBoolean
+import org.maplibre.compose.expressions.dsl.asNumber
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
@@ -148,14 +165,20 @@ import org.maplibre.compose.expressions.dsl.collator
 import org.maplibre.compose.expressions.dsl.condition
 import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.dsl.switch
+import org.maplibre.compose.expressions.value.DpPaddingValue
+import org.maplibre.compose.expressions.value.OffsetValue
 import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
+import org.maplibre.compose.layers.LineLayer
 import kotlin.Long
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import org.maplibre.spatialk.geojson.FeatureCollection
-import androidx.compose.ui.text.style.TextOverflow
+import org.maplibre.spatialk.geojson.LineString
 import kotlin.String
+import kotlin.collections.component1
+import kotlin.collections.component2
+import androidx.compose.ui.text.style.TextOverflow
 
 class MapActivity : ComponentActivity() {
 
@@ -595,6 +618,148 @@ fun TeamColors(team: String) : Color {
     return teamColor
 }
 
+data class MapBhoundItem(
+    val uid: String,
+    val distance: Double?,
+    val lat: Double?,
+    val lon: Double?,
+    val orientation: Double?,
+)
+@Composable
+fun rememberBhoundMapItem(
+    bloodhound: MapBhoundItem,
+    userLat: Double?,
+    userLon: Double?,
+) = remember(bloodhound, userLat, userLon) {
+    if (
+        bloodhound.lat == null ||
+        bloodhound.lon == null ||
+        userLat == null ||
+        userLon == null
+    ) {
+        FeatureCollection(emptyList())
+    } else {
+        FeatureCollection(
+            Feature(
+                geometry = LineString(
+                    coordinates = listOf(
+                        Position(userLon, userLat),
+                        Position(bloodhound.lon, bloodhound.lat)
+                    )
+                ),
+                properties = JsonObject(
+                    mapOf(
+                        "id" to JsonPrimitive(bloodhound.uid),
+                        "distance" to JsonPrimitive(bloodhound.distance),
+                        "orientation" to JsonPrimitive(bloodhound.orientation)
+                    )
+                )
+            )
+        )
+    }
+}
+
+@Composable
+fun rememberBhoundLabelItem(
+    bloodhound: MapBhoundItem,
+    userLat: Double?,
+    userLon: Double?,
+) = remember(bloodhound, userLat, userLon) {
+    if (
+        bloodhound.lat == null ||
+        bloodhound.lon == null ||
+        userLat == null ||
+        userLon == null
+    ) {
+        FeatureCollection(emptyList())
+    } else {
+        val midLat = (userLat + bloodhound.lat) / 2.0
+        val midLon = (userLon + bloodhound.lon) / 2.0
+
+        val distanceText = bloodhound.distance
+            ?.let { "%.2f km".format(it) }
+            ?: ""
+
+        val orientationText = bloodhound.orientation
+            ?.let { "${it.toInt()}°M" }
+            ?: ""
+        val orientationFloat = bloodhound.orientation?.toFloat()
+
+        FeatureCollection(
+            Feature(
+                geometry = Point(
+                    coordinates = Position(midLon, midLat)
+                ),
+                properties = JsonObject(
+                    mapOf(
+                        "label" to JsonPrimitive("$orientationText  $distanceText"),
+                        "orientation" to JsonPrimitive(orientationFloat)
+
+                    )
+                )
+            )
+        )
+    }
+}
+
+@Composable
+fun BhoundMap(
+    item: MapBhoundItem,
+    userLat: Double?,
+    userLon: Double?,
+    camera: CameraState,
+    ) {
+    if (item.uid.isEmpty()) return
+
+    val fc = rememberBhoundMapItem(
+        bloodhound = item,
+        userLat = userLat,
+        userLon = userLon
+    )
+    val labelFc = rememberBhoundLabelItem(
+        bloodhound = item,
+        userLat = userLat,
+        userLon = userLon
+    )
+
+    val source = rememberGeoJsonSource(
+        data = GeoJsonData.Features(fc)
+    )
+    val labelSource = rememberGeoJsonSource(
+        data = GeoJsonData.Features(labelFc)
+    )
+
+    LineLayer(
+        id = "bhound-line-${item.uid}",
+        source = source,
+        color = const(Color.Green),
+        width = const(2.dp)
+    )
+
+    SymbolLayer(
+        id = "bhound-label-${item.uid}",
+        source = labelSource,
+        textField = if (camera.position.zoom > 10.0) {
+            get("label").asString()
+        } else {
+            const("")
+        },
+        iconImage = image(painterResource(R.drawable.arrow)),
+        iconRotate = (get("orientation").asNumber()),
+        iconAnchor = const(SymbolAnchor.Center),
+        iconHaloColor = const(Color.Black),
+        iconHaloWidth = const(50.dp),
+        textSize = const(12.sp),
+        textAnchor = const(SymbolAnchor.Left),
+        textOffset = offset(0.8f.em, 0f.em),
+        textColor = const(Color.White),
+        textHaloColor = const(Color.Black),
+        textHaloWidth = const(50.dp),
+        textAllowOverlap = const(true),
+        textIgnorePlacement = const(true)
+    )
+}
+
 fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
     val raw = context.assets.open("style.json")
         .bufferedReader().readText()
@@ -1011,6 +1176,7 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedUserListSetting by MainActivity.Constants.dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val activeItem by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
 
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
@@ -1166,6 +1332,15 @@ fun MapApp(exitActivity: () -> Unit) {
 
     Log.d(TAG, receivedMapUsers.toString())
 
+    val activeBloodhound = remember(activeItem){
+        MapBhoundItem(
+            uid = activeItem?.uid ?: "",
+            distance = activeItem?.vector?.distance,
+            lat = activeItem?.bhEvent?.mapItem?.cotEvent?.point?.lat,
+            lon = activeItem?.bhEvent?.mapItem?.cotEvent?.point?.lon,
+            orientation = activeItem?.vector?.bearing,
+        )
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -1306,12 +1481,11 @@ fun MapApp(exitActivity: () -> Unit) {
                 )
             }
             if (showAtosTags) {
-                ATOSTagsOnMap(
-                    tags = receivedAtosTags,
-                    camera = cameraState
-                )
-            }
-
+            ATOSTagsOnMap(
+                tags = receivedAtosTags,
+                camera = cameraState
+            )
+                }
             if (showUsers) {
                 UsersOnMap(
                     users = receivedMapUsers.filter {
@@ -1324,7 +1498,14 @@ fun MapApp(exitActivity: () -> Unit) {
                     camera = cameraState
                 )
             }
+            BhoundMap(
+                item = activeBloodhound,
+                userLat = lat,
+                userLon = lon,
+                camera = cameraState
+            )
         }
+
         if (showPopup && puckScreenOffset != null) {
             PopupBox(
                 showPopup = showPopup,
