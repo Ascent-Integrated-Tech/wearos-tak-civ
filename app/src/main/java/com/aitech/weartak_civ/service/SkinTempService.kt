@@ -22,9 +22,13 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
+import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
+import com.aitech.weartak_civ.service.crm.CrmInferenceCoordinator
+import com.aitech.weartak_civ.service.crm.TfliteCrmModelRunner
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.cep.bus.CepBus
@@ -78,6 +82,20 @@ class SkinTempService : Service() {
 
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
+
+    private val crmRepo: CrmDataRepository by lazy {
+        try {
+            (applicationContext as WearTakApplication).crmRepo
+        } catch (_: Throwable) {
+            CrmDataRepository(sharedRepo)
+        }
+    }
+    private val crmCoordinator: CrmInferenceCoordinator by lazy {
+        CrmInferenceCoordinator(
+            crmRepo = crmRepo,
+            runnerFactory = { TfliteCrmModelRunner(applicationContext) }
+        )
+    }
 
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
@@ -689,9 +707,11 @@ class SkinTempService : Service() {
                     // Capture raw PPG sample (PPG_GREEN is Int)
                     try {
                         val raw: Int = dp.getValue(ValueKey.PpgSet.PPG_GREEN)
+                        val sampleUptimeMs = SystemClock.uptimeMillis()
                         lastPpgRaw = raw
                         // Maintain rolling 20s window
-                        appendPpgSampleAndPrune(raw)
+                        appendPpgSampleAndPrune(raw, sampleUptimeMs)
+                        crmCoordinator.onRawPpgSample(sampleUptimeMs, raw.toFloat(), ppgAvailable && deviceWorn)
                         // For on-demand burst, also store in burst buffer
                         ppgSamples.add(raw.toFloat())
                     } catch (_: Throwable) {
@@ -864,8 +884,7 @@ class SkinTempService : Service() {
     }
 
     // Rolling window helpers
-    private fun appendPpgSampleAndPrune(rawInt: Int) {
-        val now = SystemClock.uptimeMillis()
+    private fun appendPpgSampleAndPrune(rawInt: Int, now: Long = SystemClock.uptimeMillis()) {
         val v = rawInt.toFloat()
         ppgWindow.addLast(TimedSample(now, v))
         val cutoff = now - PPG_WINDOW_MS
@@ -1050,6 +1069,7 @@ class SkinTempService : Service() {
         try {
             emitJob?.cancel()
             serviceScope.cancel()
+            crmCoordinator.close()
         } catch (_: Throwable) { }
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -1105,6 +1125,7 @@ class SkinTempService : Service() {
                 stopSpo2Tracker()
                 stopPpgTracker()
                 stopEmitLoop()
+                crmCoordinator.reset("device_not_worn")
                 spo2TimeoutCleanup()
                 ppgTimeoutCleanup()
                 measureState.set(MeasurementState.IDLE)

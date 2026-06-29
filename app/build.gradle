@@ -13,7 +13,7 @@ android {
     compileSdk 35
 
     androidResources {
-        noCompress 'onnx'
+        noCompress 'onnx', 'tflite'
     }
 
     defaultConfig {
@@ -222,6 +222,9 @@ dependencies {
 
     // Onnx Runtime
     implementation libs.onnxruntime.android
+
+    // TensorFlow Lite runtime for CRM inference
+    implementation libs.tensorflow.lite
 
     implementation("org.maplibre.compose:maplibre-compose-material3:0.12.1")
     //implementation("org.maplibre.gl:android-plugin-annotation-v9:3.0.2")

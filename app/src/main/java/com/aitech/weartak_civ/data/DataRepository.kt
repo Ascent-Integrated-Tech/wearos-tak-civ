@@ -496,6 +496,15 @@ class DataRepository(private val context: Context) {
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
+    private val _latestCrmInference = MutableStateFlow(CrmInferenceState.idle())
+    val latestCrmInference: StateFlow<CrmInferenceState> = _latestCrmInference
+
+    suspend fun storeCrmInference(state: CrmInferenceState) {
+        _latestCrmInference.emit(state)
+    }
+
+    fun tryStoreCrmInference(state: CrmInferenceState): Boolean = _latestCrmInference.tryEmit(state)
+
     private val _restingHeartRate = MutableStateFlow<Int>(DEFAULT_RESTING_HR)
     val restingHeartRate: StateFlow<Int> = _restingHeartRate
 
