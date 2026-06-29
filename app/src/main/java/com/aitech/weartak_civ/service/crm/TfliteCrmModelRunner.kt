@@ -10,6 +10,8 @@
 package com.aitech.weartak_civ.service.crm
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
@@ -22,10 +24,23 @@ class TfliteCrmModelRunner(
     assetName: String = ASSET_NAME
 ) : CrmModelRunner {
     private val lock = ReentrantLock()
-    private val interpreter = Interpreter(
-        loadModel(context, assetName),
-        Interpreter.Options().setNumThreads(1)
-    )
+    private val interpreter: Interpreter
+
+    init {
+        val start = SystemClock.elapsedRealtime()
+        try {
+            interpreter = Interpreter(
+                loadModel(context, assetName),
+                Interpreter.Options().setNumThreads(1)
+            )
+            val inputShape = interpreter.getInputTensor(0).shape().contentToString()
+            val outputShape = interpreter.getOutputTensor(0).shape().contentToString()
+            Log.i(TAG, "CRM_TFLITE_LOAD_OK asset=$assetName inputShape=$inputShape outputShape=$outputShape loadMs=${SystemClock.elapsedRealtime() - start}")
+        } catch (t: Throwable) {
+            Log.e(TAG, "CRM_TFLITE_LOAD_FAIL asset=$assetName", t)
+            throw t
+        }
+    }
 
     override fun run(scaledSamples: FloatArray): Float {
         require(scaledSamples.size == CrmPpgPreprocessor.TARGET_SAMPLES) {
@@ -47,6 +62,7 @@ class TfliteCrmModelRunner(
     }
 
     companion object {
+        private const val TAG = "WearTAK-CrmTflite"
         const val ASSET_NAME = "crm_model100.tflite"
 
         private fun loadModel(context: Context, assetName: String): MappedByteBuffer {

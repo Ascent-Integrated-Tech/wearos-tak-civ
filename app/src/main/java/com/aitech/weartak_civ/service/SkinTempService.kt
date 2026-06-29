@@ -27,8 +27,6 @@ import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
-import com.aitech.weartak_civ.service.crm.CrmInferenceCoordinator
-import com.aitech.weartak_civ.service.crm.TfliteCrmModelRunner
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.cep.bus.CepBus
@@ -90,13 +88,6 @@ class SkinTempService : Service() {
             CrmDataRepository(sharedRepo)
         }
     }
-    private val crmCoordinator: CrmInferenceCoordinator by lazy {
-        CrmInferenceCoordinator(
-            crmRepo = crmRepo,
-            runnerFactory = { TfliteCrmModelRunner(applicationContext) }
-        )
-    }
-
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
     private lateinit var spo2Tracker: HealthTracker
@@ -155,6 +146,7 @@ class SkinTempService : Service() {
     @Volatile private var lastPpgRaw: Int? = null
     private var lastPpgRawLogElapsedMs: Long = 0L
     private val PPG_RAW_LOG_PERIOD_MS = 2_000L
+    private var lastCrmPpgSourceLogElapsedMs: Long = 0L
 
     // CEP emitter loop
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -711,7 +703,7 @@ class SkinTempService : Service() {
                         lastPpgRaw = raw
                         // Maintain rolling 20s window
                         appendPpgSampleAndPrune(raw, sampleUptimeMs)
-                        crmCoordinator.onRawPpgSample(sampleUptimeMs, raw.toFloat(), ppgAvailable && deviceWorn)
+                        publishCrmRawPpgSample(sampleUptimeMs, raw)
                         // For on-demand burst, also store in burst buffer
                         ppgSamples.add(raw.toFloat())
                     } catch (_: Throwable) {
@@ -929,6 +921,33 @@ class SkinTempService : Service() {
         //writeToLogFileLocation(logFile, logLine)
     }
 
+    private fun publishCrmRawPpgSample(sampleUptimeMs: Long, raw: Int) {
+        val accepted = crmRepo.tryPublishRawPpgSample(
+            uptimeMillis = sampleUptimeMs,
+            rawValue = raw.toFloat(),
+            sourceAvailable = ppgAvailable,
+            deviceWorn = deviceWorn
+        )
+        maybeLogCrmPpgSource(raw, accepted)
+    }
+
+    private fun publishCrmPpgUnavailable(reason: String) {
+        crmRepo.tryPublishPpgSourceUnavailable(
+            uptimeMillis = SystemClock.uptimeMillis(),
+            reason = reason
+        )
+    }
+
+    private fun maybeLogCrmPpgSource(raw: Int, accepted: Boolean) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed - lastCrmPpgSourceLogElapsedMs < PPG_RAW_LOG_PERIOD_MS) return
+        lastCrmPpgSourceLogElapsedMs = nowElapsed
+        Log.d(
+            TAG,
+            "[CRM_PPG_SOURCE] raw=$raw emitted=$accepted worn=$deviceWorn available=$ppgAvailable tracker=$ppgTrackerType"
+        )
+    }
+
     private fun completePpgPhase(reason: String) {
         // Only stop the tracker for on-demand mode; keep continuous listener running
         if (ppgTrackerType != HealthTrackerType.PPG_CONTINUOUS) {
@@ -1069,7 +1088,6 @@ class SkinTempService : Service() {
         try {
             emitJob?.cancel()
             serviceScope.cancel()
-            crmCoordinator.close()
         } catch (_: Throwable) { }
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -1125,7 +1143,7 @@ class SkinTempService : Service() {
                 stopSpo2Tracker()
                 stopPpgTracker()
                 stopEmitLoop()
-                crmCoordinator.reset("device_not_worn")
+                publishCrmPpgUnavailable("device_not_worn")
                 spo2TimeoutCleanup()
                 ppgTimeoutCleanup()
                 measureState.set(MeasurementState.IDLE)

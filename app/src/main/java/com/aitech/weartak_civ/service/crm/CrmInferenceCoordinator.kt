@@ -25,6 +25,24 @@ class CrmInferenceCoordinator(
     private val lock = Any()
     private var runner: CrmModelRunner? = null
     private var lastInferenceUptimeMs = 0L
+    private var lastRejectedLogUptimeMs = 0L
+    private var lastRejectedReason: String? = null
+
+    fun warmUpModel() {
+        try {
+            getRunner()
+            Log.i(TAG, "CRM_MODEL_READY")
+        } catch (t: Throwable) {
+            Log.e(TAG, "CRM_MODEL_LOAD_FAIL", t)
+            crmRepo.tryPublish(
+                CrmInferenceState(
+                    status = CrmInferenceStatus.ERROR,
+                    updatedAtMillis = wallClockMillis(),
+                    rejectionReason = t.message ?: t.javaClass.simpleName
+                )
+            )
+        }
+    }
 
     fun onRawPpgSample(sampleUptimeMillis: Long, rawValue: Float, sourceAvailable: Boolean) {
         val result = synchronized(lock) {
@@ -59,15 +77,18 @@ class CrmInferenceCoordinator(
     private fun publish(result: CrmWindowResult) {
         when (result) {
             is CrmWindowResult.Accepted -> runInference(result)
-            is CrmWindowResult.Rejected -> crmRepo.tryPublish(
-                CrmInferenceState(
-                    status = CrmInferenceStatus.REJECTED,
-                    updatedAtMillis = wallClockMillis(),
-                    rejectionReason = result.reason,
-                    sourceSampleCount = result.sourceSampleCount,
-                    inputWindowDurationMs = result.windowDurationMs
+            is CrmWindowResult.Rejected -> {
+                maybeLogRejectedWindow(result)
+                crmRepo.tryPublish(
+                    CrmInferenceState(
+                        status = CrmInferenceStatus.REJECTED,
+                        updatedAtMillis = wallClockMillis(),
+                        rejectionReason = result.reason,
+                        sourceSampleCount = result.sourceSampleCount,
+                        inputWindowDurationMs = result.windowDurationMs
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -102,6 +123,17 @@ class CrmInferenceCoordinator(
         }
     }
 
+    private fun maybeLogRejectedWindow(result: CrmWindowResult.Rejected) {
+        val now = uptimeMillis()
+        if (result.reason == lastRejectedReason && now - lastRejectedLogUptimeMs < REJECTION_LOG_PERIOD_MS) return
+        lastRejectedReason = result.reason
+        lastRejectedLogUptimeMs = now
+        Log.d(
+            TAG,
+            "CRM_WINDOW_REJECT reason=${result.reason} samples=${result.sourceSampleCount} durationMs=${result.windowDurationMs}"
+        )
+    }
+
     private fun getRunner(): CrmModelRunner = synchronized(lock) {
         runner ?: runnerFactory().also { runner = it }
     }
@@ -117,5 +149,6 @@ class CrmInferenceCoordinator(
     companion object {
         private const val TAG = "WearTAK-CrmInference"
         private const val INFERENCE_PERIOD_MS = 1_000L
+        private const val REJECTION_LOG_PERIOD_MS = 5_000L
     }
 }

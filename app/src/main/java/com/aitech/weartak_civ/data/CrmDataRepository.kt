@@ -9,16 +9,54 @@
 
 package com.aitech.weartak_civ.data
 
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class CrmDataRepository(private val dataRepository: DataRepository) {
 
     val latestCrmInference: StateFlow<CrmInferenceState> = dataRepository.latestCrmInference
+    val rawPpgSamples: SharedFlow<CrmRawPpgSample> = dataRepository.crmRawPpgSamples
 
     fun tryPublish(state: CrmInferenceState): Boolean = dataRepository.tryStoreCrmInference(state)
 
     suspend fun publish(state: CrmInferenceState) = dataRepository.storeCrmInference(state)
+
+    fun tryPublishRawPpgSample(
+        uptimeMillis: Long,
+        rawValue: Float,
+        sourceAvailable: Boolean,
+        deviceWorn: Boolean
+    ): Boolean = dataRepository.tryStoreCrmRawPpgSample(
+        CrmRawPpgSample(
+            uptimeMillis = uptimeMillis,
+            rawValue = rawValue,
+            sourceAvailable = sourceAvailable,
+            deviceWorn = deviceWorn
+        )
+    )
+
+    fun tryPublishPpgSourceUnavailable(
+        uptimeMillis: Long,
+        reason: String
+    ): Boolean = dataRepository.tryStoreCrmRawPpgSample(
+        CrmRawPpgSample(
+            uptimeMillis = uptimeMillis,
+            rawValue = null,
+            sourceAvailable = false,
+            deviceWorn = false,
+            reason = reason
+        )
+    )
 }
+
+data class CrmRawPpgSample(
+    val uptimeMillis: Long,
+    val rawValue: Float?,
+    val sourceAvailable: Boolean,
+    val deviceWorn: Boolean,
+    val emittedAtMillis: Long = System.currentTimeMillis(),
+    val reason: String? = null
+)
 
 enum class CrmInferenceStatus {
     IDLE,
