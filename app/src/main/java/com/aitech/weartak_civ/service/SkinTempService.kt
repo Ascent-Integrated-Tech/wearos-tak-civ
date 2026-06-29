@@ -692,6 +692,10 @@ class SkinTempService : Service() {
 
     private val ppgEventListener = object : HealthTracker.TrackerEventListener {
         override fun onDataReceived(dataPoints: List<DataPoint>) {
+            if (!deviceWorn) {
+                Log.d(TAG, "Ignoring PPG callback while device is not worn.")
+                return
+            }
             val now = SystemClock.uptimeMillis()
             if (ppgStartUptimeMs == 0L) ppgStartUptimeMs = now
             try {

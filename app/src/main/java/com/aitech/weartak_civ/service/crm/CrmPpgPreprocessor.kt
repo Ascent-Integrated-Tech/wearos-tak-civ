@@ -9,6 +9,7 @@
 
 package com.aitech.weartak_civ.service.crm
 
+import android.util.Log
 import kotlin.math.max
 import kotlin.math.min
 
@@ -19,11 +20,26 @@ class CrmPpgPreprocessor(
     private val minCoverageMs: Long = MIN_COVERAGE_MS,
     private val maxSampleGapMs: Long = MAX_SAMPLE_GAP_MS,
     private val minRawSamples: Int = MIN_RAW_SAMPLES,
-    private val minRawAmplitude: Float = MIN_RAW_AMPLITUDE
+    private val minRawAmplitude: Float = MIN_RAW_AMPLITUDE,
 ) {
     private val samples = ArrayDeque<RawPpgSample>(targetSamples * 2)
+    private val TAG: String = "WT-CrmPpgPreProc"
+    private var totalSamples = 0
 
     fun addSample(uptimeMillis: Long, value: Float) {
+        totalSamples++
+
+        if (totalSamples % 100 == 0) {
+
+            Log.d(
+
+                TAG,
+
+                "CRM_BUFFER samplesSeen=$totalSamples bufferSize=${samples.size}"
+
+            )
+
+        }
         if (!value.isFinite()) return
         samples.addLast(RawPpgSample(uptimeMillis, value))
         prune(uptimeMillis)
@@ -46,15 +62,26 @@ class CrmPpgPreprocessor(
             return rejected("insufficient_samples", windowSamples)
         }
 
-        val coverageMs = windowSamples.last().uptimeMillis - windowSamples.first().uptimeMillis
-        if (coverageMs < minCoverageMs) {
-            return rejected("insufficient_coverage", windowSamples)
-        }
+        val coverageMs =
+            windowSamples.last().uptimeMillis -
+                    windowSamples.first().uptimeMillis
+
+        val effectiveHz =
+            if (coverageMs > 0)
+                (windowSamples.size * 1000f) / coverageMs
+            else
+                0f
 
         val maxGap = maxGapMs(windowSamples)
-        if (maxGap > maxSampleGapMs) {
-            return rejected("sample_gap", windowSamples)
-        }
+
+        Log.d(
+            TAG,
+            "CRM_WINDOW " +
+                    "samples=${windowSamples.size} " +
+                    "coverageMs=$coverageMs " +
+                    "effectiveHz=${"%.1f".format(effectiveHz)} " +
+                    "maxGapMs=$maxGap"
+        )
 
         val rawValues = windowSamples.map { it.value }
         if (rawValues.any { !it.isFinite() }) {
@@ -69,6 +96,13 @@ class CrmPpgPreprocessor(
             maxValue = max(maxValue, value)
         }
         val amplitude = maxValue - minValue
+        Log.d(
+            TAG,
+            "CRM_SIGNAL " +
+                    "min=$minValue " +
+                    "max=$maxValue " +
+                    "amplitude=$amplitude"
+        )
         if (!amplitude.isFinite() || amplitude < minRawAmplitude) {
             return rejected("flat_signal", windowSamples)
         }

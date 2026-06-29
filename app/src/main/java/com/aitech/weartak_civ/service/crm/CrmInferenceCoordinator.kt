@@ -95,7 +95,20 @@ class CrmInferenceCoordinator(
     private fun runInference(window: CrmWindowResult.Accepted) {
         val start = SystemClock.elapsedRealtime()
         try {
+            // this is final checkpoint before crm inference via TensorFlow Lite.
+            // sourceSampleCount is the num of raw ppg samples used to build the window.
+            // scaledSamples.size should match the model input length, currently 500 samples.
+            Log.d(
+                TAG,
+                "CRM_INFERENCE_ATTEMPT " +
+                        "sourceSamples=${window.sourceSampleCount} " +
+                        "modelInputSamples=${window.scaledSamples.size} " +
+                        "durationMs=${window.windowDurationMs} " +
+                        "quality=${"%.3f".format(window.quality)}"
+            )
+
             val value = getRunner().run(window.scaledSamples)
+
             val end = SystemClock.elapsedRealtime()
             crmRepo.tryPublish(
                 CrmInferenceState(
@@ -108,7 +121,12 @@ class CrmInferenceCoordinator(
                     inferenceLatencyMs = end - start
                 )
             )
-            Log.d(TAG, "CRM_INFERENCE value=${"%.4f".format(value)} samples=${window.sourceSampleCount} latencyMs=${end - start}")
+            Log.d(TAG,
+                "CRM_INFERENCE value=${"%.4f".format(value)} " +
+                        "sourceSamples=${window.sourceSampleCount} " +
+                        "modelInputSamples=${window.scaledSamples.size} " +
+                        "latencyMs=${end - start}"
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "CRM inference failed", t)
             crmRepo.tryPublish(
