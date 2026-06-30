@@ -10,21 +10,48 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
-import com.aitech.weartak_civ.events.AlertClearedEvent
 import com.aitech.weartak_civ.cep.model.CepEvent
+import com.aitech.weartak_civ.cep.model.CepPayload
 import com.aitech.weartak_civ.cep.model.NumericSample
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancelAndJoin
+import java.util.concurrent.atomic.AtomicBoolean
 
 class CepEngine(
     private val appContext: Context,
     private val scope: CoroutineScope,
     private val config: CepConfig,
-    private val yearOfBirth: Int,
     private val dataRepository: DataRepository
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(RingConfig.default())
+    private val warmUpCompleted = AtomicBoolean(false)
+    private val started = AtomicBoolean(false)
+    private val authoritative = AtomicBoolean(false)
+
+    /**
+     * Retains sensor ring buffers across a holder-mediated swap. Invoke on the replacement
+     * engine after [buildEngine], before [warmUp]; does not copy [FeatureStore].
+     */
+    internal fun adoptWindowIngestionFrom(previous: CepEngine) {
+        windows.adoptIngestionStateFrom(previous.windows)
+    }
+
+    /**
+     * Test hook: feed a bus-shaped sample into [WindowStore] without starting coroutines.
+     * Production path uses [CepBus] from [start].
+     */
+    internal fun ingestForWindowTesting(evt: CepEvent<out CepPayload>, tsMs: Long = evt.ts) {
+        windows.ingest(evt, featureStore, tsMs)
+    }
+
+    internal fun peekNumericRingLast(topic: String): Double? = windows.peekNumericRingLast(topic)
+
+    /** Snapshot of the rule IDs this engine evaluates. Used by the holder/provider to
+     *  compute removed-rule sets across a swap so [AlertRegistry] entries can be cleared. */
+    val ruleIds: Set<String> get() = config.rules.map { it.id }.toSet()
+    val featureIds: Set<String> get() = config.features.map { it.id }.toSet()
 
     @Volatile
     private var sustainOverridesMain: Map<String, Long> = emptyMap()
@@ -40,40 +67,49 @@ class CepEngine(
         sustainOverrideWarnProvider = { sustainOverridesWarn }
     )
 
-    @Volatile
-    private var currentYearOfBirth: Int = yearOfBirth
+    private companion object {
+        const val PRESSURE_IMMERSION_DISABLED_REASON = "settings.pressure.immersion_alerts_enabled=0"
+    }
 
     fun start() {
+        if (!warmUpCompleted.get()) {
+            Log.w("CEP", "start() ignored until warmUp() has completed")
+            return
+        }
+        if (!started.compareAndSet(false, true)) {
+            Log.w("CEP", "start() ignored: engine already started")
+            return
+        }
+        authoritative.set(true)
         Log.d("CEP", "CEP Engine started")
 
-        //Call this fn whenever the yob is changed
-        updateHrProfile()
-        updateHrrProfile()
-        updatePressureProfile()
-        scope.launch { updateSustainOverrides() }
+        launchBusCollector()
+        launchFeatureLoops()
+        launchRuleLoop()
+    }
 
+    private fun launchBusCollector() {
         // Subscribe to the bus (no emitters yet; safe)
-        // Phase 1: pass evt.ts so WindowStore timestamps reflect sensor measurement time, not processing time
+        // Pass evt.ts so WindowStore timestamps reflect sensor measurement time, not processing time.
         scope.launch { CepBus.events.collect { evt -> windows.ingest(evt, featureStore, evt.ts) } }
+    }
 
-        // Phase 3: per-feature compute coroutines.
+    private fun launchFeatureLoops() {
         // Each feature runs in its own coroutine at its own updateIntervalMs cadence.
-        // An exception in one feature is caught and logged — it cannot crash or stall
-        // any other feature or the rule-eval loop.  The rule-eval loop always reads
-        // the last cached value from FeatureStore, regardless of when the feature last computed.
+        // Failures stay isolated to the feature that threw.
         for (def in config.features) {
             scope.launch {
                 while (isActive) {
                     try {
                         when (def) {
-                            is FeatureDef.Window       -> windows.computeWindow(def, featureStore)
-                            is FeatureDef.MultiWindow  -> windows.computeMultiWindow(def, featureStore)
-                            is FeatureDef.SlopeMulti   -> windows.computeSlopeMulti(def, featureStore)
-                            is FeatureDef.Delta        -> windows.computeDelta(def, featureStore)
-                            is FeatureDef.Derived      -> DerivedEval.eval(def, featureStore)
+                            is FeatureDef.Window -> windows.computeWindow(def, featureStore)
+                            is FeatureDef.MultiWindow -> windows.computeMultiWindow(def, featureStore)
+                            is FeatureDef.SlopeMulti -> windows.computeSlopeMulti(def, featureStore)
+                            is FeatureDef.Delta -> windows.computeDelta(def, featureStore)
+                            is FeatureDef.Derived -> DerivedEval.eval(def, featureStore)
                             is FeatureDef.SampleWindow -> windows.computeSampleWindow(def, featureStore)
-                            is FeatureDef.SampleDelta  -> windows.computeSampleDelta(def, featureStore)
-                            is FeatureDef.SampleSlope  -> windows.computeSampleSlope(def, featureStore)
+                            is FeatureDef.SampleDelta -> windows.computeSampleDelta(def, featureStore)
+                            is FeatureDef.SampleSlope -> windows.computeSampleSlope(def, featureStore)
                         }
                     } catch (ex: Throwable) {
                         Log.e("CEP", "Feature compute failed for ${def.id} — isolated, engine continues", ex)
@@ -82,12 +118,11 @@ class CepEngine(
                 }
             }
         }
+    }
 
-        // Rule evaluation loop.
-        // Runs at ruleEvalIntervalMs (from config); reads cached FeatureStore values written
-        // by the per-feature coroutines above.  No feature compute happens here.
+    private fun launchRuleLoop() {
         scope.launch {
-            val tickMs = config.ruleEvalIntervalMs.toLong().coerceAtLeast(1L)
+            val tickMs = config.ruleEvalIntervalMs.toLong()
             while (isActive) {
                 featureStore.beginTick()
                 featureStore.logDerivedTick("CEP")
@@ -99,55 +134,56 @@ class CepEngine(
     }
 
     fun updateHrProfile() {
-        //currentYearOfBirth = newYearOfBirth
+        scope.launch { loadHrProfile() }
+    }
 
-        scope.launch {
-            try {
-                val newYearOfBirth = dataRepository.getYearOfBirth.first()
-                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-                val age = (currentYear - newYearOfBirth).coerceIn(0, 200)
+    /**
+     * Synchronous form of [updateHrProfile]. Used by the holder/provider warm-up path so
+     * the new engine's `profile.*` and `thresholds.hr.*` keys are populated BEFORE authority
+     * transfers (per [Update v1.1 — U9]).
+     */
+    private suspend fun loadHrProfile() {
+        try {
+            val newYearOfBirth = dataRepository.getYearOfBirth.first()
+            val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+            val age = (currentYear - newYearOfBirth).coerceIn(0, 200)
 
-                val hrMax = ZoneHelper.tanakaHrMax(age)
+            val hrMax = ZoneHelper.tanakaHrMax(age)
 
-                // Load values from DataRepository
-                val hrRest = dataRepository.getRestingHeartRate.first() ?: DEFAULT_RESTING_HR
-                val hrRestingHigh = dataRepository.getRestingHrHighAlertBpmThreshold.first() ?: DEFAULT_HIGH_RESTING_HR_THRESHOLD
-                val hrRestingLow  = dataRepository.getRestingHrLowAlertBpmThreshold.first() ?: DEFAULT_LOW_RESTING_HR_THRESHOLD
+            val hrRest = dataRepository.getRestingHeartRate.first() ?: DEFAULT_RESTING_HR
+            val hrRestingHigh = dataRepository.getRestingHrHighAlertBpmThreshold.first() ?: DEFAULT_HIGH_RESTING_HR_THRESHOLD
+            val hrRestingLow  = dataRepository.getRestingHrLowAlertBpmThreshold.first() ?: DEFAULT_LOW_RESTING_HR_THRESHOLD
 
-                // Core HR profile
-                featureStore.put("profile.hr_rest_bpm", hrRest)
-                featureStore.put("profile.hr_max_bpm", hrMax)
+            featureStore.put("profile.hr_rest_bpm", hrRest)
+            featureStore.put("profile.hr_max_bpm", hrMax)
 
-                // HR thresholds
-                featureStore.put("thresholds.hr.rest_high_bpm", hrRestingHigh)
-                featureStore.put("thresholds.hr.rest_low_bpm",  hrRestingLow)
+            featureStore.put("thresholds.hr.rest_high_bpm", hrRestingHigh)
+            featureStore.put("thresholds.hr.rest_low_bpm",  hrRestingLow)
 
-                Log.d("CEP", "Updated HR profile: YOB=$newYearOfBirth age=$age " +
-                            "hrRest=$hrRest hrMax=$hrMax hrHighResting=$hrRestingHigh hrLowResting=$hrRestingLow"
-                )
-            } catch (t: Throwable) {
-                Log.e("CEP", "Failed to update HR profile from DataRepository", t)
-            }
+            Log.d("CEP", "Updated HR profile: YOB=$newYearOfBirth age=$age " +
+                        "hrRest=$hrRest hrMax=$hrMax hrHighResting=$hrRestingHigh hrLowResting=$hrRestingLow"
+            )
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to update HR profile from DataRepository", t)
         }
     }
 
     fun updateHrrProfile() {
-        scope.launch {
-            try {
+        scope.launch { loadHrrProfile() }
+    }
 
-                // Load exertion thresholds (percent values from settings)
-                val exertWarn = dataRepository.getExertionThresholdWarning.first() ?: DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
-                val exertAlert = dataRepository.getExertionThresholdAlert.first() ?: DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE
+    /** Synchronous form of [updateHrrProfile] used during warm-up. */
+    private suspend fun loadHrrProfile() {
+        try {
+            val exertWarn = dataRepository.getExertionThresholdWarning.first() ?: DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
+            val exertAlert = dataRepository.getExertionThresholdAlert.first() ?: DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE
 
-                // Store as thresholds (keep naming consistent with existing thresholds.hr.* style)
-                featureStore.put("thresholds.hrr.exert_warn_percent", exertWarn.toDouble())
-                featureStore.put("thresholds.hrr.exert_alert_percent", exertAlert.toDouble())
+            featureStore.put("thresholds.hrr.exert_warn_percent", exertWarn.toDouble())
+            featureStore.put("thresholds.hrr.exert_alert_percent", exertAlert.toDouble())
 
-                Log.d("CEP", "Loaded exertion thresholds: warn=$exertWarn% alert=$exertAlert%")
-
-            } catch (t: Throwable) {
-                Log.e("CEP", "Failed to update HRR profile from DataRepository", t)
-            }
+            Log.d("CEP", "Loaded exertion thresholds: warn=$exertWarn% alert=$exertAlert%")
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to update HRR profile from DataRepository", t)
         }
     }
 
@@ -160,28 +196,101 @@ class CepEngine(
      */
     fun updatePressureProfile() {
         scope.launch {
-            try {
-                val highHpa = dataRepository.getHighAtmPressureAlertThreshold.first()
-                val lowHpa  = dataRepository.getLowAtmPressureAlertThreshold.first()
-                featureStore.put("thresholds.pressure.high", highHpa.toDouble())
-                featureStore.put("thresholds.pressure.low",  lowHpa.toDouble())
-
-                // Write user enable flags into FeatureStore so CEP rules can gate on them.
-                // Rules use gte_key on settings.pressure.* (1.0 = enabled, 0.0 = disabled).
-                val immersionOn = dataRepository.getEnableImmersionAlerts.first()
-                val lowAtmOn    = dataRepository.getEnableLowAtmPressureAlert.first()
-                val highAtmOn   = dataRepository.getEnableHighAtmPressureAlert.first()
-                featureStore.put("settings.pressure.immersion_alerts_enabled", if (immersionOn) 1.0 else 0.0)
-                featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
-                featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
-
-                Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
-                            "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
-            } catch (t: Throwable) {
-                Log.e("CEP", "Failed to update pressure profile from DataRepository", t)
+            loadPressureProfile()
+            if (authoritative.get()) {
+                try {
+                    clearDisabledPressureAlertsFromRepository()
+                } catch (t: Throwable) {
+                    Log.e("CEP", "Failed to clear disabled pressure alerts after profile update", t)
+                }
             }
         }
     }
+
+    /** Synchronous form of [updatePressureProfile] used during warm-up. */
+    private suspend fun loadPressureProfile() {
+        try {
+            val highHpa = dataRepository.getHighAtmPressureAlertThreshold.first()
+            val lowHpa  = dataRepository.getLowAtmPressureAlertThreshold.first()
+            featureStore.put("thresholds.pressure.high", highHpa.toDouble())
+            featureStore.put("thresholds.pressure.low",  lowHpa.toDouble())
+
+            val immersionOn = dataRepository.getEnableImmersionAlerts.first()
+            val lowAtmOn    = dataRepository.getEnableLowAtmPressureAlert.first()
+            val highAtmOn   = dataRepository.getEnableHighAtmPressureAlert.first()
+            featureStore.put("settings.pressure.immersion_alerts_enabled", if (immersionOn) 1.0 else 0.0)
+            featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
+            featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
+
+            Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
+                    "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to update pressure profile from DataRepository", t)
+        }
+    }
+
+    /**
+     * Synchronously seed all runtime state needed before the engine can produce correct ticks.
+     * Called by `CepProvider` during the warm-up phase BEFORE installing this engine into
+     * `CepEngineHolder` (per [Update v1.1 — U9]). Idempotent and safe to call before [start].
+     *
+     * After this returns, the engine has:
+     *  - HR / HRR / pressure profile + thresholds populated
+     *  - sustain overrides loaded for any rule with `allow_sustain_override == true`
+     */
+    suspend fun warmUp() {
+        loadHrProfile()
+        loadHrrProfile()
+        loadPressureProfile()
+        updateSustainOverrides()
+        warmUpCompleted.set(true)
+    }
+
+    /**
+     * Post-swap pressure hygiene pass. This keeps warm-up pure while still allowing the
+     * authoritative engine to clear alerts whose enable flags are currently off.
+     */
+    suspend fun applyPressureAlertHygiene() {
+        try {
+            clearDisabledPressureAlertsFromRepository()
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to apply pressure alert hygiene from DataRepository", t)
+        }
+    }
+
+    /**
+     * Cancel this engine's coroutine scope. Safe to call only after the engine has been
+     * removed from `CepEngineHolder`. Per [Update v1.1 — U1], the apply lane invokes this
+     * AFTER the swap completes so that no old feature/rule coroutines remain scheduling work
+     * once the new engine is authoritative.
+     */
+    fun cancel() {
+        try {
+            authoritative.set(false)
+            (scope.coroutineContext[kotlinx.coroutines.Job])?.cancel()
+        } catch (t: Throwable) {
+            Log.w("CEP", "CepEngine.cancel(): ${t.message}")
+        }
+    }
+
+    /**
+     * Cancel and wait for this engine's scope to quiesce.
+     *
+     * The apply lane uses this before running global hygiene so the previous engine cannot
+     * keep reading or mutating shared state while the replacement is being prepared.
+     */
+    suspend fun cancelAndJoin() {
+        try {
+            authoritative.set(false)
+            scope.coroutineContext[kotlinx.coroutines.Job]?.cancelAndJoin()
+        } catch (t: Throwable) {
+            Log.w("CEP", "CepEngine.cancelAndJoin(): ${t.message}")
+        }
+    }
+
+    internal fun isAuthoritativeForTest(): Boolean = authoritative.get()
+    internal fun isScopeCancelledForTest(): Boolean = scope.coroutineContext[kotlinx.coroutines.Job]?.isCancelled == true
+    internal fun isScopeActiveForTest(): Boolean = scope.coroutineContext[kotlinx.coroutines.Job]?.isActive == true
 
     /**
      * Test-only: write known threshold values directly into FeatureStore, bypassing the async
@@ -268,7 +377,14 @@ class CepEngine(
     // Note: computeFeaturesSafely() was removed in Phase 3.
     // Feature compute is now done by per-feature coroutines launched in start().
 
-    private suspend fun clearActiveAlertByRuleId(ruleId: String, reason: String? = null): Boolean {
+    /**
+     * Clear an active alert owned by [ruleId]. Public so that the holder/provider apply
+     * lane can invoke this for rules removed by recompose, disable lists, or reset
+     * (per Active-alert hygiene in WEAR-508 design).
+     *
+     * Idempotent: returns false if no alert is currently active for the rule.
+     */
+    suspend fun clearActiveAlertByRuleId(ruleId: String, reason: String? = null): Boolean {
         val alert = AlertRegistry.get(ruleId) ?: return false
 
         if (alert.priority == 1) {
@@ -280,6 +396,35 @@ class CepEngine(
         dataRepository.addAlertClearedEventCep(alert.uid)
         Log.i("CEP", "Cleared active alert for rule=$ruleId reason=${reason ?: "unspecified"} uid=${alert.uid}")
         return true
+    }
+
+    private suspend fun clearDisabledPressureAlerts(lowAtmOn: Boolean, highAtmOn: Boolean, immersionOn: Boolean) {
+        if (!lowAtmOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_low_atm",
+                reason = "settings.pressure.low_atm_alert_enabled=0"
+            )
+        }
+        if (!highAtmOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_high_atm",
+                reason = "settings.pressure.high_atm_alert_enabled=0"
+            )
+        }
+        if (!immersionOn) {
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_dunk_detected",
+                reason = PRESSURE_IMMERSION_DISABLED_REASON
+            )
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_shallow_dunk",
+                reason = PRESSURE_IMMERSION_DISABLED_REASON
+            )
+            clearActiveAlertByRuleId(
+                ruleId = "pressure_submerge_detected",
+                reason = PRESSURE_IMMERSION_DISABLED_REASON
+            )
+        }
     }
 
     //Fix for cep feature key alert cancellation
@@ -333,6 +478,9 @@ class CepEngine(
     }
 
     fun ingest(path: String, value: Double, tsMs: Long = System.currentTimeMillis()) {
+        if (!authoritative.get()) {
+            return
+        }
         try {
             val parts = path.split(".")
             if (parts.size < 2) return
@@ -357,6 +505,13 @@ class CepEngine(
         } catch (ex: Exception) {
             Log.e("CEP", "Failed to ingest $path", ex)
         }
+    }
+
+    private suspend fun clearDisabledPressureAlertsFromRepository() {
+        val immersionOn = dataRepository.getEnableImmersionAlerts.first()
+        val lowAtmOn = dataRepository.getEnableLowAtmPressureAlert.first()
+        val highAtmOn = dataRepository.getEnableHighAtmPressureAlert.first()
+        clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn, immersionOn = immersionOn)
     }
 
 }

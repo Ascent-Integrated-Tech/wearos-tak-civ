@@ -36,6 +36,13 @@ object DerivedEval {
         // 1) Specialized handlers
         // ---------------------------
         when {
+            expr.has("state_age_sec") -> {
+                val stateKey = expr.getString("state_age_sec")
+                val age = StateRepo.tracker.ageSecondsIfTrue(stateKey, tsMs) ?: return
+                logDerived(id, age)
+                fs.putDerived(id, age, tsMs)
+                return
+            }
             expr.has("wind_chill") -> {
                 val cfg = expr.getJSONObject("wind_chill")
                 val t = readDouble(fs, cfg.getString("temp_key"), def.maxAgeSec) ?: return
@@ -104,6 +111,9 @@ object DerivedEval {
         evalBoolean(expr, fs)?.let { bool ->
             logDerived(id, bool)
             fs.putDerived(id, bool, tsMs)
+            if (id == "features.shiver_present") {
+                StateRepo.tracker.mark(id, bool, tsMs)
+            }
             return
         }
 

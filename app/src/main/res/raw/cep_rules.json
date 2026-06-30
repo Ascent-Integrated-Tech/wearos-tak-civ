@@ -500,6 +500,14 @@
     },
     {
       "type": "derived",
+      "id": "features.heart_rate",
+      "expr": {
+        "key": "heart_rate"
+      },
+      "units": "bpm"
+    },
+    {
+      "type": "derived",
       "id": "features.hr.above_hrmax",
       "expr": {
         "gt": [
@@ -637,12 +645,60 @@
     },
     {
       "type": "derived",
+      "id": "features.accel_low_motion",
+      "expr": {
+        "or": [
+          {
+            "lte_key": [
+              "accel.cadence_spm",
+              15.0
+            ]
+          },
+          {
+            "lte_key": [
+              "accel.magnitude_g",
+              0.15
+            ]
+          }
+        ]
+      },
+      "units": "bool"
+    },
+    {
+      "type": "derived",
       "id": "features.motion.active",
       "expr": {
         "not": {
           "ref": "features.accel_low_motion"
         }
       }
+    },
+    {
+      "type": "derived",
+      "id": "features.shiver_present",
+      "expr": {
+        "and": [
+          {
+            "ref": "features.accel_low_motion",
+            "is": true
+          },
+          {
+            "gte_key": [
+              "gyro.rms_dps",
+              5.0
+            ]
+          }
+        ]
+      },
+      "units": "bool"
+    },
+    {
+      "type": "derived",
+      "id": "features.shiver_duration_s",
+      "expr": {
+        "state_age_sec": "features.shiver_present"
+      },
+      "units": "sec"
     },
     {
       "type": "derived",

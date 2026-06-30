@@ -610,4 +610,12 @@
         android:description="@string/custom_developer_config_json_description"
         android:defaultValue="{}" />
 
+    <!-- WEAR-508 ManagedConfiguration CEP overlay payload. Empty string = no overlay. -->
+    <restriction
+        android:key="cep_configuration_json"
+        android:restrictionType="string"
+        android:title="@string/restrict_cep_configuration_title"
+        android:description="@string/restrict_cep_configuration_desc"
+        android:defaultValue="" />
+
 </restrictions>

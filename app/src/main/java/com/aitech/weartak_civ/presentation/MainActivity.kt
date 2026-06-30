@@ -1597,6 +1597,9 @@ class MainActivity : ComponentActivity() {
 
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, "=== === Handling Managed Config Update (calledOnCreate: $calledOnCreate) ===")
+        // WEAR-508: ManagedConfiguration CEP overlay (`cep_configuration_json`) is owned
+        // exclusively by the app-level CepManagedConfigReceiver -> ManagedConfigApplyWorker
+        // pipeline. MainActivity only handles non-CEP scalar managed-config keys here.
         seedVariablesFromRepo()
 
         val context = mainActivity.applicationContext
@@ -3937,11 +3940,9 @@ fun ConfirmationDialogPreview() {
 
     ConfirmationDialog(
         shouldShowDialog = shouldShowDialog,
-        rememberSwipeDismissableNavController(),
         "Do you want to trigger an SOS alert at your location?",
         Icons.Default.Warning,
         Color.Red,
-        "pp",
         isConfirmed
     )
 }
