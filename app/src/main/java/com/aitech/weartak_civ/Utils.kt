@@ -1015,20 +1015,6 @@ object Utils {
             val uid: String,
             val team: String,
             val type: String,
-            val how: String,
-            val time: Long,
-            val start: Long,
-            val stale: Long,
-            val access: String?,
-            val point: Point,
-            val detail: MarkerDetail,
-        )
-
-        data class UserPositionCotEvent(
-            val version: String,
-            val uid: String,
-            val team: String,
-            val type: String,
             val role: String,
             val how: String,
             val time: Long,

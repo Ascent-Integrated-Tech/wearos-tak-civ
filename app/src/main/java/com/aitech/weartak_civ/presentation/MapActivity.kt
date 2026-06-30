@@ -180,6 +180,7 @@ import kotlin.String
 import kotlin.collections.component1
 import kotlin.collections.component2
 import androidx.compose.ui.text.style.TextOverflow
+import org.maplibre.compose.expressions.dsl.asNumber
 
 class MapActivity : ComponentActivity() {
 
