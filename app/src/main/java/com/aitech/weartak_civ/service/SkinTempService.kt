@@ -513,11 +513,26 @@ class SkinTempService : Service() {
                 try {
                     dataPoints.forEach { dp ->
                         val status: Int? = try { dp.getValue(ValueKey.SpO2Set.STATUS) } catch (_: Throwable) { null }
+                        catch (_: Throwable) {
+                            null
+                        }
+
+                        Log.d(
+                            TAG,
+                            "[SPO2] status=$status value=${
+                                try { dp.getValue(ValueKey.SpO2Set.SPO2) } catch (_: Throwable) { null }
+                            }"
+                        )
                         if (status == null) return@forEach
                         if (status == 2) {
                             val spo2Val: Int? = try { dp.getValue(ValueKey.SpO2Set.SPO2) } catch (_: Throwable) { null }
                             lastSpo2Status = status
                             lastSpo2Pct = spo2Val?.toDouble()
+                            lastSpo2Pct?.let { pct ->
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    sharedRepo.storeLatestSpo2(pct)
+                                }
+                            }
                             lastSpo2Ts = System.currentTimeMillis()
                             lastSpo2OutcomeWasTimeout = false
                             lastSpo2EndedAsTimeout = false
@@ -528,7 +543,7 @@ class SkinTempService : Service() {
                             return@post
                         } else if (status == SPO2_STATUS_TIMEOUT) {
                             lastSpo2Status = status
-                            lastSpo2Pct = null
+                            // Keep the last successful SpO₂ reading.
                             lastSpo2Ts = System.currentTimeMillis()
                             lastSpo2OutcomeWasTimeout = true
                             lastSpo2EndedAsTimeout = true
@@ -1149,6 +1164,8 @@ class SkinTempService : Service() {
     private suspend fun emitLatestCep() {
         try {
             lastSpo2Pct?.let { pct ->
+                Log.d("SPO2_STORE", "Saving SpO2=$pct")
+                sharedRepo.storeLatestSpo2(pct)
                 CepBus.emit(CepEvent(topic = Topics.SPO2, payload = Spo2Payload(pct = pct)))
             }
 			// Emit latest HRV (RMSSD) if available

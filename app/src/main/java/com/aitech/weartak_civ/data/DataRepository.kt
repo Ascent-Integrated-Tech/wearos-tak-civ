@@ -501,6 +501,9 @@ class DataRepository(private val context: Context) {
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
+    private val _latestSpo2 = MutableStateFlow<Double?>(null)
+    val latestSpo2: StateFlow<Double?> = _latestSpo2
+
     private val _restingHeartRate = MutableStateFlow<Int>(DEFAULT_RESTING_HR)
     val restingHeartRate: StateFlow<Int> = _restingHeartRate
 
@@ -859,6 +862,7 @@ class DataRepository(private val context: Context) {
 
     data class PhysioData(
         val heartRateBpm: Int?,          // current HR
+        val spo2: Double?,
         val skinTempF: Float?,           // Temp of skin in Deg F
         val ageYears: Int?,              // physiological age used for calculations
         val weightKg: Int?,              // settings
@@ -877,6 +881,7 @@ class DataRepository(private val context: Context) {
         val nowMillis = System.currentTimeMillis()
 
         val hr          = latestHeartRate.value
+        val spo2        = latestSpo2.value
         val skinT       = latestSkinTemp.value
         val ageYears    = getPhysiologicalMetricAge.first()
         val weightKg    = getPhysiologicalMetricWeight.first()
@@ -892,6 +897,7 @@ class DataRepository(private val context: Context) {
             timeMillis = nowMillis,
             data = PhysioData(
                 heartRateBpm  = hr,
+                spo2          = spo2,
                 skinTempF     = skinT,
                 ageYears      = ageYears,
                 weightKg      = weightKg,
@@ -1808,7 +1814,9 @@ class DataRepository(private val context: Context) {
         Log.e("HR_REPO", "storeLatestHeartRate($heartRate)")
         _latestHeartRate.emit(heartRate)
     }
-
+    suspend fun storeLatestSpo2(spo2: Double?) {
+        _latestSpo2.emit(spo2)
+    }
     suspend fun storeLatestActivityRecognized(activity: ActivityRecognized) {
         _latestActivityRecognized.emit(activity)
     }

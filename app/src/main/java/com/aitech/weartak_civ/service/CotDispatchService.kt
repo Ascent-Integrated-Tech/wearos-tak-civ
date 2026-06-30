@@ -1097,13 +1097,22 @@ class CotDispatchService : Service() {
             "heartRateBpm raw = ${physSnap.data.heartRateBpm}"
         )
         val hr          = rectifiedIntToString(physSnap.data.heartRateBpm)
-
+        Log.d(
+            "SPO2_TRACE",
+            "snapshot spo2 = ${physSnap.data.spo2}"
+        )
+        val spo2        = rectifiedFormattedNumber(physSnap.data.spo2, "%.1f",zeroIsInvalid = false)
+        Log.d(
+            "SPO2_TRACE",
+            "xml spo2 = $spo2"
+        )
         Log.e(
             "HR_XML_DEBUG",
             "raw=${physSnap.data.heartRateBpm} hr=$hr"
         )
         val skt         = rectifiedFormattedNumber(physSnap.data.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
         val exert       = rectifiedFormattedNumber(physSnap.data.exertion, "%.2f", zeroIsInvalid = false)
+
         val bat         = sysSnap.batteryPercent
         val steps       = dailyMetrics?.steps ?: 0L
         val calories    = dailyMetrics?.calories ?: 0.0
@@ -1138,8 +1147,10 @@ class CotDispatchService : Service() {
 
         // Build the cot XML
         val cot = if (enableBatdokCot) {
-            val sktCelcius = String.format("%.1f", convertFarenheitToCelsius(physSnap.data.skinTempF)).let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
-            var batdokStr = if (-1 == (physSnap.data.heartRateBpm)) {
+            val sktCelcius = String.format("%.1f", convertFarenheitToCelsius(physSnap.data.skinTempF))
+                .let { str -> if (str.endsWith(".0")) str.replace(".0", "") else str }
+
+            val batdokStr = if (-1 == (physSnap.data.heartRateBpm)) {
                 if (-1F == physSnap.data.skinTempF) {
                     ""
                 } else {
@@ -1148,12 +1159,12 @@ class CotDispatchService : Service() {
             } else {
                 if (-1F == physSnap.data.skinTempF) {
                     """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
-
                 } else {
                     """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign><vitalSign index="1" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
                 }
             }
-            """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks>$batdokStr<biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$hr</hr><skt>$skt</skt><exert>$exert</exert><bat>$bat</bat></device></biometrics><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
+
+            """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks>$batdokStr<biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$hr</hr><spo2>$spo2</spo2><skt>$skt</skt><exert>$exert</exert><bat>$bat</bat></device></biometrics><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
         } else {
             """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
         }
