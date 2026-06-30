@@ -48,6 +48,8 @@ object SitxSecretsKeys {
 
     // TAK sessions list (encrypted JSON array)
     val TAK_SESSIONS_JSON = stringPreferencesKey("sitx.tak_sessions_json.enc")
+    val SELECTED_TAK_GROUP =
+        stringPreferencesKey("sitx.selected_tak_group.enc")
 
     val SELECTED_TAK_GROUP =
         stringPreferencesKey("sitx.selected_tak_group.enc")

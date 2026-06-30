@@ -159,6 +159,10 @@ class HeartrateService: Service() {
                 runBlocking {
                     hrStringLiveData.postValue("N/A")
                     requestPhysioStatusAndAlertingComplicationUpdate(context)
+                    Log.e(
+                        "HR_STORE",
+                        "OFF WRIST storing heartRate=$hr"
+                    )
                     sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
                 }
             }
@@ -234,14 +238,19 @@ class HeartrateService: Service() {
             if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
                 localHr = event.values[0].toInt()
                 //Log.i(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
+                Log.e(
+                    "HR_SENSOR",
+                    "rawHr=$localHr accuracy=$accuracyVal"
+                )
                 if ((accuracyVal != 3)) {
                     //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
                     return
                 }
 
-                if (!deviceWorn || localHr <= 0) {
+                if (!deviceWorn) {
                     if (hr != -1) {
                         hr = -1
+
                         runBlocking {
                             hrStringLiveData.postValue("N/A")
                             requestPhysioStatusAndAlertingComplicationUpdate(context)
@@ -251,6 +260,13 @@ class HeartrateService: Service() {
                     return
                 }
 
+                if (localHr <= 0) {
+                    Log.e(
+                        "HR_STORE",
+                        "Ignoring invalid sensor sample localHr=$localHr"
+                    )
+                    return
+                }
                 // --- NEW: feed real HR into CEP ---
                 scope.launch {
                     try {
@@ -277,6 +293,7 @@ class HeartrateService: Service() {
                         hrStringLiveData.postValue(hr.toString())
                         requestPhysioStatusAndAlertingComplicationUpdate(context)
 //                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
+                        Log.e("HR_STORE", "VALID HR storing heartRate=$hr")
                         sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
                     }
                 }

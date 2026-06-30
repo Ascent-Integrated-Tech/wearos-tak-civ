@@ -154,6 +154,20 @@ class PressureService : Service() {
             dataRepository.getEnableImmersionAlerts.distinctUntilChanged().collect { it ->
                 Log.i(TAG, "startEnableImmersionAlertsCollector: getEnableImmersionAlerts=$it")
                 enableImmersionAlerts = it
+                if (!enableImmersionAlerts) {
+                    if (null != submergeUid) {
+                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(submergeUid!!)
+                        submergeUid = null
+                    }
+                    if (null != shallowDunkUid) {
+                        dataRepository.removePhysioAndAutoGenAlertByUid(shallowDunkUid!!)
+                        shallowDunkUid = null
+                    }
+                    if (null != dunkUid) {
+                        dataRepository.removePhysioAndAutoGenAlertByUid(dunkUid!!)
+                        dunkUid = null
+                    }
+                }
             }
         }
     }
@@ -163,6 +177,13 @@ class PressureService : Service() {
             dataRepository.getEnableLowAtmPressureAlert.distinctUntilChanged().collect { it ->
                 Log.i(TAG, "getEnableLowAtmPressureAlert=$it")
                 enableLowAtmPressureAlert = it
+                if (!enableLowAtmPressureAlert) {
+                    if (null != lowPressureAlertUid) {
+                        Log.i(TAG, "Clearing Low Pressure Alert")
+                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(lowPressureAlertUid!!)
+                        lowPressureAlertUid = null
+                    }
+                }
             }
         }
         serviceScope.launch {
@@ -175,6 +196,13 @@ class PressureService : Service() {
             dataRepository.getEnableHighAtmPressureAlert.distinctUntilChanged().collect { it ->
                 Log.i(TAG, "getEnableHighAtmPressureAlert=$it")
                 enableHighAtmPressureAlert = it
+                if (!enableHighAtmPressureAlert) {
+                    if (null != highPressureAlertUid) {
+                        Log.i(TAG, "Clearing High Pressure Alert")
+                        dataRepository.clearPhysioAndAutoGenAlertRequestUid(highPressureAlertUid!!)
+                        highPressureAlertUid = null
+                    }
+                }
             }
         }
         serviceScope.launch {
