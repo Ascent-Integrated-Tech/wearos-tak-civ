@@ -18,6 +18,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -105,13 +106,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathNode
@@ -146,13 +147,13 @@ import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import org.greenrobot.eventbus.EventBus
 import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.all
 import org.maplibre.compose.expressions.dsl.asBoolean
-import org.maplibre.compose.expressions.dsl.asNumber
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
@@ -1504,6 +1505,15 @@ fun MapApp(exitActivity: () -> Unit) {
                 userLon = lon,
                 camera = cameraState
             )
+            ATOSTagsOnMap(
+                tags = receivedAtosTags,
+                camera = cameraState
+            )
+            UsersOnMap(
+                users = receivedMapUsers,
+                camera = cameraState
+            )
+
         }
 
         if (showPopup && puckScreenOffset != null) {

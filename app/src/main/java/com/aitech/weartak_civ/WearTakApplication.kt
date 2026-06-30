@@ -21,6 +21,9 @@ import android.content.Context
 import android.provider.Settings.Secure
 import android.util.Log
 import com.aitech.weartak_civ.cep.di.CepProvider
+import com.aitech.weartak_civ.integration.plugin.PluginIngressPort
+import com.aitech.weartak_civ.integration.plugin.PluginManager
+import com.aitech.weartak_civ.integration.plugin.HostPluginRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
@@ -32,6 +35,7 @@ import com.aitech.weartak_civ.data.secure.sitx.SitxEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.data.secure.takserver.TakServerEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
+import com.aitech.weartak_civ.integration.plugin.PluginRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +57,13 @@ class WearTakApplication : Application() {
 
     lateinit var gunshotOnnxRepo: GunshotOnnxRepository; private set
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
+
+    lateinit var pluginIngress: PluginIngressPort
+        private set
+    lateinit var pluginManager: PluginManager
+        private set
+    lateinit var pluginRepository: HostPluginRepository
+        private set
 
     companion object {
         val TAG = "WearTAK-Application"
@@ -84,7 +95,20 @@ class WearTakApplication : Application() {
             TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
         }
         CepProvider.init(this)
-        CepProvider.getOrCreateEngine(this).start()
+        // bootstrapEngine() inside getOrCreateEngine handles warm-up + start under the
+        // holder-mediated swap path, so callers must NOT invoke start() separately.
+        CepProvider.getOrCreateEngine(this)
+
+        pluginIngress = PluginIngressPort(this)
+        pluginManager = PluginManager(this, pluginIngress)
+        pluginRepository = HostPluginRepository(this, pluginManager)
+        pluginManager.startDeferred()
+    }
+
+    fun onPluginPackageRemoved(packageName: String) {
+        if (::pluginRepository.isInitialized) {
+            pluginRepository.onPackageRemoved(packageName)
+        }
     }
 
     object AppCtx {

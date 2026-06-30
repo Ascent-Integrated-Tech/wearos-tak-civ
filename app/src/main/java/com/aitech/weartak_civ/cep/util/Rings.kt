@@ -66,6 +66,18 @@ class TimedDoubleRing(private val cap: Int) {
         private set
     private var head = 0
 
+    /**
+     * Copies buffer state from [other] into this ring. Both rings must have the same capacity
+     * (same [RingConfig]-derived sizing); used when swapping engines to retain sensor history.
+     */
+    fun copyStateFrom(other: TimedDoubleRing) {
+        check(cap == other.cap) { "TimedDoubleRing capacity mismatch: $cap vs ${other.cap}" }
+        System.arraycopy(other.values, 0, values, 0, cap)
+        System.arraycopy(other.times, 0, times, 0, cap)
+        size = other.size
+        head = other.head
+    }
+
     fun add(v: Double, tsMs: Long) {
         values[head] = v
         times[head]  = tsMs
@@ -174,6 +186,14 @@ class TimedArrayRing(private val cap: Int) {
     private val times = LongArray(cap)
     private var size = 0
     private var head = 0
+
+    fun copyStateFrom(other: TimedArrayRing) {
+        check(cap == other.cap) { "TimedArrayRing capacity mismatch: $cap vs ${other.cap}" }
+        for (i in buf.indices) buf[i] = other.buf[i].toList()
+        System.arraycopy(other.times, 0, times, 0, cap)
+        size = other.size
+        head = other.head
+    }
 
     fun add(v: List<Double>, tsMs: Long) {
         buf[head]   = v

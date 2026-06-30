@@ -511,6 +511,10 @@
     <string name="custom_developer_config_json_title" translatable="false">Custom Developer Configurations</string>
     <string name="custom_developer_config_json_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>
 
+    <!-- WEAR-508 CEP ManagedConfiguration overlay -->
+    <string name="restrict_cep_configuration_title" translatable="false">CEP Configuration JSON</string>
+    <string name="restrict_cep_configuration_desc" translatable="false">ManagedConfiguration CEP overlay (schemaVersion 1). Empty string disables the overlay and the device runs on built-in rules only.</string>
+
     <!-- Developer bundle -->
     <string name="custom_developer_bundle_title" translatable="false">Developer bundle</string>
     <string name="custom_developer_bundle_description" translatable="false">Custom Configurations for development purposes. Deployment can leave this empty!!</string>

@@ -9,15 +9,19 @@
 
 package com.aitech.weartak_civ.presentation
 
+import android.R.id.icon
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
 import android.view.Gravity
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,9 +31,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -55,6 +61,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,9 +72,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -82,7 +92,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
@@ -105,12 +118,20 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.NavType
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.wear.compose.foundation.RevealValue
 import androidx.wear.compose.foundation.rememberRevealState
@@ -125,6 +146,7 @@ import androidx.wear.compose.material.Picker
 import androidx.wear.compose.material.PickerState
 import androidx.wear.compose.material.SelectableChip
 import androidx.wear.compose.material.SplitToggleChip
+import androidx.wear.compose.material.SplitToggleChipColors
 import androidx.wear.compose.material.SwipeToRevealChip
 import androidx.wear.compose.material.SwipeToRevealDefaults
 import androidx.wear.compose.material.SwipeToRevealPrimaryAction
@@ -140,6 +162,7 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_BASIC
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
@@ -157,6 +180,10 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
+import com.aitech.weartak_civ.integration.plugin.PluginCompatibilityStatus
+import com.aitech.weartak_civ.integration.plugin.PluginLoadingStatus
+import com.aitech.weartak_civ.integration.plugin.PluginUI
+import com.aitech.weartak_civ.integration.plugin.PluginViewModel
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.ALL_WIFI_NETWORKS
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.EVENT_SEND_DELAY_MS
@@ -380,6 +407,7 @@ import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -392,6 +420,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.Boolean
+import kotlin.Int
 import kotlin.String
 
 
@@ -416,21 +446,44 @@ class SettingsActivity : ComponentActivity() {
         const val LABEL_ALERT_LENGTH = "Alert Length"
         const val UNIT_MINUTES = " minutes"
         const val UNIT_SECONDS = " seconds"
+//        val pluginList: List<PluginData> = listOf(
+//            PluginData(
+//                icon = R.drawable.settings,
+//                title = "Hello World",
+//                loadingStatus = "LOADED",
+//            ),
+//            PluginData(
+//                icon = R.drawable.tak_alert_icon,
+//                title = "Alerting",
+//                loadingStatus = "NOT LOADED",
+//            ),
+//            PluginData(
+//                icon = R.drawable.bloodhound,
+//                title = "Bloodhound",
+//                loadingStatus = "ERROR",
+//                errorType = "INCOMPATIBLE VERSION"
+//            )
+//        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "SettingsActivity onCreate()")
         settingsActivity = this
+        val app = applicationContext as WearTakApplication
+        MainActivity.Constants.dataRepository = app.repo
+        MainActivity.Constants.bhRepo = app.bhRepo
+        MainActivity.Constants.sitxRepo = app.sitxRepo
         loadSettingsValues()
         Log.d(TAG, "SettingsActivity onCreate called with enablePhysiologicalAlertsSettingState=$enablePhysiologicalAlertsSettingState and enablePhysiologicalAlerts=$enablePhysiologicalAlerts")
 
         enableEdgeToEdge()
         setContent {
             val sitxVm: SitxViewModel = viewModel()
+            val pluginVm: PluginViewModel = viewModel()
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    WearTAKCivSettings(callsignState, licenseState, sitxVm = sitxVm)
+                    WearTAKCivSettings(callsignState, licenseState, sitxVm = sitxVm, pluginVm = pluginVm)
                 }
             }
         }
@@ -492,6 +545,13 @@ private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
 
     return changes
 }
+
+//data class PluginData(
+//    val icon: Int,
+//    val title: String,
+//    val loadingStatus: String,
+//    val errorType: String = ""
+//)
 
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
@@ -581,7 +641,7 @@ fun loadSettingsValues(){
 }
 
 @Composable
-fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>, sitxVm: SitxViewModel) {
+fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>, sitxVm: SitxViewModel, pluginVm: PluginViewModel) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
 //    var selectedCategoryAndRoleIndex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -590,6 +650,7 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
     }
     // collect license from data repo so we can see if it changes.
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
+    val pluginList by pluginVm.plugins.collectAsState()
 
     SwipeDismissableNavHost(
         navController = navController,
@@ -1012,6 +1073,17 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         }
         composable("sitx_status_authorization_screen") {
             SitxStatusAuthorizationScreen(navController, sitxVm)
+        }
+        composable("plugins_screen"){
+            PluginsScreen(navController, pluginVm, pluginList)
+        }
+
+        composable("specific_plugin_screen/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            Log.d(TAG, "specific_plugin_screen index: $index")
+            SpecificPluginScreen(navController, index, pluginList)
         }
     }
 
@@ -2557,11 +2629,9 @@ fun ServerRegistrationDialog(
 @Composable
 fun ConfirmationDialog(
     shouldShowDialog: MutableState<Boolean>,
-    navController: NavController,
     description: String,
     icon: ImageVector,
     confirmColor: Color,
-    path: String,
     isConfirmed: MutableState<Boolean>
 ) {
     if (shouldShowDialog.value) {
@@ -5052,6 +5122,405 @@ fun displayHailLoadingDialog(
 }
 
 @Composable
+fun PluginsScreen(navController: NavController, pluginViewModel: PluginViewModel, pluginList: List<PluginUI> ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                pluginViewModel.refresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    var showPopup = remember { mutableStateOf(false) }
+    val shouldShowDialog = remember { mutableStateOf(false) }
+    val isConfirmed = remember { mutableStateOf(false) }
+    //TODO: Make this actually change based on success
+    val successBoolean = remember { mutableStateOf(true) }
+//    val sortedUsers = remember(pluginList) {
+//        pluginList.sortedBy { it.loadingStatus }
+//    }
+    var pluginitem =  remember { mutableStateOf(PluginUI(
+        icon = null,
+        title = "",
+        desc = "",
+        loadingStatus = PluginLoadingStatus.NOT_LOADED,
+        pluginId = "",
+        versionName = "",
+        packageName = ""
+    )) }
+    WearTakCivScreenDimensions(
+        columnContent = {
+            LazyColumn(modifier = Modifier
+                .height(200.dp)){
+                itemsIndexed(
+                    items = pluginList,
+                    key = { _, item -> item.pluginId },
+                ) { index, item ->
+                    SwipeablePluginChip(
+                        index = index,
+                        title = item.title,
+                        loadingStatus = item.loadingStatus,
+                        showPopup = showPopup,
+                        appIcon = item.icon,
+                        navController = navController,
+                        onPrimaryActionClick = {
+                            pluginitem.value = item
+                            shouldShowDialog.value = true},
+                        onSecondaryActionClick = {
+                            pluginitem.value = item
+                            showPopup.value = true},
+                        checked = item.isLoaded,
+                        onCheckedChange = {
+                            when (it) {
+                                true -> pluginViewModel.loadPlugin(item.pluginId)
+                                false -> pluginViewModel.unloadPlugin(item.pluginId)
+                            }
+                        }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("settings_screen") {
+                        popUpTo(("settings_screen")) {
+                            inclusive = true
+                        }
+                    } },
+            )
+        },
+        "Plugins"
+    )
+    PopupBox(
+        showPopup,
+        pluginitem.value.title,
+        description = pluginitem.value.desc,
+        versionNumber = pluginitem.value.versionName,
+        compatibility = pluginitem.value.compatibility,
+        loadingStatus = pluginitem.value.loadingStatus,
+        errorMessage = pluginitem.value.errorMessage
+    )
+
+    ConfirmationDialog(
+        shouldShowDialog,
+        description = "Remove ${pluginitem.value.title}?",
+        icon = Icons.Default.Warning,
+        confirmColor = Color.Green,
+        isConfirmed = isConfirmed
+    )
+    if (isConfirmed.value) {
+        LaunchedEffect(Unit) {
+            delay(1000) // Delay for 5 seconds
+            isConfirmed.value = false // Dismiss the dialog
+            successBoolean.value = false // Dismiss the dialog
+            pluginViewModel.removePlugin(pluginitem.value.pluginId)
+        }
+        SuccessDialog(
+            isConfirmed,
+            successBoolean
+        )
+    }
+}
+
+@Composable
+fun SuccessDialog(
+    shouldShowSuccessDialog: MutableState<Boolean>,
+    successBoolean : MutableState<Boolean>
+) {
+    Dialog(onDismissRequest = { shouldShowSuccessDialog.value = false }) {
+        Card(
+            modifier = Modifier
+                .fillMaxSize()
+                .height(200.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.background)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (successBoolean.value) {
+//                    successImage()
+                    Spacer(modifier = Modifier.height(10.dp))
+                    androidx.compose.material3.Text(
+                        text = stringResource(R.string.success),
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                    )
+//                    additionalText()
+                } else {
+                    Icon(
+                        Icons.Rounded.Clear,
+                        modifier = Modifier.size(25.dp),
+                        contentDescription = null,
+                        tint = Color.Red
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    // TODO: Add more context to the error, for example "not connected to server & mesh/ditto is disabled. Enable meshing to fix"
+                    Text(
+                        text = stringResource(R.string.marker_stored_error_msg),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalWearMaterialApi::class)
+@Composable
+fun SwipeablePluginChip(
+    index: Int,
+    title: String,
+    loadingStatus: PluginLoadingStatus,
+    showPopup: MutableState<Boolean>,
+    appIcon: Drawable?,
+    navController: NavController,
+    onPrimaryActionClick: () -> Unit,
+    onSecondaryActionClick: () -> Unit,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val revealState = rememberRevealState()
+    val scope = rememberCoroutineScope()
+
+
+    SwipeToRevealChip(
+        revealState = revealState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                // Use custom actions to make the primary and secondary actions accessible
+                customActions =
+                    listOf(
+                        CustomAccessibilityAction("Delete TAK Server") {
+                            /* Add the primary action click handler here */
+                            true
+                        },
+                        CustomAccessibilityAction("Edit TAK Server") {
+                            /* Add the secondary click handler here */
+                            true
+                        }
+                    )
+            },
+        primaryAction = {
+            SwipeToRevealPrimaryAction(
+                revealState = revealState,
+                icon = { Icon(SwipeToRevealDefaults.Delete, stringResource(R.string.delete)) },
+                label = { Text(stringResource(R.string.delete)) },
+                onClick = { onPrimaryActionClick();
+                     /* scope.launch {revealState.animateTo(targetValue = RevealValue.RightRevealed)} */
+                }
+            )
+        },
+        secondaryAction = {
+            SwipeToRevealSecondaryAction(
+                revealState = revealState,
+                onClick = { onSecondaryActionClick() }
+            ) {
+                Icon(
+                    painterResource( R.drawable.info_outline ),
+                    "More Options")
+            }
+        },
+        undoPrimaryAction = {
+            SwipeToRevealUndoAction(
+                revealState = revealState,
+                label = { Text(stringResource(R.string.undo)) },
+                onClick = { /* Add the undo handler for primary action */ }
+            )
+        },
+        undoSecondaryAction = {
+            SwipeToRevealUndoAction(
+                revealState = revealState,
+                label = { Text(stringResource(R.string.undo)) },
+                onClick = { /* Add the undo handler for secondary action */ }
+            )
+        },
+        onFullSwipe = {onPrimaryActionClick() }
+    ) {
+        SplitToggleChip(
+            contentPadding = PaddingValues(end = 15.dp, start = 5.dp, top = 5.dp, bottom = 5.dp),
+            label = {
+                appIcon.let {
+                    AndroidView(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .align(Alignment.CenterVertically),
+                        factory = { context ->
+                            ImageView(context).apply {
+                                setImageDrawable(it)
+                            }
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.width(5.dp))
+                Column {
+                    Text(
+                        title,
+                        fontSize = 13.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                    )
+                    Text(
+                        loadingStatus.toString(),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = Color.LightGray
+                    )
+                }
+            },
+            checked = checked,
+            toggleControl = {
+                Switch(
+                    checked = checked,
+                    onCheckedChange =  null,
+                    modifier = Modifier.size(25.dp)
+                )
+            },
+            onCheckedChange = onCheckedChange,
+            enabled = true,
+            onClick = {
+                if (loadingStatus == PluginLoadingStatus.LOADED){
+                    navController.navigate("specific_plugin_screen/$index")
+                } else {
+                    //Nothing happens
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 3.dp),
+            colors = ToggleChipDefaults.splitToggleChipColors(
+                backgroundColor = if (loadingStatus == PluginLoadingStatus.ERROR) Color.Red.copy(alpha = 0.5f) else colors.surface,
+                splitBackgroundOverlayColor = if (loadingStatus == PluginLoadingStatus.ERROR) Color.Red.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.05f)
+            )
+        )
+    }
+}
+
+@Composable
+fun SpecificPluginScreen(
+    navController: NavController,
+    index: Int,
+    pluginList: List<PluginUI>
+) {
+    var title by remember { mutableStateOf(pluginList.getOrNull(index)?.title.orEmpty()) }
+
+    WearTakCivScreenDimensions(
+        columnContent = { },
+        rowContent = {
+            BackButton(
+                onClick = {
+                    navController.navigate("plugins_screen") {
+                        popUpTo(("plugins_screen")) {
+                            inclusive = true
+                        }
+                    } },
+            )
+        },
+        title
+    )
+}
+
+@Composable
+fun PopupBox(
+    showPopup: MutableState<Boolean>,
+    titleText: String,
+    description: String,
+    versionNumber: String,
+    compatibility: PluginCompatibilityStatus,
+    loadingStatus: PluginLoadingStatus,
+    errorMessage: String
+) {
+    if (showPopup.value) {
+        Dialog(
+            onDismissRequest = { showPopup.value = false },
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.DarkGray),
+                shape = RectangleShape,
+                modifier = Modifier
+                    .fillMaxHeight(.6f)
+                    .fillMaxWidth(.8f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Text(
+                        text = titleText,
+                        maxLines = 1,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = description,
+                        maxLines = 2,
+                        fontSize = 11.sp,
+                        lineHeight = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    if (loadingStatus == PluginLoadingStatus.ERROR){
+                        Column(
+                            //TODO WEAR-535: Make modular
+                            Modifier
+                                .background(Color.Red.copy(alpha = 0.5f))
+                                .padding(5.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = "ERROR: $errorMessage",
+                                color = Color.White,
+                                maxLines = 4,
+                                fontSize = 12.sp,
+                                lineHeight = 11.sp
+                            )
+                        }
+                    } else {
+                        Column(
+                            //TODO WEAR-535: Make modular
+                            Modifier
+                                .background(Color.Green)
+                                .padding(5.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = "Version: $versionNumber",
+                                color = Color.Black,
+                                maxLines = 3,
+                                fontSize = 10.sp,
+                                lineHeight = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Is $compatibility with WearTAK ${MainActivity.Constants.versionNumber} and is $loadingStatus",
+                                color = Color.Black,
+                                maxLines = 2,
+                                fontSize = 10.sp,
+                                lineHeight = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun SettingSwitchToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -5555,6 +6024,23 @@ fun SettingsScreen(
                     } },
                 enabled = true,
                 label = { Text(text = stringResource(R.string.physiological_user_metrics)) },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 3.dp)
+            )
+            Chip(
+                onClick = {
+                    navController.navigate("plugins_screen") {
+                        popUpTo("plugins_screen") { inclusive = true }
+                    }
+                },
+                enabled = true,
+                label = { Text(text = "Plugins") },
                 colors = ChipDefaults.chipColors(
                     backgroundColor = Color.DarkGray,
                     contentColor = Color.White,
@@ -6647,58 +7133,81 @@ fun BackButton(onClick: () -> Unit) {
     }
 }
 
-@Preview(widthDp = 192, heightDp = 1200, showBackground = true)
-@Composable
-fun SettingsPreview() {
-    var callsignState = MutableLiveData<String>("WEAROS-0")
-    var licenseState = MutableLiveData<String>("AscentLicense")
+//@Preview(widthDp = 192, heightDp = 1200, showBackground = true)
+//@Composable
+//fun SettingsPreview() {
+//    var callsignState = MutableLiveData<String>("WEAROS-0")
+//    var licenseState = MutableLiveData<String>("AscentLicense")
+//
+//    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
+//}
+//
+//@Preview(widthDp = 192, heightDp = 800, showBackground = true)
+//@Composable
+//fun PhysioSettingsPreview() {
+//
+//    PhysiologicalMetricsSetting(rememberSwipeDismissableNavController())
+//}
+//@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+//@Composable
+//fun SexMetricPreview() {
+//    var licenseState = MutableLiveData<String>("")
+//
+//    RadioChoiceSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type", "physiological_metrics_setting_screen")
+//}
+//@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+//@Composable
+//fun RoleSettingPreview() {
+//    RoleSetting(rememberSwipeDismissableNavController())
+//}
+//
+//@Preview(widthDp = 192, heightDp = 500, showBackground = true)
+//@Composable
+//fun AllergyMetricPreview() {
+//
+//    AllergySetting(rememberSwipeDismissableNavController(),"Allergies")
+//}
+//
+//@Preview(widthDp = 192, heightDp = 800, showBackground = true)
+//@Composable
+//fun PhysioAlertsPreview() {
+//    HeartRateAlertsSetting(rememberSwipeDismissableNavController())
+//}
+//@Preview(widthDp = 192, heightDp = 600, showBackground = true)
+//@Composable
+//fun ReportingStratPreview() {
+//    ReportingStrategySettings(rememberSwipeDismissableNavController())
+//}
+//@Preview(widthDp = 192, heightDp = 600, showBackground = true)
+//@Composable
+//fun ReportingStrategyPreview() {
+//    ReportingStrategyDynamicConstantSetting(rememberSwipeDismissableNavController())
+//}
+//@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+//@Composable
+//fun ReportingIntPreview() {
+//    ReportingStrategyIntervalSettings(rememberSwipeDismissableNavController(), constantReportingIntervalSettingsState, "Static Reporting Interval", "0")
+//}
 
-    SettingsScreen(rememberSwipeDismissableNavController(),callsignState, licenseState, LocalContext.current)
-}
-
-@Preview(widthDp = 192, heightDp = 800, showBackground = true)
-@Composable
-fun PhysioSettingsPreview() {
-
-    PhysiologicalMetricsSetting(rememberSwipeDismissableNavController())
-}
 @Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
 @Composable
-fun SexMetricPreview() {
-    var licenseState = MutableLiveData<String>("")
-
-    RadioChoiceSetting(rememberSwipeDismissableNavController(), licenseState, sexOptionsList, "Blood Type", "physiological_metrics_setting_screen")
-}
-@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
-@Composable
-fun RoleSettingPreview() {
-    RoleSetting(rememberSwipeDismissableNavController())
-}
-
-@Preview(widthDp = 192, heightDp = 500, showBackground = true)
-@Composable
-fun AllergyMetricPreview() {
-
-    AllergySetting(rememberSwipeDismissableNavController(),"Allergies")
+fun PopupBoxPreview() {
+    var showPopup = remember { mutableStateOf(true) }
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+        PopupBox(
+            showPopup,
+            "HelloWorld",
+            description = "Description text belongs here and describes the plugin",
+            versionNumber = "v5.5.1.8 (7f381e4d) - [5.5.1] (1761249075)",
+            compatibility = PluginCompatibilityStatus.UNKNOWN,
+            loadingStatus = PluginLoadingStatus.ERROR,
+            errorMessage = "This is an error message you goofed"
+        )
+    }
 }
 
-@Preview(widthDp = 192, heightDp = 800, showBackground = true)
-@Composable
-fun PhysioAlertsPreview() {
-    HeartRateAlertsSetting(rememberSwipeDismissableNavController())
-}
-@Preview(widthDp = 192, heightDp = 600, showBackground = true)
-@Composable
-fun ReportingStratPreview() {
-    ReportingStrategySettings(rememberSwipeDismissableNavController())
-}
-@Preview(widthDp = 192, heightDp = 600, showBackground = true)
-@Composable
-fun ReportingStrategyPreview() {
-    ReportingStrategyDynamicConstantSetting(rememberSwipeDismissableNavController())
-}
-@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
-@Composable
-fun ReportingIntPreview() {
-    ReportingStrategyIntervalSettings(rememberSwipeDismissableNavController(), constantReportingIntervalSettingsState, "Static Reporting Interval", "0")
-}
+//@Preview(device = Devices.WEAR_OS_LARGE_ROUND, showSystemUi = true, showBackground = true)
+//@Composable
+//fun PluginScreenPreview() {
+//    PluginsScreen(rememberNavController())
+//}

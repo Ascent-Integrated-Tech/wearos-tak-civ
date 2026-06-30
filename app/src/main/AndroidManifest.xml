@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <permission
+        android:name="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST"
+        android:protectionLevel="signature" />
+
     <uses-feature android:name="android.hardware.type.watch" />
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -68,6 +72,9 @@
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
+    <!-- WEAR-509: bind WearTAK plugins exposing IWearTakPlugin (SDK contract). -->
+    <uses-permission android:name="com.weartak.plugin.permission.BIND_PLUGIN" />
+
     <!--
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
@@ -87,6 +94,9 @@
     <queries>
         <package android:name="com.samsung.android.service.health" />
         <package android:name="com.toughstump.atoswearable" />
+        <intent>
+            <action android:name="com.weartak.plugin.action.PLUGIN_SERVICE" />
+        </intent>
     </queries>
 
     <application
@@ -451,6 +461,66 @@
             android:name=".receiver.AlarmReceiver"
             android:enabled="true"
             android:exported="false">
+        </receiver>
+
+        <!-- WEAR-508: app-level ManagedConfiguration CEP overlay receiver.
+             Listens for ACTION_APPLICATION_RESTRICTIONS_CHANGED outside of MainActivity so
+             the overlay can be applied without an activity. exported=true is required because
+             the broadcast is delivered by the system process. -->
+        <receiver
+            android:name=".integration.managedconfig.CepManagedConfigReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.APPLICATION_RESTRICTIONS_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".integration.plugin.PluginOverlayReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            <intent-filter>
+                <action android:name="com.aitech.weartak_civ.PLUGIN_OVERLAY" />
+                <action android:name="com.aitech.weartak_civ.PLUGIN_UNREGISTER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WEAR-509: plugin sample ingest. Design action name is PLUGIN_SAMPLE; the legacy
+             PLUGIN_INGEST action is retained temporarily for backward compatibility with
+             plugins that still publish against the older name. -->
+        <receiver
+            android:name=".integration.plugin.PluginIngestReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            <intent-filter>
+                <action android:name="com.aitech.weartak_civ.PLUGIN_SAMPLE" />
+                <action android:name="com.aitech.weartak_civ.PLUGIN_INGEST" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WEAR-509: package uninstall triggers plugin eviction + recompose (design §540). -->
+        <receiver
+            android:name=".integration.plugin.PluginPackageRemovedReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_PACKAGE_REMOVED">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".integration.plugin.PluginPackageChangedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
         </receiver>
 
         <activity
