@@ -175,8 +175,6 @@ class CepEngine(
                 featureStore.put("settings.pressure.low_atm_alert_enabled",    if (lowAtmOn)    1.0 else 0.0)
                 featureStore.put("settings.pressure.high_atm_alert_enabled",   if (highAtmOn)   1.0 else 0.0)
 
-                clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn, immersionOn=immersionOn)
-
                 Log.d("CEP", "Updated pressure profile: high=$highHpa low=$lowHpa hPa " +
                             "immersionOn=$immersionOn lowAtmOn=$lowAtmOn highAtmOn=$highAtmOn")
             } catch (t: Throwable) {
@@ -284,35 +282,6 @@ class CepEngine(
         return true
     }
 
-    private suspend fun clearDisabledPressureAlerts(lowAtmOn: Boolean, highAtmOn: Boolean, immersionOn: Boolean) {
-        if (!lowAtmOn) {
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_low_atm",
-                reason = "settings.pressure.low_atm_alert_enabled=0"
-            )
-        }
-        if (!highAtmOn) {
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_high_atm",
-                reason = "settings.pressure.high_atm_alert_enabled=0"
-            )
-        }
-        if (!immersionOn) {
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_dunk_detected",
-                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
-            )
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_shallow_dunk",
-                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
-            )
-            clearActiveAlertByRuleId(
-                ruleId = "pressure_submerge_detected",
-                reason = "settings.pressure.settings.pressure.immersion_alerts_enabled=0"
-            )
-        }
-    }
-
     //Fix for cep feature key alert cancellation
     private suspend fun checkAndClearAlerts() {
         val now = System.currentTimeMillis()
@@ -391,4 +360,3 @@ class CepEngine(
     }
 
 }
-
