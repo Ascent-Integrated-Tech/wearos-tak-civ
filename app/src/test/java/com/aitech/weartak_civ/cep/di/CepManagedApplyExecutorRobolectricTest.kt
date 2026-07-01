@@ -92,68 +92,84 @@ class CepManagedApplyExecutorRobolectricTest {
         }
     }
 
-    private class CapturingDiag : CepApplyDiagnostics {
-        val rejections = mutableListOf<String>()
-        val infos = mutableListOf<String>()
+//    private class CapturingDiag : CepApplyDiagnostics {
+//        val rejections = mutableListOf<String>()
+//        val infos = mutableListOf<String>()
+//
+//        override fun recordRejection(
+//            source: SourceLayer,
+//            reasonCode: String,
+//            schemaVersion: Int?,
+//            payloadHash: String?,
+//            effectiveBefore: String?,
+//            effectiveAfter: String?,
+//            fallbackDecision: String?,
+//            tenant: String?, issuer: String?,
+//            message: String?,
+//            pluginId: String?,
+//            pluginVersion: String?
+//        ) {
+//            rejections.add(reasonCode)
+//        }
+//
+//        override fun recordInfo(
+//            source: SourceLayer,
+//            reasonCode: String,
+//            schemaVersion: Int?,
+//            payloadHash: String?,
+//            effectiveBefore: String?,
+//            effectiveAfter: String?,
+//            tenant: String?, issuer: String?,
+//            pluginId: String?,
+//            pluginVersion: String?
+//        ) {
+//            infos.add(reasonCode)
+//        }
+//    }
+private class CapturingDiag : CepApplyDiagnostics {
+    val rejections = mutableListOf<String>()
+    val infos = mutableListOf<String>()
 
-        override fun recordRejection(
-            source: SourceLayer,
-            reasonCode: String,
-            schemaVersion: Int?,
-            payloadHash: String?,
-            effectiveBefore: String?,
-            effectiveAfter: String?,
-            fallbackDecision: String?,
-            tenant: String?, issuer: String?,
-            message: String?,
-            pluginId: String?,
-            pluginVersion: String?
-        ) {
-            rejections.add(reasonCode)
-        }
-
-        override fun recordInfo(
-            source: SourceLayer,
-            reasonCode: String,
-            schemaVersion: Int?,
-            payloadHash: String?,
-            effectiveBefore: String?,
-            effectiveAfter: String?,
-            tenant: String?, issuer: String?,
-            pluginId: String?,
-            pluginVersion: String?
-        ) {
-            infos.add(reasonCode)
-        }
+    override fun recordRejection(context: CepDiagnosticContext) {
+        rejections.add(context.reasonCode)
     }
 
-    private object NoopDiag : CepApplyDiagnostics {
-        override fun recordRejection(
-            source: SourceLayer,
-            reasonCode: String,
-            schemaVersion: Int?,
-            payloadHash: String?,
-            effectiveBefore: String?,
-            effectiveAfter: String?,
-            fallbackDecision: String?,
-            tenant: String?, issuer: String?,
-            message: String?,
-            pluginId: String?,
-            pluginVersion: String?
-        ) = Unit
-
-        override fun recordInfo(
-            source: SourceLayer,
-            reasonCode: String,
-            schemaVersion: Int?,
-            payloadHash: String?,
-            effectiveBefore: String?,
-            effectiveAfter: String?,
-            tenant: String?, issuer: String?,
-            pluginId: String?,
-            pluginVersion: String?
-        ) = Unit
+    override fun recordInfo(context: CepDiagnosticContext) {
+        infos.add(context.reasonCode)
     }
+}
+
+//    private object NoopDiag : CepApplyDiagnostics {
+//        override fun recordRejection(
+//            source: SourceLayer,
+//            reasonCode: String,
+//            schemaVersion: Int?,
+//            payloadHash: String?,
+//            effectiveBefore: String?,
+//            effectiveAfter: String?,
+//            fallbackDecision: String?,
+//            tenant: String?, issuer: String?,
+//            message: String?,
+//            pluginId: String?,
+//            pluginVersion: String?
+//        ) = Unit
+//
+//        override fun recordInfo(
+//            source: SourceLayer,
+//            reasonCode: String,
+//            schemaVersion: Int?,
+//            payloadHash: String?,
+//            effectiveBefore: String?,
+//            effectiveAfter: String?,
+//            tenant: String?, issuer: String?,
+//            pluginId: String?,
+//            pluginVersion: String?
+//        ) = Unit
+//    }
+private object NoopDiag : CepApplyDiagnostics {
+    override fun recordRejection(context: CepDiagnosticContext) = Unit
+    override fun recordInfo(context: CepDiagnosticContext) = Unit
+}
 
     private fun overlayJson(cepResetEpoch: Long): String = """
         {"schemaVersion":1,"cepResetEpoch":$cepResetEpoch,"rulesMode":"MERGE","featuresMode":"MERGE",

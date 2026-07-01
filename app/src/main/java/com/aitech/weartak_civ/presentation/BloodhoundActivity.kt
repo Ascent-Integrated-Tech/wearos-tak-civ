@@ -174,11 +174,19 @@ class BloodhoundActivity  : ComponentActivity() {
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
+    val app = context.applicationContext as WearTakApplication
+
+    val dataRepository = remember(app) { app.repo }
+    val bhRepo = remember(app) { app.bhRepo }
+
     val navController = rememberSwipeDismissableNavController()
+
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-    val bhRepo = (context.applicationContext as WearTakApplication).bhRepo
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
-    val bloodhoundEnabledLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
+
+    val bloodhoundEnabledLive by MainActivity.Constants
+        .enableBloodhoundCompassServiceSettingsState
+        .observeAsState()
 
     LaunchedEffect(Unit) {
         dataRepository.bloodhoundUiCommands.collectLatest { command ->
@@ -190,6 +198,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context) {
                     context.startActivity(intent)
                     exitActivity()
                 }
+
                 DataRepository.BloodhoundUiCommand.CloseBloodhoundScreen -> {
                     exitActivity()
                 }

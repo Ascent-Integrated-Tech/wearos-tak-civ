@@ -1175,11 +1175,14 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedAtosTagsSetting by dataRepository.receivedAtosTagList.collectAsStateWithLifecycle(
         initialValue = emptyList()
     )
-    val receivedUserListSetting by MainActivity.Constants.dataRepository
+    val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val activeItem by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
+    val bhRepo = remember(context) {
+        (context.applicationContext as WearTakApplication).bhRepo
+    }
 
+    val activeItem by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
@@ -1506,15 +1509,14 @@ fun MapApp(exitActivity: () -> Unit) {
                 userLon = lon,
                 camera = cameraState
             )
-            ATOSTagsOnMap(
-                tags = receivedAtosTags,
-                camera = cameraState
-            )
-            UsersOnMap(
-                users = receivedMapUsers,
-                camera = cameraState
-            )
-
+//            ATOSTagsOnMap(
+//                tags = receivedAtosTags,
+//                camera = cameraState
+//            )
+//            UsersOnMap(
+//                users = receivedMapUsers,
+//                camera = cameraState
+//            )
         }
 
         if (showPopup && puckScreenOffset != null) {
