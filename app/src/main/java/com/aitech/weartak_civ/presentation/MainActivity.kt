@@ -202,6 +202,8 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_CRM_POOR_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
@@ -298,6 +300,7 @@ import java.io.File
 import com.aitech.weartak_civ.service.SitxTakService
 import kotlinx.serialization.SerialName
 import kotlin.Long
+import kotlin.text.get
 
 
 class MainActivity : ComponentActivity() {
@@ -387,6 +390,15 @@ class MainActivity : ComponentActivity() {
         var highAtmPressureAlertThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD)
         //Enable Global Health Events
         var enablePassiveDataService = false
+
+        // CRM
+        var enableCrmService: Boolean = false
+        val enableCrmServiceSettingsState = MutableLiveData(enableCrmService)
+        var crmPoorMaxThreshold: Int = DEFAULT_CRM_POOR_MAX_THRESHOLD
+        var crmModerateMaxThreshold: Int = DEFAULT_CRM_MODERATE_MAX_THRESHOLD
+        val crmPoorMaxThresholdSettingsState = MutableLiveData(crmPoorMaxThreshold)
+        val crmModerateMaxThresholdSettingsState = MutableLiveData(crmModerateMaxThreshold)
+
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -950,6 +962,9 @@ class MainActivity : ComponentActivity() {
             enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
             onnxUasTriggerThresholdPercent = dataRepository.getOnnxUasTriggerThresholdPercent.first()
 
+            // CRM
+            enableCrmService = dataRepository.getEnableCrmService.first()
+
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
             highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
 
@@ -1430,7 +1445,7 @@ class MainActivity : ComponentActivity() {
         enableBloodhoundProximityVibrationSettingsState.postValue(enableBloodhoundProximityVibration)
         bloodhoundProximityRadiusMetersSettingsState.postValue(bloodhoundProximityRadiusMeters)
         bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
-
+        enableCrmServiceSettingsState.postValue(enableCrmService)
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
         onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
         enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)

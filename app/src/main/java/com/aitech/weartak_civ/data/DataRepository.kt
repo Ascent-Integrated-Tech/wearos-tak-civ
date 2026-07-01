@@ -46,10 +46,13 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
+import com.aitech.weartak_civ.DEFAULT_CRM_POOR_MAX_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
@@ -115,7 +118,6 @@ import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
@@ -140,16 +142,12 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
-import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
-import com.aitech.weartak_civ.Utils.CotUtils.Point
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.ipc.AtosCotPacket
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import kotlin.collections.plus
-import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsKeys
 import com.aitech.weartak_civ.service.SitxTakService
-import kotlinx.serialization.builtins.ListSerializer
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -496,6 +494,16 @@ class DataRepository(private val context: Context) {
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
 
+    val getEnableCrmService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_CRM_SERVICE] ?: DEFAULT_ENABLE_CRM_SERVICE
+    }
+
+    suspend fun storeEnableCrmService(enableCrmService: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_CRM_SERVICE] = enableCrmService
+        }
+    }
+
     private val _latestCrmInference = MutableStateFlow(CrmInferenceState.idle())
     val latestCrmInference: StateFlow<CrmInferenceState> = _latestCrmInference
 
@@ -504,6 +512,35 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeCrmInference(state: CrmInferenceState) {
         _latestCrmInference.emit(state)
+    }
+
+    val crmThresholdRanges: Flow<CrmThresholdRanges> =
+        context.dataStore.data.map { prefs ->
+            val poorMax = prefs[CRM_RED_MAX_THRESHOLD]
+                ?: DEFAULT_CRM_POOR_MAX_THRESHOLD
+
+            val moderateMax = prefs[CRM_YELLOW_MAX_THRESHOLD]
+                ?: DEFAULT_CRM_MODERATE_MAX_THRESHOLD
+
+            sanitizeCrmThresholdRanges(
+                poorMax = poorMax,
+                moderateMax = moderateMax,
+            )
+        }
+
+    suspend fun storeCrmThresholdRanges(
+        poorMax: Int,
+        moderateMax: Int,
+    ) {
+        val sanitized = sanitizeCrmThresholdRanges(
+            poorMax = poorMax,
+            moderateMax = moderateMax,
+        )
+
+        context.dataStore.edit { prefs ->
+            prefs[CRM_RED_MAX_THRESHOLD] = sanitized.poorMax
+            prefs[CRM_YELLOW_MAX_THRESHOLD] = sanitized.moderateMax
+        }
     }
 
     fun tryStoreCrmInference(state: CrmInferenceState): Boolean = _latestCrmInference.tryEmit(state)
@@ -3490,6 +3527,11 @@ class DataRepository(private val context: Context) {
         private val EXERTION_ALERT_THRESHOLD_LENGTH = intPreferencesKey("exertion_alert_threshold_length")
         private val HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("hr_high_alert_bpm_threshold")
         private val HR_HIGH_ALERT_NUM_SECS_THRESHOLD = intPreferencesKey("hr_high_alert_num_secs_threshold")
+        private val ENABLE_CRM_SERVICE = booleanPreferencesKey("enable_crm_service")
+        private val CRM_RED_MAX_THRESHOLD = intPreferencesKey("crm_red_max_threshold")
+
+        private val CRM_YELLOW_MAX_THRESHOLD = intPreferencesKey("crm_yellow_max_threshold")
+
         private val BATT_WARN_PERCENT = intPreferencesKey("batt_warn_percent")
         private val BATT_ALERT_PERCENT = intPreferencesKey("batt_alert_percent")
         private val AGE = intPreferencesKey("age")

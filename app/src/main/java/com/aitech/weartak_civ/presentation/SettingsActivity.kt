@@ -275,7 +275,13 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProx
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityIntensitySettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityRadiusMeters
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityRadiusMetersSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmModerateMaxThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmModerateMaxThresholdSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmPoorMaxThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmPoorMaxThresholdSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundProximityVibrationSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCrmService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCrmServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeight
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightState
@@ -495,6 +501,7 @@ private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
 
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
+    enableCrmServiceSettingsState.postValue(enableCrmService)
     enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
@@ -5152,6 +5159,7 @@ fun SettingsScreen(
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     val onnxGunshotDetectCheckedLive by enableOnnxGunshotServiceSettingsState.observeAsState()
     val onnxUasDetectCheckedLive by enableOnnxUasServiceSettingsState.observeAsState()
+    val crmCheckedLive by enableCrmServiceSettingsState.observeAsState()
     val coroutineScope = rememberCoroutineScope()
     var versionTapCount by remember { mutableStateOf(0) }
     var lastVersionTapTime by remember { mutableStateOf(0L) }
@@ -5537,6 +5545,27 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(top = 3.dp)
             )
+            SettingsToggleWithClickOnEnabledChip(
+                checkedLive = crmCheckedLive,
+                onCheckedChange = {
+                    enableCrmServiceSettingsState.postValue(it)
+                },
+                title = "CRM Reserve",
+                description = if (crmCheckedLive == true) {
+                    "Thresholds →"
+                } else {
+                    stringResource(R.string.service_on_off)
+                },
+                detailsEnabled = crmCheckedLive == true,
+                onDetailsClick = {
+                    crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
+                    crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
+
+                    navController.navigate("crm_thresholds_screen") {
+                        popUpTo("crm_thresholds_screen") { inclusive = true }
+                    }
+                }
+            )
 
             Chip(
                 onClick = {
@@ -5677,6 +5706,9 @@ fun SettingsScreen(
                     var loadoutWeightChanged: Boolean = false
                     var restingHeartRateChanged: Boolean = false
                     var companionAppCheckedChanged: Boolean = false
+                    var crmCheckedChanged: Boolean = false
+                    var crmPoorThresholdChanged: Boolean = false
+                    var crmModerateThresholdChanged: Boolean = false
 
                     if (restingHrHighAlertBpmThreshold != restingHrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; restingHeartRateHighThresholdChanged = true
@@ -5987,6 +6019,40 @@ fun SettingsScreen(
                         requestChatComplicationUpdate(context)
 
                     }
+                    if (enableCrmService != enableCrmServiceSettingsState.value) {
+                        settingsChanged = true
+                        crmCheckedChanged = true
+
+                        enableCrmService = enableCrmServiceSettingsState.value ?: enableCrmService
+
+                        runBlocking {
+                            enableCrmServiceSettingsState.postValue(enableCrmService)
+                        }
+                    }
+
+                    if (crmPoorMaxThreshold != crmPoorMaxThresholdSettingsState.value) {
+                        settingsChanged = true
+                        crmPoorThresholdChanged = true
+
+                        crmPoorMaxThreshold =
+                            crmPoorMaxThresholdSettingsState.value ?: crmPoorMaxThreshold
+
+                        runBlocking {
+                            crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
+                        }
+                    }
+
+                    if (crmModerateMaxThreshold != crmModerateMaxThresholdSettingsState.value) {
+                        settingsChanged = true
+                        crmModerateThresholdChanged = true
+
+                        crmModerateMaxThreshold =
+                            crmModerateMaxThresholdSettingsState.value ?: crmModerateMaxThreshold
+
+                        runBlocking {
+                            crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
+                        }
+                    }
                     if (enableImmersionAlerts != enableImmersionAlertsSettingsState.value) {
                         settingsChanged = true; immersionAlertsChanged = true
                         enableImmersionAlerts = enableImmersionAlertsSettingsState.value ?: enableImmersionAlerts
@@ -6169,6 +6235,22 @@ fun SettingsScreen(
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
+                            if (crmCheckedChanged) {
+                                Log.d(TAG, "Storing enableCrmService $enableCrmService")
+                                dataRepository.storeEnableCrmService(enableCrmService)
+                            }
+
+                            if (crmPoorThresholdChanged || crmModerateThresholdChanged) {
+                                Log.d(
+                                    TAG,
+                                    "Storing CRM thresholds poorMax=$crmPoorMaxThreshold moderateMax=$crmModerateMaxThreshold"
+                                )
+
+                                dataRepository.storeCrmThresholdRanges(
+                                    poorMax = crmPoorMaxThreshold,
+                                    moderateMax = crmModerateMaxThreshold,
+                                )
+                            }
                              if (birthYearChanged) {
                                  Log.d(TAG, "Storing Birth Year ($birthYearValue)")
                                  dataRepository.storeYearOfBirth(birthYearValue)
