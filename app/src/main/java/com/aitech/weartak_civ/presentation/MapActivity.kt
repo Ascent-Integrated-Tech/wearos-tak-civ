@@ -886,6 +886,7 @@ fun LayerTogglePopup(
     availableUserRolesLEO : Set<String>,
     onDismiss: () -> Unit
 )
+
 {
     Popup(
         alignment = Alignment.Center,
@@ -958,6 +959,8 @@ fun LayerTogglePopup(
 
 
 
+
+
                 Spacer(Modifier.height(4.dp))
 
                 val userTeams = listOf(
@@ -965,9 +968,12 @@ fun LayerTogglePopup(
                     "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
                     "Green", "Dark Green", "Brown"
                 ).filter { it in availableTeams }
+                val totalOtherTeamCategories = userTeams.count { team ->
+                    (teamColorCount[team] ?: 0) > 0
+                }
 
                 Text(
-                    text = "Team Colors (${userTeams.size})",
+                    text = "Team Colors ($totalOtherTeamCategories)",
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 10.sp
@@ -989,15 +995,18 @@ fun LayerTogglePopup(
                 val userRoles = listOf(
                     "Forward Observer", "HQ", "K9", "Medic", "RTO", "Sniper", "Team Lead", "Team Member"
                 ).filter { it in availableUserRoles }
+                val totalOtherDefaultRoleCategories = userRoles.count { role ->
+                    (roleCounts[role] ?: 0) > 0
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Default Roles (${userRoles.size})",
+                    text = "Default Roles ($totalOtherDefaultRoleCategories)",
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     fontSize = 10.sp
                 )
                 userRoles.forEach { role ->
-                    val count = teamColorCount[role] ?: 0
+                    val count = roleCounts[role] ?: 0
                     val meSuffix = if (role ==  myRole) ", me" else ""
                     ToggleRow(
                         label = "$role ($count$meSuffix)",
@@ -1009,11 +1018,15 @@ fun LayerTogglePopup(
                 Spacer(Modifier.height(4.dp))
 
                 val userRolesLEO = listOf(
-                    "Armed Surveillance", "Assistant Team Leader", "Aviation", "Bomb Tech", "Command Post", "Critical Response", "Hazards", "Negotiator", "Surveilliance", "Tactical Communicator", "TOC"
+                    "Armed Surveillance", "Assistant Team Leader", "Aviation", "Bomb Tech", "Command Post", "Critical Response", "Hazards", "Negotiator", "Surveillance", "Tactical Communicator", "TOC"
                 ).filter { it in availableUserRolesLEO }
+                val totalLeoRoleCategories = userRolesLEO.count { role ->
+                    val count = roleCounts[role] ?: 0
+                    count > 0
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "LEO / Civil Use Roles (${userRolesLEO.size})",
+                    text = "LEO / Civil Use Roles (${totalLeoRoleCategories})",
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     fontSize = 10.sp
@@ -1172,6 +1185,7 @@ fun MapApp(exitActivity: () -> Unit) {
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+
     val receivedAtosTagsSetting by dataRepository.receivedAtosTagList.collectAsStateWithLifecycle(
         initialValue = emptyList()
     )
@@ -1304,35 +1318,46 @@ fun MapApp(exitActivity: () -> Unit) {
             }
         }
     }
-    val roleCounts = remember(receivedMapUsers, myRole) {
-        val counts = receivedMapUsers
+    val roleCounts = remember(receivedMapUsers) {
+        receivedMapUsers
             .mapNotNull { it.role }
             .filter { it.isNotBlank() }
             .groupingBy { it }
             .eachCount()
-            .toMutableMap()
 
-        if (myRole.isNotBlank()) {
-            counts[myRole] = (counts[myRole] ?: 0) + 1
-        }
-        counts
     }
-    val teamColorCount = remember(receivedMapUsers, team) {
-        val counts = receivedMapUsers
+    val teamColorCount = remember(receivedMapUsers) {
+        receivedMapUsers
             .map { it.team }
             .filter { it.isNotBlank() }
             .groupingBy { it }
             .eachCount()
             .toMutableMap()
 
-        if (team.isNotBlank()) {
-            counts[team] = (counts[team] ?: 0) + 1
-        }
-
-        counts
     }
-    val presentUserRoles = remember(roleCounts) { roleCounts.keys }
-    val presentUserRolesLEO = presentUserRoles
+    val defaultRoleNames = setOf(
+        "Forward Observer", "HQ", "K9", "Medic", "RTO", "Sniper", "Team Lead", "Team Member"
+    )
+
+    val leoRoleNames = setOf(
+        "Armed Surveillance", "Assistant Team Leader", "Aviation", "Bomb Tech",
+        "Command Post", "Critical Response", "Hazards", "Negotiator",
+        "Surveillance", "Tactical Communicator", "TOC"
+    )
+
+    val presentUserRoles = remember(roleCounts, myRole) {
+        roleCounts.keys.filter { it in defaultRoleNames }.toSet() +
+                if (myRole in defaultRoleNames) setOf(myRole) else emptySet()
+    }
+
+    val presentUserRolesLEO = remember(roleCounts, myRole) {
+        roleCounts.keys
+            .filter { it in leoRoleNames }
+            .toMutableSet()
+            .apply {
+                if (myRole in leoRoleNames) add(myRole)
+            }
+    }
 
 
     Log.d(TAG, receivedMapUsers.toString())
