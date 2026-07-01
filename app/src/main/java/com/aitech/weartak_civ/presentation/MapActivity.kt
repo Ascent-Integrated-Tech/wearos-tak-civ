@@ -967,7 +967,7 @@ fun LayerTogglePopup(
                     "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
                     "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
                     "Green", "Dark Green", "Brown"
-                ).filter { it in availableTeams }
+                ).filter { (it in availableTeams) && ((teamColorCount[it] ?: 0) > 0) }
                 val totalOtherTeamCategories = userTeams.count { team ->
                     (teamColorCount[team] ?: 0) > 0
                 }
@@ -994,7 +994,7 @@ fun LayerTogglePopup(
 
                 val userRoles = listOf(
                     "Forward Observer", "HQ", "K9", "Medic", "RTO", "Sniper", "Team Lead", "Team Member"
-                ).filter { it in availableUserRoles }
+                ).filter { (it in availableUserRoles) && ((roleCounts[it] ?: 0) > 0)}
                 val totalOtherDefaultRoleCategories = userRoles.count { role ->
                     (roleCounts[role] ?: 0) > 0
                 }
@@ -1019,7 +1019,7 @@ fun LayerTogglePopup(
 
                 val userRolesLEO = listOf(
                     "Armed Surveillance", "Assistant Team Leader", "Aviation", "Bomb Tech", "Command Post", "Critical Response", "Hazards", "Negotiator", "Surveillance", "Tactical Communicator", "TOC"
-                ).filter { it in availableUserRolesLEO }
+                ).filter { (it in availableUserRolesLEO) && ((roleCounts[it] ?: 0) > 0) }
                 val totalLeoRoleCategories = userRolesLEO.count { role ->
                     val count = roleCounts[role] ?: 0
                     count > 0
