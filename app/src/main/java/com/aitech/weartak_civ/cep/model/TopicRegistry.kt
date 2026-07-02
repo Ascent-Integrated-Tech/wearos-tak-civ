@@ -11,6 +11,7 @@ object TopicRegistry {
         Topics.ACCEL     to AccelPayload::class.java,
         Topics.ACTIVITY  to ActivityPayload::class.java,
         Topics.SPO2      to Spo2Payload::class.java,
+        Topics.SPO2_TIER_EVENT to Spo2TierEventPayload::class.java,
         Topics.IMMERSION to ImmersionPayload::class.java,
         Topics.SLEEP     to SleepPayload::class.java,
         Topics.OFFBODY   to OffBodyPayload::class.java,

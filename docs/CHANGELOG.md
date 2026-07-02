@@ -5,6 +5,60 @@ Format: `[YYYY-MM-DD] <type>: <summary>` with full context per entry.
 
 ---
 
+## [2026-04-25] — SpO2 Production-Hardening (Final v7 pass)
+
+### Objective
+Close the remaining SpO2 correctness and verification gaps without expanding scope.
+
+### Code Changes
+
+- `ProfileStore.updateSpo2BaselinesEma` now abstains on unclassified activity states:
+  - Allowed: `STILL -> resting`, `WALKING/LIGHT_ACTIVITY -> walk`
+  - Abstain: `RUN`, `VEHICLE`, `UNKNOWN`, and all other states
+  - Returns `false` and logs `baseline_ema_abstain ...` when abstaining
+- `ProfileStore` adds `spo2BaselineSampleCount(...)` to support deterministic harness verification.
+- `CEPSimulationService` Phase-7 gains `SPO2_BASELINE_UPDATE_ABSTAIN_NON_REST_NON_WALK` scenario and assertion checks proving no resting/walk baseline movement under `RUN`/`VEHICLE`/`UNKNOWN`.
+- Phase-7 scenario result model now includes `assertionFailures`; scenario pass/fail requires both rule checks and scenario-specific assertions to pass.
+- `phase7_spo2_summary.json` now emits structured JSON arrays/objects for IDs/counts/failures (instead of stringified collections).
+- `CepEngine.handleTierEvent` now enforces idempotency with dedupe key `(tier,state,ts)` and bounded LRU size `32`.
+
+### Verification In This Pass
+
+- `./gradlew assembleDebug` passed after these changes.
+- `./gradlew testDebugUnitTest --tests "*Spo2*"` passed with `NO-SOURCE` (no current unit tests in that target).
+
+### Remaining Deferrals
+
+- Full JUnit/CI enforcement of Phase-7 SpO2 scenarios remains deferred.
+- Fresh runtime-captured full Phase-7 artifact content and on-device debug/reset validation remain deferred to a dedicated verification run.
+
+---
+
+## [2026-04-25] — SpO2 Production-Hardening Follow-up (Runner + Android gate)
+
+### Code changes
+
+- Added `Spo2Phase7Runner` (service-independent Phase-7 scenario execution).
+- `CEPSimulationService` Phase-7 flow now delegates to `Spo2Phase7Runner`.
+- Added Android instrumentation regression test:
+  - `Spo2Phase7RunnerInstrumentedTest` (AndroidJUnit4)
+  - fails on scenario pass/failure contract violations.
+- Removed dead transport infrastructure:
+  - deleted `Spo2TierEventFifo.kt`
+  - removed `CepEngine` FIFO field and write path.
+- Added debug-state observability fields:
+  - `lastStateUpdateTs`
+  - `lastResetReason`
+- Added mixed-window WARN abstain log line in `Spo2Sequencer`.
+
+### Verification
+
+- `./gradlew :app:assembleDebug` passed.
+- `./gradlew :app:connectedDebugAndroidTest` failed at runtime due `No connected devices!` after successful test compilation/packaging.
+- `rg "Spo2TierEventFifo" app/src` returns no matches.
+
+---
+
 ## [2026-04-01] — CEP Phase 4 + Simulation Hardening
 
 ### Objective

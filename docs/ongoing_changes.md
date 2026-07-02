@@ -6,6 +6,56 @@ the change was made.
 
 ---
 
+## SpO2 Production-Hardening Update — 2026-04-25
+
+Focused pass to close final v7 hardening items without architectural redesign.
+
+### Landed
+
+- **`Spo2Sequencer` audit:** classification contract already correct (`STILL` -> `resting`; `WALKING/LIGHT_ACTIVITY` -> `walk`; others abstain).
+- **`ProfileStore.kt`:**
+  - `updateSpo2BaselinesEma(...)` now mirrors sequencer contract and abstains on unclassified activity states.
+  - added `spo2BaselineSampleCount(...)` for verification.
+- **`CEPSimulationService.kt`:**
+  - added Phase-7 scenario `SPO2_BASELINE_UPDATE_ABSTAIN_NON_REST_NON_WALK`.
+  - scenario assertions now include `assertionFailures`; pass/fail includes these failures.
+  - summary artifact structure upgraded to emit proper JSON arrays/objects for IDs/counts/failures.
+- **`CepEngine.kt`:**
+  - `handleTierEvent(...)` now has an idempotency guard with dedupe key `(tier,state,ts)` and bounded LRU of 32.
+
+### Verified
+
+- `./gradlew assembleDebug` passed.
+- `./gradlew testDebugUnitTest --tests "*Spo2*"` executed; target currently has `NO-SOURCE`.
+
+### Still Pending
+
+- Full JUnit/CI enforcement for Phase-7 SpO2 scenarios.
+- Fresh full runtime Phase-7 execution artifact capture and on-device debug/reset validation sweep.
+
+---
+
+## SpO2 Production-Hardening Follow-up — 2026-04-25
+
+### Landed
+
+- Introduced service-independent reviewed scenario runner:
+  - `Spo2Phase7Runner` + `Spo2Phase7RunnerEnv`
+  - shared `Spo2ScenarioAssertionResult` payload contract
+- `CEPSimulationService` now delegates Phase-7 scenario execution to the runner.
+- Preserved reviewed baseline abstain regression as `SPO2_BASELINE_ABSTAIN_NON_REST_NON_WALK`.
+- Added Android instrumentation test gate:
+  - `Spo2Phase7RunnerInstrumentedTest` under `app/src/androidTest`.
+- Removed dead tier-event FIFO transport code from `app/src` (file + engine wiring).
+- Added debug support fields (`lastStateUpdateTs`, `lastResetReason`) and mixed-window WARN abstain log signal.
+
+### Verification status
+
+- Assemble/build path passes.
+- Connected instrumentation task compiles and packages tests, but execution is pending a connected device/emulator.
+
+---
+
 ## Confirmation Status — 2026-04-07
 
 All source files verified against the Codex prompt (`codex_prompt_gaps_and_phase5.md`) and

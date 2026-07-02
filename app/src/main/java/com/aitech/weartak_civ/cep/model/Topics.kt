@@ -10,6 +10,7 @@ object Topics {
     const val GYRO      = "gyro"
     const val ACTIVITY  = "activity"
     const val SPO2      = "spo2"
+    const val SPO2_TIER_EVENT = "spo2.tier_event"
     const val PPG       = "ppg"
     const val IMMERSION = "immersion"
     const val HUMIDITY  = "humidity"

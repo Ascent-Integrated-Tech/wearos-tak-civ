@@ -214,6 +214,17 @@
       "units": "%"
     },
     {
+      "type": "derived",
+      "id": "features.spo2.baseline_minus_4",
+      "expr": {
+        "sub": [
+          { "key": "profile.spo2_active_baseline_pct" },
+          4.0
+        ]
+      },
+      "units": "%"
+    },
+    {
       "type": "window",
       "id": "features.spo2.recent_120s",
       "source": "spo2",
@@ -1059,6 +1070,7 @@
         ]
       },
       "sustained_for_sec": 600,
+      "sustained_for_sec_warn": 300,
       "allow_sustain_override": true,
       "action": {
         "type": "log",
@@ -1171,7 +1183,7 @@
       },
       "sustained_for_sec": 10,
       "action": {
-        "type": "nonelog",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": ">HRmax TRIGGER (EXERCISE, \u2265100% HRR for \u22655 min)",
         "tags": [
@@ -1224,7 +1236,7 @@
       "sustained_for_sec": 180,
       "hold_down_sec": 120,
       "action": {
-        "type": "nonelog",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": ">HRmax TRIGGER (REST, \u2265100% HRR)",
         "tags": [
@@ -1802,6 +1814,34 @@
       }
     },
     {
+      "id": "hr_zone4_exercise_10min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "ref": "features.hr.exertion_warning_active", "is": true }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "warn",
+        "severity": "EMERGENCY",
+        "message": "Exertion Warning: Above {features.hr.exertion_warning_threshold_hrr_percent}%",
+        "isTak": false,
+        "monitor": [
+          {
+            "feature": "features.hrr_percent",
+            "exit_below": "features.hr.exertion_warning_threshold_hrr_percent",
+            "hysteresis": 2.0
+          }
+        ],
+        "exit_below_hrr_percent": "features.hr.exertion_warning_threshold_hrr_percent",
+        "exit_hysteresis_hrr_percent": 2.0,
+        "exit_sustain_sec": 10
+      }
+    },
+    {
       "id": "hr_zone4_rest_immediate_emergency",
       "when": {
         "all": [
@@ -1867,7 +1907,7 @@
       "sustained_for_sec": 120,
       "allow_sustain_override": true,
       "action": {
-        "type": "log",
+        "type": "none",
         "severity": "EMERGENCY",
         "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
         "category": "CAT_HR_EMERGENCY",
@@ -1887,6 +1927,33 @@
           }
         ],
         "exit_logic": "OR",
+        "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
+        "exit_hysteresis_hrr_percent": 2.0,
+        "exit_sustain_sec": 10
+      }
+    },
+    {
+      "id": "hr_zone5_exercise_5min_emergency",
+      "when": {
+        "all": [
+          { "not": { "eq_key": ["activity.state", "STILL"] } },
+          { "eq_key": ["sleep.is_sleeping", false] },
+          { "gte_keys": ["features.hrr_percent", "features.hr.exertion_alert_threshold_hrr_percent"] }
+        ]
+      },
+      "sustained_for_sec": 180,
+      "allow_sustain_override": true,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
+        "monitor": [
+          {
+            "feature": "features.hrr_percent",
+            "exit_below": "features.hr.exertion_alert_threshold_hrr_percent",
+            "hysteresis": 2.0
+          }
+        ],
         "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
         "exit_sustain_sec": 10
@@ -2017,22 +2084,231 @@
       }
     },
     {
-      "id": "spo2_drop_alert",
+      "id": "spo2_warn_baseline_drop",
+      "description": "SpO2 WARN: N consecutive valid readings <= baseline-4% with upper-curve guard.",
       "when": {
-        "lte_key": [
-          "features.spo2.delta_pct",
-          -3.0
+        "all": [
+          { "gte_key": ["spo2.tier_event_warn_edge", 0.5] },
+          { "gte_key": ["offbody.on_wrist", 0.5] },
+          { "lte_key": ["profile.spo2_active_baseline_provisional", 0.5] },
+          { "lte_key_fresh": ["spo2.pct", 100.0, 30] }
         ]
       },
-      "sustained_for_sec": 60,
+      "sustained_for_sec": 0,
+      "hold_down_sec": 300,
       "action": {
-        "type": "nonelog",
-        "severity": "ALERT",
-        "message": "SpO\u2082 drop \u22653% vs baseline \u2014 possible perfusion/oxygenation issue.",
-        "tags": [
-          "spo2",
-          "perfusion"
+        "type": "log",
+        "severity": "WARN",
+        "message": "SpO2 WARN: {spo2.pct}% <= baseline-4% (baseline={profile.spo2_active_baseline_pct}%).",
+        "tags": ["spo2", "warn", "baseline_drop"],
+        "category": "CAT_SPO2_WARN",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 120
+      }
+    },
+    {
+      "id": "spo2_alert_sustained_hypoxemia",
+      "description": "SpO2 ALERT: N consecutive valid readings <90%.",
+      "when": {
+        "all": [
+          { "gte_key": ["spo2.tier_event_alert_edge", 0.5] },
+          { "gte_key": ["offbody.on_wrist", 0.5] },
+          { "eq_key": ["activity.state", "STILL"] },
+          { "gte_key": ["activity.confidence", 50.0] },
+          { "lte_key_fresh": ["spo2.pct", 90.0, 30] }
         ]
+      },
+      "sustained_for_sec": 0,
+      "hold_down_sec": 300,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "SpO2 ALERT: sustained <90% ({spo2.pct}%).",
+        "tags": ["spo2", "alert", "hypoxemia"],
+        "category": "CAT_SPO2_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": false,
+        "timeout": 180
+      }
+    },
+    {
+      "id": "spo2_emergency_severe_hypoxemia",
+      "description": "SpO2 EMERGENCY: corroborated severe hypoxemia.",
+      "when": {
+        "all": [
+          { "gte_key": ["spo2.tier_event_emergency_edge", 0.5] },
+          { "gte_key": ["offbody.on_wrist", 0.5] },
+          { "lte_key_fresh": ["spo2.pct", 88.0, 30] }
+        ]
+      },
+      "sustained_for_sec": 0,
+      "hold_down_sec": 300,
+      "action": {
+        "type": "log",
+        "severity": "EMERGENCY",
+        "message": "SpO2 EMERGENCY: severe hypoxemia ({spo2.pct}%).",
+        "tags": ["spo2", "emergency", "severe_hypoxemia"],
+        "category": "CAT_SPO2_EMERGENCY",
+        "isTak": true,
+        "isLocal": true,
+        "priority_from": "severity",
+        "sendSms": true,
+        "timeout": 300
+      }
+    },
+    {
+      "id": "spo2_clear_any",
+      "when": {
+        "any": [
+          { "gte_key": ["spo2.tier_event_warn_clear", 0.5] },
+          { "gte_key": ["spo2.tier_event_alert_clear", 0.5] },
+          { "gte_key": ["spo2.tier_event_emergency_clear", 0.5] }
+        ]
+      },
+      "sustained_for_sec": 0,
+      "hold_down_sec": 60,
+      "action": {
+        "type": "log",
+        "severity": "INFO",
+        "message": "SpO2 tier cleared (pct={spo2.pct}%).",
+        "tags": ["spo2", "clear"],
+        "isTak": false,
+        "isLocal": true
+      }
+    },
+
+    {
+      "_comment": "── Pressure rules ───────────────────────────────────────────────────────",
+      "id": "pressure_dunk_detected",
+      "description": "Rapid pressure rise (>5 hPa over 5 samples) — probable water immersion/dunk. Gated on settings.pressure.immersion_alerts_enabled so the rule respects the user's immersion alert toggle.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.immersion_alerts_enabled", 1.0] },
+          { "gte_key": ["features.pressure.delta_rapid_rise", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 2,
+      "hold_down_sec": 5,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Probable immersion warning — rapid pressure rise detected.",
+        "category": "CAT_IMMERSION_WARN",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "immersion", "dunk"]
+      }
+    },
+    {
+      "id": "pressure_shallow_dunk",
+      "description": "Moderate pressure rise (2–4 hPa over 5 samples) — possible shallow immersion. Gated on immersion alerts toggle.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.immersion_alerts_enabled", 1.0] },
+          { "gte_key": ["features.pressure.delta_shallow_rise", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 1,
+      "hold_down_sec": 3,
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Possible shallow immersion — moderate pressure rise detected.",
+        "category": "CAT_IMMERSION_WARN",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "immersion", "shallow_dunk"]
+      }
+    },
+    {
+      "id": "pressure_submerge_detected",
+      "description": "Sustained pressure elevation ≥5 hPa above the 20-sample rolling baseline — probable prolonged immersion. Approximates PressureService.handleSubmergeDetection() using mean_n5 vs mean_n20; the 5 s sustained window covers the period before mean_n20 fully catches up to the elevated pressure. Phase-7 TODO: replace with a frozen-baseline feature type to support the full 60 s confirmation.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.immersion_alerts_enabled", 1.0] },
+          { "gte_key": ["features.pressure.submerge_rise", 5.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 5,
+      "hold_down_sec": 30,
+      "action": {
+        "type": "log",
+        "severity": "ALERT",
+        "message": "Probable sustained immersion — pressure held elevated above baseline.",
+        "category": "CAT_IMMERSION_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "immersion", "submerge"]
+      }
+    },
+    {
+      "id": "pressure_low_atm",
+      "description": "Mean atmospheric pressure below configured low threshold for 10 s. Gated on settings.pressure.low_atm_alert_enabled.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.low_atm_alert_enabled", 1.0] },
+          { "gte_key": ["features.pressure.below_low_threshold", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 10,
+      "hold_down_sec": 60,
+      "snapshot_keys": ["features.pressure.mean_n5", "thresholds.pressure.low"],
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "Low atmospheric pressure alert.",
+        "category": "CAT_LOW_PRESSURE_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "atm", "low"],
+        "monitor": [
+          {
+            "feature": "features.pressure.mean_n5",
+            "exit_above": "thresholds.pressure.low",
+            "hysteresis": 1.0
+          }
+        ],
+        "exit_sustain_sec": 5
+      }
+    },
+    {
+      "id": "pressure_high_atm",
+      "description": "Mean atmospheric pressure above configured high threshold for 10 s. Gated on settings.pressure.high_atm_alert_enabled.",
+      "when": {
+        "all": [
+          { "gte_key": ["settings.pressure.high_atm_alert_enabled", 1.0] },
+          { "gte_key": ["features.pressure.above_high_threshold", 1.0] },
+          {"gte_key": ["offbody.on_wrist", 0.5]}
+        ]
+      },
+      "sustained_for_sec": 10,
+      "hold_down_sec": 60,
+      "snapshot_keys": ["features.pressure.mean_n5", "thresholds.pressure.high"],
+      "action": {
+        "type": "log",
+        "severity": "WARN",
+        "message": "High atmospheric pressure alert.",
+        "category": "CAT_HIGH_PRESSURE_ALERT",
+        "isTak": true,
+        "isLocal": true,
+        "tags": ["pressure", "atm", "high"],
+        "monitor": [
+          {
+            "feature": "features.pressure.mean_n5",
+            "exit_below": "thresholds.pressure.high",
+            "hysteresis": 1.0
+          }
+        ],
+        "exit_sustain_sec": 5
       }
     },
 
