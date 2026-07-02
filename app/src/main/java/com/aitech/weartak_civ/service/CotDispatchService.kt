@@ -1068,6 +1068,7 @@ class CotDispatchService : Service() {
     }
 
     private fun buildPliCot(snapshot: DataRepository.PliSnapshot): String {
+        Log.d("WEARTAK_BUILD", "buildPliCot called")
         val timeSnap     = snapshot.time
 
         val physSnap     = snapshot.physioData
@@ -1091,7 +1092,16 @@ class CotDispatchService : Service() {
 
         // Pull out physio values
         val uid         = sysSnap.deviceId
+        Log.e(
+            "HR_SOURCE",
+            "heartRateBpm raw = ${physSnap.data.heartRateBpm}"
+        )
         val hr          = rectifiedIntToString(physSnap.data.heartRateBpm)
+
+        Log.e(
+            "HR_XML_DEBUG",
+            "raw=${physSnap.data.heartRateBpm} hr=$hr"
+        )
         val skt         = rectifiedFormattedNumber(physSnap.data.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
         val exert       = rectifiedFormattedNumber(physSnap.data.exertion, "%.2f", zeroIsInvalid = false)
         val bat         = sysSnap.batteryPercent
@@ -1100,7 +1110,7 @@ class CotDispatchService : Service() {
         val floors      = dailyMetrics?.floors ?: 0.0
         val elevationM  = dailyMetrics?.elevationM ?: 0.0
         val age         = physSnap.data.ageYears
-
+        Log.d("WEARTAK_STEP", "basic values extracted")
         // Inject physio data into remarks
         val remarks = if (MainActivity.enablePhysiologicalServices && (MainActivity.enableActRecService || MainActivity.enableDynamicReportingStrategy)) {
             buildString {
@@ -1143,7 +1153,7 @@ class CotDispatchService : Service() {
                     """<_atmist_ age="$age" timeOfIncident="$startTime"><vitalSign index="0" timestamp="$staleTime">(HR,$hr,$startTimeInMs)</vitalSign><vitalSign index="1" timestamp="$startTime">(Temp,$skt (F) $sktCelcius (C),$startTimeInMs)</vitalSign></_atmist_>""".trimIndent()
                 }
             }
-            """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks>$batdokStr<contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
+            """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks>$batdokStr<biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$hr</hr><skt>$skt</skt><exert>$exert</exert><bat>$bat</bat></device></biometrics><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
         } else {
             """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='$uid' type='a-f-G-U-C' time='$startTime' start='$startTime' stale='$staleTime' how='m-g'><point lat='${"%.6f".format(lat)}' lon='${"%.6f".format(lon)}' hae='${"%.1f".format(hae)}' ce='$ceTrim' le='$leTrim'/><detail><remarks>$remarks</remarks><contact endpoint='*:-1:stcp' callsign='$callsign'/><__group role='$role' name='$teamValue'/><track course='$courseTrim' speed='$speedTrim'/>$hailCotDetailString</detail></event>""".trimIndent()
         }
@@ -1181,8 +1191,7 @@ class CotDispatchService : Service() {
             }
             //Log.d(TAG, "tabletCommandJsonMsg: $tabletCommandJsonMsg")
         }
-
-
+        Log.e("WEARTAK_COT_XML", "XML=" + cot)
         return cot
     }
 
@@ -1839,6 +1848,10 @@ class CotDispatchService : Service() {
         }
         if (TAKConnectService.isAnyTakConnected) {
             sendDataTAKServers(clearXml, true)
+            sent = true
+        }
+        if (dataRepository.multicastPublisherRunning.value) {
+            sendMulticastDatagram(clearXml)
             sent = true
         }
         if (dataRepository.multicastPublisherRunning.value) {

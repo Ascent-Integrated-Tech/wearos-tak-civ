@@ -161,7 +161,7 @@ class CepEngine(
             featureStore.put("thresholds.hr.rest_low_bpm",  hrRestingLow)
 
             Log.d("CEP", "Updated HR profile: YOB=$newYearOfBirth age=$age " +
-                        "hrRest=$hrRest hrMax=$hrMax hrHighResting=$hrRestingHigh hrLowResting=$hrRestingLow"
+                    "hrRest=$hrRest hrMax=$hrMax hrHighResting=$hrRestingHigh hrLowResting=$hrRestingLow"
             )
         } catch (t: Throwable) {
             Log.e("CEP", "Failed to update HR profile from DataRepository", t)

@@ -142,7 +142,6 @@ import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
 import com.aitech.weartak_civ.Utils.CotUtils.Point
-import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.ipc.AtosCotPacket
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -150,6 +149,12 @@ import kotlin.collections.plus
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsKeys
 import com.aitech.weartak_civ.service.SitxTakService
 import kotlinx.serialization.builtins.ListSerializer
+import com.aitech.weartak_civ.DEFAULT_ENABLE_IMMERSION_ALERTS
+import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
+import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
+import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.data.model.PressureReading
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -1800,6 +1805,7 @@ class DataRepository(private val context: Context) {
     suspend fun requestClearAll() = _clearMarkerRequests.emit(ClearRequest.All)
 
     suspend fun storeLatestHeartRate(heartRate: Int) {
+        Log.e("HR_REPO", "storeLatestHeartRate($heartRate)")
         _latestHeartRate.emit(heartRate)
     }
 
