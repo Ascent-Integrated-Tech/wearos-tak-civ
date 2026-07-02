@@ -49,3 +49,4 @@ class TriggerTimer(
 
         return TickResult(warnFired = warnFired, mainFired = mainFired)
     }
+}
