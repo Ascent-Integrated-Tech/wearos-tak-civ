@@ -119,6 +119,10 @@ class RuleEngine(
             }
         }
     }
-}
 
+    fun resetForTest() {
+        compiledTimers.values.forEach { it.reset() }
+        dispatcher.resetForTest()
+    }
+}
 

@@ -52,6 +52,9 @@ class CepActionDispatcher(
         return (now - last) < thr
     }
     private fun remember(ctx: TriggerContext) { lastFire[key(ctx)] = System.currentTimeMillis() }
-}
 
+    fun resetForTest() {
+        lastFire.clear()
+    }
+}
 

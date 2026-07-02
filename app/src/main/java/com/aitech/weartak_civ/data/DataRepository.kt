@@ -155,12 +155,25 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.data.model.PressureReading
+import com.aitech.weartak_civ.cep.di.CepProvider
+import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 class DataRepository(private val context: Context) {
+    data class Spo2DebugState(
+        val activeBaselinePct: Double,
+        val activeBaselineFamily: String,
+        val activeAltitudeBucket: Int,
+        val activeBaselineProvisional: Boolean,
+        val ringSize: Int,
+        val lastInvalidReason: String?,
+        val lastStateUpdateTs: Long,
+        val lastResetReason: String?,
+    )
+
     private val TAG = "WearTAK-" + DataRepository::class.java.simpleName
     private val takServerSecretsRepository: TakServerSecretsRepository
         get() = (context.applicationContext as WearTakApplication).takServerRepo
@@ -506,6 +519,12 @@ class DataRepository(private val context: Context) {
 
     private val _latestSkinTemp = MutableStateFlow<Float?>(null)
     val latestSkinTemp: StateFlow<Float?> = _latestSkinTemp
+    private val _latestSpo2 = MutableStateFlow<Double?>(null)
+    val latestSpo2: StateFlow<Double?> = _latestSpo2.asStateFlow()
+    private val _latestSpo2TierEvent = MutableStateFlow<Spo2TierEventPayload?>(null)
+    val latestSpo2TierEvent: StateFlow<Spo2TierEventPayload?> = _latestSpo2TierEvent.asStateFlow()
+    private val _latestSpo2DebugState = MutableStateFlow<Spo2DebugState?>(null)
+    val latestSpo2DebugState: StateFlow<Spo2DebugState?> = _latestSpo2DebugState.asStateFlow()
 
     // PRESSURE SENSOR START
     private val _latestPressure = MutableStateFlow<PressureReading?>(null)
@@ -1819,6 +1838,23 @@ class DataRepository(private val context: Context) {
 
     suspend fun storeLatestSkinTemp(skinTemp: Float) {
         _latestSkinTemp.emit(skinTemp)
+    }
+
+    suspend fun storeLatestSpo2(spo2: Double?) {
+        _latestSpo2.emit(spo2)
+    }
+
+    suspend fun storeLatestSpo2TierEvent(event: Spo2TierEventPayload?) {
+        _latestSpo2TierEvent.emit(event)
+    }
+
+    suspend fun storeLatestSpo2DebugState(state: Spo2DebugState?) {
+        _latestSpo2DebugState.emit(state)
+    }
+
+    suspend fun setUserRiskProfile(profile: String) {
+        CepProvider.getProfile(context).setUserRiskProfile(profile)
+        CepProvider.getOrCreateEngine(context).updateSpo2Profile()
     }
 
     suspend fun storeLatestLocation(location: Location) {

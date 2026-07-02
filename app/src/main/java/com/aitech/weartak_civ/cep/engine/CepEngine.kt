@@ -9,13 +9,18 @@ import com.aitech.weartak_civ.DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
 import com.aitech.weartak_civ.DEFAULT_HIGH_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_RESTING_HR_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_RESTING_HR
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.engine.action.AlertRegistry
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.CepPayload
 import com.aitech.weartak_civ.cep.model.NumericSample
+import com.aitech.weartak_civ.cep.model.payloads.Spo2EdgeState
+import com.aitech.weartak_civ.cep.model.payloads.Spo2Tier
+import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.cancelAndJoin
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CepEngine(
@@ -26,6 +31,9 @@ class CepEngine(
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(RingConfig.default())
+    private val profileStore = CepProvider.getProfile(appContext)
+    private val seenTierEventLru = ArrayDeque<String>(32)
+    private val seenTierEventSet = mutableSetOf<String>()
     private val warmUpCompleted = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
     private val authoritative = AtomicBoolean(false)
@@ -207,6 +215,26 @@ class CepEngine(
         }
     }
 
+    fun updateSpo2Profile() {
+        val family = profileStore.spo2BaselineFamily()
+        val bucket = profileStore.spo2BaselineAltitudeBucket()
+        val baseline = profileStore.spo2Baseline(family, bucket)
+        val provisional = profileStore.spo2BaselineProvisional(family, bucket)
+        featureStore.put("profile.spo2_active_baseline_pct", baseline)
+        featureStore.put("profile.spo2_active_baseline_provisional", if (provisional) 1.0 else 0.0)
+        featureStore.put("profile.spo2_active_baseline_altitude_bucket", bucket.toDouble())
+        featureStore.put("profile.spo2_active_baseline_family", if (family == "walk") 1.0 else 0.0)
+        featureStore.put("profile.spo2_baseline_pct", baseline)
+        featureStore.put("profile.spo2_baseline_altitude_bucket", bucket.toDouble())
+        featureStore.put("profile.spo2_baseline_family", if (family == "walk") 1.0 else 0.0)
+        featureStore.put("profile.spo2_baseline_provisional", if (provisional) 1.0 else 0.0)
+        featureStore.put("thresholds.spo2.warn_floor", baseline - 4.0)
+        featureStore.put("thresholds.spo2.alert_pct", 90.0)
+        featureStore.put("thresholds.spo2.emergency_pct", 88.0)
+        featureStore.put("settings.spo2.consecutive_required", 4.0)
+        featureStore.put("settings.spo2.emergency_consecutive_required", 2.0)
+    }
+
     /** Synchronous form of [updatePressureProfile] used during warm-up. */
     private suspend fun loadPressureProfile() {
         try {
@@ -345,6 +373,27 @@ class CepEngine(
         // injectPressureAlertFlagsForTest() and must survive across the clear so the
         // enable-gate conditions stay satisfied for the next scenario.
         Log.d("CEP", "[TEST] Pressure ring and derived features cleared")
+    }
+
+    fun resetSpo2SimulationStateForTest() {
+        AlertRegistry.clearAll()
+        ruleEngine.resetForTest()
+        synchronized(seenTierEventLru) {
+            seenTierEventLru.clear()
+            seenTierEventSet.clear()
+        }
+        listOf(
+            "spo2.pct",
+            "spo2.status_ok",
+            "spo2.ppg_red_sustained_ms",
+            "spo2.tier_event_warn_edge",
+            "spo2.tier_event_warn_clear",
+            "spo2.tier_event_alert_edge",
+            "spo2.tier_event_alert_clear",
+            "spo2.tier_event_emergency_edge",
+            "spo2.tier_event_emergency_clear"
+        ).forEach { featureStore.clear(it) }
+        Log.d("CEP", "[TEST] SpO2 rule timers, dispatch throttle, tier-event features, and dedupe state cleared")
     }
 
     /**
@@ -504,6 +553,64 @@ class CepEngine(
             Log.i("CEP", "INGEST $ns.$key=$value @ $tsMs")
         } catch (ex: Exception) {
             Log.e("CEP", "Failed to ingest $path", ex)
+        }
+    }
+
+    fun handleTierEvent(p: Spo2TierEventPayload) {
+        val dedupeKey = "${p.tier.name}|${p.state.name}|${p.ts}"
+        synchronized(seenTierEventLru) {
+            if (!seenTierEventSet.add(dedupeKey)) {
+                Log.d("CEP", "SPO2_TIER_EVENT_DEDUP key=$dedupeKey")
+                return
+            }
+            seenTierEventLru.addLast(dedupeKey)
+            while (seenTierEventLru.size > 32) {
+                val evicted = seenTierEventLru.removeFirst()
+                seenTierEventSet.remove(evicted)
+            }
+        }
+        val ts = p.ts
+        val keys = listOf("warn", "alert", "emergency")
+        keys.forEach {
+            featureStore.put("spo2.tier_event_${it}_edge", 0.0, ts)
+            featureStore.put("spo2.tier_event_${it}_clear", 0.0, ts)
+        }
+        val tierKey = when (p.tier) {
+            Spo2Tier.WARN -> "warn"
+            Spo2Tier.ALERT -> "alert"
+            Spo2Tier.EMERGENCY -> "emergency"
+            Spo2Tier.NONE -> null
+        }
+        when (p.state) {
+            Spo2EdgeState.ENTER -> {
+                if (tierKey != null) {
+                    featureStore.put("spo2.tier_event_${tierKey}_edge", 1.0, ts)
+                    scope.launch {
+                        delay(config.ruleEvalIntervalMs + 250L)
+                        featureStore.put("spo2.tier_event_${tierKey}_edge", 0.0, System.currentTimeMillis())
+                    }
+                }
+                if (p.pct.isFinite()) featureStore.put("spo2.pct", p.pct, ts)
+            }
+            Spo2EdgeState.CLEAR -> {
+                if (tierKey != null) {
+                    featureStore.put("spo2.tier_event_${tierKey}_clear", 1.0, ts)
+                    featureStore.put("spo2.tier_event_${tierKey}_edge", 0.0, ts)
+                    AlertRegistry.clear(
+                        when (p.tier) {
+                            Spo2Tier.WARN -> "spo2_warn_baseline_drop"
+                            Spo2Tier.ALERT -> "spo2_alert_sustained_hypoxemia"
+                            Spo2Tier.EMERGENCY -> "spo2_emergency_severe_hypoxemia"
+                            Spo2Tier.NONE -> ""
+                        }
+                    )
+                    scope.launch {
+                        delay(config.ruleEvalIntervalMs + 250L)
+                        featureStore.put("spo2.tier_event_${tierKey}_clear", 0.0, System.currentTimeMillis())
+                    }
+                }
+            }
+            Spo2EdgeState.HELD -> if (p.pct.isFinite()) featureStore.put("spo2.pct", p.pct, ts)
         }
     }
 
