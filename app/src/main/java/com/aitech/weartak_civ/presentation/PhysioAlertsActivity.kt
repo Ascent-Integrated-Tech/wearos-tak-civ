@@ -197,27 +197,6 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
             exitActivity()
         }
 
-        composable("crm_reserve_screen") {
-            val context = LocalContext.current
-
-            val app = context.applicationContext as WearTakApplication
-
-            val crmViewModel: CrmViewModel = viewModel(
-                factory = CrmViewModelFactory(
-                    crmDataRepository = app.crmRepo,
-                    dataRepository = app.repo,
-                )
-            )
-
-            val uiState by crmViewModel.uiState.collectAsStateWithLifecycle()
-
-            CrmReserveScreen(
-                uiState = uiState,
-                onBackClick = {
-                    navController.popBackStack()
-                },
-            )
-        }
     }
 }
 
@@ -409,7 +388,7 @@ fun ExpandableCard(navController: NavController) {
 
     val openCrmReserveScreen = {
         Log.d(TAG, "Opening CRM Reserve screen")
-        navController.navigate("crm_reserve_screen")
+        context.startActivity(Intent(context, CrmReserveActivity::class.java))
     }
 
     val logOutput = """
