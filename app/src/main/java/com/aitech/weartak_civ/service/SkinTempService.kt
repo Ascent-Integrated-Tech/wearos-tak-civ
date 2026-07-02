@@ -35,6 +35,7 @@ import com.aitech.weartak_civ.cep.model.payloads.PpgPayload
 import com.aitech.weartak_civ.cep.model.payloads.SkinTempPayload
 import com.aitech.weartak_civ.cep.model.payloads.Spo2Payload
 import com.aitech.weartak_civ.cep.model.payloads.HrvPayload
+import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 //import com.aitech.weartak_civ.cep.CepProvider
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 //import com.aitech.weartak_civ.cep.CepProvider
@@ -60,6 +61,7 @@ import org.greenrobot.eventbus.ThreadMode
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.pow
 
 class SkinTempService : Service() {
     companion object {
@@ -114,9 +116,11 @@ class SkinTempService : Service() {
      *   then resumed regardless of the exit path (complete/error/timeout).
      */
     private val SPO2_TIMEOUT_MS: Long = 30_000L
-    private val SPO2_BACKOFF_AFTER_TIMEOUT_MS: Long = 30 * 60_000L // 30 minutes after timeout
+    private val SPO2_BACKOFF_AFTER_TIMEOUT_MS: Long = 5 * 60_000L
     // Strict 1-hour minimum gap between SpO2 attempts (monotonic)
-    private val SPO2_MIN_GAP_MS: Long = 60 * 60_000L
+    private val SPO2_MIN_GAP_MS: Long = 30_000L
+    private val SPO2_PPG_RED_SUSTAIN_REQUIRED_MS: Long = 30_000L
+    private val SPO2_EMIT_FRESHNESS_MS: Long = 35_000L
     // SHS "TIMEOUT" appears as status = -6
     private val SPO2_STATUS_TIMEOUT: Int = -6
     // ActivityRecognition stillness gate
@@ -158,6 +162,13 @@ class SkinTempService : Service() {
     @Volatile private var lastSpo2Pct: Double? = null
     @Volatile private var lastPpgAmp: Float? = null
     @Volatile private var lastPpgQuality: Float? = null
+    @Volatile private var ppgRedFirstContinuouslyOkSinceMs: Long = 0L
+    @Volatile private var ppgRedSustainedAtPauseMs: Long = 0L
+    @Volatile private var ppgPauseStartedAtMs: Long = 0L
+    @Volatile private var lastSpo2EmittedTs: Long = 0L
+    @Volatile private var lastSpo2InvalidReason: String? = null
+    @Volatile private var lastSpo2ResetReason: String? = null
+    private lateinit var spo2Sequencer: Spo2Sequencer
 
     private var nextFireMs = 0L          // wall-clock target for the next run
     // One monotonic clock – the same one Handler uses
@@ -422,6 +433,9 @@ class SkinTempService : Service() {
         if (!ppgRunning) return
         if (ppgPausedForSpo2) return
         try {
+            val now = System.currentTimeMillis()
+            ppgPauseStartedAtMs = now
+            ppgRedSustainedAtPauseMs = if (ppgRedFirstContinuouslyOkSinceMs == 0L) 0L else (now - ppgRedFirstContinuouslyOkSinceMs).coerceAtLeast(0L)
             ppgTracker?.unsetEventListener()
             ppgRunning = false
             ppgPausedForSpo2 = true
@@ -434,6 +448,7 @@ class SkinTempService : Service() {
     private fun resumePpgContinuousAfterSpo2() {
         if (!ppgPausedForSpo2) return
         ppgPausedForSpo2 = false
+        ppgPauseStartedAtMs = 0L
         startPpgContinuousIfSelected()
         //Log.i(TAG, "[PPG] Resumed PPG_CONTINUOUS after SpO2")
     }
@@ -515,6 +530,37 @@ class SkinTempService : Service() {
                             lastSpo2Status = status
                             lastSpo2Pct = spo2Val?.toDouble()
                             lastSpo2Ts = System.currentTimeMillis()
+                            val ts = lastSpo2Ts ?: System.currentTimeMillis()
+                            val activityState = when (sharedRepo.latestActivityRecognized.value) {
+                                ActivityRecognitionService.Companion.ActivityRecognized.WALKING,
+                                ActivityRecognitionService.Companion.ActivityRecognized.ON_FOOT -> "WALKING"
+                                ActivityRecognitionService.Companion.ActivityRecognized.RUNNING -> "LIGHT_ACTIVITY"
+                                ActivityRecognitionService.Companion.ActivityRecognized.STILL -> "STILL"
+                                else -> "UNKNOWN"
+                            }
+                            val motionOk = isStill && lastActivityConfidence >= ACTIVITY_STILL_CONFIDENCE_MIN
+                            val ppgRedSustainedMs = ppgRedSustainedForValidation(ts)
+                            val altitudeBucket = currentAltitudeBucket()
+                            val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
+                            cepEngine.ingest("activity.confidence", lastActivityConfidence.toDouble(), ts)
+                            cepEngine.ingest("spo2.status_ok", 1.0, ts)
+                            cepEngine.ingest("spo2.ppg_red_sustained_ms", ppgRedSustainedMs.toDouble(), ts)
+                            if (lastSpo2Pct != null) {
+                                spo2Sequencer.onValid(
+                                    pct = lastSpo2Pct!!,
+                                    ts = ts,
+                                    activityState = activityState,
+                                    altitudeBucket = altitudeBucket,
+                                    motionOk = motionOk,
+                                    ppgRedSustainedMs = ppgRedSustainedMs,
+                                    statusOk = true,
+                                )
+                                lastSpo2InvalidReason = null
+                                lastSpo2ResetReason = null
+                                serviceScope.launch { sharedRepo.storeLatestSpo2(lastSpo2Pct) }
+                                serviceScope.launch { updateSpo2DebugState() }
+                                cepEngine.updateSpo2Profile()
+                            }
                             lastSpo2OutcomeWasTimeout = false
                             lastSpo2EndedAsTimeout = false
                             lastSpo2OutcomeWallMs = System.currentTimeMillis()
@@ -523,12 +569,13 @@ class SkinTempService : Service() {
                             transitionToPpgPhase()
                             return@post
                         } else if (status == SPO2_STATUS_TIMEOUT) {
-                            lastSpo2Status = status
-                            lastSpo2Pct = null
                             lastSpo2Ts = System.currentTimeMillis()
-                            lastSpo2OutcomeWasTimeout = true
-                            lastSpo2EndedAsTimeout = true
-                            lastSpo2OutcomeWallMs = System.currentTimeMillis()
+                            handleSpo2InvalidOutcome(
+                                reason = InvalidReason.TIMEOUT,
+                                ts = lastSpo2Ts ?: System.currentTimeMillis(),
+                                status = status,
+                                endedAsTimeout = true
+                            )
                             Log.w(TAG, "[SPO2] TIMEOUT status=$status → stopping session early")
                             stopSpo2Session("status_timeout")
                             transitionToPpgPhase()
@@ -542,9 +589,12 @@ class SkinTempService : Service() {
                     }
                 } catch (t: Throwable) {
                     Log.e(TAG, "[SPO2] onDataReceived error", t)
-                    lastSpo2Status = -1
-                    // Treat unknown errors as timeouts for backoff purposes
-                    lastSpo2EndedAsTimeout = true
+                    handleSpo2InvalidOutcome(
+                        reason = InvalidReason.ERROR,
+                        ts = System.currentTimeMillis(),
+                        status = -1,
+                        endedAsTimeout = true
+                    )
                     stopSpo2Session("error")
                     transitionToPpgPhase()
                 }
@@ -555,9 +605,12 @@ class SkinTempService : Service() {
             backgroundHandler.post {
                 if (measureState.get() != MeasurementState.SPO2_RUNNING) return@post
                 Log.e(TAG, "[SPO2] Error: $error")
-                lastSpo2Status = -1
-                // Treat callback errors as timeouts for backoff purposes
-                lastSpo2EndedAsTimeout = true
+                handleSpo2InvalidOutcome(
+                    reason = InvalidReason.ERROR,
+                    ts = System.currentTimeMillis(),
+                    status = -1,
+                    endedAsTimeout = true
+                )
                 stopSpo2Session("onError:$error")
                 transitionToPpgPhase()
             }
@@ -618,11 +671,12 @@ class SkinTempService : Service() {
             spo2TimeoutRunnable = Runnable {
                 if (measureState.get() == MeasurementState.SPO2_RUNNING) {
                     Log.w(TAG, "[SPO2] Timeout reached → stopping session, moving to PPG")
-                    lastSpo2Status = SPO2_STATUS_TIMEOUT
-                    lastSpo2Pct = null
-                    lastSpo2OutcomeWasTimeout = true
-                    lastSpo2EndedAsTimeout = true
-                    lastSpo2OutcomeWallMs = System.currentTimeMillis()
+                    handleSpo2InvalidOutcome(
+                        reason = InvalidReason.TIMEOUT,
+                        ts = System.currentTimeMillis(),
+                        status = SPO2_STATUS_TIMEOUT,
+                        endedAsTimeout = true
+                    )
                     stopSpo2Session("timeout_runnable")
                     measureState.set(MeasurementState.PPG_RUNNING)
                     startPpgPhase()
@@ -884,6 +938,14 @@ class SkinTempService : Service() {
         lastPpgTs = System.currentTimeMillis()
         // reuse quality heuristic
         lastPpgQuality = (amp.toFloat() / (amp.toFloat() + 50f)).coerceIn(0f, 1f)
+        val quality = lastPpgQuality ?: 0f
+        if (amp.toFloat() > 0f && quality >= 0.5f) {
+            if (ppgRedFirstContinuouslyOkSinceMs == 0L) {
+                ppgRedFirstContinuouslyOkSinceMs = lastPpgTs ?: System.currentTimeMillis()
+            }
+        } else {
+            ppgRedFirstContinuouslyOkSinceMs = 0L
+        }
         //Log.i(TAG, "[PPG] amplitude=$amp samples=${ppgWindow.size} ($reason)")
     }
     private fun maybeComputePpgThrottled() {
@@ -967,6 +1029,21 @@ class SkinTempService : Service() {
         Log.d(TAG, "SkinTempService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
+        val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
+        spo2Sequencer = Spo2Sequencer(
+            profile = CepProvider.getProfile(applicationContext),
+            publish = { payload ->
+                cepEngine.handleTierEvent(payload)
+                serviceScope.launch { sharedRepo.storeLatestSpo2TierEvent(payload) }
+                serviceScope.launch {
+                    val evt = CepEvent(Topics.SPO2_TIER_EVENT, payload, payload.ts)
+                    if (!CepBus.tryEmit(evt)) {
+                        CepBus.emit(evt)
+                    }
+                }
+            },
+            ingest = { path, value, ts -> cepEngine.ingest(path, value, ts) },
+        )
 
         deleteLogFile()
         CoroutineScope(Dispatchers.IO).launch{
@@ -1056,6 +1133,12 @@ class SkinTempService : Service() {
         stopSpo2Tracker()
         stopPpgTracker()
         stopHrTracker(true)
+        if (::spo2Sequencer.isInitialized) {
+            spo2Sequencer.reset(ResetReason.SERVICE_STOP)
+            lastSpo2InvalidReason = ResetReason.SERVICE_STOP.name
+            lastSpo2ResetReason = ResetReason.SERVICE_STOP.name
+            CoroutineScope(Dispatchers.IO).launch { clearSpo2RepositoryState() }
+        }
         spo2TimeoutCleanup()
         ppgTimeoutCleanup()
         measureState.set(MeasurementState.IDLE)
@@ -1093,6 +1176,13 @@ class SkinTempService : Service() {
             //writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
+            spo2Sequencer.reset(ResetReason.OFF_WRIST)
+            lastSpo2InvalidReason = ResetReason.OFF_WRIST.name
+            lastSpo2ResetReason = ResetReason.OFF_WRIST.name
+            ppgRedFirstContinuouslyOkSinceMs = 0L
+            ppgRedSustainedAtPauseMs = 0L
+            ppgPauseStartedAtMs = 0L
+            clearSpo2RepositoryStateAsync()
             stopHrTracker(true)
             stopSkinTracker(true)     // shut it down
             stopSpo2Tracker()
@@ -1138,10 +1228,103 @@ class SkinTempService : Service() {
         } catch (_: Throwable) { }
     }
 
+    private fun ppgRedSustainedForValidation(nowMs: Long): Long {
+        return if (ppgPausedForSpo2 && ppgPauseStartedAtMs != 0L) {
+            ppgRedSustainedAtPauseMs
+        } else if (ppgRedFirstContinuouslyOkSinceMs == 0L) {
+            0L
+        } else {
+            (nowMs - ppgRedFirstContinuouslyOkSinceMs).coerceAtLeast(0L)
+        }
+    }
+
+    private suspend fun clearSpo2RepositoryState() {
+        sharedRepo.storeLatestSpo2(null)
+        sharedRepo.storeLatestSpo2TierEvent(null)
+        sharedRepo.storeLatestSpo2DebugState(null)
+    }
+
+    private fun clearSpo2RepositoryStateAsync() {
+        serviceScope.launch { clearSpo2RepositoryState() }
+    }
+
+    private fun handleSpo2InvalidOutcome(
+        reason: InvalidReason,
+        ts: Long,
+        status: Int,
+        endedAsTimeout: Boolean,
+    ) {
+        lastSpo2Status = status
+        lastSpo2Pct = null
+        lastSpo2OutcomeWasTimeout = endedAsTimeout
+        lastSpo2EndedAsTimeout = endedAsTimeout
+        lastSpo2OutcomeWallMs = System.currentTimeMillis()
+        spo2Sequencer.onInvalid(ts, reason)
+        lastSpo2InvalidReason = reason.name
+        // Clear transient UI/debug-facing state so invalid outcomes do not keep stale SpO2/tier snapshots.
+        serviceScope.launch { sharedRepo.storeLatestSpo2(null) }
+        serviceScope.launch { sharedRepo.storeLatestSpo2TierEvent(null) }
+        serviceScope.launch { updateSpo2DebugState() }
+    }
+
+    private fun currentAltitudeBucket(): Int {
+        val pressureHpa = sharedRepo.latestPressure.value?.pressure?.toDouble() ?: return 0
+        if (!pressureHpa.isFinite() || pressureHpa <= 0.0) return 0
+        val altitudeMeters = 44330.0 * (1.0 - (pressureHpa / 1013.25).pow(0.1903))
+        return when {
+            altitudeMeters < 1000.0 -> 0
+            altitudeMeters < 2500.0 -> 1
+            altitudeMeters < 4000.0 -> 2
+            else -> 3
+        }
+    }
+
+    private suspend fun updateSpo2DebugState() {
+        val profile = CepProvider.getProfile(applicationContext)
+        val family = profile.spo2BaselineFamily()
+        val bucket = profile.spo2BaselineAltitudeBucket()
+        val baseline = profile.spo2Baseline(family, bucket)
+        val provisional = profile.spo2BaselineProvisional(family, bucket)
+        val snapshot = spo2Sequencer.snapshot()
+        sharedRepo.storeLatestSpo2DebugState(
+            DataRepository.Spo2DebugState(
+                activeBaselinePct = baseline,
+                activeBaselineFamily = family,
+                activeAltitudeBucket = bucket,
+                activeBaselineProvisional = provisional,
+                ringSize = snapshot.ringSize,
+                lastInvalidReason = lastSpo2InvalidReason,
+                lastStateUpdateTs = System.currentTimeMillis(),
+                lastResetReason = lastSpo2ResetReason,
+            )
+        )
+    }
+
     private suspend fun emitLatestCep() {
         try {
+            val now = System.currentTimeMillis()
+            val spo2Ts = lastSpo2Ts
             lastSpo2Pct?.let { pct ->
-                CepBus.emit(CepEvent(topic = Topics.SPO2, payload = Spo2Payload(pct = pct)))
+                if (spo2Ts != null && spo2Ts > lastSpo2EmittedTs && (now - spo2Ts) <= SPO2_EMIT_FRESHNESS_MS) {
+                    val ppgRedSustainedMs = ppgRedSustainedForValidation(now)
+                    CepBus.emit(
+                        CepEvent(
+                            topic = Topics.SPO2,
+                            payload = Spo2Payload(
+                                pct = pct,
+                                ts = spo2Ts,
+                                statusOk = (lastSpo2Status == 2),
+                                motionOk = isStill && lastActivityConfidence >= ACTIVITY_STILL_CONFIDENCE_MIN,
+                                ppgRedSustainedMs = ppgRedSustainedMs,
+                                ppgAmplitude = lastPpgAmp,
+                                ppgQuality = lastPpgQuality,
+                            ),
+                            ts = spo2Ts
+                        )
+                    )
+                    lastSpo2EmittedTs = spo2Ts
+                    sharedRepo.storeLatestSpo2(pct)
+                }
             }
 			// Emit latest HRV (RMSSD) if available
 			if (lastNonZeroRmssdMs > 0.0 && lastNonZeroRmssdMs.isFinite()) {
@@ -1156,7 +1339,13 @@ class SkinTempService : Service() {
                 CepBus.emit(
                     CepEvent(
                         topic = Topics.PPG,
-                        payload = PpgPayload(amplitude = amp.toFloat(), quality = (lastPpgQuality ?: 0f), wavelength = "green")
+                        payload = PpgPayload(
+                            amplitude = amp.toFloat(),
+                            quality = (lastPpgQuality ?: 0f),
+                            wavelength = "green",
+                            ppgRedSustainedMs = ppgRedSustainedForValidation(now),
+                            ts = now,
+                        )
                     )
                 )
             }

@@ -37,6 +37,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_C
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.UserWarnActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -536,6 +537,7 @@ class CotDispatchService : Service() {
         } else {
             dataRepository.changePhysioAndAutoGenAlertToClearAndEnqueueStatusUid(pendingAlert.uuid, true)
         }
+
     }
 
     private fun startClearPhysioAndAutoGenAlertCollector() {

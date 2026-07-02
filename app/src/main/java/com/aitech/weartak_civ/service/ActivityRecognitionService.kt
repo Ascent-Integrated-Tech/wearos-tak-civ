@@ -108,7 +108,7 @@ class ActivityRecognitionService : Service() {
             CepBus.emit(
                 CepEvent(
                     topic = Topics.ACTIVITY,
-                    payload = ActivityPayload(state = "UNKNOWN")
+                    payload = ActivityPayload(state = "UNKNOWN", confidence = 0)
                 )
             )
 
@@ -201,7 +201,7 @@ class ActivityRecognitionService : Service() {
                     CepBus.emit(
                         CepEvent(
                             topic = Topics.ACTIVITY,
-                            payload = ActivityPayload(state = cepState)
+                            payload = ActivityPayload(state = cepState, confidence = act?.confidence ?: 0)
                         )
                     )
                     CepBus.emit(

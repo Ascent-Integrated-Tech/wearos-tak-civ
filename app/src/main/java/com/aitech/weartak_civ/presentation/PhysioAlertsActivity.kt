@@ -352,6 +352,9 @@ fun ExpandableCard() {
     val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
     val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
     val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
+    val latestSpo2 = dataRepository.latestSpo2.collectAsState()
+    val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
+    val latestSpo2Debug = dataRepository.latestSpo2DebugState.collectAsState()
     val logOutput = """
                     === === Physiological User Metrics === ===
                     ${String.format("%-25s %-30s", "heartRateFlow:", heartRateFlow.value)}
@@ -369,7 +372,9 @@ fun ExpandableCard() {
         Utils.SelectedPhysioMetric("key_skin_temp",painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"),
         Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"),
         Utils.SelectedPhysioMetric("key_floors",painterResource(id = R.drawable.floors), stringResource(R.string.floors), if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"),
-        Utils.SelectedPhysioMetric("key_calories",painterResource(id = R.drawable.calories), stringResource(R.string.calories), if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}")
+        Utils.SelectedPhysioMetric("key_calories",painterResource(id = R.drawable.calories), stringResource(R.string.calories), if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"),
+        Utils.SelectedPhysioMetric("key_spo2", painterResource(id = R.drawable.heart_rate), "SpO2", latestSpo2.value?.let { "${it.formatDecimal(1)}%" } ?: "---"),
+        Utils.SelectedPhysioMetric("key_spo2_tier", painterResource(id = R.drawable.heart_rate), "SpO2 Tier", latestSpo2TierEvent.value?.tier?.name ?: "NONE")
     )
 
     Card(
@@ -406,6 +411,27 @@ fun ExpandableCard() {
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "SpO2 Baseline: ${latestSpo2Debug.value?.activeBaselinePct?.formatDecimal(1) ?: "--"}% (${latestSpo2Debug.value?.activeBaselineFamily ?: "--"})",
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = "SpO2 Bucket: ${latestSpo2Debug.value?.activeAltitudeBucket ?: "--"}  Provisional: ${latestSpo2Debug.value?.activeBaselineProvisional ?: "--"}",
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = "SpO2 Ring: ${latestSpo2Debug.value?.ringSize ?: "--"}  Invalid: ${latestSpo2Debug.value?.lastInvalidReason ?: "none"}",
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = "SpO2 StateTs: ${latestSpo2Debug.value?.lastStateUpdateTs ?: "--"}  Reset: ${latestSpo2Debug.value?.lastResetReason ?: "none"}",
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
         } else {
             val indices = listOf(0, 3)
             val hrExertion = activePhysioMetrics.slice(indices)
@@ -461,6 +487,7 @@ fun ExpandableCard() {
 }
 
 fun Float.formatDecimal(numberOfDecimals: Int = 2): String = "%.${numberOfDecimals}f".format(this)
+fun Double.formatDecimal(numberOfDecimals: Int = 2): String = "%.${numberOfDecimals}f".format(this)
 
 @Composable
 fun MetricItem(

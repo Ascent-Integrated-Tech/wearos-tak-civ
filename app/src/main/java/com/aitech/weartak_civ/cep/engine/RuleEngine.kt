@@ -39,6 +39,10 @@ class RuleEngine(
             } */
 
             val cond = JsonLogic.eval(r.condition, fs)
+            if (r.id.startsWith("pressure_")) {
+                val timer = compiledTimers[r.id]
+                Log.d("CEP_P6", "[RULE] id=${r.id} cond=$cond elapsedSec=${timer?.elapsedSec(now)}")
+            }
             val base = r.sustainedForSec
             val effMain = if (r.allowSustainOverride) {
                 overridesMain[r.id]?.coerceAtLeast(0L) ?: base
@@ -51,39 +55,48 @@ class RuleEngine(
                 r.sustainedForSecWarn
             }
             val sustainWarnSec = effWarn?.takeIf { it in 1 until effMain }
-            val result = compiledTimers[r.id]?.tick(cond, now, effMain, sustainWarnSec) ?: TickResult(false, false)
+            val result =
+                compiledTimers[r.id]?.tick(cond, now, effMain, sustainWarnSec) ?: TickResult(
+                    false,
+                    false
+                )
 
             /* if (r.id.contains("exertion_warning_hr_zone4_exercise") ||
                 r.id.contains("exertion_alert_hr_zone5_exercise") ||
                 r.id.contains("features.hr.exertion_warning_active")) {
                 Log.i("CEP", "cond=$cond, effMain=$effMain, effWarn=$effWarn, result=$result")
             } */
+            if (r.id.startsWith("pressure_") && (result.warnFired || result.mainFired)) {
+                Log.d("CEP_P6", "[RULE] id=${r.id} FIRED warnFired=${result.warnFired} mainFired=${result.mainFired}")
+            }
             if (!result.warnFired && !result.mainFired) return@forEach
 
             val snapshot = fs.snapshot(r.snapshotKeys)
             val action = ActionDef(
-                type        = r.action.type,
-                severity    = resolveSeverity(r.action.severity.uppercase()),
-                message     = r.action.message,
-                tags        = r.action.tags,
-                category    = r.action.category,
-                isTak       = r.action.isTak,
-                isLocal     = r.action.isLocal,
-                priorityFrom= r.action.priorityFrom,
-                priority    = r.action.priority,
-                sendSms     = r.action.sendSms,
-                timeoutSec  = r.action.timeoutSec,
-                uid         = r.action.uid,
-                monitor     = r.action.monitor,
-                exitLogic   = r.action.exitLogic,
+                type = r.action.type,
+                severity = resolveSeverity(r.action.severity.uppercase()),
+                message = r.action.message,
+                tags = r.action.tags,
+                category = r.action.category,
+                isTak = r.action.isTak,
+                isLocal = r.action.isLocal,
+                priorityFrom = r.action.priorityFrom,
+                priority = r.action.priority,
+                sendSms = r.action.sendSms,
+                timeoutSec = r.action.timeoutSec,
+                uid = r.action.uid,
+                monitor = r.action.monitor,
+                exitLogic = r.action.exitLogic,
                 exitSustainSec = r.action.exitSustainSec
             )
 
             if (result.warnFired) {
                 scope.launch {
                     dispatcher.dispatch(
-                        TriggerContext(ruleId = r.id, action = action.copy(type = "warn"),
-                            snapshot = snapshot, ts = now, isPreWarn = true)
+                        TriggerContext(
+                            ruleId = r.id, action = action.copy(type = "warn"),
+                            snapshot = snapshot, ts = now, isPreWarn = true
+                        )
                     )
                 }
             }
@@ -91,13 +104,19 @@ class RuleEngine(
                 //Log.i("CEP", "result.mainFired (${result.warnFired}, ${result.mainFired}); sustainWarnSec=$sustainWarnSec; effMain=$effMain")
                 scope.launch {
                     dispatcher.dispatch(
-                        TriggerContext(ruleId = r.id, action = action,
-                            snapshot = snapshot, ts = now)
+                        TriggerContext(
+                            ruleId = r.id, action = action,
+                            snapshot = snapshot, ts = now
+                        )
                     )
                 }
             }
         }
     }
-}
 
+    fun resetForTest() {
+        compiledTimers.values.forEach { it.reset() }
+        dispatcher.resetForTest()
+    }
+}
 

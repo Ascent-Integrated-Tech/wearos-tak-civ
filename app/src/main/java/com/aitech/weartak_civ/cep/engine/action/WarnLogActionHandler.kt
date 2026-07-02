@@ -5,7 +5,7 @@
 package com.aitech.weartak_civ.cep.engine.action
 
 import android.util.Log
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.WearTakApplication
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -45,7 +45,8 @@ class WarnLogActionHandler(
         val uid      = tak.rawUid
         val category = ctx.action.category ?: "CAT_HEALTH_GENERIC"
 
-        dataRepository.addPhysioAndAutoGenAlertRequest(
+        val repo = (WearTakApplication.AppCtx.app as WearTakApplication).repo
+        repo.addPhysioAndAutoGenAlertRequest(
             uid         = uid,
             category    = category,
             description = expandedMessage.ifEmpty { ctx.ruleId },

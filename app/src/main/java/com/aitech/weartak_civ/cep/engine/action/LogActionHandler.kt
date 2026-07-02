@@ -2,8 +2,8 @@ package com.aitech.weartak_civ.cep.engine.action
 
 import android.util.Log
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 
 
@@ -14,6 +14,9 @@ class LogActionHandler(
     override val type: String = "log"
 
     override suspend fun handle(ctx: TriggerContext) {
+        if (ctx.ruleId.startsWith("pressure_")) {
+            Log.d("CEP_P6", "[ACTION] rule=${ctx.ruleId} entered isTak=${ctx.action.isTak} snapshot=${ctx.snapshot}")
+        }
         val prefix = "[CEP][${ctx.action.severity}][${ctx.ruleId}]"
         val expandedMessage = expandMessage(ctx.action.message.ifEmpty { "Triggered" }, ctx.snapshot)
         val body = "$expandedMessage tags=${ctx.action.tags} | snapshot=${ctx.snapshot}"
@@ -39,14 +42,18 @@ class LogActionHandler(
                 exitLogic     = tak.exitLogic,
                 exitSustainSec = tak.sustainSec
             )
+            if (ctx.ruleId.startsWith("pressure_")) {
+                Log.d("CEP_P6", "[ACTION] rule=${ctx.ruleId} tryActivate=$isFirstActivation uid=${tak.rawUid}")
+            }
             if (!isFirstActivation) {
                 Log.i("CEP", "[AlertRegistry] Suppressing duplicate alert for rule=${ctx.ruleId}")
                 return
             }
 
             Utils.vibrateWatch(vibDurationMs = 200L, numberOfVibes = 5, timeBtwnVibesMs = 120L)
+            val repo = (WearTakApplication.AppCtx.app as WearTakApplication).repo
             if (tak.priority == 1) {
-                dataRepository.addPhysioAndAutoGenAlertRequest(
+                repo.addPhysioAndAutoGenAlertRequest(
                     uid = tak.rawUid,
                     category = ctx.action.category ?: "CAT_HEALTH_GENERIC",
                     description = expandedMessage.ifEmpty { ctx.ruleId },
@@ -55,7 +62,7 @@ class LogActionHandler(
                     timeMillis = System.currentTimeMillis()
                 )
             } else {
-                dataRepository.appendPhysioAndAutoGenAlert(
+                repo.appendPhysioAndAutoGenAlert(
                     DataRepository.CustomEmergencyAlert(uuid = tak.rawUid,
                         alertState = DataRepository.AlertState.ALERT,
                         category = ctx.action.category ?: "CAT_HEALTH_GENERIC",

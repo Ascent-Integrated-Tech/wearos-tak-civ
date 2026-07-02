@@ -5,35 +5,54 @@ data class TickResult(val warnFired: Boolean, val mainFired: Boolean)
 class TriggerTimer(
     private val holdDownSec: Long
 ) {
-    private var activeFor = 0L
+    // Phase 1: wall-clock sustain — stores the ms when the condition first became true.
+    // Replaces the tick-count `activeFor` field so sustain is rate-independent.
+    private var conditionTrueStartMs: Long? = null
     private var lastFireAt = 0L
     private var warnFiredThisEpisode = false
 
     /**
-     * @param effectiveSustainSec Sustain duration in seconds (1 Hz tick => activeFor counts seconds).
-     * @param sustainWarnSec Optional warn threshold; must be in [1, effectiveSustainSec) to take effect.
+     * Returns whole seconds elapsed since the condition most recently became true.
+     *
+     * This is observational only and does not mutate timer state.
+     *
+     * @param now Current epoch time in milliseconds.
+     * @return Elapsed whole seconds while condition is continuously true, or 0 when false.
+     */
+    fun elapsedSec(now: Long = System.currentTimeMillis()): Long =
+        conditionTrueStartMs?.let { (now - it) / 1000L } ?: 0L
+
+    /**
+     * @param effectiveSustainSec Sustain duration in real wall-clock seconds (rate-independent).
+     * @param sustainWarnSec Optional warn threshold in seconds; must be in [1, effectiveSustainSec).
      */
     fun tick(isTrue: Boolean, now: Long, effectiveSustainSec: Long, sustainWarnSec: Long? = null): TickResult {
         if (isTrue) {
-            activeFor++
+            if (conditionTrueStartMs == null) conditionTrueStartMs = now
         } else {
-            activeFor = 0
+            conditionTrueStartMs = null
             warnFiredThisEpisode = false
         }
-        val mature = activeFor >= effectiveSustainSec
+
+        val elapsedSec = conditionTrueStartMs?.let { (now - it) / 1000L } ?: 0L
+        val mature = elapsedSec >= effectiveSustainSec
         val cooldown = (now - lastFireAt) >= holdDownSec * 1000
         val mainFired = mature && cooldown
         if (mainFired) lastFireAt = now
 
         val warnSec = sustainWarnSec
         var warnFired = false
-        if (warnSec != null && warnSec in 1 until effectiveSustainSec && activeFor >= warnSec && !warnFiredThisEpisode) {
+        if (warnSec != null && warnSec in 1 until effectiveSustainSec && elapsedSec >= warnSec && !warnFiredThisEpisode) {
             warnFiredThisEpisode = true
             warnFired = true
         }
 
         return TickResult(warnFired = warnFired, mainFired = mainFired)
     }
+
+    fun reset() {
+        conditionTrueStartMs = null
+        lastFireAt = 0L
+        warnFiredThisEpisode = false
+    }
 }
-
-

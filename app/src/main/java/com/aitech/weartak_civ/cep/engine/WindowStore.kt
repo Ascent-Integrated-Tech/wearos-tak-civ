@@ -5,14 +5,25 @@ import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.CepPayload
 import com.aitech.weartak_civ.cep.model.Topics
 import com.aitech.weartak_civ.cep.model.payloads.*
-import com.aitech.weartak_civ.cep.util.ArrayRing
-import com.aitech.weartak_civ.cep.util.DoubleRing
+import com.aitech.weartak_civ.cep.util.TimedArrayRing
+import com.aitech.weartak_civ.cep.util.TimedDoubleRing
 import com.aitech.weartak_civ.cep.util.MathOps
+import com.aitech.weartak_civ.cep.util.Stats
 
-class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
+/**
+ * Stores ingested sensor samples in per-channel ring buffers and exposes
+ * feature-compute helpers consumed by [CepEngine].
+ *
+ * Phase 2: ring buffers changed from count-indexed ([DoubleRing]/[ArrayRing])
+ * to timestamp-indexed ([TimedDoubleRing]/[TimedArrayRing]).  All window,
+ * slope and delta computations now work in wall-clock time, making them
+ * independent of CEP tick rate and sensor ingest frequency.
+ */
+class WindowStore(private val ringConfig: RingConfig) {
 
-    private val num = mutableMapOf<String, DoubleRing>()
-    private val arr = mutableMapOf<String, ArrayRing>()
+    // Phase 2: timestamp-aware ring maps
+    private val num = mutableMapOf<String, TimedDoubleRing>()
+    private val arr = mutableMapOf<String, TimedArrayRing>()
     private val latest = mutableMapOf<String, Any?>()
 
     private val accelMag = "accel.magnitude_g"
@@ -30,6 +41,7 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
     private val offbody_on_wrist = "offbody.on_wrist"
     private val gyro_rms_dps = "gyro.rms_dps"
     private val ppg_amplitude = "ppg.amplitude"
+    private val spo2 = "spo2"
     private val humidity_relative_percent = "humidity.relative_percent"
     private val water_sensor_wet = "water_sensor.wet"
     private val light_lux = "light.lux"
@@ -39,18 +51,25 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
     private val rms = "rms"
     private val median = "median"
 
-    private fun numCap() = ringConfig.maxSecondsNumeric * tickHz
-    private fun arrCap() = ringConfig.maxSecondsArray * tickHz
+    // Ring capacity: sized by maxSensorHz (the fastest sensor rate in the system),
+    // NOT by the engine tick rate.  This ensures that even a 4 Hz sensor retains a
+    // full maxSecondsNumeric window of history.
+    // e.g. default: 3600 s * 4 Hz = 14 400 slots (~56 kB for DoubleArray).
+    private fun numCap() = ringConfig.maxSecondsNumeric * ringConfig.maxSensorHz
+    private fun arrCap() = ringConfig.maxSecondsArray  * ringConfig.maxSensorHz
+
+    // ── Ingestion ─────────────────────────────────────────────────────────────
 
     fun ingest(evt: CepEvent<out CepPayload>, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         when (val p = evt.payload) {
             is HeartRatePayload -> {
-                num.getOrPut(Topics.HEART_RATE) { DoubleRing(numCap()) }.add(p.bpm)
+                // Phase 2: pass tsMs so tailByTime works correctly
+                num.getOrPut(Topics.HEART_RATE) { TimedDoubleRing(numCap()) }.add(p.bpm, tsMs)
                 latest[heart_rate] = p.bpm
                 fs.put(heart_rate, p.bpm, tsMs)
             }
             is SkinTempPayload -> {
-                arr.getOrPut(Topics.SKIN_TEMP) { ArrayRing(arrCap()) }.add(p.c_peripheral)
+                arr.getOrPut(Topics.SKIN_TEMP) { TimedArrayRing(arrCap()) }.add(p.c_peripheral, tsMs)
                 latest[skin_temp] = p.c_peripheral
             }
             is AmbientPayload -> {
@@ -64,11 +83,11 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 ))
             }
             is AccelPayload -> {
-                num.getOrPut(accelMag) { DoubleRing(numCap()) }.add(p.magnitude_g)
+                num.getOrPut(accelMag) { TimedDoubleRing(numCap()) }.add(p.magnitude_g, tsMs)
                 latest[accelMag] = p.magnitude_g
                 fs.put(accelMag, p.magnitude_g, tsMs)
                 p.cadence_spm?.let {
-                    num.getOrPut(accel_cadence_spm) { DoubleRing(numCap()) }.add(it)
+                    num.getOrPut(accel_cadence_spm) { TimedDoubleRing(numCap()) }.add(it, tsMs)
                     latest[accel_cadence_spm] = it
                 }
             }
@@ -78,15 +97,20 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 fs.put(activity_state, p.state, tsMs)
             }
             is Spo2Payload -> {
-                latest["spo2"] = p.pct; fs.put("spo2", p.pct, tsMs)
+                // Phase 2: add to ring so computeWindow can build time-based windows
+                // (features.spo2.recent_120s, features.spo2.baseline_86400s).
+                // Previously only fs.put() was called — num["spo2"] was always null
+                // so both SPO2 window features returned early and were permanently null.
+                num.getOrPut(spo2) { TimedDoubleRing(numCap()) }.add(p.pct, tsMs)
+                latest[spo2] = p.pct
+                fs.put(spo2, p.pct, tsMs)
             }
             is HrvPayload -> {
                 val h = p.rmssd_ms
-                if (h != null) { num.getOrPut(hrv_rmssd_ms) { DoubleRing(numCap()) }.add(h); fs.put(
-                    hrv_rmssd_ms,
-                    h,
-                    tsMs
-                ) }
+                if (h != null) {
+                    num.getOrPut(hrv_rmssd_ms) { TimedDoubleRing(numCap()) }.add(h, tsMs)
+                    fs.put(hrv_rmssd_ms, h, tsMs)
+                }
             }
             is ImmersionPayload -> {
                 latest[immersion_wet_flag] = p.wet_flag
@@ -94,11 +118,8 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 fs.putAll(mapOf(immersion_wet_flag to p.wet_flag, immersion_immersion_flag to p.immersion_flag))
             }
             is SleepPayload -> {
-                latest[sleep_is_sleeping] = p.is_sleeping; fs.put(
-                    sleep_is_sleeping,
-                    p.is_sleeping,
-                    tsMs
-                )
+                latest[sleep_is_sleeping] = p.is_sleeping
+                fs.put(sleep_is_sleeping, p.is_sleeping, tsMs)
             }
             is OffBodyPayload -> {
                 //Log.i("CEP", "latest[offbody_on_wrist] = ${p.on_wrist}")
@@ -109,161 +130,334 @@ class WindowStore(private val tickHz: Int, private val ringConfig: RingConfig) {
                 )
             }
 
-            // ---- NEW: WindPayload (Topics.WIND) ----
+            // ---- WindPayload (Topics.WIND) ----
             is WindPayload -> {
                 p.speedMps?.let {
-                    latest[ambientWind] = it                   // keep backward-compatible key
+                    latest[ambientWind] = it
                     fs.put(ambientWind, it, tsMs)
                 }
                 p.directionDeg?.let { fs.put("wind.direction_deg", it, tsMs) }
             }
 
-            // ---- NEW: GyroPayload (Topics.GYRO) ----
+            // ---- GyroPayload (Topics.GYRO) ----
             is GyroPayload -> {
-                // Raw axes if you want them available:
                 fs.put("gyro.x_dps", p.x.toDouble(), tsMs)
                 fs.put("gyro.y_dps", p.y.toDouble(), tsMs)
                 fs.put("gyro.z_dps", p.z.toDouble(), tsMs)
-                // Optional RMS stream to support shiver detection windows:
                 p.rms?.let {
-                    num.getOrPut(gyro_rms_dps) { DoubleRing(numCap()) }.add(it.toDouble())
+                    num.getOrPut(gyro_rms_dps) { TimedDoubleRing(numCap()) }.add(it.toDouble(), tsMs)
                     fs.put(gyro_rms_dps, it, tsMs)
                 }
             }
 
-            // ---- NEW: PpgPayload (Topics.PPG) ----
+            // ---- PpgPayload (Topics.PPG) ----
             is PpgPayload -> {
-                // Amplitude is the one the rules use for collapse ratio:
-                num.getOrPut(ppg_amplitude) { DoubleRing(numCap()) }.add(p.amplitude.toDouble())
+                num.getOrPut(ppg_amplitude) { TimedDoubleRing(numCap()) }.add(p.amplitude.toDouble(), tsMs)
                 fs.put(ppg_amplitude, p.amplitude, tsMs)
                 p.quality?.let { fs.put("ppg.quality", it, tsMs) }
                 p.wavelength?.let { fs.put("ppg.wavelength", it, tsMs) }
             }
 
-            // ---- NEW: HumidityPayload (Topics.HUMIDITY) ----
+            // ---- HumidityPayload (Topics.HUMIDITY) ----
             is HumidityPayload -> {
                 fs.put(humidity_relative_percent, p.relativePercent, tsMs)
                 latest[humidity_relative_percent] = p.relativePercent
             }
 
-            // ---- NEW: WaterPayload (Topics.WATER) ----
+            // ---- WaterPayload (Topics.WATER) ----
             is WaterPayload -> {
                 fs.put(water_sensor_wet, p.wet, tsMs)
                 latest[water_sensor_wet] = p.wet
                 p.temperatureC?.let {
-                    // Mirror to ambient.water_temp_c to match immersion override rule
                     fs.put("ambient.water_temp_c", it, tsMs)
                 }
             }
 
-            // ---- NEW: LightPayload (Topics.LIGHT) ----
+            // ---- LightPayload (Topics.LIGHT) ----
             is LightPayload -> {
                 fs.put(light_lux, p.lux, tsMs)
                 latest[light_lux] = p.lux
                 p.covered?.let {
-                    fs.put("als.covered", it, tsMs) // used by coverage/exposure logic
+                    fs.put("als.covered", it, tsMs)
                 }
+            }
+
+            // ---- PressurePayload (Topics.PRESSURE) ----
+            is PressurePayload -> {
+                val ring = num.getOrPut(Topics.PRESSURE) { TimedDoubleRing(numCap()) }
+                ring.add(p.hpa.toDouble(), tsMs)
+                fs.put(Topics.PRESSURE, p.hpa.toDouble(), tsMs)
+                fs.put("pressure.accuracy", p.accuracy.toDouble(), tsMs)
+                Log.d("CEP_P6", "[INGEST] hpa=${p.hpa} ts=$tsMs ringSize=${ring.size}")
             }
         }
     }
 
+    // ── Feature Compute ───────────────────────────────────────────────────────
+
+    /**
+     * Phase 2: time-based window — [ring.tailByTime] returns all samples
+     * whose timestamp falls within the last [def.windowSec] real seconds,
+     * regardless of how many ticks have elapsed.
+     *
+     * Phase 1: if [def.maxAgeSec] is set the feature is suppressed when the
+     * most-recent sample is staler than that guard.
+     */
     fun computeWindow(def: FeatureDef.Window, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = num[def.source] ?: return
-        val n = def.windowSec * tickHz
-        val window = ring.tail(n)
-        val v = when (def.op) {
-            min -> window.minOrNull()
-            max -> window.maxOrNull()
-            avg -> if (window.isNotEmpty()) window.average() else null
-            rms -> MathOps.rms(window)
-            median -> if (window.isNotEmpty()) window.sorted()[window.size/2] else null
-            else -> null
+
+        // Phase 1: freshness guard
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: return
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) return
         }
-        fs.putDerived(def.id, v, tsMs)
+
+        // Phase 2: time-based window
+        val window = ring.tailByTime(def.windowSec * 1000L, tsMs)
+        val v = when (def.op) {
+            min    -> window.minOrNull()
+            max    -> window.maxOrNull()
+            avg    -> if (window.isNotEmpty()) window.average() else null
+            rms    -> MathOps.rms(window)
+            median -> if (window.isNotEmpty()) window.sorted()[window.size / 2] else null
+            else   -> null
+        }
+        // Phase 2: null guard — empty window produces null; don't forward null into
+        // ConcurrentHashMap (putDerived) or it throws NPE.  Sparse sensors make empty
+        // windows the normal steady-state, not just a test-teardown edge case.
+        v?.let { fs.putDerived(def.id, it, tsMs) }
     }
 
-    /*fun computeMultiWindow(def: FeatureDef.MultiWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
-        val ring = arr[def.source] ?: return
-        val n = def.windowSec * tickHz
-        val window = ring.tail(n)
-        if (window.isEmpty()) return
-        // per-sample min across channels
-        val perSampleMin = window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY }
-        val valWindow = when (def.op) {
-            "min" -> perSampleMin.minOrNull()
-            "max" -> perSampleMin.maxOrNull()
-            "avg" -> if (perSampleMin.isNotEmpty()) perSampleMin.average() else null
-            else -> perSampleMin.minOrNull()
-        }
-        fs.putDerived(def.id, valWindow, tsMs)
-    }*/
-
+    /**
+     * Phase 2: time-based multi-channel window — mirrors [computeWindow] but
+     * for array-valued rings (e.g. skin-temp with multiple peripheral sensors).
+     */
     fun computeMultiWindow(def: FeatureDef.MultiWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = arr[def.source] ?: return
-        val n = def.windowSec * tickHz
-        val window = ring.tail(n)
+
+        // Phase 1: freshness guard
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: return
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) return
+        }
+
+        // Phase 2: time-based window
+        val window = ring.tailByTime(def.windowSec * 1000L, tsMs)
         if (window.isEmpty()) return
 
         // Combine channels per sample according to multiPolicy
         val perSampleAgg: List<Double> = when (def.multiPolicy) {
-            min -> window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY }
-            max -> window.map { it.maxOrNull() ?: Double.NEGATIVE_INFINITY }
-            else  -> window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY } // default
+            min  -> window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY }
+            max  -> window.map { it.maxOrNull() ?: Double.NEGATIVE_INFINITY }
+            else -> window.map { it.minOrNull() ?: Double.POSITIVE_INFINITY }
         }
 
         val v = when (def.op) {
-            min -> perSampleAgg.minOrNull()
-            max -> perSampleAgg.maxOrNull()
-            avg -> if (perSampleAgg.isNotEmpty()) perSampleAgg.average() else null
-            rms -> MathOps.rms(perSampleAgg.toList())
-            median -> if (perSampleAgg.isNotEmpty()) perSampleAgg.sorted()[perSampleAgg.size/2] else null
-            else -> perSampleAgg.minOrNull()
+            min    -> perSampleAgg.minOrNull()
+            max    -> perSampleAgg.maxOrNull()
+            avg    -> if (perSampleAgg.isNotEmpty()) perSampleAgg.average() else null
+            rms    -> MathOps.rms(perSampleAgg)
+            median -> if (perSampleAgg.isNotEmpty()) perSampleAgg.sorted()[perSampleAgg.size / 2] else null
+            else   -> perSampleAgg.minOrNull()
         }
-
-        fs.putDerived(def.id, v, tsMs)
+        // Phase 2: null guard — same as computeWindow; perSampleAgg can yield null
+        // for edge cases (e.g. all infinity from empty channels).
+        v?.let { fs.putDerived(def.id, it, tsMs) }
     }
 
-    /*fun computeSlopeMulti(def: FeatureDef.SlopeMulti, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
-        val ring = arr[def.source] ?: return
-        val n = def.windowSec * tickHz
-        val window = ring.tail(n)
-        if (window.isEmpty()) return
-        val last = window.last()
-        val minIdx = last.indices.minByOrNull { last[it] } ?: 0
-        val series = window.mapNotNull { it.getOrNull(minIdx) }.toDoubleArray()
-        val slopePerSample = MathOps.lsqSlope(series) ?: return
-        val slope = if (def.unitsPerSec == "per_minute") slopePerSample * tickHz * 60.0 else slopePerSample * tickHz
-        fs.putDerived(def.id, slope, tsMs)
-    }*/
-
+    /**
+     * Phase 2: true time-based slope via [MathOps.lsqSlopeXY].
+     *
+     * Timestamps from [TimedArrayRing.tailByTimePairs] are converted to
+     * seconds-from-first-sample as the x-axis, so the returned slope is
+     * already in °C/s (or the appropriate y-unit per second).  No
+     * `* tickHz` scaling needed — the actual elapsed time is used directly.
+     *
+     * Phase 1: optional freshness guard suppresses stale features.
+     */
     fun computeSlopeMulti(def: FeatureDef.SlopeMulti, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = arr[def.source] ?: return
-        val n = def.windowSec * tickHz
-        val window = ring.tail(n)
-        if (window.isEmpty()) return
 
-        // Choose which channel to follow for slope based on multiPolicy
-        val last = window.last()
+        // Phase 1: freshness guard
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: return
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) return
+        }
+
+        // Phase 2: time-based window + true LSQ slope
+        val pairs = ring.tailByTimePairs(def.windowSec * 1000L, tsMs)
+        if (pairs.size < 2) return
+
+        // Choose channel to follow based on multiPolicy applied to the LAST sample
+        val last = pairs.last().second
         val channelIdx = when (def.multiPolicy) {
             "min_channel" -> last.indices.minByOrNull { last[it] } ?: 0
             "max_channel" -> last.indices.maxByOrNull { last[it] } ?: 0
             else          -> 0
         }
 
-        val series = window.mapNotNull { it.getOrNull(channelIdx) }.toDoubleArray()
-        val slopePerSample = MathOps.lsqSlope(series) ?: return
-        val slopePerSec = if (def.unitsPerSec == "per_minute") slopePerSample * tickHz * 60.0
-        else slopePerSample * tickHz
+        val t0 = pairs.first().first
+        val xsList = ArrayList<Double>(pairs.size)
+        val ysList = ArrayList<Double>(pairs.size)
+        for ((ts, channels) in pairs) {
+            val y = channels.getOrNull(channelIdx) ?: continue
+            xsList.add((ts - t0) / 1000.0)   // seconds from first sample
+            ysList.add(y)
+        }
+        if (xsList.size < 2) return
 
-        fs.putDerived(def.id, slopePerSec, tsMs)
+        // Slope is already per-second; multiply by 60 for per-minute features
+        val slopePerSec = MathOps.lsqSlopeXY(xsList.toDoubleArray(), ysList.toDoubleArray()) ?: return
+        val slope = if (def.unitsPerSec == "per_minute") slopePerSec * 60.0 else slopePerSec
+        fs.putDerived(def.id, slope, tsMs)
     }
 
+    /**
+     * Phase 2: time-based delta — looks up the sample closest to
+     * (tsMs - horizonSec * 1000) instead of indexing back [horizonSec * tickHz] slots.
+     */
     fun computeDelta(def: FeatureDef.Delta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = num[def.source] ?: return
-        val now = ring.lastOrNull() ?: return
-        val back = ring.getBack(def.horizonSec * tickHz) ?: return
+        val now  = ring.lastOrNull() ?: return
+        // Phase 2: time-based horizon lookup
+        val back = ring.getByTime(def.horizonSec * 1000L, tsMs) ?: return
         fs.putDerived(def.id, now - back, tsMs)
     }
+
+    // ── Sample-count feature compute (signal-agnostic) ────────────────────────
+
+    /**
+     * Rolling aggregate over the last [def.sampleCount] samples by insertion order.
+     *
+     * Suppressed when:
+     *  - the ring for [def.source] has not been populated yet
+     *  - fewer than [def.minSamples] samples are available
+     *  - [def.maxAgeSec] is set and the newest sample is older than that threshold
+     *
+     * Supported ops: avg, min, max, rms, median, stddev, variance
+     */
+
+    /** Test-only: drop the numeric ring for [topic] so the next ingest starts from an empty buffer. */
+    fun clearRing(topic: String) { num.remove(topic) }
+
+    fun computeSampleWindow(def: FeatureDef.SampleWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        val isPressure = def.source == Topics.PRESSURE
+        val ring = num[def.source] ?: run {
+            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
+            return
+        }
+
+        // Freshness guard: newest sample must be within maxAgeSec of now
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: run {
+                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
+                return
+            }
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) {
+                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
+                return
+            }
+        }
+
+        val window = ring.tailByCount(def.sampleCount)
+        if (window.size < def.minSamples) {
+            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=insufficient have=${window.size} need=${def.minSamples} ringSize=${ring.size}")
+            return
+        }
+
+        val v: Double? = when (def.op) {
+            avg        -> window.average()
+            min        -> window.minOrNull()
+            max        -> window.maxOrNull()
+            rms        -> MathOps.rms(window)
+            median     -> window.sorted().let { s -> s[s.size / 2] }
+            "stddev"   -> Stats.std(window)
+            "variance" -> Stats.std(window)?.let { s -> s * s }
+            else       -> null
+        }
+        v?.let {
+            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} value=$it")
+            fs.putDerived(def.id, it, tsMs)
+        }
+    }
+
+    /**
+     * Sample-count delta: (newest sample) − (sample [def.horizonSamples] positions back).
+     *
+     * Position 0 is the most-recently inserted sample; position [horizonSamples] is
+     * [horizonSamples] samples older.  Writes nothing if insufficient history.
+     */
+    fun computeSampleDelta(def: FeatureDef.SampleDelta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        val isPressure = def.source == Topics.PRESSURE
+        val ring = num[def.source] ?: run {
+            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=no_ring")
+            return
+        }
+
+        // Freshness guard on the newest sample
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: run {
+                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=empty_ring")
+                return
+            }
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) {
+                if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=stale ageSec=${(tsMs - lastTs) / 1000L} maxAge=${def.maxAgeSec}")
+                return
+            }
+        }
+
+        val now  = ring.getByCount(0) ?: run {
+            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_newest ringSize=${ring.size}")
+            return
+        }
+        val back = ring.getByCount(def.horizonSamples) ?: run {
+            if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} suppressed=missing_back ringSize=${ring.size} need=${def.horizonSamples + 1}")
+            return
+        }
+        val delta = now - back
+        if (isPressure) Log.d("CEP_P6", "[FEATURE] id=${def.id} ringSize=${ring.size} now=$now back=$back delta=$delta")
+        fs.putDerived(def.id, delta, tsMs)
+    }
+
+    /**
+     * Sample-count slope via least-squares regression over [def.sampleCount] recent samples.
+     *
+     * Real sensor timestamps serve as the x-axis (converted to seconds) so the slope is
+     * in signal-units/second (or /minute when [def.unitsPerSec] = "per_minute").
+     *
+     * Suppressed when:
+     *  - fewer than 2 samples exist
+     *  - timestamp span of the window is < MIN_SLOPE_SPAN_MS (guards against ÷0 near-singularity
+     *    when multiple samples share the same millisecond timestamp)
+     *  - [def.maxAgeSec] freshness check fails
+     */
+    fun computeSampleSlope(def: FeatureDef.SampleSlope, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
+        val ring = num[def.source] ?: return
+
+        // Freshness guard
+        if (def.maxAgeSec != null) {
+            val lastTs = ring.lastTsOrNull() ?: return
+            if ((tsMs - lastTs) / 1000L > def.maxAgeSec) return
+        }
+
+        val pairs = ring.tailByCountPairs(def.sampleCount)
+        if (pairs.size < 2) return
+
+        // Guard against near-zero time span (e.g. high-frequency replay with synthetic clocks)
+        val span = pairs.last().first - pairs.first().first
+        if (span < MIN_SLOPE_SPAN_MS) return
+
+        val t0 = pairs.first().first
+        val xs = DoubleArray(pairs.size) { i -> (pairs[i].first - t0) / 1000.0 }
+        val ys = DoubleArray(pairs.size) { i -> pairs[i].second }
+
+        val slopePerSec = MathOps.lsqSlopeXY(xs, ys) ?: return
+        val slope = if (def.unitsPerSec == "per_minute") slopePerSec * 60.0 else slopePerSec
+        fs.putDerived(def.id, slope, tsMs)
+    }
+
+    companion object {
+        /** Minimum timestamp span (ms) required to compute a valid sample-count slope. */
+        private const val MIN_SLOPE_SPAN_MS = 10L
+    }
 }
-
-
