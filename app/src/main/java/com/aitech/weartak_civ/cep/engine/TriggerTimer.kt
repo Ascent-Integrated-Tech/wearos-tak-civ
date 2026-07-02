@@ -49,4 +49,10 @@ class TriggerTimer(
 
         return TickResult(warnFired = warnFired, mainFired = mainFired)
     }
+
+    fun reset() {
+        conditionTrueStartMs = null
+        lastFireAt = 0L
+        warnFiredThisEpisode = false
+    }
 }
