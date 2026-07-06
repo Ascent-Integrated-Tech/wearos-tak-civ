@@ -29,6 +29,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.di.CepProvider
+import com.aitech.weartak_civ.cep.engine.CepEngine
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
 import com.aitech.weartak_civ.cep.model.payloads.PpgPayload
@@ -546,11 +547,13 @@ class SkinTempService : Service() {
                             val ppgRedSustainedMs = ppgRedSustainedForValidation(ts)
                             val altitudeBucket = currentAltitudeBucket()
                             val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
+                            val spo2Ops = createSpo2EngineOps(cepEngine)
                             cepEngine.ingest("activity.confidence", lastActivityConfidence.toDouble(), ts)
                             cepEngine.ingest("spo2.status_ok", 1.0, ts)
                             cepEngine.ingest("spo2.ppg_red_sustained_ms", ppgRedSustainedMs.toDouble(), ts)
                             if (lastSpo2Pct != null) {
                                 spo2Sequencer.onValid(
+                                    ops = spo2Ops,
                                     pct = lastSpo2Pct!!,
                                     ts = ts,
                                     activityState = activityState,
@@ -563,7 +566,6 @@ class SkinTempService : Service() {
                                 lastSpo2ResetReason = null
                                 serviceScope.launch { sharedRepo.storeLatestSpo2(lastSpo2Pct) }
                                 serviceScope.launch { updateSpo2DebugState() }
-                                cepEngine.updateSpo2Profile()
                             }
                             lastSpo2OutcomeWasTimeout = false
                             lastSpo2EndedAsTimeout = false
@@ -1028,26 +1030,27 @@ class SkinTempService : Service() {
         return norm.coerceIn(0f, 1f)
     }
 
+    private fun createSpo2EngineOps(cepEngine: CepEngine) = buildSpo2EngineOps(
+        engine = cepEngine,
+        onPublish = { payload ->
+            serviceScope.launch { sharedRepo.storeLatestSpo2TierEvent(payload) }
+            serviceScope.launch {
+                val evt = CepEvent(Topics.SPO2_TIER_EVENT, payload, payload.ts)
+                if (!CepBus.tryEmit(evt)) {
+                    CepBus.emit(evt)
+                }
+            }
+        }
+    )
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SkinTempService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
         deviceWorn = sharedRepo.latestIsDeviceWorn.value
-        val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
         spo2Sequencer = Spo2Sequencer(
             profile = CepProvider.getProfile(applicationContext),
-            publish = { payload ->
-                cepEngine.handleTierEvent(payload)
-                serviceScope.launch { sharedRepo.storeLatestSpo2TierEvent(payload) }
-                serviceScope.launch {
-                    val evt = CepEvent(Topics.SPO2_TIER_EVENT, payload, payload.ts)
-                    if (!CepBus.tryEmit(evt)) {
-                        CepBus.emit(evt)
-                    }
-                }
-            },
-            ingest = { path, value, ts -> cepEngine.ingest(path, value, ts) },
         )
 
         deleteLogFile()
@@ -1139,7 +1142,7 @@ class SkinTempService : Service() {
         stopPpgTracker()
         stopHrTracker(true)
         if (::spo2Sequencer.isInitialized) {
-            spo2Sequencer.reset(ResetReason.SERVICE_STOP)
+            spo2Sequencer.reset(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ResetReason.SERVICE_STOP)
             lastSpo2InvalidReason = ResetReason.SERVICE_STOP.name
             lastSpo2ResetReason = ResetReason.SERVICE_STOP.name
             CoroutineScope(Dispatchers.IO).launch { clearSpo2RepositoryState() }
@@ -1181,7 +1184,7 @@ class SkinTempService : Service() {
             //writeToLogFileLocation(logFile, "deviceWorn=true.")
         } else {
             deviceWorn = false
-            spo2Sequencer.reset(ResetReason.OFF_WRIST)
+            spo2Sequencer.reset(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ResetReason.OFF_WRIST)
             lastSpo2InvalidReason = ResetReason.OFF_WRIST.name
             lastSpo2ResetReason = ResetReason.OFF_WRIST.name
             ppgRedFirstContinuouslyOkSinceMs = 0L
@@ -1264,7 +1267,7 @@ class SkinTempService : Service() {
         lastSpo2OutcomeWasTimeout = endedAsTimeout
         lastSpo2EndedAsTimeout = endedAsTimeout
         lastSpo2OutcomeWallMs = System.currentTimeMillis()
-        spo2Sequencer.onInvalid(ts, reason)
+        spo2Sequencer.onInvalid(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ts, reason)
         lastSpo2InvalidReason = reason.name
         // Clear transient UI/debug-facing state so invalid outcomes do not keep stale SpO2/tier snapshots.
         serviceScope.launch { sharedRepo.storeLatestSpo2(null) }

@@ -3,6 +3,7 @@ package com.aitech.weartak_civ.cep.engine.config
 import com.aitech.weartak_civ.cep.engine.CepConfig
 import com.aitech.weartak_civ.cep.engine.FeatureDef
 import com.aitech.weartak_civ.cep.engine.ExitCondition
+import com.aitech.weartak_civ.cep.engine.MissingRenderPolicy
 import com.aitech.weartak_civ.cep.engine.RuleAction
 import com.aitech.weartak_civ.cep.engine.RuleDef
 import org.json.JSONArray
@@ -133,6 +134,12 @@ object CepConfigValidator {
                 return ValidationResult.Err(
                     ReasonCodes.NEGATIVE_DURATION,
                     "rule ${r.id} has negative sustain/hold-down",
+                )
+            }
+            if (r.renderKeys.any { it.isBlank() }) {
+                return ValidationResult.Err(
+                    ReasonCodes.INVALID_CONFIG,
+                    "rule ${r.id} has blank render key",
                 )
             }
             val unsupported = collectUnsupportedOperators(r.condition)
@@ -458,6 +465,10 @@ object CepConfigValidator {
         if (r.sustainedForSecWarn != null) o.put("sustained_for_sec_warn", r.sustainedForSecWarn)
         o.put("hold_down_sec", r.holdDownSec)
         o.put("allow_sustain_override", r.allowSustainOverride)
+        if (r.renderKeys.isNotEmpty()) o.put("render_keys", JSONArray(r.renderKeys))
+        if (r.onMissingRender != MissingRenderPolicy.SUPPRESS) {
+            o.put("on_missing_render", r.onMissingRender.name.lowercase())
+        }
         if (r.snapshotKeys.isNotEmpty()) o.put("snapshot_keys", JSONArray(r.snapshotKeys))
         o.put("action", actionToJson(r.action))
         return o

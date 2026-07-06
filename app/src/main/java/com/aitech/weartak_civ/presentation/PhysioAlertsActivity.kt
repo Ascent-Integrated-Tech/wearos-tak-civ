@@ -237,6 +237,9 @@ fun alertCategoryFromString(category: String): String {
         "CAT_HR_ALERT" -> "High Exertion"
         "CAT_IMMERSION_WARN" -> "Immersion Warning"
         "CAT_IMMERSION_ALERT" -> "Immersion Alert"
+        "CAT_SPO2_WARN" -> "Low SpO2"
+        "CAT_SPO2_ALERT" -> "Low SpO2"
+        "CAT_SPO2_EMERGENCY" -> "Severe Hypoxemia"
         "CAT_LOW_PRESSURE_ALERT" -> "Low Pressure Alert"
         "CAT_HIGH_PRESSURE_ALERT" -> "High Pressure Alert"
         else ->

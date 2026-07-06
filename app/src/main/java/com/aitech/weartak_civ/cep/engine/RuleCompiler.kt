@@ -19,7 +19,6 @@ import org.json.JSONObject
  * both delegate to these, so any parser divergence is structurally impossible.
  */
 object RuleCompiler {
-
     /** Defaults applied when an `engine` object is omitted from the JSON. */
     data class EngineCadence(val tickHz: Int, val ruleEvalIntervalMs: Int)
 
@@ -166,6 +165,7 @@ object RuleCompiler {
 
     private fun parseRuleEntry(o: JSONObject): RuleDef {
         val action = o.getJSONObject("action")
+        val message = action.optString("message", "")
         val sustainedForSec = o.optLong("sustained_for_sec", 0)
         val rawWarn = if (o.has("sustained_for_sec_warn") && !o.isNull("sustained_for_sec_warn"))
             o.optLong("sustained_for_sec_warn", -1) else -1L
@@ -178,6 +178,8 @@ object RuleCompiler {
             sustainedForSecWarn = sustainedForSecWarn,
             holdDownSec = o.optLong("hold_down_sec", 0),
             action = parseRuleAction(action),
+            renderKeys = renderKeysFor(message, parseStringArray(o.optJSONArray("render_keys"))),
+            onMissingRender = parseMissingRenderPolicy(o.optString("on_missing_render", null)),
             snapshotKeys = parseStringArray(o.optJSONArray("snapshot_keys")),
             allowSustainOverride = o.optBoolean("allow_sustain_override", false)
         )
@@ -239,5 +241,22 @@ object RuleCompiler {
     private fun parseStringArray(arr: JSONArray?): List<String> {
         if (arr == null) return emptyList()
         return List(arr.length()) { idx -> arr.getString(idx) }
+    }
+
+    private fun renderKeysFor(message: String, explicit: List<String>): List<String> {
+        val derived = MessageTemplate.extractKeys(message)
+        if (explicit.isEmpty()) return derived
+        val keys = LinkedHashSet<String>()
+        keys.addAll(derived)
+        keys.addAll(explicit)
+        return keys.toList()
+    }
+
+    private fun parseMissingRenderPolicy(raw: String?): MissingRenderPolicy {
+        return when (raw?.trim()?.lowercase()) {
+            null, "", "suppress" -> MissingRenderPolicy.SUPPRESS
+            "degrade" -> MissingRenderPolicy.DEGRADE
+            else -> throw IllegalArgumentException("Unsupported on_missing_render: $raw")
+        }
     }
 }

@@ -45,6 +45,7 @@ import com.aitech.weartak_civ.cep.model.payloads.WindPayload
 import com.aitech.weartak_civ.cep.model.payloads.PressurePayload
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -66,11 +67,20 @@ class CEPSimulationService : Service() {
 
         const val ACTION_START = "com.aitech.weartak_civ.cep.sim.START"
         const val ACTION_STOP  = "com.aitech.weartak_civ.cep.sim.STOP"
+        const val EXTRA_SIMULATION_TARGET = "com.aitech.weartak_civ.cep.sim.TARGET"
+        const val SIM_TARGET_ALL_MAIN = "ALL_MAIN"
+        const val SIM_TARGET_SPO2_ALL = "SPO2_ALL"
 
-        fun start(ctx: Context) {
-            val i = Intent(ctx, CEPSimulationService::class.java).apply { action = ACTION_START }
+        fun start(ctx: Context, target: String = SIM_TARGET_ALL_MAIN) {
+            val i = Intent(ctx, CEPSimulationService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_SIMULATION_TARGET, target)
+            }
             if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
         }
+        fun startPhase(ctx: Context, phase: String) = start(ctx, phase)
+        fun startScenario(ctx: Context, scenario: String) = start(ctx, scenario)
+        fun startSpo2Scenario(ctx: Context, scenario: String) = start(ctx, scenario)
         fun stop(ctx: Context) {
             val i = Intent(ctx, CEPSimulationService::class.java).apply { action = ACTION_STOP }
             ctx.startService(i)
@@ -90,6 +100,7 @@ class CEPSimulationService : Service() {
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Default + job)
     private var loopStarted = false
+    private var simulationJob: Job? = null
 
     private val toggleCEP = true
 
@@ -112,8 +123,11 @@ class CEPSimulationService : Service() {
         Log.d(TAG, "CEPSimulationService enabled (CEP_SIMULATION=true)")
 
         when (intent?.action) {
-            ACTION_START, null -> if (!loopStarted) startPhase1TestLoop()
-            ACTION_STOP -> stopSelf()
+            ACTION_START, null -> if (!loopStarted) startSelectedSimulation(resolveSelection(intent))
+            ACTION_STOP -> {
+                simulationJob?.cancel()
+                stopSelf()
+            }
         }
 
         //TODO - ALERT SIMULATION: Uncomment to use and set flag -PCEP_SIMULATION=true and -PCEP_TEST_ALERTS=true
@@ -125,6 +139,70 @@ class CEPSimulationService : Service() {
         }
 
         return START_STICKY
+    }
+
+    private sealed class SimulationSelection {
+        data object AllMain : SimulationSelection()
+        data object Spo2All : SimulationSelection()
+        data class MainPhase(val phase: Int) : SimulationSelection()
+        data class MainScenario(val scenario: Scenario) : SimulationSelection()
+        data class Spo2Scenario(val scenario: Spo2Phase7Scenario) : SimulationSelection()
+    }
+
+    private fun resolveSelection(intent: Intent?): SimulationSelection {
+        val raw = intent?.getStringExtra(EXTRA_SIMULATION_TARGET)?.trim().orEmpty()
+        if (raw.isEmpty() || raw.equals(SIM_TARGET_ALL_MAIN, ignoreCase = true) || raw.equals("ALL", ignoreCase = true)) {
+            return SimulationSelection.AllMain
+        }
+        if (raw.equals(SIM_TARGET_SPO2_ALL, ignoreCase = true) || raw.equals("SPO2", ignoreCase = true)) {
+            return SimulationSelection.Spo2All
+        }
+        phaseNumber(raw)?.let { return SimulationSelection.MainPhase(it) }
+        mainScenario(raw)?.let { return SimulationSelection.MainScenario(it) }
+        spo2Scenario(raw)?.let { return SimulationSelection.Spo2Scenario(it) }
+        Log.w(TAG, "Unknown simulation target '$raw' - defaulting to ALL_MAIN")
+        return SimulationSelection.AllMain
+    }
+
+    private fun phaseNumber(raw: String): Int? = when (raw.uppercase()) {
+        "P1" -> 1
+        "P2" -> 2
+        "P3" -> 3
+        "P4" -> 4
+        "P5" -> 5
+        "P6" -> 6
+        else -> null
+    }
+
+    private fun mainScenario(raw: String): Scenario? = runCatching {
+        Scenario.valueOf(raw.uppercase())
+    }.getOrNull()
+
+    private fun spo2Scenario(raw: String): Spo2Phase7Scenario? = runCatching {
+        Spo2Phase7Scenario.valueOf(raw.uppercase())
+    }.getOrNull()
+
+    private fun startSelectedSimulation(selection: SimulationSelection) {
+        loopStarted = true
+        simulationJob = scope.launch {
+            try {
+                runSelection(selection)
+            } finally {
+                loopStarted = false
+                simulationJob = null
+                updateNotification("Idle")
+            }
+        }
+    }
+
+    private suspend fun runSelection(selection: SimulationSelection) {
+        when (selection) {
+            SimulationSelection.AllMain -> runAllMainPhases()
+            is SimulationSelection.MainPhase -> runMainPhase(selection.phase)
+            is SimulationSelection.MainScenario -> runSingleMainScenario(selection.scenario)
+            SimulationSelection.Spo2All -> runSpo2AllScenarios()
+            is SimulationSelection.Spo2Scenario -> runSpo2Scenario(selection.scenario)
+        }
     }
 
     private fun testAlert() {
@@ -182,151 +260,256 @@ class CEPSimulationService : Service() {
     }
 
 
-    /**
-     * Phase 1 test loop — runs when [enableCepSimulation] is true.
-     *
-     * Exercises the five P1 scenarios in sequence and then stops.  Each scenario is
-     * designed to let you observe in logcat (tag "Simulation") that:
-     *  - P1-T1/T2/T3: hr_hrmax_rest_immediate_emergency fires at ~180s and
-     *                   hr_high_threshold_resting_alert warn fires at ~300s — both at the same
-     *                   wall-clock seconds regardless of the CEP tick rate.
-     *  - P1-T4:       the sustainedForSecWarn warn fires based on wall-clock, not tick count.
-     *  - P1-T6:       hold_down_sec=120 prevents re-fire within 120s of first fire (regression guard).
-     *
-     * To run: set [enableCepSimulation] = true, build+deploy, then call [start] from any component.
-     */
-    /**
-     * Master test orchestrator — runs Phase 1 followed by Phase 2.
-     *
-     * [emitResetBurst] is called before every scenario to ensure TriggerTimer
-     * instances start from a clean (null) state regardless of what the
-     * preceding scenario left behind.
-     */
     private fun startPhase1TestLoop() {
-        loopStarted = true
-        scope.launch {
-            // ── Phase 1: Wall-clock sustain verification ──────────────────────
-            val phase1Scenarios = listOf(
+        startSelectedSimulation(SimulationSelection.AllMain)
+    }
+
+    private suspend fun runAllMainPhases() {
+        runPhase1()
+        runPhase2()
+        runPhase3()
+        runPhase4()
+        runPhase5()
+        runPhase6()
+        Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 + P6 testing complete")
+        updateNotification("[ALL] P1–P6 complete")
+    }
+
+    private suspend fun runMainPhase(phase: Int) {
+        when (phase) {
+            1 -> runPhase1()
+            2 -> runPhase2()
+            3 -> runPhase3()
+            4 -> runPhase4()
+            5 -> runPhase5()
+            6 -> runPhase6()
+            else -> runAllMainPhases()
+        }
+    }
+
+    private suspend fun runSingleMainScenario(scenario: Scenario) {
+        when (scenario) {
+            Scenario.P1_T1_BASELINE_1HZ,
+            Scenario.P1_T2_SUSTAIN_2HZ,
+            Scenario.P1_T3_SUSTAIN_4HZ,
+            Scenario.P1_T4_WARN_THRESHOLD,
+            Scenario.P1_T6_HOLDDOWN_REGRESSION -> runSelectedMainScenario("P1", scenario, 2_000L, true)
+
+            Scenario.P2_T1_WINDOW_1HZ,
+            Scenario.P2_T2_WINDOW_4HZ,
+            Scenario.P2_T3_SLOPE_1HZ,
+            Scenario.P2_T4_SLOPE_4HZ -> runSelectedMainScenario("P2", scenario, 2_000L, true)
+
+            Scenario.P3_T1_SLOW_FEATURE_NO_STALL,
+            Scenario.P3_T2_FAST_FEATURE_FRESH_VALUE,
+            Scenario.P3_T3_EXCEPTION_ISOLATION -> runSelectedMainScenario("P3", scenario, 2_000L, true)
+
+            Scenario.P4_T1_STALE_TIMESTAMP,
+            Scenario.P4_T2_SIGNAL_GAP,
+            Scenario.P4_T3_BURST_STRESS,
+            Scenario.P4_T4_GAP_THEN_BURST,
+            Scenario.P4_T5_HIGHRATE_10HZ -> runSelectedMainScenario("P4", scenario, 2_000L, true)
+
+            Scenario.P5_T1_ALERT_LATENCY_BASELINE,
+            Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET,
+            Scenario.P5_T3_NO_DOUBLE_FIRE,
+            Scenario.P5_T4_SUSTAIN_ACCURACY -> runSelectedMainScenario("P5", scenario, 3_000L, false)
+
+            Scenario.P6_T1_DUNK_DETECTED,
+            Scenario.P6_T2_SHALLOW_DUNK,
+            Scenario.P6_T3_LOW_ATM_PRESSURE,
+            Scenario.P6_T4_HIGH_ATM_PRESSURE,
+            Scenario.P6_T5_INSUFFICIENT_HISTORY,
+            Scenario.P6_T6_STALE_DATA_SUPPRESSION -> runSelectedMainScenario("P6", scenario, 3_000L, false)
+
+            else -> {
+                Log.i(TAG, "[SIM] ▶ Starting: $scenario")
+                updateNotification("[SIM] Running: $scenario")
+                simulateScenario(scenario, ageYears = 35, hrRest = 60)
+                Log.i(TAG, "[SIM] ✓ Completed: $scenario")
+                updateNotification("[SIM] Done: $scenario")
+            }
+        }
+    }
+
+    private suspend fun runSpo2AllScenarios() {
+        val runner = Spo2Phase7Runner(Spo2Phase7RunnerEnv(applicationContext))
+        val results = runner.runReviewedScenarios()
+        results.forEach { result ->
+            Log.i(TAG, "[SPO2] ${result.scenario} pass=${result.pass} observed=${result.observedRuleIds} missing=${result.missing}")
+        }
+        updateNotification("[SPO2] All reviewed scenarios complete")
+    }
+
+    private suspend fun runSpo2Scenario(scenario: Spo2Phase7Scenario) {
+        val runner = Spo2Phase7Runner(Spo2Phase7RunnerEnv(applicationContext))
+        updateNotification("[SPO2] Running: $scenario")
+        val result = runner.runScenario(scenario)
+        Log.i(TAG, "[SPO2] ${result.scenario} pass=${result.pass} observed=${result.observedRuleIds} missing=${result.missing}")
+        updateNotification("[SPO2] Done: $scenario")
+    }
+
+    private suspend fun runPhase1() {
+        runScenarioSequence(
+            scenarios = listOf(
                 Scenario.P1_T1_BASELINE_1HZ,
                 Scenario.P1_T2_SUSTAIN_2HZ,
                 Scenario.P1_T3_SUSTAIN_4HZ,
                 Scenario.P1_T4_WARN_THRESHOLD,
                 Scenario.P1_T6_HOLDDOWN_REGRESSION
-            )
-            for (scenario in phase1Scenarios) {
-                emitResetBurst()
-                Log.i(TAG, "[P1] ▶ Starting: $scenario")
-                updateNotification("[P1] Running: $scenario")
-                simulateScenario(scenario, ageYears = 35, hrRest = 60)
-                Log.i(TAG, "[P1] ✓ Completed: $scenario")
-                updateNotification("[P1] Done: $scenario")
-                delay(2_000)
-            }
-            Log.i(TAG, "[P1] ✅ All Phase 1 scenarios complete")
-            updateNotification("[P1] Complete – P2 starting in 5 s")
-            delay(5_000)
+            ),
+            interScenarioDelayMs = 2_000L
+        ) { scenario ->
+            emitResetBurst()
+            Log.i(TAG, "[P1] ▶ Starting: $scenario")
+            updateNotification("[P1] Running: $scenario")
+            simulateScenario(scenario, ageYears = 35, hrRest = 60)
+            Log.i(TAG, "[P1] ✓ Completed: $scenario")
+            updateNotification("[P1] Done: $scenario")
+        }
+        Log.i(TAG, "[P1] ✅ All Phase 1 scenarios complete")
+        updateNotification("[P1] Complete – P2 starting in 5 s")
+        delay(5_000)
+    }
 
-            // ── Phase 2: Time-based window / slope verification ───────────────
-            val phase2Scenarios = listOf(
+    private suspend fun runPhase2() {
+        runScenarioSequence(
+            scenarios = listOf(
                 Scenario.P2_T1_WINDOW_1HZ,
                 Scenario.P2_T2_WINDOW_4HZ,
                 Scenario.P2_T3_SLOPE_1HZ,
                 Scenario.P2_T4_SLOPE_4HZ
-            )
-            for (scenario in phase2Scenarios) {
-                emitResetBurst()
-                Log.i(TAG, "[P2] ▶ Starting: $scenario")
-                updateNotification("[P2] Running: $scenario")
-                simulateScenario(scenario, ageYears = 35, hrRest = 60)
-                Log.i(TAG, "[P2] ✓ Completed: $scenario")
-                updateNotification("[P2] Done: $scenario")
-                delay(2_000)
-            }
-            Log.i(TAG, "[P2] ✅ All Phase 2 scenarios complete")
-            updateNotification("[P2] Complete – P3 starting in 5 s")
-            delay(5_000)
+            ),
+            interScenarioDelayMs = 2_000L
+        ) { scenario ->
+            emitResetBurst()
+            Log.i(TAG, "[P2] ▶ Starting: $scenario")
+            updateNotification("[P2] Running: $scenario")
+            simulateScenario(scenario, ageYears = 35, hrRest = 60)
+            Log.i(TAG, "[P2] ✓ Completed: $scenario")
+            updateNotification("[P2] Done: $scenario")
+        }
+        Log.i(TAG, "[P2] ✅ All Phase 2 scenarios complete")
+        updateNotification("[P2] Complete – P3 starting in 5 s")
+        delay(5_000)
+    }
 
-            // ── Phase 3: Per-feature cadence decoupling ───────────────────────
-            val phase3Scenarios = listOf(
+    private suspend fun runPhase3() {
+        runScenarioSequence(
+            scenarios = listOf(
                 Scenario.P3_T1_SLOW_FEATURE_NO_STALL,
                 Scenario.P3_T2_FAST_FEATURE_FRESH_VALUE,
                 Scenario.P3_T3_EXCEPTION_ISOLATION
-            )
-            for (scenario in phase3Scenarios) {
-                emitResetBurst()
-                Log.i(TAG, "[P3] ▶ Starting: $scenario")
-                updateNotification("[P3] Running: $scenario")
-                simulateScenario(scenario, ageYears = 35, hrRest = 60)
-                Log.i(TAG, "[P3] ✓ Completed: $scenario")
-                updateNotification("[P3] Done: $scenario")
-                delay(2_000)
-            }
-            Log.i(TAG, "[P3] ✅ All Phase 3 scenarios complete")
-            updateNotification("[P3] Complete – P4 starting in 5 s")
-            delay(5_000)
+            ),
+            interScenarioDelayMs = 2_000L
+        ) { scenario ->
+            emitResetBurst()
+            Log.i(TAG, "[P3] ▶ Starting: $scenario")
+            updateNotification("[P3] Running: $scenario")
+            simulateScenario(scenario, ageYears = 35, hrRest = 60)
+            Log.i(TAG, "[P3] ✓ Completed: $scenario")
+            updateNotification("[P3] Done: $scenario")
+        }
+        Log.i(TAG, "[P3] ✅ All Phase 3 scenarios complete")
+        updateNotification("[P3] Complete – P4 starting in 5 s")
+        delay(5_000)
+    }
 
-            // ── Phase 4: Native-rate ingestion & freshness ────────────────────
-            val phase4Scenarios = listOf(
+    private suspend fun runPhase4() {
+        runScenarioSequence(
+            scenarios = listOf(
                 Scenario.P4_T1_STALE_TIMESTAMP,
                 Scenario.P4_T2_SIGNAL_GAP,
                 Scenario.P4_T3_BURST_STRESS,
                 Scenario.P4_T4_GAP_THEN_BURST,
                 Scenario.P4_T5_HIGHRATE_10HZ
-            )
-            for (scenario in phase4Scenarios) {
-                emitResetBurst()
-                Log.i(TAG, "[P4] ▶ Starting: $scenario")
-                updateNotification("[P4] Running: $scenario")
-                simulateScenario(scenario, ageYears = 35, hrRest = 60)
-                Log.i(TAG, "[P4] ✓ Completed: $scenario")
-                updateNotification("[P4] Done: $scenario")
-                delay(2_000)
-            }
-            Log.i(TAG, "[P4] ✅ All Phase 4 scenarios complete")
-            updateNotification("[P4] Complete – P5 starting in 3 s")
-            delay(3_000)
+            ),
+            interScenarioDelayMs = 2_000L
+        ) { scenario ->
+            emitResetBurst()
+            Log.i(TAG, "[P4] ▶ Starting: $scenario")
+            updateNotification("[P4] Running: $scenario")
+            simulateScenario(scenario, ageYears = 35, hrRest = 60)
+            Log.i(TAG, "[P4] ✓ Completed: $scenario")
+            updateNotification("[P4] Done: $scenario")
+        }
+        Log.i(TAG, "[P4] ✅ All Phase 4 scenarios complete")
+        updateNotification("[P4] Complete – P5 starting in 3 s")
+        delay(3_000)
+    }
 
-            // ── Phase 5: 500ms rule-eval cadence verification ────────────────
-            val phase5Scenarios = listOf(
+    private suspend fun runPhase5() {
+        Log.i(TAG, "[SIM] === PHASE 5 START === rule_eval_interval_ms=500")
+        runScenarioSequence(
+            scenarios = listOf(
                 Scenario.P5_T1_ALERT_LATENCY_BASELINE,
                 Scenario.P5_T2_ALERT_LATENCY_FAST_ONSET,
                 Scenario.P5_T3_NO_DOUBLE_FIRE,
                 Scenario.P5_T4_SUSTAIN_ACCURACY
-            )
-            Log.i(TAG, "[SIM] === PHASE 5 START === rule_eval_interval_ms=500")
-            for (scenario in phase5Scenarios) {
-                Log.i(TAG, "[P5] ▶ Starting: $scenario")
-                updateNotification("[P5] Running: $scenario")
-                runPhase5Scenario(scenario)
-                Log.i(TAG, "[P5] ✓ Completed: $scenario")
-                updateNotification("[P5] Done: $scenario")
-                delay(3_000)
-            }
-            Log.i(TAG, "[SIM] === PHASE 5 COMPLETE ===")
-            updateNotification("[P5] Complete – P6 starting in 3 s")
-            delay(3_000)
+            ),
+            interScenarioDelayMs = 3_000L
+        ) { scenario ->
+            Log.i(TAG, "[P5] ▶ Starting: $scenario")
+            updateNotification("[P5] Running: $scenario")
+            runPhase5Scenario(scenario)
+            Log.i(TAG, "[P5] ✓ Completed: $scenario")
+            updateNotification("[P5] Done: $scenario")
+        }
+        Log.i(TAG, "[SIM] === PHASE 5 COMPLETE ===")
+        updateNotification("[P5] Complete – P6 starting in 3 s")
+        delay(3_000)
+    }
 
-            // ── Phase 6: Sample-count pressure feature verification ──────────
-            val phase6Scenarios = listOf(
+    private suspend fun runPhase6() {
+        Log.i(TAG, "[SIM] === PHASE 6 START === sample-count pressure features")
+        runScenarioSequence(
+            scenarios = listOf(
                 Scenario.P6_T1_DUNK_DETECTED,
                 Scenario.P6_T2_SHALLOW_DUNK,
                 Scenario.P6_T3_LOW_ATM_PRESSURE,
                 Scenario.P6_T4_HIGH_ATM_PRESSURE,
                 Scenario.P6_T5_INSUFFICIENT_HISTORY,
                 Scenario.P6_T6_STALE_DATA_SUPPRESSION
-            )
-            Log.i(TAG, "[SIM] === PHASE 6 START === sample-count pressure features")
-            for (scenario in phase6Scenarios) {
-                Log.i(TAG, "[P6] ▶ Starting: $scenario")
-                updateNotification("[P6] Running: $scenario")
-                runPhase6Scenario(scenario)
-                Log.i(TAG, "[P6] ✓ Completed: $scenario")
-                updateNotification("[P6] Done: $scenario")
-                delay(3_000)
-            }
-            Log.i(TAG, "[SIM] === PHASE 6 COMPLETE ===")
-            Log.i(TAG, "[ALL] ✅ P1 + P2 + P3 + P4 + P5 + P6 testing complete")
-            updateNotification("[ALL] P1–P6 complete")
+            ),
+            interScenarioDelayMs = 3_000L
+        ) { scenario ->
+            Log.i(TAG, "[P6] ▶ Starting: $scenario")
+            updateNotification("[P6] Running: $scenario")
+            runPhase6Scenario(scenario)
+            Log.i(TAG, "[P6] ✓ Completed: $scenario")
+            updateNotification("[P6] Done: $scenario")
+        }
+        Log.i(TAG, "[SIM] === PHASE 6 COMPLETE ===")
+        updateNotification("[P6] Complete")
+    }
+
+    private suspend fun runSelectedMainScenario(
+        phaseTag: String,
+        scenario: Scenario,
+        interScenarioDelayMs: Long,
+        needsResetBurst: Boolean
+    ) {
+        if (needsResetBurst) emitResetBurst()
+        Log.i(TAG, "[$phaseTag] ▶ Starting: $scenario")
+        updateNotification("[$phaseTag] Running: $scenario")
+        when (phaseTag) {
+            "P5" -> runPhase5Scenario(scenario)
+            "P6" -> runPhase6Scenario(scenario)
+            else -> simulateScenario(scenario, ageYears = 35, hrRest = 60)
+        }
+        Log.i(TAG, "[$phaseTag] ✓ Completed: $scenario")
+        updateNotification("[$phaseTag] Done: $scenario")
+        delay(interScenarioDelayMs)
+    }
+
+    private suspend fun runScenarioSequence(
+        scenarios: List<Scenario>,
+        interScenarioDelayMs: Long,
+        scenarioRunner: suspend (Scenario) -> Unit
+    ) {
+        scenarios.forEach { scenario ->
+            scenarioRunner(scenario)
+            delay(interScenarioDelayMs)
         }
     }
 
