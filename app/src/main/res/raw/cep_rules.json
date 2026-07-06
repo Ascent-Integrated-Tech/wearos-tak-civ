@@ -2107,7 +2107,9 @@
         "priority_from": "severity",
         "sendSms": false,
         "timeout": 120
-      }
+      },
+      "on_missing_render": "suppress",
+      "snapshot_keys": ["spo2.pct", "profile.spo2_active_baseline_pct"]
     },
     {
       "id": "spo2_alert_sustained_hypoxemia",
@@ -2134,7 +2136,9 @@
         "priority_from": "severity",
         "sendSms": false,
         "timeout": 180
-      }
+      },
+      "on_missing_render": "suppress",
+      "snapshot_keys": ["spo2.pct"]
     },
     {
       "id": "spo2_emergency_severe_hypoxemia",
@@ -2159,7 +2163,9 @@
         "priority_from": "severity",
         "sendSms": true,
         "timeout": 300
-      }
+      },
+      "on_missing_render": "degrade",
+      "snapshot_keys": ["spo2.pct"]
     },
     {
       "id": "spo2_clear_any",
@@ -2175,7 +2181,7 @@
       "action": {
         "type": "log",
         "severity": "INFO",
-        "message": "SpO2 tier cleared (pct={spo2.pct}%).",
+        "message": "SpO2 tier cleared.",
         "tags": ["spo2", "clear"],
         "isTak": false,
         "isLocal": true
