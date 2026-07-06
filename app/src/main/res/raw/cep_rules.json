@@ -2097,7 +2097,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 300,
       "action": {
-        "type": "log",
+        "type": "none_log",
         "severity": "WARN",
         "message": "SpO2 WARN: {spo2.pct}% <= baseline-4% (baseline={profile.spo2_active_baseline_pct}%).",
         "tags": ["spo2", "warn", "baseline_drop"],
@@ -2124,7 +2124,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 300,
       "action": {
-        "type": "log",
+        "type": "none_log",
         "severity": "ALERT",
         "message": "SpO2 ALERT: sustained <90% ({spo2.pct}%).",
         "tags": ["spo2", "alert", "hypoxemia"],
@@ -2149,7 +2149,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 300,
       "action": {
-        "type": "log",
+        "type": "none_log",
         "severity": "EMERGENCY",
         "message": "SpO2 EMERGENCY: severe hypoxemia ({spo2.pct}%).",
         "tags": ["spo2", "emergency", "severe_hypoxemia"],
@@ -2173,7 +2173,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 60,
       "action": {
-        "type": "log",
+        "type": "none_log",
         "severity": "INFO",
         "message": "SpO2 tier cleared (pct={spo2.pct}%).",
         "tags": ["spo2", "clear"],
