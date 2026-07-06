@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -109,6 +110,22 @@ class CepEngineWarmUpTest {
         verify(exactly = 1) { repo.getEnableImmersionAlerts }
         verify(exactly = 1) { repo.getEnableLowAtmPressureAlert }
         verify(exactly = 1) { repo.getEnableHighAtmPressureAlert }
+        engine.cancel()
+    }
+
+    @Test
+    fun warmUpSeedsSpo2ProfileAndThresholds() = runBlocking {
+        val repo = mockRepo()
+        val engine = newEngine(repo)
+
+        engine.warmUp()
+
+        val spo2 = engine.spo2FeatureSnapshot()
+        assertEquals(97.0, (spo2["profile.spo2_active_baseline_pct"] as Number).toDouble(), 0.0)
+        assertEquals(1.0, (spo2["profile.spo2_active_baseline_provisional"] as Number).toDouble(), 0.0)
+        assertEquals(93.0, (spo2["thresholds.spo2.warn_floor"] as Number).toDouble(), 0.0)
+        assertEquals(90.0, (spo2["thresholds.spo2.alert_pct"] as Number).toDouble(), 0.0)
+        assertEquals(88.0, (spo2["thresholds.spo2.emergency_pct"] as Number).toDouble(), 0.0)
         engine.cancel()
     }
 }

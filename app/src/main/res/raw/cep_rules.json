@@ -2097,7 +2097,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 300,
       "action": {
-        "type": "none_log",
+        "type": "log",
         "severity": "WARN",
         "message": "SpO2 WARN: {spo2.pct}% <= baseline-4% (baseline={profile.spo2_active_baseline_pct}%).",
         "tags": ["spo2", "warn", "baseline_drop"],
@@ -2107,7 +2107,9 @@
         "priority_from": "severity",
         "sendSms": false,
         "timeout": 120
-      }
+      },
+      "on_missing_render": "suppress",
+      "snapshot_keys": ["spo2.pct", "profile.spo2_active_baseline_pct"]
     },
     {
       "id": "spo2_alert_sustained_hypoxemia",
@@ -2124,7 +2126,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 300,
       "action": {
-        "type": "none_log",
+        "type": "log",
         "severity": "ALERT",
         "message": "SpO2 ALERT: sustained <90% ({spo2.pct}%).",
         "tags": ["spo2", "alert", "hypoxemia"],
@@ -2134,7 +2136,9 @@
         "priority_from": "severity",
         "sendSms": false,
         "timeout": 180
-      }
+      },
+      "on_missing_render": "suppress",
+      "snapshot_keys": ["spo2.pct"]
     },
     {
       "id": "spo2_emergency_severe_hypoxemia",
@@ -2149,7 +2153,7 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 300,
       "action": {
-        "type": "none_log",
+        "type": "log",
         "severity": "EMERGENCY",
         "message": "SpO2 EMERGENCY: severe hypoxemia ({spo2.pct}%).",
         "tags": ["spo2", "emergency", "severe_hypoxemia"],
@@ -2159,7 +2163,9 @@
         "priority_from": "severity",
         "sendSms": true,
         "timeout": 300
-      }
+      },
+      "on_missing_render": "degrade",
+      "snapshot_keys": ["spo2.pct"]
     },
     {
       "id": "spo2_clear_any",
@@ -2173,9 +2179,9 @@
       "sustained_for_sec": 0,
       "hold_down_sec": 60,
       "action": {
-        "type": "none_log",
+        "type": "log",
         "severity": "INFO",
-        "message": "SpO2 tier cleared (pct={spo2.pct}%).",
+        "message": "SpO2 tier cleared.",
         "tags": ["spo2", "clear"],
         "isTak": false,
         "isLocal": true

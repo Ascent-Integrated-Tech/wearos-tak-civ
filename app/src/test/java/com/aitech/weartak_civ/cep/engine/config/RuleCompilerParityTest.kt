@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.cep.engine.config
 
 import com.aitech.weartak_civ.cep.engine.FeatureDef
+import com.aitech.weartak_civ.cep.engine.MissingRenderPolicy
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
 import org.json.JSONArray
 import org.json.JSONObject
@@ -64,7 +65,7 @@ class RuleCompilerParityTest {
             {
               "id":"r1","description":"d","sustained_for_sec":30,"hold_down_sec":60,
               "when":{"and":[{"gte_key_fresh":["features.x",180.0,5]}]},
-              "action":{"type":"alert","severity":"ALERT","message":"hi","isTak":true,"isLocal":true,
+              "action":{"type":"alert","severity":"ALERT","message":"hi {features.x}","isTak":true,"isLocal":true,
                         "monitor":[{"feature":"features.x","exit_below":170.0,"hysteresis":2.0}],
                         "exit_sustain_sec":60,"exit_logic":"AND"}
             }
@@ -95,6 +96,42 @@ class RuleCompilerParityTest {
         assertEquals(a.action.exitLogic, b.action.exitLogic)
         assertEquals(a.action.monitor.size, b.action.monitor.size)
         assertEquals(a.action.monitor.first().exitBelow, b.action.monitor.first().exitBelow)
+        assertEquals(listOf("features.x"), a.renderKeys)
+        assertEquals(a.renderKeys, b.renderKeys)
+        assertEquals(MissingRenderPolicy.SUPPRESS, a.onMissingRender)
+        assertEquals(a.onMissingRender, b.onMissingRender)
+    }
+
+    @Test fun missingRenderPolicyDefaultsAndOverridesViaBothPaths() {
+        val rulesArr = """
+          [
+            {
+              "id":"r1","sustained_for_sec":0,"hold_down_sec":0,"on_missing_render":"degrade",
+              "when":{"ref":"features.x"},
+              "action":{"type":"alert","severity":"EMERGENCY","message":"hi {features.x}"}
+            },
+            {
+              "id":"r2","sustained_for_sec":0,"hold_down_sec":0,
+              "when":{"ref":"features.y"},
+              "action":{"type":"alert","severity":"WARN","message":"hi {features.y}"}
+            }
+          ]
+        """.trimIndent()
+
+        val builtInDefs = RuleCompiler.parseRuleDefs(JSONArray(rulesArr))
+        val payload = JSONObject().apply {
+            put("schemaVersion", 1)
+            put("rulesMode", "MERGE"); put("featuresMode", "MERGE")
+            put("clearCepRules", false); put("clearCepFeatures", false)
+            put("features", JSONArray()); put("rules", JSONArray(rulesArr))
+            put("disabledRuleIds", JSONArray()); put("disabledFeatureIds", JSONArray())
+        }.toString()
+        val parsed = ManagedConfigOverlayParser.parse(payload)
+
+        assertEquals(MissingRenderPolicy.DEGRADE, builtInDefs[0].onMissingRender)
+        assertEquals(MissingRenderPolicy.SUPPRESS, builtInDefs[1].onMissingRender)
+        assertEquals(builtInDefs[0].onMissingRender, parsed.rules[0].onMissingRender)
+        assertEquals(builtInDefs[1].onMissingRender, parsed.rules[1].onMissingRender)
     }
 
     @Test fun engineCadenceParsesIdenticallyViaBothPaths() {

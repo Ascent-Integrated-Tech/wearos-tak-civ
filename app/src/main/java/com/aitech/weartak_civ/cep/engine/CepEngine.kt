@@ -270,6 +270,7 @@ class CepEngine(
         loadHrProfile()
         loadHrrProfile()
         loadPressureProfile()
+        updateSpo2Profile()
         updateSustainOverrides()
         warmUpCompleted.set(true)
     }
@@ -356,6 +357,25 @@ class CepEngine(
             "features.pressure.mean_n5", "features.pressure.delta_n5",
             "features.pressure.delta_rapid_rise", "features.pressure.delta_shallow_rise",
             "features.pressure.below_low_threshold", "features.pressure.above_high_threshold"
+        )
+    )
+
+    /** Test-only: snapshot SpO2 profile and threshold keys for warm-up assertions. */
+    internal fun spo2FeatureSnapshot(): Map<String, Any?> = featureStore.snapshot(
+        listOf(
+            "profile.spo2_active_baseline_pct",
+            "profile.spo2_active_baseline_provisional",
+            "profile.spo2_active_baseline_altitude_bucket",
+            "profile.spo2_active_baseline_family",
+            "profile.spo2_baseline_pct",
+            "profile.spo2_baseline_altitude_bucket",
+            "profile.spo2_baseline_family",
+            "profile.spo2_baseline_provisional",
+            "thresholds.spo2.warn_floor",
+            "thresholds.spo2.alert_pct",
+            "thresholds.spo2.emergency_pct",
+            "settings.spo2.consecutive_required",
+            "settings.spo2.emergency_consecutive_required"
         )
     )
 

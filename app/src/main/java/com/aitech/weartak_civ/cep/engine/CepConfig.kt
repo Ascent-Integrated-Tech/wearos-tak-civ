@@ -8,6 +8,11 @@ data class CepConfig(
     val ruleEvalIntervalMs: Int = 1000
 )
 
+enum class MissingRenderPolicy {
+    SUPPRESS,
+    DEGRADE
+}
+
 sealed interface FeatureDef {
     val id: String
     /**
@@ -136,6 +141,8 @@ data class RuleDef(
     val sustainedForSecWarn: Long? = null,
     val holdDownSec: Long,
     val action: RuleAction,
+    val renderKeys: List<String> = emptyList(),
+    val onMissingRender: MissingRenderPolicy = MissingRenderPolicy.SUPPRESS,
     val snapshotKeys: List<String> = emptyList(),
     val allowSustainOverride: Boolean = false
 )
@@ -166,5 +173,3 @@ data class ExitCondition(
     val exitAboveKey: String? = null,
     val hysteresis: Double = 0.0
 )
-
-
