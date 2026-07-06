@@ -115,7 +115,6 @@ import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
-import com.aitech.weartak_civ.service.BatteryService
 import com.aitech.weartak_civ.service.CotDispatchService
 import com.aitech.weartak_civ.service.HailService
 import com.aitech.weartak_civ.service.HailService.HailLicenseStates
@@ -140,21 +139,13 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
-import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
-import com.aitech.weartak_civ.Utils.CotUtils.Point
 import com.aitech.weartak_civ.ipc.AtosCotPacket
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import kotlin.collections.plus
-import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsKeys
 import com.aitech.weartak_civ.service.SitxTakService
-import kotlinx.serialization.builtins.ListSerializer
-import com.aitech.weartak_civ.DEFAULT_ENABLE_IMMERSION_ALERTS
-import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
-import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
-import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.data.model.PressureReading
+import com.aitech.weartak_civ.ipc.AtosIpcConstants
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 
@@ -476,6 +467,13 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[MULTICAST_PORT] = multicastPort
         }
+    }
+
+    private val _broadcastCot = MutableStateFlow<String>("")
+    val broadcastCot: StateFlow<String> = _broadcastCot
+
+    fun broadcastCot(xml: String) {
+        _broadcastCot.value = xml
     }
 
     /*

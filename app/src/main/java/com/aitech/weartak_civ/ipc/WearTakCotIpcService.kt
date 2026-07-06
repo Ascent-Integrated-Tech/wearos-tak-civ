@@ -19,7 +19,6 @@ import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
 import com.weartak.ipcservice.IWearTakAppCotListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,14 +52,21 @@ class WearTakCotIpcService : Service() {
             DataRepository(applicationContext)
         }
     }
+
     private val binder = object : IWearTakAppCotListener.Stub() {
         override fun receiveCotFromPlugin(cotXml: String) {
-            Log.i(AtosIpcConstants.LOG_TAG, "receiveCotFromPlugin invoked size=${cotXml.toByteArray(Charsets.UTF_8).size}")
+            Log.i(
+                AtosIpcConstants.LOG_TAG,
+                "ATOS_IPC received route=LOCAL_INGEST_REQUEST size=${cotXml.utf8Size()}"
+            )
             handleIncomingPayload(AtosIpcRoute.LOCAL_INGEST_REQUEST, cotXml)
         }
 
         override fun broadcastCot(cotXml: String) {
-            Log.i(AtosIpcConstants.LOG_TAG, "broadcastCot invoked size=${cotXml.toByteArray(Charsets.UTF_8).size}")
+            Log.i(
+                AtosIpcConstants.LOG_TAG,
+                "ATOS_IPC received route=BROADCAST_REQUEST size=${cotXml.utf8Size()}"
+            )
             handleIncomingPayload(AtosIpcRoute.BROADCAST_REQUEST, cotXml)
         }
     }
@@ -130,8 +136,10 @@ class WearTakCotIpcService : Service() {
         return false
     }
 
+    private fun String.utf8Size(): Int = toByteArray(Charsets.UTF_8).size
+
     private fun handleIncomingPayload(route: AtosIpcRoute, cotXml: String) {
-        val size = cotXml.toByteArray(Charsets.UTF_8).size
+        val size = cotXml.utf8Size()
         val callingUid = Binder.getCallingUid()
         val callerPackages = packageManager.getPackagesForUid(callingUid)?.toList().orEmpty()
         val callerLabel = if (callerPackages.isEmpty()) {
@@ -139,8 +147,7 @@ class WearTakCotIpcService : Service() {
         } else {
             callerPackages.joinToString(",")
         }
-        logIncomingPayloadPreview(route, size, callingUid, callerLabel, cotXml)
-        logIncomingPayloadFull(route, callingUid, callerLabel, cotXml)
+
         val result = try {
             AtosCotParser.parse(cotXml)
         } catch (t: Throwable) {
@@ -151,32 +158,61 @@ class WearTakCotIpcService : Service() {
             is AtosCotParseResult.Failure -> {
                 Log.w(
                     AtosIpcConstants.LOG_TAG,
-                    "Rejected ATOS CoT route=$route callerUid=$callingUid callerPackages=$callerLabel reason=\"${result.reason}\" size=$size"
+                    "ATOS_IPC rejected route=$route caller=$callerLabel size=$size reason=\"${result.reason}\""
                 )
             }
+
             is AtosCotParseResult.Success -> {
-                logPacket(route, callerUid = callingUid, callerPackages = callerLabel, packet = result.packet)
+                val packet = result.packet
+
+                Log.i(
+                    AtosIpcConstants.LOG_TAG,
+                    "ATOS_IPC accepted route=$route uid=${packet.uid} callsign=${packet.contact?.callsign} caller=$callerLabel"
+                )
+
+                logPacket(route, callerUid = callingUid, callerPackages = callerLabel, packet = packet)
+
                 serviceScope.launch {
-                    val applied = dataRepo.applyReceivedAtosTagEvent(result.packet)
-                    Log.i(
+                    val applied = dataRepo.applyReceivedAtosTagEvent(packet)
+                    Log.d(
                         AtosIpcConstants.LOG_TAG,
-                        "ATOS repository apply result route=$route uid=${result.packet.uid} applied=$applied"
+                        "ATOS_IPC map.apply route=$route uid=${packet.uid} applied=$applied"
                     )
                 }
-                val takXml = AtosCotSerializer.toCotXml(result.packet)
+
+                val takXml = AtosCotSerializer.toCotXml(packet)
+
                 if (takXml.isBlank()) {
                     Log.w(
                         AtosIpcConstants.LOG_TAG,
-                        "ATOS CoT serialization failed route=$route uid=${result.packet.uid}"
+                        "ATOS_IPC serialize.failed route=$route uid=${packet.uid}"
                     )
-                } else {
-                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", takXml))
-                    sendDataTAKServers(takXml, true)
-                    Log.i(
-                        AtosIpcConstants.LOG_TAG,
-                        "Forwarded ATOS CoT to TAK route=$route uid=${result.packet.uid} size=${takXml.toByteArray(Charsets.UTF_8).size}"
-                    )
+                    return
+                }
 
+                Log.d(
+                    AtosIpcConstants.LOG_TAG,
+                    "ATOS_IPC serialize.ok route=$route uid=${packet.uid} takSize=${takXml.utf8Size()}"
+                )
+
+                if (Log.isLoggable(AtosIpcConstants.LOG_TAG, Log.VERBOSE)) {
+                    Log.v(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC incoming.xml route=$route uid=${packet.uid} size=$size xml=$cotXml"
+                    )
+                    Log.v(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC outgoing.xml route=$route uid=${packet.uid} size=${takXml.utf8Size()} xml=$takXml"
+                    )
+                }
+
+                if (route == AtosIpcRoute.BROADCAST_REQUEST) {
+                    dataRepo.broadcastCot(takXml)
+                } else {
+                    Log.d(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC broadcast.skip route=$route uid=${packet.uid} reason=local_ingest"
+                    )
                 }
             }
         }
@@ -220,7 +256,7 @@ class WearTakCotIpcService : Service() {
         val link = packet.link
         val customAttrCount = atos?.attributes?.size ?: 0
 
-        val summary = buildString {
+        val verboseSummary = buildString {
             append("Received ATOS CoT route=").append(route)
             append(" uid=").append(packet.uid ?: "null")
             append(" type=").append(packet.type ?: "null")
@@ -246,8 +282,7 @@ class WearTakCotIpcService : Service() {
             append(" callerUid=").append(callerUid)
             append(" callerPackages=").append(callerPackages)
         }
-
-        Log.i(AtosIpcConstants.LOG_TAG, summary)
+        Log.v(AtosIpcConstants.LOG_TAG, verboseSummary)
 
         packet.warnings.forEach { warning ->
             Log.w(AtosIpcConstants.LOG_TAG, "ATOS CoT warning route=$route warning=\"$warning\" uid=${packet.uid}")
@@ -258,17 +293,17 @@ class WearTakCotIpcService : Service() {
         } else {
             val expectedCotType = AtosReferenceTables.resolveTagTypeToCotType(atos.tagType)
             val colorArgb = atos.color?.let { AtosReferenceTables.teamColorToArgb[it] }
-            Log.d(
+            Log.v(
                 AtosIpcConstants.LOG_TAG,
                 "ATOS detail route=$route tagType=${atos.tagType} expectedCotType=${expectedCotType ?: "unknown"} colorArgb=${colorArgb?.toString(16) ?: "unknown"} customAttrCount=$customAttrCount"
             )
             atos.attributes.forEach { (key, value) ->
-                Log.d(AtosIpcConstants.LOG_TAG, "ATOS attribute route=$route key=$key value=$value uid=${packet.uid}")
+                Log.v(AtosIpcConstants.LOG_TAG, "ATOS attribute route=$route key=$key value=$value uid=${packet.uid}")
             }
         }
 
         if (link != null) {
-            Log.d(
+            Log.v(
                 AtosIpcConstants.LOG_TAG,
                 "ATOS link route=$route relation=${link.relation ?: "null"} uid=${link.uid ?: "null"} type=${link.type ?: "null"} parentCallsign=${link.parentCallsign ?: "null"}"
             )

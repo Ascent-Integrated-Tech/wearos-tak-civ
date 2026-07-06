@@ -109,6 +109,26 @@ object Utils {
         }
     }
 
+    private val eventUidRegex =
+        """<event\b[^>]*?\buid\s*=\s*(['"])(.*?)\1"""
+            .toRegex(RegexOption.DOT_MATCHES_ALL)
+
+    fun getCotXmlUid(rawXml: String): String? {
+        return eventUidRegex.find(rawXml)?.groupValues?.getOrNull(2)
+    }
+
+    private fun extractAttr(xml: String, elementName: String, attrName: String): String? {
+
+        val pattern =
+
+            """<${Regex.escape(elementName)}\b[^>]*?\b${Regex.escape(attrName)}\s*=\s*(['"])(.*?)\1"""
+
+                .toRegex(RegexOption.DOT_MATCHES_ALL)
+
+        return pattern.find(xml)?.groupValues?.getOrNull(2)
+
+    }
+
     fun isPointInPolygon(point: LatLon, polygon: List<LatLon>): Boolean {
         if (polygon.size < 3) return false
 

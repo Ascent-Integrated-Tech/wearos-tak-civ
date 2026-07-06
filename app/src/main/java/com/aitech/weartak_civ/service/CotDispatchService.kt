@@ -17,7 +17,6 @@ import android.location.Location
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.MessageEvent
@@ -27,7 +26,6 @@ import com.aitech.weartak_civ.Utils.PhysioUtils.convertFarenheitToCelsius
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.PhysioData
@@ -37,10 +35,9 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
+import com.aitech.weartak_civ.ipc.AtosIpcConstants
 import com.aitech.weartak_civ.manager.SMSManager
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
-import com.aitech.weartak_civ.presentation.UserWarnActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableTabletCommandEndpoint
@@ -172,7 +169,74 @@ class CotDispatchService : Service() {
         startSendChatMessageCollector()
 
         startAnyEndpointConnectedCollector()
+
+        startCotBroadcaster()
     }
+
+    private fun startCotBroadcaster() {
+        serviceScope.launch {
+            dataRepository.broadcastCot.collect { xml ->
+                if (xml == "") { return@collect }
+
+                val size = xml.utf8Size()
+                val hasValidEndpoint = dataRepository.anyEndpointConnected.value
+                val endpoints: Set<DataRepository.Endpoint> = dataRepository.endpointConnected.value
+
+                if (!hasValidEndpoint) {
+                    Log.w(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC dispatch.drop reason=no_connected_endpoints size=$size"
+                    )
+                    return@collect
+                }
+
+                Log.i(
+                    AtosIpcConstants.LOG_TAG,
+                    "ATOS_IPC dispatch endpoints=${endpoints.joinToString(",")} size=$size"
+                )
+
+                if (Log.isLoggable(AtosIpcConstants.LOG_TAG, Log.VERBOSE)) {
+                    Log.v(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC dispatch.xml size=$size xml=$xml"
+                    )
+                }
+
+                if (endpoints.contains(DataRepository.Endpoint.TAK_SERVER)) {
+                    sendDataTAKServers(xml, true)
+                    Log.i(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC dispatched endpoint=TAK_SERVER size=$size"
+                    )
+                }
+
+                if (endpoints.contains(DataRepository.Endpoint.MULTICAST)) {
+                    sendCotXmlMulticast(xml)
+                    Log.i(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC dispatched endpoint=MULTICAST size=$size"
+                    )
+                }
+
+                if (endpoints.contains(DataRepository.Endpoint.DITTO)) {
+                    EventBus.getDefault().post(DittoDocumentEvent("mapitem", xml))
+                    Log.i(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC dispatched endpoint=DITTO size=$size"
+                    )
+                }
+
+                if (endpoints.contains(DataRepository.Endpoint.COMPANION_APP)) {
+                    Log.w(
+                        AtosIpcConstants.LOG_TAG,
+                        "ATOS_IPC dispatch.skip endpoint=COMPANION_APP reason=not_implemented size=$size"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun String.utf8Size(): Int = toByteArray(Charsets.UTF_8).size
 
     private fun startAnyEndpointConnectedCollector() {
         serviceScope.launch {
@@ -263,7 +327,7 @@ class CotDispatchService : Service() {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
                                     if (dataRepository.multicastPublisherRunning.value) {
-                                        sendMulticastDatagram(chatCot)
+                                        sendCotXmlMulticast(chatCot)
                                     }
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
@@ -287,7 +351,7 @@ class CotDispatchService : Service() {
                                         capRepo.enqueueChatSnapshotForBle(chatSnap)
                                     }
                                     if (dataRepository.multicastPublisherRunning.value) {
-                                        sendMulticastDatagram(chatCot)
+                                        sendCotXmlMulticast(chatCot)
                                     }
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
@@ -329,7 +393,7 @@ class CotDispatchService : Service() {
                                 SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
                             }
                             if (sendOverMulticast) {
-                                sendMulticastDatagram(chatCot)
+                                sendCotXmlMulticast(chatCot)
                             }
                             Log.d(TAG, "Sending chat msg to 'All Chat Rooms' via snapshot: $chatCot")
                         }
@@ -661,7 +725,7 @@ class CotDispatchService : Service() {
             sent = true
         }
         if (dataRepository.multicastPublisherRunning.value) {
-            sendMulticastDatagram(chatCotXml)
+            sendCotXmlMulticast(chatCotXml)
             sent = true
         }
         if (DittoService.isRunning.get()) {
@@ -1226,28 +1290,28 @@ class CotDispatchService : Service() {
                 .collect { id -> combatId = id ?: 0 }
         }
 
-        serviceScope.launch {
-            dataRepository.hailInfoStateFlow
-                .collect { info ->
-                    lgGate("""
-                    hailInfoStateFlow changed:
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    %-20s %s
-                    """.trimIndent().format(
-                        "Pairing code:", info?.pairingCode ?: "null",
-                        "Expiration date:", info?.expirationDate ?: "null",
-                        "Soft exp. date:", info?.softExpirationDate ?: "null",
-                        "Account number:", info?.accountNumber ?: "null",
-                        "License ID:", info?.licenseId ?: "null",
-                        "Device ID:", info?.deviceId ?: "null"
-                    )
-                    )
-                }
-        }
+//        serviceScope.launch {
+//            dataRepository.hailInfoStateFlow
+//                .collect { info ->
+//                    lgGate("""
+//                    hailInfoStateFlow changed:
+//                    %-20s %s
+//                    %-20s %s
+//                    %-20s %s
+//                    %-20s %s
+//                    %-20s %s
+//                    %-20s %s
+//                    """.trimIndent().format(
+//                        "Pairing code:", info?.pairingCode ?: "null",
+//                        "Expiration date:", info?.expirationDate ?: "null",
+//                        "Soft exp. date:", info?.softExpirationDate ?: "null",
+//                        "Account number:", info?.accountNumber ?: "null",
+//                        "License ID:", info?.licenseId ?: "null",
+//                        "Device ID:", info?.deviceId ?: "null"
+//                    )
+//                    )
+//                }
+//        }
     }
 
     private fun buildHailDetail(physioData: PhysioData): String {
@@ -1851,11 +1915,11 @@ class CotDispatchService : Service() {
             sent = true
         }
         if (dataRepository.multicastPublisherRunning.value) {
-            sendMulticastDatagram(clearXml)
+            sendCotXmlMulticast(clearXml)
             sent = true
         }
         if (dataRepository.multicastPublisherRunning.value) {
-            sendMulticastDatagram(clearXml)
+            sendCotXmlMulticast(clearXml)
             sent = true
         }
         if (sitxAvailable()) {
@@ -1918,10 +1982,10 @@ class CotDispatchService : Service() {
 
  */
 
-    private fun sendMulticastDatagram(cotXml: String) {
+    private fun sendCotXmlMulticast(cotXml: String) {
         // the publisher will return if not connected to wifi. Just pass it every time for POC. //TODO: design a better system for cots to be dispatched to their proper endpoints (e.g. Ditto, LAN Multicast, TAK Server, Esri)
         if (isLicenseValid()) {
-            Log.i(TAG, "Trying to multicast data to the wifi network! ")
+            Log.i(TAG, "COT_DISPATCH sendMulticastCotXml uid=${Utils.getCotXmlUid(cotXml)}")
             NetworkUtils.MulticastPublisher.send(cotXml)
         }
     }
@@ -2016,7 +2080,7 @@ class CotDispatchService : Service() {
             sent = true
         }
         if (dataRepository.multicastPublisherRunning.value) {
-            sendMulticastDatagram(xml)
+            sendCotXmlMulticast(xml)
             sent = true
         }
         if (DittoService.isRunning.get()) {
@@ -2070,18 +2134,19 @@ class CotDispatchService : Service() {
             )
 
             if (TAKConnectService.isAnyTakConnected) {
-                Log.i(TAG, "Outbound PLI send via TAK server")
+                Log.i(TAG, "COT_DISPATCH isAnyTakConnected=true sendDataTAKServers ")
                 sendDataTAKServers(xml, false)
+            } else {
+                Log.i(TAG, "COT_DISPATCH isAnyTakConnected=false")
             }
-            Log.i(TAG, "Outbound PLI send via Sitx command bus")
+
             SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(xml))
 
             if (companionAppAvailable()) {
                 capRepo.enqueuePliSnapshotForBle(snapshot)
             }
 
-            // if (dataRepository.getEnableMulticast.first()) { sendMulticastDatagram(xml) }.
-            NetworkUtils.MulticastPublisher.send(xml) // always multicast
+            sendCotXmlMulticast(xml) // always multicast pli
         }
     }
 
@@ -2222,7 +2287,7 @@ class CotDispatchService : Service() {
             sent = true
         }
         if (dataRepository.multicastPublisherRunning.value) {
-            sendMulticastDatagram(xml)
+            sendCotXmlMulticast(xml)
             sent = true
         }
         if (DittoService.isRunning.get()) {

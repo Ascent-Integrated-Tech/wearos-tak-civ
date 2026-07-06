@@ -161,15 +161,16 @@ object NetworkUtils {
             if (!MainActivity.enableMulticastOnWifi) return
 
             val bytes = cotXml.toByteArray(Charsets.UTF_8)
+            val uid = Utils.getCotXmlUid(cotXml)
             // Keep messages small; UDP can fragment.
             if (bytes.size > 1300) {
-                Log.w(TAG, "CoT payload ${bytes.size}B may fragment over UDP.")
+                Log.w(TAG, "MULTICAST CoT payload ${bytes.size}B may fragment over UDP.")
             }
             try {
                 ms.send(DatagramPacket(bytes, bytes.size, grp, port))
-                //Log.i(TAG, "Sent Datagram to the multicast socket! $cotXml")
+                Log.i(TAG, "MULTICAST send().DatagramPacket uid=$uid socket [${grp}:$port]")
             } catch (e: Exception) {
-                Log.e(TAG, "Multicast send() error: ${e.message}", e)
+                Log.e(TAG, "MULTICAST send() error: ${e.message}", e)
             }
         }
     }
