@@ -3106,12 +3106,28 @@ fun AtmPressureAlertSettings(navController: NavController) {
                     }
                 },
                 onClickConfirm = {
+                    Log.d(
+                        TAG,
+                        "Saving Atm Pressure Settings: " +
+                                "low=${enableLowAtmPressureAlertSettingsState.value}, " +
+                                "high=${enableHighAtmPressureAlertSettingsState.value}, " +
+                                "lowThreshold=${lowAtmPressureAlertThresholdSettingsState.value}, " +
+                                "highThreshold=${highAtmPressureAlertThresholdSettingsState.value}"
+                    )
+
                     navController.navigate("settings_screen") {
                         popUpTo(("settings_screen")) {
                             inclusive = true
                         }
                     }
                 })
+//                onClickConfirm = {
+//                    navController.navigate("settings_screen") {
+//                        popUpTo(("settings_screen")) {
+//                            inclusive = true
+//                        }
+//                    }
+//                })
         },
         text = stringResource(R.string.atm_pressure_alerts)
     )
@@ -6942,9 +6958,26 @@ fun SettingsScreen(
                                 mainActivity.updateCepSustainOverridesMap()
                                 CepProvider.getOrCreateEngine(context).updateSustainOverrides()
                             }
+                            Log.d(
+                                TAG,
+                                "Pressure changed flags: " +
+                                        "immersion=$immersionAlertsChanged, " +
+                                        "low=$lowPressureAlertChanged, " +
+                                        "lowThreshold=$lowPressureAlertThresholdChanged, " +
+                                        "high=$highPressureAlertChanged, " +
+                                        "highThreshold=$highPressureAlertThresholdChanged"
+                            )
                             if (immersionAlertsChanged ||
                                 lowPressureAlertChanged || lowPressureAlertThresholdChanged ||
                                 highPressureAlertChanged || highPressureAlertThresholdChanged) {
+                                dataRepository.storeEnableImmersionAlerts(enableImmersionAlerts)
+                                dataRepository.storeEnableLowAtmPressureAlert(enableLowAtmPressureAlert)
+                                dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThreshold)
+                                dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlert)
+                                dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThreshold)
+
+                                Log.d(TAG, "Calling updatePressureProfile() after pressure setting change")
+
                                 CepProvider.getOrCreateEngine(context).updatePressureProfile()
                             }
                             Log.d(TAG, "Finished saving settings")
