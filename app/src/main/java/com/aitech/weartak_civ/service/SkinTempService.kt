@@ -295,6 +295,10 @@ class SkinTempService : Service() {
                 if (status >= 0) {
                     val objectTemp = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE)
                     val ambientTemp = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
+                    Log.d(
+                        "SKIN_TEMP_DEBUG",
+                        "status=$status objectTemp=$objectTemp ambientTemp=$ambientTemp"
+                    )
                     lastSkinTempC = objectTemp
                     tempF = objectTemp.toFahrenheit()
                     //Log.i(TAG, "SkinTempService skinTemp: object=${"%.1f".format(tempF)}°F (${objectTemp}°C) ambient=${ambientTemp}°C")
@@ -304,6 +308,10 @@ class SkinTempService : Service() {
                                 "ambientF=${ambientTemp.toFahrenheit()}°F ambientC=${ambientTemp}°C"
                     //writeToLogFileLocation(logFile, logLine)
                 } else {
+                    Log.d(
+                        "SKIN_TEMP_DEBUG",
+                        "Invalid status=$status"
+                    )
                     tempF = -1f
                     skinTempLiveData.postValue("N/A")
                 }

@@ -1110,7 +1110,12 @@ class CotDispatchService : Service() {
             "HR_XML_DEBUG",
             "raw=${physSnap.data.heartRateBpm} hr=$hr"
         )
+        Log.d(
+            "SKIN_TEMP_TRACE",
+            "skinTempF=${physSnap.data.skinTempF}"
+        )
         val skt         = rectifiedFormattedNumber(physSnap.data.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
+        Log.d("SKIN_TEMP_TRACE", "formatted skt=$skt")
         val exert       = rectifiedFormattedNumber(physSnap.data.exertion, "%.2f", zeroIsInvalid = false)
 
         val bat         = sysSnap.batteryPercent
