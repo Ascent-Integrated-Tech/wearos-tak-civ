@@ -20,8 +20,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 64
-        versionName "5.7.6.1"
+        versionCode 67
+        versionName "5.7.6.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary true
@@ -62,7 +62,7 @@ android {
         abi {
             enable !isBuildingBundle
             reset()
-            include "armeabi-v7a", "arm64-v8a"
+            include "armeabi-v7a"
             universalApk false
         }
     }
