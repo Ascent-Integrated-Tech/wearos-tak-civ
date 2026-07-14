@@ -2904,6 +2904,24 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.Center
                     ){
                         BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
+                        Spacer(modifier = Modifier.width(3.dp))
+                        FilledIconButton(
+                            onClick ={ context.startActivity(Intent(context, MapActivity::class.java)) },
+                            modifier = Modifier.size(37.dp),
+                            colors = IconButtonColors(
+                                containerColor = Color.DarkGray,
+                                contentColor = Color.Unspecified,
+                                disabledContentColor = Color.Gray,
+                                disabledContainerColor = Color.Black
+                            ),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.maps),
+                                contentDescription = "Favorite icon",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
