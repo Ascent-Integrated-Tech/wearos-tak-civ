@@ -1077,6 +1077,9 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable("plugins_screen"){
             PluginsScreen(navController, pluginVm, pluginList)
         }
+        composable("debug_tools") {
+            DebugScreen(navController)
+        }
 
         composable("specific_plugin_screen/{index}",
             arguments = listOf(navArgument("index") { type = NavType.IntType })
@@ -5642,6 +5645,9 @@ fun SettingsScreen(
     var lastVersionTapTime by remember { mutableStateOf(0L) }
     val tapsRequired = 8
     val timeoutMs = 1500L
+    val devModeEnabled by dataRepository
+        .getEnableWearTakDevMode
+        .collectAsState(initial = false)
 
     WearTakCivScreenDimensions(
         columnContent = {
@@ -5748,29 +5754,6 @@ fun SettingsScreen(
                     .padding(bottom = 3.dp)
             )
 
-
-            /*
-            val licenseText: String? by licenseSettingsState.observeAsState()
-
-            Chip(
-                onClick = { navController.navigate("license_setting_screen") {
-                    popUpTo("license_setting_screen") { inclusive = true }
-                } },
-                enabled = true,
-                label = { Text(text = stringResource(R.string.license_key)) },
-                secondaryLabel = {
-                    Text(text = licenseText.toString(), maxLines =1, overflow = TextOverflow.Ellipsis)
-                },
-                colors = ChipDefaults.chipColors(
-                    backgroundColor = Color.DarkGray,
-                    contentColor = Color.White,
-                    secondaryContentColor = Color.LightGray
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 3.dp)
-            )
-            */
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
@@ -6066,6 +6049,21 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(top = 3.dp)
             )
+
+            if (devModeEnabled) {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        navController.navigate("debug_tools")
+                    },
+                    label = {
+                        Text("Dev Debug Tools")
+                    },
+                    secondaryLabel = {
+                        Text("View network and build information")
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
