@@ -9,6 +9,7 @@
 
 package com.aitech.weartak_civ
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -21,9 +22,13 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import android.net.Network
+import com.aitech.weartak_civ.data.DataRepository
 import java.net.DatagramPacket
 import java.net.InetAddress
 import java.net.MulticastSocket
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Collections
 
 object NetworkUtils {
     private const val TAG = "WearTAK-NetworkUtils"
