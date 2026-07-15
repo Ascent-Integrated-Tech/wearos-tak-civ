@@ -6,6 +6,7 @@ gradle/libs.versions.toml
 # Local configuration file (sdk path, etc)
 local.properties
 /local.properties
+*.env
 
 # Log/OS Files
 *.log

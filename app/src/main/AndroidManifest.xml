@@ -536,6 +536,11 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".presentation.DevDebugActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/MainActivityTheme.Starting" />
+        <activity
             android:name=".presentation.SosActivity"
             android:exported="true"
             android:launchMode="singleInstance"

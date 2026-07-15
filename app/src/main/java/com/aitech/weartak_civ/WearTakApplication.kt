@@ -36,6 +36,7 @@ import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.data.secure.takserver.TakServerEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.integration.plugin.PluginRepository
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

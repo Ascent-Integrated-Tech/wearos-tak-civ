@@ -155,9 +155,11 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
+import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
+import com.aitech.weartak_civ.manager.NetworkManager
 import kotlinx.coroutines.flow.flowOf
 
 
@@ -1036,6 +1038,11 @@ class DataRepository(private val context: Context) {
             systemStates = snapshotSystemStates()
         )
     }
+
+//    val networkSnapshot: StateFlow<NetworkManager.NetworkSnapshot> =
+//        NetworkManager
+//            .getInstance()
+//            .networkSnapshot
 
     data class MarkerSnapshot(
         val cotType: MarkerCotType,
