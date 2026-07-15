@@ -26,6 +26,7 @@ import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
@@ -157,6 +158,7 @@ import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
+import kotlinx.coroutines.flow.flowOf
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -189,6 +191,22 @@ class DataRepository(private val context: Context) {
             prefs[PASSIVE_DATA_ENABLED] = enabled
         }
     }
+
+    data class WearTakInfo(
+        val versionNumber: String,
+        val versionCode: Int,
+        val gitBranch: String,
+        val gitCommit: String,
+        val buildType: String,
+    )
+
+    val wearTakInfo = WearTakInfo(
+        versionNumber = BuildConfig.VERSION_NAME,
+        versionCode = BuildConfig.VERSION_CODE,
+        gitBranch = BuildConfig.GIT_BRANCH,
+        gitCommit = BuildConfig.GIT_COMMIT_SHORT,
+        buildType = BuildConfig.BUILD_TYPE,
+    )
 
     private val _airplaneOnSuccess = MutableStateFlow(false)
     val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
