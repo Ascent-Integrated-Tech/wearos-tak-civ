@@ -589,6 +589,9 @@ class MainActivity : ComponentActivity() {
         //val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
+        var commitHash: String = ""
+
+
         var logFile: File? = null
 
 //        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService

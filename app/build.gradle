@@ -1,3 +1,5 @@
+import java.time.Instant
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
@@ -22,14 +24,32 @@ android {
         targetSdk 34
         versionCode 64
         versionName "5.7.6.1"
+
+        def buildGitUrl = gitUrl() ?: "unknown"
+        def buildGitBranch = gitBranch() ?: "unknown"
+        def buildGitCommit = gitCommit() ?: "unknown"
+
+        def buildGitCommitShort = buildGitCommit.length() >= 8 ? buildGitCommit.substring(0, 8) : buildGitCommit
+        def safeGitBranch = buildGitBranch.replaceAll("[^A-Za-z0-9._-]", "-")
+
+        def buildTimestampUtc = System.getenv("WEARTAK_BUILD_TIMESTAMP_UTC") ?: Instant.now().toString()
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary true
         }
-        setProperty("archivesBaseName", "$rootProject.name-$versionName-$versionCode-"+gitBranch())
-        manifestPlaceholders["repo"] = gitUrl()
-        manifestPlaceholders["branch"] = gitBranch()
-        manifestPlaceholders["commit"] = gitCommit()
+
+        setProperty("archivesBaseName", "${rootProject.name}-${versionName}-${versionCode}-" + "${safeGitBranch}-${buildGitCommitShort}")
+
+        buildConfigField "String", "GIT_REPOSITORY", "\"${buildGitUrl}\""
+        buildConfigField "String", "GIT_BRANCH", "\"${buildGitBranch}\""
+        buildConfigField "String", "GIT_COMMIT", "\"${buildGitCommit}\""
+        buildConfigField "String", "GIT_COMMIT_SHORT", "\"${buildGitCommitShort}\""
+        buildConfigField("String", "BUILD_TIMESTAMP_UTC", "\"${buildTimestampUtc}\"")
+
+//        manifestPlaceholders["repo"] = gitUrl()
+//        manifestPlaceholders["branch"] = gitBranch()
+//        manifestPlaceholders["commit"] = gitCommit()
 
         // Inject OpenWeather API key from local.properties into BuildConfig
         def lp = new Properties()
