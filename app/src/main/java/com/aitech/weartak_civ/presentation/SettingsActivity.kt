@@ -6073,7 +6073,7 @@ fun SettingsScreen(
             var lastVersionTapTime by remember { mutableStateOf(0L) }
 
             DebugVersionText(
-                versionNumber = versionNumber,
+                wearTakInfo = dataRepository.wearTakInfo,
                 dataRepository = dataRepository,
                 onDebugToggled = { enabled ->
                     // Optional: if you want to immediately test something when debug is enabled
@@ -7001,7 +7001,7 @@ fun SettingsScreen(
 
 @Composable
 fun DebugVersionText(
-    versionNumber: String,
+    wearTakInfo: DataRepository.WearTakInfo,
     dataRepository: DataRepository,
     onDebugToggled: ((Boolean) -> Unit)? = null, // optional hook if you want to do extra stuff
 ) {
@@ -7009,7 +7009,7 @@ fun DebugVersionText(
     val coroutineScope = rememberCoroutineScope()
     val colors = colors
 
-    val devModeEnabled by MainActivity.Constants.dataRepository
+    val devModeEnabled by dataRepository
         .getEnableWearTakDevMode
         .collectAsState(false)
 
@@ -7030,6 +7030,89 @@ fun DebugVersionText(
         currentToast = toast
     }
 
+    Column(
+        modifier = Modifier.padding(top = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            modifier = Modifier.clickable {
+                val now = System.currentTimeMillis()
+
+                if (now - lastVersionTapTime > timeoutMs) {
+                    versionTapCount = 0
+                }
+
+                versionTapCount++
+                lastVersionTapTime = now
+
+                if (versionTapCount in 5 until tapsRequired) {
+                    val remaining = tapsRequired - versionTapCount
+                    val msg = if (remaining == 1) {
+                        "1 more tap to toggle debug"
+                    } else {
+                        "$remaining more taps to toggle debug"
+                    }
+                    showTopToast(msg)
+                }
+
+                if (versionTapCount >= tapsRequired) {
+                    versionTapCount = 0
+
+                    coroutineScope.launch {
+                        val currentlyEnabled =
+                            dataRepository.getEnableWearTakDevMode.first()
+                        val newValue = !currentlyEnabled
+
+                        dataRepository.storeEnableWearTakDevMode(newValue)
+
+                        Log.d(
+                            TAG,
+                            "~~~ DEBUG MODE ${if (newValue) "ENABLED" else "DISABLED"} ~~~"
+                        )
+
+                        withContext(Dispatchers.Main) {
+                            val toastText = if (newValue) {
+                                "Debug tools enabled (airplane mode off)"
+                            } else {
+                                "Debug tools disabled (airplane mode off)"
+                            }
+                            showTopToast(toastText)
+                        }
+
+                        onDebugToggled?.invoke(newValue)
+                    }
+                }
+            },
+            text = stringResource(
+                R.string.version,
+                wearTakInfo.versionNumber
+            ),
+            fontSize = 11.sp,
+            color = if (devModeEnabled) Color.Red else colors.primary,
+        )
+
+        if (devModeEnabled) {
+            Text(
+                text = "Code ${wearTakInfo.versionCode}",
+                fontSize = 9.sp,
+                color = Color.Red,
+            )
+
+            Text(
+                text = "${wearTakInfo.gitBranch}@${wearTakInfo.gitCommit}",
+                fontSize = 9.sp,
+                color = Color.Red,
+                maxLines = 1,
+            )
+
+            Text(
+                text = wearTakInfo.buildType,
+                fontSize = 9.sp,
+                color = Color.Red,
+            )
+        }
+    }
+    /*
     Text(
         modifier = Modifier
             .padding(top = 7.dp)
@@ -7089,6 +7172,7 @@ fun DebugVersionText(
         fontSize = 11.sp,
         color = if (devModeEnabled) Color.Red else colors.primary,
     )
+    */
 }
 
 fun convertSmsNumbersListToStringWithSeparator(smsNumbersList: List<DataRepository.SmsNumber>, separatorStr: String): String {
