@@ -83,6 +83,14 @@ class CrmPpgPreprocessor(
                     "maxGapMs=$maxGap"
         )
 
+        if (coverageMs < minCoverageMs) {
+            return rejected("insufficient_coverage", windowSamples)
+        }
+
+        if (maxGap > maxSampleGapMs) {
+            return rejected("sample_gap_too_large", windowSamples)
+        }
+
         val rawValues = windowSamples.map { it.value }
         if (rawValues.any { !it.isFinite() }) {
             return rejected("non_finite", windowSamples)
@@ -113,9 +121,16 @@ class CrmPpgPreprocessor(
         val quality = (amplitude / (amplitude + QUALITY_SOFT_CAP)).coerceIn(0f, 1f)
         return CrmWindowResult.Accepted(
             scaledSamples = scaled,
+            resampledSamples = resampled,
             sourceSampleCount = windowSamples.size,
             windowDurationMs = coverageMs,
-            quality = quality
+            windowStartUptimeMs = windowSamples.first().uptimeMillis,
+            windowEndUptimeMs = windowSamples.last().uptimeMillis,
+            maxSampleGapMs = maxGap,
+            resampledMin = minValue,
+            resampledMax = maxValue,
+            resampledAmplitude = amplitude,
+            quality = quality,
         )
     }
 
@@ -186,23 +201,45 @@ class CrmPpgPreprocessor(
 sealed class CrmWindowResult {
     data class Accepted(
         val scaledSamples: FloatArray,
+        val resampledSamples: FloatArray,
         val sourceSampleCount: Int,
         val windowDurationMs: Long,
-        val quality: Float
+        val windowStartUptimeMs: Long,
+        val windowEndUptimeMs: Long,
+        val maxSampleGapMs: Long,
+        val resampledMin: Float,
+        val resampledMax: Float,
+        val resampledAmplitude: Float,
+        val quality: Float,
     ) : CrmWindowResult() {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is Accepted) return false
+
             return scaledSamples.contentEquals(other.scaledSamples) &&
-                sourceSampleCount == other.sourceSampleCount &&
-                windowDurationMs == other.windowDurationMs &&
-                quality == other.quality
+                    resampledSamples.contentEquals(other.resampledSamples) &&
+                    sourceSampleCount == other.sourceSampleCount &&
+                    windowDurationMs == other.windowDurationMs &&
+                    windowStartUptimeMs == other.windowStartUptimeMs &&
+                    windowEndUptimeMs == other.windowEndUptimeMs &&
+                    maxSampleGapMs == other.maxSampleGapMs &&
+                    resampledMin == other.resampledMin &&
+                    resampledMax == other.resampledMax &&
+                    resampledAmplitude == other.resampledAmplitude &&
+                    quality == other.quality
         }
 
         override fun hashCode(): Int {
             var result = scaledSamples.contentHashCode()
+            result = 31 * result + resampledSamples.contentHashCode()
             result = 31 * result + sourceSampleCount
             result = 31 * result + windowDurationMs.hashCode()
+            result = 31 * result + windowStartUptimeMs.hashCode()
+            result = 31 * result + windowEndUptimeMs.hashCode()
+            result = 31 * result + maxSampleGapMs.hashCode()
+            result = 31 * result + resampledMin.hashCode()
+            result = 31 * result + resampledMax.hashCode()
+            result = 31 * result + resampledAmplitude.hashCode()
             result = 31 * result + quality.hashCode()
             return result
         }

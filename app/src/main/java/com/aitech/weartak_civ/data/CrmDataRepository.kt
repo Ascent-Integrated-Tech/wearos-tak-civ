@@ -15,6 +15,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class CrmDataRepository(private val dataRepository: DataRepository) {
 
@@ -40,6 +45,50 @@ class CrmDataRepository(private val dataRepository: DataRepository) {
         poorMax = poorMax,
         moderateMax = moderateMax,
     )
+
+    private val _samplingCommands = MutableSharedFlow<CrmSamplingCommand>(
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    val samplingCommands: SharedFlow<CrmSamplingCommand> =
+        _samplingCommands.asSharedFlow()
+
+    private val _samplingState =
+        MutableStateFlow(CrmSamplingState.IDLE)
+
+    val samplingState: StateFlow<CrmSamplingState> =
+        _samplingState.asStateFlow()
+
+    fun requestSamplingStart(): Boolean {
+        _samplingState.value = CrmSamplingState.STARTING
+        return _samplingCommands.tryEmit(CrmSamplingCommand.START)
+    }
+
+    fun requestSamplingStop(): Boolean {
+        _samplingState.value = CrmSamplingState.STOPPING
+        return _samplingCommands.tryEmit(CrmSamplingCommand.STOP)
+    }
+
+    fun updateSamplingState(state: CrmSamplingState) {
+        _samplingState.value = state
+    }
+
+    enum class CrmSamplingCommand {
+        START,
+        STOP,
+    }
+
+    enum class CrmSamplingState {
+        IDLE,
+        STARTING,
+        SAMPLING,
+        STOPPING,
+        NOT_WORN,
+        UNAVAILABLE,
+        ERROR,
+    }
 
     fun tryPublishRawPpgSample(
         uptimeMillis: Long,

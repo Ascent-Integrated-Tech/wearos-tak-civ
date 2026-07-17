@@ -396,12 +396,6 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
-        <service
-            android:name=".service.CrmInferenceService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="specialUse"
-            android:stopWithTask="false" />
         <!-- Phase 1 testing: CEPSimulationService is registered but only activates when
              CEPSimulationService.IN_TESTING = true is set in the companion object.
              Safe to keep in production manifests — the service is a no-op by default. -->

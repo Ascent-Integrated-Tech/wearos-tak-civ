@@ -17,6 +17,7 @@ import com.aitech.weartak_civ.data.CrmInferenceStatus
 
 class CrmInferenceCoordinator(
     private val crmRepo: CrmDataRepository,
+    private val csvLogger: CrmSessionCsvLogger,
     private val runnerFactory: () -> CrmModelRunner,
     private val preprocessor: CrmPpgPreprocessor = CrmPpgPreprocessor(),
     private val wallClockMillis: () -> Long = { System.currentTimeMillis() },
@@ -27,6 +28,7 @@ class CrmInferenceCoordinator(
     private var lastInferenceUptimeMs = 0L
     private var lastRejectedLogUptimeMs = 0L
     private var lastRejectedReason: String? = null
+    private var latestSampleUptimeMillis: Long = 0L
 
     fun warmUpModel() {
         try {
@@ -44,27 +46,58 @@ class CrmInferenceCoordinator(
         }
     }
 
-    fun onRawPpgSample(sampleUptimeMillis: Long, rawValue: Float, sourceAvailable: Boolean) {
+    private var bufferedSampleCount = 0
+
+    fun onRawPpgSample(
+        sampleUptimeMillis: Long,
+        rawValue: Float,
+        sourceAvailable: Boolean,
+    ) {
+        latestSampleUptimeMillis = sampleUptimeMillis
+        if (!sourceAvailable) {
+            reset("ppg_source_unavailable")
+            return
+        }
+
         val result = synchronized(lock) {
-            preprocessor.addSample(sampleUptimeMillis, rawValue)
+            preprocessor.addSample(
+                uptimeMillis = sampleUptimeMillis,
+                value = rawValue,
+            )
+
             val now = uptimeMillis()
+
             if (now - lastInferenceUptimeMs < INFERENCE_PERIOD_MS) {
                 return
             }
+
             lastInferenceUptimeMs = now
-            if (!sourceAvailable) {
-                return@synchronized CrmWindowResult.Rejected("ppg_unavailable", 0, 0L)
-            }
             preprocessor.buildWindow()
         }
+
+        // "Insufficient samples" means keep collecting, not publish/reset.
+        if (
+            result is CrmWindowResult.Rejected &&
+            result.reason == "insufficient_samples"
+        ) {
+            Log.d(
+                TAG,
+                "CRM_WINDOW_FILL samples=${result.sourceSampleCount} " +
+                        "durationMs=${result.windowDurationMs}"
+            )
+            return
+        }
+
         publish(result)
     }
 
     fun reset(reason: String) {
         synchronized(lock) {
             preprocessor.clear()
+            bufferedSampleCount = 0
             lastInferenceUptimeMs = 0L
         }
+
         crmRepo.tryPublish(
             CrmInferenceState(
                 status = CrmInferenceStatus.REJECTED,
@@ -79,13 +112,36 @@ class CrmInferenceCoordinator(
             is CrmWindowResult.Accepted -> runInference(result)
             is CrmWindowResult.Rejected -> {
                 maybeLogRejectedWindow(result)
+
+                csvLogger.logInference(
+                    inferenceUptimeMillis = uptimeMillis(),
+                    windowStartUptimeMillis = (latestSampleUptimeMillis - result.windowDurationMs).coerceAtLeast(0L),
+                    windowEndUptimeMillis = latestSampleUptimeMillis,
+                    sourceSampleCount = result.sourceSampleCount,
+                    windowDurationMs = result.windowDurationMs,
+                    maxSampleGapMs = null,
+                    resampledMin = null,
+                    resampledMax = null,
+                    resampledAmplitude = null,
+                    modelInputSampleCount = 0,
+                    quality = null,
+                    qualityMethod = "amplitude_soft_cap",
+                    minCoverageEnforced = false,
+                    maxGapEnforced = false,
+                    rawModelOutput = null,
+                    displayScore = null,
+                    inferenceLatencyMs = null,
+                    status = "REJECTED",
+                    rejectionReason = result.reason,
+                )
+
                 crmRepo.tryPublish(
                     CrmInferenceState(
                         status = CrmInferenceStatus.REJECTED,
                         updatedAtMillis = wallClockMillis(),
                         rejectionReason = result.reason,
                         sourceSampleCount = result.sourceSampleCount,
-                        inputWindowDurationMs = result.windowDurationMs
+                        inputWindowDurationMs = result.windowDurationMs,
                     )
                 )
             }
@@ -94,10 +150,8 @@ class CrmInferenceCoordinator(
 
     private fun runInference(window: CrmWindowResult.Accepted) {
         val start = SystemClock.elapsedRealtime()
+
         try {
-            // this is final checkpoint before crm inference via TensorFlow Lite.
-            // sourceSampleCount is the num of raw ppg samples used to build the window.
-            // scaledSamples.size should match the model input length, currently 500 samples.
             Log.d(
                 TAG,
                 "CRM_INFERENCE_ATTEMPT " +
@@ -110,6 +164,42 @@ class CrmInferenceCoordinator(
             val value = getRunner().run(window.scaledSamples)
 
             val end = SystemClock.elapsedRealtime()
+            val latencyMs = end - start
+            val displayScore =
+                (value.coerceIn(0f, 1f) * 100f).toInt()
+
+            val inferenceIndex = csvLogger.logInference(
+                inferenceUptimeMillis = end,
+                windowStartUptimeMillis = window.windowStartUptimeMs,
+                windowEndUptimeMillis = window.windowEndUptimeMs,
+                sourceSampleCount = window.sourceSampleCount,
+                windowDurationMs = window.windowDurationMs,
+                maxSampleGapMs = window.maxSampleGapMs,
+                resampledMin = window.resampledMin,
+                resampledMax = window.resampledMax,
+                resampledAmplitude = window.resampledAmplitude,
+                modelInputSampleCount = window.scaledSamples.size,
+                quality = window.quality,
+                qualityMethod = "amplitude_soft_cap",
+                minCoverageEnforced = false,
+                maxGapEnforced = false,
+                rawModelOutput = value,
+                displayScore = displayScore,
+                inferenceLatencyMs = latencyMs,
+                status = "ACCEPTED",
+                rejectionReason = null,
+            )
+
+            if (inferenceIndex >= 0L) {
+                csvLogger.logModelInput(
+                    inferenceIndex = inferenceIndex,
+                    windowStartUptimeMs = window.windowStartUptimeMs,
+                    windowEndUptimeMs = window.windowEndUptimeMs,
+                    resampledSamples = window.resampledSamples,
+                    scaledSamples = window.scaledSamples,
+                )
+            }
+
             crmRepo.tryPublish(
                 CrmInferenceState(
                     status = CrmInferenceStatus.ACCEPTED,
@@ -118,24 +208,28 @@ class CrmInferenceCoordinator(
                     quality = window.quality,
                     sourceSampleCount = window.sourceSampleCount,
                     inputWindowDurationMs = window.windowDurationMs,
-                    inferenceLatencyMs = end - start
+                    inferenceLatencyMs = latencyMs,
                 )
             )
-            Log.d(TAG,
+
+            Log.d(
+                TAG,
                 "CRM_INFERENCE value=${"%.4f".format(value)} " +
                         "sourceSamples=${window.sourceSampleCount} " +
                         "modelInputSamples=${window.scaledSamples.size} " +
-                        "latencyMs=${end - start}"
+                        "latencyMs=$latencyMs " +
+                        "csvInferenceIndex=$inferenceIndex"
             )
         } catch (t: Throwable) {
             Log.e(TAG, "CRM inference failed", t)
+
             crmRepo.tryPublish(
                 CrmInferenceState(
                     status = CrmInferenceStatus.ERROR,
                     updatedAtMillis = wallClockMillis(),
                     rejectionReason = t.message ?: t.javaClass.simpleName,
                     sourceSampleCount = window.sourceSampleCount,
-                    inputWindowDurationMs = window.windowDurationMs
+                    inputWindowDurationMs = window.windowDurationMs,
                 )
             )
         }
@@ -161,6 +255,7 @@ class CrmInferenceCoordinator(
             runner?.close()
             runner = null
             preprocessor.clear()
+            bufferedSampleCount = 0
         }
     }
 
@@ -168,5 +263,6 @@ class CrmInferenceCoordinator(
         private const val TAG = "WearTAK-CrmInference"
         private const val INFERENCE_PERIOD_MS = 1_000L
         private const val REJECTION_LOG_PERIOD_MS = 5_000L
+        private const val REQUIRED_SAMPLE_COUNT = 500
     }
 }

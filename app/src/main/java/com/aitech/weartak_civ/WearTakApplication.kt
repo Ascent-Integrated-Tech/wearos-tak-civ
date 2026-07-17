@@ -38,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -55,6 +56,7 @@ class WearTakApplication : Application() {
 
     lateinit var gunshotOnnxRepo: GunshotOnnxRepository; private set
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
+    val crmCsvLogger: CrmSessionCsvLogger by lazy { CrmSessionCsvLogger(applicationContext) }
 
     companion object {
         val TAG = "WearTAK-Application"
@@ -75,10 +77,7 @@ class WearTakApplication : Application() {
 
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
-        // Wipe debug mode to false on every boot! 
-//        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-//            repo.storeEnableWearTakDevMode(false)
-//        }
+
         // Wipe debug mode to false on every boot!
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.storeEnableWearTakDevMode(false)

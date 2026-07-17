@@ -59,6 +59,9 @@ import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.presentation.viewmodel.CrmUiState
 import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModelFactory
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingState
 
 class CrmReserveActivity : ComponentActivity() {
 
@@ -82,9 +85,12 @@ class CrmReserveActivity : ComponentActivity() {
                 }
 
                 val uiState by crmViewModel.uiState.collectAsStateWithLifecycle()
+                val samplingState by crmViewModel.samplingState.collectAsStateWithLifecycle()
 
                 CrmReserveScreen(
                     uiState = uiState,
+                    samplingState = samplingState,
+                    onSamplingClick = crmViewModel::onSamplingButtonClick,
                     onBackClick = { finish() },
                 )
             }
@@ -96,7 +102,9 @@ class CrmReserveActivity : ComponentActivity() {
 @Composable
 fun CrmReserveScreen(
     uiState: CrmUiState,
+    samplingState: CrmDataRepository.CrmSamplingState,
     modifier: Modifier = Modifier,
+    onSamplingClick: () -> Unit,
     onBackClick: (() -> Unit)? = null,
 ) {
     val nowMillis = rememberNowMillisTicker()
@@ -118,8 +126,23 @@ fun CrmReserveScreen(
 
     val statusText = crmStatusText(
         uiState = uiState,
+        samplingState = samplingState,
         ageLabel = ageLabel,
     )
+
+    val samplingButtonText = when (samplingState) {
+        CrmSamplingState.STARTING -> "Starting..."
+        CrmSamplingState.SAMPLING -> "Stop Session"
+        CrmSamplingState.STOPPING -> "Stopping..."
+        CrmSamplingState.NOT_WORN -> "Not Worn"
+        CrmSamplingState.UNAVAILABLE -> "PPG Unavailable"
+        CrmSamplingState.ERROR -> "Retry Session"
+        CrmSamplingState.IDLE -> "Start Session"
+    }
+
+    val samplingButtonEnabled = samplingState != CrmSamplingState.STARTING &&
+            samplingState != CrmSamplingState.STOPPING &&
+            samplingState != CrmSamplingState.UNAVAILABLE
 
     Box(
         modifier = modifier
@@ -128,39 +151,29 @@ fun CrmReserveScreen(
             .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (onBackClick != null) {
-            Text(
-                text = "Back",
-                color = foregroundColor.copy(alpha = 0.85f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
-                    .clickable { onBackClick() },
-            )
-        }
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 8.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (uiState.hasValidScore) {
-                Text(
-                    text = uiState.score?.toString().orEmpty(),
-                    color = foregroundColor,
-                    fontSize = 58.sp,
-                    fontWeight = FontWeight.Black,
-                    lineHeight = 58.sp,
-                    textAlign = TextAlign.Center,
-                )
-
                 Text(
                     text = "CRM",
                     color = foregroundColor.copy(alpha = 0.9f),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.4.sp,
+                    textAlign = TextAlign.Center,
+                )
+
+                Text(
+                    text = uiState.score?.toString().orEmpty(),
+                    color = foregroundColor,
+                    fontSize = 58.sp,
+                    fontWeight = FontWeight.Black,
+                    lineHeight = 58.sp,
                     textAlign = TextAlign.Center,
                 )
 
@@ -201,6 +214,48 @@ fun CrmReserveScreen(
                 modifier = Modifier.padding(top = 4.dp),
             )
 
+            Box(
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        foregroundColor.copy(
+                            alpha = if (samplingButtonEnabled) 0.20f else 0.08f
+                        )
+                    )
+                    .clickable(enabled = samplingButtonEnabled) {
+                        onSamplingClick()
+                    }
+                    .padding(
+                        horizontal = 18.dp,
+                        vertical = 8.dp,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = samplingButtonText,
+                    color = foregroundColor.copy(
+                        alpha = if (samplingButtonEnabled) 1f else 0.55f
+                    ),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+        }
+
+        if (onBackClick != null) {
+            Text(
+                text = "Back",
+                color = foregroundColor.copy(alpha = 0.85f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clickable { onBackClick() },
+            )
         }
 
         if (uiState.hasValidScore) {
@@ -220,6 +275,7 @@ fun CrmReserveScreen(
 
 private fun crmStatusText(
     uiState: CrmUiState,
+    samplingState: CrmSamplingState,
     ageLabel: String,
 ): String {
     if (uiState.hasValidScore) {
@@ -230,17 +286,43 @@ private fun crmStatusText(
         }
     }
 
-    return when (uiState.status) {
-        CrmInferenceStatus.NOT_WORN -> "Wear watch snugly"
-        CrmInferenceStatus.IDLE -> "Waiting for CRM samples"
-        CrmInferenceStatus.REJECTED -> {
-            uiState.rejectionReason
-                ?.takeIf { it.isNotBlank() }
-                ?.let { "Adjust strap: $it" }
-                ?: "Adjust strap for better signal"
+    return when (samplingState) {
+        CrmSamplingState.STARTING ->
+            "Starting PPG measurement"
+
+        CrmSamplingState.SAMPLING ->
+            "Collecting PPG samples"
+
+        CrmSamplingState.STOPPING ->
+            "Stopping measurement"
+
+        CrmSamplingState.NOT_WORN ->
+            "Please wear device to begin CRM"
+
+        CrmSamplingState.UNAVAILABLE ->
+            "PPG sensor unavailable"
+
+        CrmSamplingState.ERROR ->
+            "CRM measurement error"
+
+        CrmSamplingState.IDLE -> {
+            when (uiState.status) {
+                CrmInferenceStatus.NOT_WORN ->
+                    "Please wear device to begin CRM"
+
+                CrmInferenceStatus.REJECTED ->
+                    uiState.rejectionReason
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { "Adjust strap: $it" }
+                        ?: "Adjust strap for better signal"
+
+                CrmInferenceStatus.ERROR ->
+                    "CRM unavailable"
+
+                else ->
+                    "Press Start Sample to begin CRM"
+            }
         }
-        CrmInferenceStatus.ERROR -> "CRM unavailable"
-        CrmInferenceStatus.ACCEPTED -> "Waiting for CRM score"
     }
 }
 

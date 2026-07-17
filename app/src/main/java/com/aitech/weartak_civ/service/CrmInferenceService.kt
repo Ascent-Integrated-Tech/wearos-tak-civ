@@ -29,6 +29,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
+import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingCommand
+import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingState
+import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 
 class CrmInferenceService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -54,9 +58,57 @@ class CrmInferenceService : Service() {
     private val coordinator: CrmInferenceCoordinator by lazy {
         CrmInferenceCoordinator(
             crmRepo = crmRepo,
+            csvLogger = crmCsvLogger,
             runnerFactory = { TfliteCrmModelRunner(applicationContext) }
         )
     }
+
+    private val crmCsvLogger: CrmSessionCsvLogger by lazy {
+        (applicationContext as WearTakApplication).crmCsvLogger
+    }
+
+    private fun startCollectingSampleCommands() {
+        serviceScope.launch {
+            crmRepo.samplingCommands.collect { command ->
+                when (command) {
+                    CrmSamplingCommand.START -> {
+                        crmRepo.updateSamplingState(CrmSamplingState.STARTING)
+
+                        val intent = Intent(
+                            this@CrmInferenceService,
+                            SkinTempService::class.java,
+                        ).apply {
+                            action = SkinTempService.ACTION_START_CRM_PPG
+                        }
+
+                        ContextCompat.startForegroundService(
+                            this@CrmInferenceService,
+                            intent,
+                        )
+                    }
+
+                    CrmSamplingCommand.STOP -> {
+                        crmRepo.updateSamplingState(CrmSamplingState.STOPPING)
+                        coordinator.reset("sampling_stopped")
+
+                        if (SkinTempService.isRunning.get()) {
+                            val intent = Intent(
+                                this@CrmInferenceService,
+                                SkinTempService::class.java,
+                            ).apply {
+                                action = SkinTempService.ACTION_STOP_CRM_PPG
+                            }
+
+                            startService(intent)
+                        } else {
+                            crmRepo.updateSamplingState(CrmSamplingState.IDLE)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     override fun onCreate() {
         super.onCreate()
@@ -65,6 +117,7 @@ class CrmInferenceService : Service() {
         startForegroundServiceCompat(NOTIFICATION_ID, importance = NotificationManager.IMPORTANCE_LOW)
         coordinator.warmUpModel()
         startCollectingPpg()
+        startCollectingSampleCommands()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -86,9 +139,15 @@ class CrmInferenceService : Service() {
 
     private fun startCollectingPpg() {
         if (ppgCollectJob?.isActive == true) return
+
         ppgCollectJob = serviceScope.launch {
             Log.i(TAG, "CRM_PPG_COLLECT_START waiting for SkinTempService raw PPG")
+
             crmRepo.rawPpgSamples.collect { sample ->
+                if (crmRepo.samplingState.value != CrmSamplingState.SAMPLING) {
+                    return@collect
+                }
+
                 onPpgSample(sample)
             }
         }

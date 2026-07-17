@@ -19,6 +19,7 @@ import com.aitech.weartak_civ.data.CrmDisplayState
 import com.aitech.weartak_civ.data.CrmInferenceStatus
 import com.aitech.weartak_civ.data.CrmThresholdRanges
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.google.android.horologist.compose.tools.themeValues
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +33,29 @@ class CrmViewModel(
     private val dataRepository: DataRepository,
 
 ) : ViewModel() {
+
+    val samplingState: StateFlow<CrmSamplingState> =
+        crmDataRepository.samplingState
+
+    fun onSamplingButtonClick() {
+        when (samplingState.value) {
+            CrmSamplingState.STARTING,
+            CrmSamplingState.SAMPLING -> {
+                crmDataRepository.requestSamplingStop()
+            }
+
+            CrmSamplingState.STOPPING -> {
+                // Ignore repeated clicks while stopping.
+            }
+
+            CrmSamplingState.IDLE,
+            CrmSamplingState.NOT_WORN,
+            CrmSamplingState.UNAVAILABLE,
+            CrmSamplingState.ERROR -> {
+                crmDataRepository.requestSamplingStart()
+            }
+        }
+    }
 
     val uiState: StateFlow<CrmUiState> =
         combine(
