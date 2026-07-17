@@ -165,21 +165,21 @@ data class CrmUiState(
 
     val displayLabel: String
         get() = when {
-            score == null && status == CrmInferenceStatus.NOT_WORN -> "--"
-            score == null && status == CrmInferenceStatus.IDLE -> "--"
-            score == null && status == CrmInferenceStatus.REJECTED -> "--"
-            score == null && status == CrmInferenceStatus.ERROR -> "--"
+            score == null && status == CrmInferenceStatus.NOT_WORN -> "NOT WORN"
+            score == null && status == CrmInferenceStatus.IDLE -> "WAITING"
+            score == null && status == CrmInferenceStatus.REJECTED -> "NO SIGNAL"
+            score == null && status == CrmInferenceStatus.ERROR -> "ERROR"
             displayState == CrmDisplayState.POOR -> "POOR"
             displayState == CrmDisplayState.MODERATE -> "MODERATE"
             displayState == CrmDisplayState.GOOD -> "GOOD"
-            else -> "CRM"
+            else -> ""
         }
 
     val signalLabel: String
         get() = when {
             status == CrmInferenceStatus.NOT_WORN -> "NOT WORN"
             status == CrmInferenceStatus.ACCEPTED -> "LIVE"
-            status == CrmInferenceStatus.REJECTED && score != null -> "SIGNAL LOST"
+            status == CrmInferenceStatus.REJECTED && score != null -> "OFF"
             status == CrmInferenceStatus.ERROR && score != null -> "LAST KNOWN"
             status == CrmInferenceStatus.IDLE && score != null -> "LAST KNOWN"
             else -> displayLabel

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -62,6 +63,8 @@ import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModelFactory
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingState
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.wrapContentSize
 
 class CrmReserveActivity : ComponentActivity() {
 
@@ -132,78 +135,92 @@ fun CrmReserveScreen(
 
     val samplingButtonText = when (samplingState) {
         CrmSamplingState.STARTING -> "Starting..."
-        CrmSamplingState.SAMPLING -> "Stop Session"
+        CrmSamplingState.SAMPLING -> "Stop"
         CrmSamplingState.STOPPING -> "Stopping..."
         CrmSamplingState.NOT_WORN -> "Not Worn"
         CrmSamplingState.UNAVAILABLE -> "PPG Unavailable"
         CrmSamplingState.ERROR -> "Retry Session"
-        CrmSamplingState.IDLE -> "Start Session"
+        CrmSamplingState.IDLE -> "Start"
     }
+
+//    val samplingButtonColor = when (samplingState) {
+//        CrmSamplingState.IDLE,
+//        CrmSamplingState.NOT_WORN -> Color.Gray
+//        CrmSamplingState.ERROR -> CrmGoodColor
+//
+//        CrmSamplingState.STARTING,
+//        CrmSamplingState.SAMPLING,
+//        CrmSamplingState.STOPPING -> CrmPoorColor
+//
+//        CrmSamplingState.UNAVAILABLE -> Color.Gray
+//    }
+
 
     val samplingButtonEnabled = samplingState != CrmSamplingState.STARTING &&
             samplingState != CrmSamplingState.STOPPING &&
             samplingState != CrmSamplingState.UNAVAILABLE
 
+
+    val samplingButtonColor = when (samplingState) {
+        CrmSamplingState.IDLE,
+        CrmSamplingState.NOT_WORN,
+        CrmSamplingState.ERROR -> Color(0xFF146C2E)
+
+        CrmSamplingState.STARTING,
+        CrmSamplingState.SAMPLING,
+        CrmSamplingState.STOPPING -> Color(0xFF9E1623)
+
+        CrmSamplingState.UNAVAILABLE -> Color(0xFF55575A)
+    }
+
+    val samplingButtonBorderColor = Color.White.copy(
+        alpha = if (samplingButtonEnabled) 0.95f else 0.55f
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundColor)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 8.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.Center,
+                .padding(
+                    start = 34.dp,
+                    end = 34.dp,
+                    top = 10.dp,
+                    bottom = 8.dp,
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (uiState.hasValidScore) {
-                Text(
-                    text = "CRM",
-                    color = foregroundColor.copy(alpha = 0.9f),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp,
-                    textAlign = TextAlign.Center,
-                )
+            Text(
+                text = "CRM",
+                color = foregroundColor.copy(alpha = 0.9f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.4.sp,
+                textAlign = TextAlign.Center,
+            )
 
-                Text(
-                    text = uiState.score?.toString().orEmpty(),
-                    color = foregroundColor,
-                    fontSize = 58.sp,
-                    fontWeight = FontWeight.Black,
-                    lineHeight = 58.sp,
-                    textAlign = TextAlign.Center,
-                )
+            Text(
+                text = uiState.displayScoreText,
+                color = foregroundColor,
+                fontSize = 58.sp,
+                fontWeight = FontWeight.Black,
+                lineHeight = 58.sp,
+                textAlign = TextAlign.Center,
+            )
 
-                Text(
-                    text = uiState.displayLabel,
-                    color = foregroundColor,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            } else {
-                Text(
-                    text = uiState.displayLabel,
-                    color = foregroundColor,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                )
-
-                Text(
-                    text = "CRM",
-                    color = foregroundColor.copy(alpha = 0.85f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
+            Text(
+                text = uiState.displayLabel,
+                color = foregroundColor,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.padding(top = 2.dp),
+            )
 
             Text(
                 text = statusText,
@@ -211,17 +228,26 @@ fun CrmReserveScreen(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
+                maxLines = 2,
                 modifier = Modifier.padding(top = 4.dp),
             )
 
+            Spacer(modifier = Modifier.weight(1f))
+
+
             Box(
                 modifier = Modifier
-                    .padding(top = 12.dp)
+                    .padding(bottom = 14.dp)
                     .clip(RoundedCornerShape(50))
                     .background(
-                        foregroundColor.copy(
-                            alpha = if (samplingButtonEnabled) 0.20f else 0.08f
+                        samplingButtonColor.copy(
+                            alpha = if (samplingButtonEnabled) 1f else 0.65f
                         )
+                    )
+                    .border(
+                        width = 2.dp,
+                        color = samplingButtonBorderColor,
+                        shape = RoundedCornerShape(50),
                     )
                     .clickable(enabled = samplingButtonEnabled) {
                         onSamplingClick()
@@ -234,28 +260,34 @@ fun CrmReserveScreen(
             ) {
                 Text(
                     text = samplingButtonText,
-                    color = foregroundColor.copy(
-                        alpha = if (samplingButtonEnabled) 1f else 0.55f
+                    color = Color.White.copy(
+                        alpha = if (samplingButtonEnabled) 1f else 0.75f
                     ),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                 )
             }
-
         }
 
         if (onBackClick != null) {
-            Text(
-                text = "Back",
-                color = foregroundColor.copy(alpha = 0.85f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
+                    .align(Alignment.CenterStart)
+                    .width(36.dp)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(foregroundColor.copy(alpha = 0.18f))
                     .clickable { onBackClick() },
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "‹",
+                    color = foregroundColor,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
 
         if (uiState.hasValidScore) {
@@ -264,10 +296,10 @@ fun CrmReserveScreen(
                 hasValidScore = true,
                 thresholds = uiState.thresholds,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
-                    .width(132.dp)
-                    .height(24.dp),
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 5.dp)
+                    .width(28.dp)
+                    .height(132.dp),
             )
         }
     }
@@ -297,7 +329,7 @@ private fun crmStatusText(
             "Stopping measurement"
 
         CrmSamplingState.NOT_WORN ->
-            "Please wear device to begin CRM"
+            "Wear device to begin CRM"
 
         CrmSamplingState.UNAVAILABLE ->
             "PPG sensor unavailable"
@@ -308,19 +340,19 @@ private fun crmStatusText(
         CrmSamplingState.IDLE -> {
             when (uiState.status) {
                 CrmInferenceStatus.NOT_WORN ->
-                    "Please wear device to begin CRM"
+                    "Wear device to begin CRM"
 
                 CrmInferenceStatus.REJECTED ->
                     uiState.rejectionReason
                         ?.takeIf { it.isNotBlank() }
-                        ?.let { "Adjust strap: $it" }
-                        ?: "Adjust strap for better signal"
+                        ?.let { "Adjust strap." }
+                        ?: "Adjust strap."
 
                 CrmInferenceStatus.ERROR ->
                     "CRM unavailable"
 
                 else ->
-                    "Press Start Sample to begin CRM"
+                    "Press Start begin CRM"
             }
         }
     }
@@ -349,59 +381,113 @@ private fun DrawScope.drawThresholdBar(
     hasValidScore: Boolean,
     thresholds: CrmThresholdRanges,
 ) {
-    val barHeight = 7.dp.toPx()
-    val tickHeight = 13.dp.toPx()
-    val markerHeight = 7.dp.toPx()
+    val barWidth = 9.dp.toPx()
+    val tickWidth = 15.dp.toPx()
+    val markerSize = 7.dp.toPx()
 
-    val barTop = size.height - barHeight
-    val barWidth = size.width
+    val barLeft = 0f
+    val barHeight = size.height
 
-    val poorEndX = barWidth * (thresholds.poorMax.coerceIn(0, 100) / 100f)
-    val moderateEndX = barWidth * (thresholds.moderateMax.coerceIn(0, 100) / 100f)
+    fun scoreToY(value: Int): Float {
+        return barHeight * (1f - value.coerceIn(0, 100) / 100f)
+    }
 
-    drawRoundedSegment(
-        color = CrmPoorColor,
-        startX = 0f,
-        endX = poorEndX,
-        top = barTop,
-        height = barHeight,
-    )
+    val poorBoundaryY = scoreToY(thresholds.poorMax)
+    val moderateBoundaryY = scoreToY(thresholds.moderateMax)
 
-    drawRoundedSegment(
-        color = CrmModerateColor,
-        startX = poorEndX,
-        endX = moderateEndX,
-        top = barTop,
-        height = barHeight,
-    )
-
-    drawRoundedSegment(
+    drawVerticalRoundedSegment(
         color = CrmGoodColor,
-        startX = moderateEndX,
-        endX = barWidth,
-        top = barTop,
-        height = barHeight,
+        left = barLeft,
+        top = 0f,
+        bottom = moderateBoundaryY,
+        width = barWidth,
     )
 
-    drawThresholdTick(
-        x = poorEndX,
-        top = barTop - tickHeight / 2f,
-        height = tickHeight,
+    drawVerticalRoundedSegment(
+        color = CrmModerateColor,
+        left = barLeft,
+        top = moderateBoundaryY,
+        bottom = poorBoundaryY,
+        width = barWidth,
     )
 
-    drawThresholdTick(
-        x = moderateEndX,
-        top = barTop - tickHeight / 2f,
-        height = tickHeight,
+    drawVerticalRoundedSegment(
+        color = CrmPoorColor,
+        left = barLeft,
+        top = poorBoundaryY,
+        bottom = barHeight,
+        width = barWidth,
+    )
+
+    // Dark outer border so the bar remains visible
+    // even when the bar color matches the screen background.
+    drawRoundRect(
+        color = Color.Black.copy(alpha = 0.55f),
+        topLeft = Offset(
+            x = barLeft - 1.dp.toPx(),
+            y = -1.dp.toPx(),
+        ),
+        size = Size(
+            width = barWidth + 2.dp.toPx(),
+            height = barHeight + 2.dp.toPx(),
+        ),
+        cornerRadius = CornerRadius(
+            x = barWidth / 2f + 1.dp.toPx(),
+            y = barWidth / 2f + 1.dp.toPx(),
+        ),
+        style = Stroke(
+            width = 2.dp.toPx(),
+        ),
+    )
+
+    // Thin white inner border for extra contrast.
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.9f),
+        topLeft = Offset(
+            x = barLeft,
+            y = 0f,
+        ),
+        size = Size(
+            width = barWidth,
+            height = barHeight,
+        ),
+        cornerRadius = CornerRadius(
+            x = barWidth / 2f,
+            y = barWidth / 2f,
+        ),
+        style = Stroke(
+            width = 1.dp.toPx(),
+        ),
+    )
+
+    drawVerticalThresholdTick(
+        y = moderateBoundaryY,
+        left = barLeft - tickWidth / 2f,
+        width = tickWidth,
+    )
+
+    drawVerticalThresholdTick(
+        y = poorBoundaryY,
+        left = barLeft - tickWidth / 2f,
+        width = tickWidth,
     )
 
     if (hasValidScore && score != null) {
-        val markerX = barWidth * (score.coerceIn(0, 100) / 100f)
+        val markerY = scoreToY(score)
 
         val markerPath = Path().apply {
-            moveTo(markerX, barTop - 2.dp.toPx())
-            lineTo(markerX - markerHeight, barTop - markerHeight - 2.dp.toPx())
-            lineTo(markerX + markerHeight, barTop - markerHeight - 2.dp.toPx())
+            moveTo(
+                barLeft + barWidth + 2.dp.toPx(),
+                markerY,
+            )
+            lineTo(
+                barLeft + barWidth + markerSize + 2.dp.toPx(),
+                markerY - markerSize,
+            )
+            lineTo(
+                barLeft + barWidth + markerSize + 2.dp.toPx(),
+                markerY + markerSize,
+            )
             close()
         }
 
@@ -411,6 +497,132 @@ private fun DrawScope.drawThresholdBar(
         )
     }
 }
+
+//private fun DrawScope.drawThresholdBar(
+//    score: Int?,
+//    hasValidScore: Boolean,
+//    thresholds: CrmThresholdRanges,
+//) {
+//    val barWidth = 7.dp.toPx()
+//    val tickWidth = 13.dp.toPx()
+//    val markerSize = 7.dp.toPx()
+//
+//    val barLeft = 0f
+//    val barHeight = size.height
+//
+//    /*
+//     * Higher values appear toward the top:
+//     *
+//     * 100  Good
+//     *      Moderate
+//     *   0  Poor
+//     */
+//    fun scoreToY(value: Int): Float {
+//        return barHeight * (1f - value.coerceIn(0, 100) / 100f)
+//    }
+//
+//    val poorBoundaryY = scoreToY(thresholds.poorMax)
+//    val moderateBoundaryY = scoreToY(thresholds.moderateMax)
+//
+//    drawVerticalRoundedSegment(
+//        color = CrmGoodColor,
+//        left = barLeft,
+//        top = 0f,
+//        bottom = moderateBoundaryY,
+//        width = barWidth,
+//    )
+//
+//    drawVerticalRoundedSegment(
+//        color = CrmModerateColor,
+//        left = barLeft,
+//        top = moderateBoundaryY,
+//        bottom = poorBoundaryY,
+//        width = barWidth,
+//    )
+//
+//    drawVerticalRoundedSegment(
+//        color = CrmPoorColor,
+//        left = barLeft,
+//        top = poorBoundaryY,
+//        bottom = barHeight,
+//        width = barWidth,
+//    )
+//
+//    drawRoundRect(
+//        color = Color.White.copy(alpha = 0.9f),
+//        topLeft = Offset(barLeft, 0f),
+//        size = Size(barWidth, barHeight),
+//        cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
+//        style = Stroke(width = 1.5.dp.toPx()),
+//    )
+//
+//    drawVerticalThresholdTick(
+//        y = moderateBoundaryY,
+//        left = barLeft - tickWidth / 2f,
+//        width = tickWidth,
+//    )
+//
+//    drawVerticalThresholdTick(
+//        y = poorBoundaryY,
+//        left = barLeft - tickWidth / 2f,
+//        width = tickWidth,
+//    )
+//
+//    if (hasValidScore && score != null) {
+//        val markerY = scoreToY(score)
+//
+//        val markerPath = Path().apply {
+//            moveTo(barLeft + barWidth + 2.dp.toPx(), markerY)
+//            lineTo(
+//                barLeft + barWidth + markerSize + 2.dp.toPx(),
+//                markerY - markerSize,
+//            )
+//            lineTo(
+//                barLeft + barWidth + markerSize + 2.dp.toPx(),
+//                markerY + markerSize,
+//            )
+//            close()
+//        }
+//
+//        drawPath(
+//            path = markerPath,
+//            color = Color.White,
+//        )
+//    }
+//}
+
+private fun DrawScope.drawVerticalRoundedSegment(
+    color: Color,
+    left: Float,
+    top: Float,
+    bottom: Float,
+    width: Float,
+) {
+    val height = (bottom - top).coerceAtLeast(0f)
+
+    if (height <= 0f) return
+
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(left, top),
+        size = Size(width, height),
+        cornerRadius = CornerRadius(width / 2f, width / 2f),
+    )
+}
+
+private fun DrawScope.drawVerticalThresholdTick(
+    y: Float,
+    left: Float,
+    width: Float,
+) {
+    drawLine(
+        color = Color.White.copy(alpha = 0.95f),
+        start = Offset(left, y),
+        end = Offset(left + width, y),
+        strokeWidth = Stroke.DefaultMiter,
+    )
+}
+
 
 @Composable
 private fun rememberNowMillisTicker(): Long {
