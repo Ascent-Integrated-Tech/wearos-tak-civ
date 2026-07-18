@@ -2410,6 +2410,7 @@ class MainActivity : ComponentActivity() {
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
                 enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
+                CepProvider.getOrCreateEngine(context).updatePhysioAlertProfile()
                 Handler(Looper.getMainLooper()).postDelayed({
                     EventBus.getDefault().post(
                         MessageEvent(
