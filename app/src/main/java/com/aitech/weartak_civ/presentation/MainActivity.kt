@@ -3046,6 +3046,8 @@ fun selectedMetricIconFromKey(key: String?): Int {
         "key_steps" -> (R.drawable.steps)
         "key_skin_temp" -> (R.drawable.skin_temp)
         "key_exertion" -> (R.drawable.exertion)
+        "key_spo2" -> (R.drawable.oxygen_saturation)
+        "key_spo2_tier" -> (R.drawable.oxygen_saturation)
         "key_floors" -> (R.drawable.floors)
         "key_calories" -> (R.drawable.calories)
         else ->

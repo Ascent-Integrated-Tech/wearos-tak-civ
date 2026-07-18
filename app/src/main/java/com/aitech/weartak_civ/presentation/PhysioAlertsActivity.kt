@@ -376,8 +376,8 @@ fun ExpandableCard() {
         Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"),
         Utils.SelectedPhysioMetric("key_floors",painterResource(id = R.drawable.floors), stringResource(R.string.floors), if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"),
         Utils.SelectedPhysioMetric("key_calories",painterResource(id = R.drawable.calories), stringResource(R.string.calories), if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"),
-        Utils.SelectedPhysioMetric("key_spo2", painterResource(id = R.drawable.heart_rate), "SpO2", latestSpo2.value?.let { "${it.formatDecimal(1)}%" } ?: "---"),
-        Utils.SelectedPhysioMetric("key_spo2_tier", painterResource(id = R.drawable.heart_rate), "SpO2 Tier", latestSpo2TierEvent.value?.tier?.name ?: "NONE")
+        Utils.SelectedPhysioMetric("key_spo2", painterResource(id = R.drawable.oxygen_saturation), "SpO2", latestSpo2.value?.let { "${it.formatDecimal(1)}%" } ?: "---"),
+        Utils.SelectedPhysioMetric("key_spo2_tier", painterResource(id = R.drawable.oxygen_saturation), "SpO2 Tier", latestSpo2TierEvent.value?.tier?.name ?: "NONE")
     )
 
     Card(
