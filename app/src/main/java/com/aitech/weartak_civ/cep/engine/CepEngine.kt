@@ -77,6 +77,7 @@ class CepEngine(
 
     private companion object {
         const val PRESSURE_IMMERSION_DISABLED_REASON = "settings.pressure.immersion_alerts_enabled=0"
+        const val PHYSIO_ALERT_DISABLED_REASON = "settings.physio.alerts_enabled=0"
     }
 
     fun start() {
@@ -176,6 +177,19 @@ class CepEngine(
         }
     }
 
+    fun updatePhysioAlertProfile() {
+        scope.launch {
+            loadPhysioAlertProfile()
+            if (authoritative.get()) {
+                try {
+                    applyPhysioAlertHygiene()
+                } catch (t: Throwable) {
+                    Log.e("CEP", "Failed to clear disabled physio alerts after profile update", t)
+                }
+            }
+        }
+    }
+
     fun updateHrrProfile() {
         scope.launch { loadHrrProfile() }
     }
@@ -269,6 +283,7 @@ class CepEngine(
     suspend fun warmUp() {
         loadHrProfile()
         loadHrrProfile()
+        loadPhysioAlertProfile()
         loadPressureProfile()
         updateSpo2Profile()
         updateSustainOverrides()
@@ -284,6 +299,18 @@ class CepEngine(
             clearDisabledPressureAlertsFromRepository()
         } catch (t: Throwable) {
             Log.e("CEP", "Failed to apply pressure alert hygiene from DataRepository", t)
+        }
+    }
+
+    /**
+     * Post-swap physio hygiene pass. This mirrors the pressure hygiene path so disabled
+     * HR / HRR / HRV alerts are cleared on startup and after managed-config swaps.
+     */
+    suspend fun applyPhysioAlertHygiene() {
+        try {
+            clearDisabledPhysioAlertsFromRepository()
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to apply physio alert hygiene from DataRepository", t)
         }
     }
 
@@ -639,6 +666,38 @@ class CepEngine(
         val lowAtmOn = dataRepository.getEnableLowAtmPressureAlert.first()
         val highAtmOn = dataRepository.getEnableHighAtmPressureAlert.first()
         clearDisabledPressureAlerts(lowAtmOn = lowAtmOn, highAtmOn = highAtmOn, immersionOn = immersionOn)
+    }
+
+    private suspend fun loadPhysioAlertProfile() {
+        try {
+            val physioAlertsOn = dataRepository.getEnablePhysiologicalAlerts.first()
+            featureStore.put(
+                "settings.physio.alerts_enabled",
+                if (physioAlertsOn) 1.0 else 0.0
+            )
+            Log.d("CEP", "Updated physio alert flag: alertsOn=$physioAlertsOn")
+        } catch (t: Throwable) {
+            Log.e("CEP", "Failed to update physio alert flag from DataRepository", t)
+        }
+    }
+
+    private suspend fun clearDisabledPhysioAlertsFromRepository() {
+        val physioAlertsOn = dataRepository.getEnablePhysiologicalAlerts.first()
+        if (physioAlertsOn) return
+
+        AlertRegistry.allActive()
+            .map { it.ruleId }
+            .filter { ruleId ->
+                ruleId.startsWith("hr_") ||
+                    ruleId.startsWith("hrv_") ||
+                    ruleId.startsWith("exertion_")
+            }
+            .forEach { ruleId ->
+                clearActiveAlertByRuleId(
+                    ruleId = ruleId,
+                    reason = PHYSIO_ALERT_DISABLED_REASON
+                )
+            }
     }
 
 }

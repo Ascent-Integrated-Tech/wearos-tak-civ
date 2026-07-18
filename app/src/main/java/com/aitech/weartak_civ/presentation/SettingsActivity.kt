@@ -6878,6 +6878,7 @@ fun SettingsScreen(
                              if (physiologicalAlertsCheckedChanged) {
                                  Log.d(TAG, "Storing enablePhysiologicalAlerts $enablePhysiologicalAlerts")
                                  dataRepository.storeEnablePhysiologicalAlerts(enablePhysiologicalAlerts)
+                                 CepProvider.getOrCreateEngine(context).updatePhysioAlertProfile()
                                  Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(MessageEvent(PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED, if (enablePhysiologicalAlerts) {1} else {0}))}, EVENT_SEND_DELAY_MS)
                              }
 
