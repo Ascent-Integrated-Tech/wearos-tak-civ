@@ -502,6 +502,8 @@ private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
     enableCrmServiceSettingsState.postValue(enableCrmService)
+    crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
+    crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
     enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
@@ -1020,8 +1022,34 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable("sitx_status_authorization_screen") {
             SitxStatusAuthorizationScreen(navController, sitxVm)
         }
-    }
+        composable("crm_thresholds_screen") {
+            CrmThresholdSettings(navController)
+        }
 
+        composable("crm_poor_threshold_screen") {
+            NumericEntryPage(
+                navController = navController,
+                metricSettingState = crmPoorMaxThresholdSettingsState,
+                maximum = 100,
+                minimum = 0,
+                label = "Poor Maximum",
+                context = context,
+                route = "crm_thresholds_screen"
+            )
+        }
+
+        composable("crm_moderate_threshold_screen") {
+            NumericEntryPage(
+                navController = navController,
+                metricSettingState = crmModerateMaxThresholdSettingsState,
+                maximum = 100,
+                minimum = 0,
+                label = "Moderate Maximum",
+                context = context,
+                route = "crm_thresholds_screen"
+            )
+        }
+    }
 }
 
 @Composable
@@ -1113,6 +1141,75 @@ fun CallsignRoleTeamChip(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+fun CrmThresholdSettings(navController: NavController) {
+    WearTakCivScreenDimensions(
+        columnContent = {
+            DataMetricsChip(
+                route = "crm_poor_threshold_screen",
+                title = "Poor Maximum",
+                nameSecondary = crmPoorMaxThresholdSettingsState.value.toString(),
+                navController = navController
+            )
+
+            DataMetricsChip(
+                route = "crm_moderate_threshold_screen",
+                title = "Moderate Maximum",
+                nameSecondary = crmModerateMaxThresholdSettingsState.value.toString(),
+                navController = navController
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "CRM threshold settings not saved")
+
+                    crmPoorMaxThresholdSettingsState.setValue(
+                        crmPoorMaxThreshold
+                    )
+                    crmModerateMaxThresholdSettingsState.setValue(
+                        crmModerateMaxThreshold
+                    )
+
+                    navController.navigate("settings_screen") {
+                        popUpTo("settings_screen") {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    val poorMax =
+                        crmPoorMaxThresholdSettingsState.value
+                            ?: crmPoorMaxThreshold
+
+                    val moderateMax =
+                        crmModerateMaxThresholdSettingsState.value
+                            ?: crmModerateMaxThreshold
+
+                    if (poorMax >= moderateMax) {
+                        Toast.makeText(
+                            mainActivity,
+                            "Poor maximum must be less than moderate maximum",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        return@ConfirmCancelButtons
+                    }
+
+                    navController.navigate("settings_screen") {
+                        popUpTo("settings_screen") {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
+        },
+        text = "CRM Thresholds"
     )
 }
 
@@ -5159,7 +5256,6 @@ fun SettingsScreen(
     val displayedSecondaryText by saveBattOnWifiStringState.observeAsState()
     val onnxGunshotDetectCheckedLive by enableOnnxGunshotServiceSettingsState.observeAsState()
     val onnxUasDetectCheckedLive by enableOnnxUasServiceSettingsState.observeAsState()
-    val crmCheckedLive by enableCrmServiceSettingsState.observeAsState()
     val coroutineScope = rememberCoroutineScope()
     var versionTapCount by remember { mutableStateOf(0) }
     var lastVersionTapTime by remember { mutableStateOf(0L) }
@@ -5545,26 +5641,61 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(top = 3.dp)
             )
-            SettingsToggleWithClickOnEnabledChip(
-                checkedLive = crmCheckedLive,
-                onCheckedChange = {
-                    enableCrmServiceSettingsState.postValue(it)
-                },
-                title = "CRM Reserve",
-                description = if (crmCheckedLive == true) {
-                    "Thresholds →"
-                } else {
-                    stringResource(R.string.service_on_off)
-                },
-                detailsEnabled = crmCheckedLive == true,
-                onDetailsClick = {
-                    crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
-                    crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
+//            SettingsToggleWithClickOnEnabledChip(
+//                checkedLive = crmCheckedLive,
+//                onCheckedChange = {
+//                    enableCrmServiceSettingsState.postValue(it)
+//                },
+//                title = "CRM Reserve",
+//                description = if (crmCheckedLive == true) {
+//                    "Thresholds →"
+//                } else {
+//                    stringResource(R.string.service_on_off)
+//                },
+//                detailsEnabled = crmCheckedLive == true,
+//                onDetailsClick = {
+//                    crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
+//                    crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
+//
+//                    navController.navigate("crm_thresholds_screen") {
+//                        popUpTo("crm_thresholds_screen") { inclusive = true }
+//                    }
+//                }
+//            )
+            Chip(
+                onClick = {
+                    crmPoorMaxThresholdSettingsState.postValue(
+                        crmPoorMaxThreshold
+                    )
+                    crmModerateMaxThresholdSettingsState.postValue(
+                        crmModerateMaxThreshold
+                    )
 
                     navController.navigate("crm_thresholds_screen") {
-                        popUpTo("crm_thresholds_screen") { inclusive = true }
+                        popUpTo("crm_thresholds_screen") {
+                            inclusive = true
+                        }
                     }
-                }
+                },
+                enabled = true,
+                label = {
+                    Text(text = "CRM Settings")
+                },
+                secondaryLabel = {
+                    Text(
+                        text = "Thresholds →",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = Color.DarkGray,
+                    contentColor = Color.White,
+                    secondaryContentColor = Color.LightGray
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 3.dp)
             )
 
             Chip(

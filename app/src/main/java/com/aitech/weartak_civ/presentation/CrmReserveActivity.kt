@@ -17,11 +17,12 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -89,10 +90,12 @@ class CrmReserveActivity : ComponentActivity() {
 
                 val uiState by crmViewModel.uiState.collectAsStateWithLifecycle()
                 val samplingState by crmViewModel.samplingState.collectAsStateWithLifecycle()
+                val waveformSamples by crmViewModel.waveformSamples.collectAsStateWithLifecycle()
 
                 CrmReserveScreen(
                     uiState = uiState,
                     samplingState = samplingState,
+                    waveformSamples = waveformSamples,
                     onSamplingClick = crmViewModel::onSamplingButtonClick,
                     onBackClick = { finish() },
                 )
@@ -107,10 +110,15 @@ fun CrmReserveScreen(
     uiState: CrmUiState,
     samplingState: CrmDataRepository.CrmSamplingState,
     modifier: Modifier = Modifier,
+    waveformSamples: List<Float>,
     onSamplingClick: () -> Unit,
     onBackClick: (() -> Unit)? = null,
 ) {
     val nowMillis = rememberNowMillisTicker()
+
+    var showWaveform by remember {
+        mutableStateOf(false)
+    }
 
     val ageLabel = crmAgeLabel(
         nowMillis = nowMillis,
@@ -195,7 +203,7 @@ fun CrmReserveScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "CRM",
+                text = if (showWaveform) "PPG SIGNAL" else "CRM",
                 color = foregroundColor.copy(alpha = 0.9f),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
@@ -203,41 +211,68 @@ fun CrmReserveScreen(
                 textAlign = TextAlign.Center,
             )
 
-            Text(
-                text = uiState.displayScoreText,
-                color = foregroundColor,
-                fontSize = 58.sp,
-                fontWeight = FontWeight.Black,
-                lineHeight = 58.sp,
-                textAlign = TextAlign.Center,
-            )
-
-            Text(
-                text = uiState.displayLabel,
-                color = foregroundColor,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-
-            Text(
-                text = statusText,
-                color = foregroundColor.copy(alpha = 0.85f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (showWaveform) {
+                    CrmPpgWaveformContent(
+                        samples = waveformSamples,
+                        samplingState = samplingState,
+                        foregroundColor = foregroundColor,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    CrmScoreContent(
+                        uiState = uiState,
+                        statusText = statusText,
+                        foregroundColor = foregroundColor,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
 
             Box(
                 modifier = Modifier
-                    .padding(bottom = 14.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        foregroundColor.copy(alpha = 0.18f)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = foregroundColor.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(50),
+                    )
+                    .clickable {
+                        showWaveform = !showWaveform
+                    }
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 5.dp,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (showWaveform) {
+                        "Show CRM"
+                    } else {
+                        "Show PPG"
+                    },
+                    color = foregroundColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .padding(
+                        top = 6.dp,
+                        bottom = 8.dp,
+                    )
                     .clip(RoundedCornerShape(50))
                     .background(
                         samplingButtonColor.copy(
@@ -356,6 +391,192 @@ private fun crmStatusText(
             }
         }
     }
+}
+
+@Composable
+private fun CrmScoreContent(
+    uiState: CrmUiState,
+    statusText: String,
+    foregroundColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = uiState.displayScoreText,
+            color = foregroundColor,
+            fontSize = 58.sp,
+            fontWeight = FontWeight.Black,
+            lineHeight = 58.sp,
+            textAlign = TextAlign.Center,
+        )
+
+        Text(
+            text = uiState.displayLabel,
+            color = foregroundColor,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+
+        Text(
+            text = statusText,
+            color = foregroundColor.copy(alpha = 0.85f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun CrmPpgWaveformContent(
+    samples: List<Float>,
+    samplingState: CrmSamplingState,
+    foregroundColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        if (samples.size < 2) {
+            Text(
+                text = when (samplingState) {
+                    CrmSamplingState.STARTING ->
+                        "Starting PPG measurement"
+
+                    CrmSamplingState.SAMPLING ->
+                        "Waiting for PPG samples"
+
+                    CrmSamplingState.STOPPING ->
+                        "Stopping measurement"
+
+                    CrmSamplingState.NOT_WORN ->
+                        "Wear device to view signal"
+
+                    CrmSamplingState.UNAVAILABLE ->
+                        "PPG sensor unavailable"
+
+                    CrmSamplingState.ERROR ->
+                        "PPG measurement error"
+
+                    CrmSamplingState.IDLE ->
+                        "Press Start to view PPG"
+                },
+                color = foregroundColor.copy(alpha = 0.85f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 10.dp),
+            )
+
+            return@Box
+        }
+
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    horizontal = 4.dp,
+                    vertical = 14.dp,
+                ),
+        ) {
+            drawPpgWaveform(
+                samples = samples,
+                color = foregroundColor,
+            )
+        }
+
+        Text(
+            text = "${samples.size} samples",
+            color = foregroundColor.copy(alpha = 0.65f),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 2.dp),
+        )
+    }
+}
+
+private fun DrawScope.drawPpgWaveform(
+    samples: List<Float>,
+    color: Color,
+) {
+    if (samples.size < 2) return
+
+    val minimum = samples.minOrNull() ?: return
+    val maximum = samples.maxOrNull() ?: return
+
+    val valueRange = (maximum - minimum)
+        .takeIf { it > 0.000001f }
+        ?: 1f
+
+    val horizontalPadding = 2.dp.toPx()
+    val verticalPadding = 8.dp.toPx()
+
+    val drawableWidth =
+        (size.width - horizontalPadding * 2f)
+            .coerceAtLeast(1f)
+
+    val drawableHeight =
+        (size.height - verticalPadding * 2f)
+            .coerceAtLeast(1f)
+
+    drawLine(
+        color = color.copy(alpha = 0.18f),
+        start = Offset(
+            x = horizontalPadding,
+            y = size.height / 2f,
+        ),
+        end = Offset(
+            x = size.width - horizontalPadding,
+            y = size.height / 2f,
+        ),
+        strokeWidth = 1.dp.toPx(),
+    )
+
+    val path = Path()
+
+    samples.forEachIndexed { index, sample ->
+        val horizontalProgress =
+            index.toFloat() /
+                    samples.lastIndex.coerceAtLeast(1).toFloat()
+
+        val normalizedValue =
+            ((sample - minimum) / valueRange)
+                .coerceIn(0f, 1f)
+
+        val x =
+            horizontalPadding +
+                    horizontalProgress * drawableWidth
+
+        val y =
+            verticalPadding +
+                    (1f - normalizedValue) * drawableHeight
+
+        if (index == 0) {
+            path.moveTo(x, y)
+        } else {
+            path.lineTo(x, y)
+        }
+    }
+
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(
+            width = 2.dp.toPx(),
+        ),
+    )
 }
 
 @Composable

@@ -20,13 +20,15 @@ import com.aitech.weartak_civ.data.CrmInferenceStatus
 import com.aitech.weartak_civ.data.CrmThresholdRanges
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.google.android.horologist.compose.tools.themeValues
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.scan
+import java.util.ArrayDeque
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class CrmViewModel(
     private val crmDataRepository: CrmDataRepository,
@@ -36,6 +38,59 @@ class CrmViewModel(
 
     val samplingState: StateFlow<CrmSamplingState> =
         crmDataRepository.samplingState
+
+    private val _waveformSamples =
+        MutableStateFlow<List<Float>>(emptyList())
+
+    val waveformSamples: StateFlow<List<Float>> =
+        _waveformSamples.asStateFlow()
+
+    init {
+        collectRawPpgWaveform()
+    }
+
+    private fun collectRawPpgWaveform() {
+        viewModelScope.launch {
+            val sampleBuffer = ArrayDeque<Float>(CRM_WAVEFORM_SAMPLE_COUNT)
+
+            var lastPublishedAtMillis = 0L
+
+            crmDataRepository.rawPpgSamples.collect { sample ->
+                val rawValue = sample.rawValue
+
+                val sampleIsUsable =
+                    sample.sourceAvailable &&
+                            sample.deviceWorn &&
+                            rawValue != null &&
+                            rawValue.isFinite()
+
+                if (!sampleIsUsable) {
+                    if (sampleBuffer.isNotEmpty()) {
+                        sampleBuffer.clear()
+                        _waveformSamples.value = emptyList()
+                    }
+
+                    return@collect
+                }
+
+                sampleBuffer.addLast(rawValue)
+
+                while (sampleBuffer.size > CRM_WAVEFORM_SAMPLE_COUNT) {
+                    sampleBuffer.removeFirst()
+                }
+
+                val nowMillis = sample.uptimeMillis
+
+                if (
+                    nowMillis - lastPublishedAtMillis >=
+                    CRM_WAVEFORM_PUBLISH_INTERVAL_MS
+                ) {
+                    _waveformSamples.value = sampleBuffer.toList()
+                    lastPublishedAtMillis = nowMillis
+                }
+            }
+        }
+    }
 
     fun onSamplingButtonClick() {
         when (samplingState.value) {
@@ -133,6 +188,8 @@ class CrmViewModel(
 
 private const val CRM_REQUIRED_SAMPLE_COUNT = 500
 private const val CRM_RECENT_READING_MAX_AGE_MS = 30_000L
+private const val CRM_WAVEFORM_SAMPLE_COUNT = 500
+private const val CRM_WAVEFORM_PUBLISH_INTERVAL_MS = 100L
 
 data class CrmUiState(
     val score: Int?,
