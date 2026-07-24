@@ -3,8 +3,12 @@ package com.aitech.weartak_civ.cep.engine
 import android.content.Context
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cep.metric.MetricBaselinePolicy
+import com.aitech.weartak_civ.cep.metric.MetricCalculationPolicy
+import com.aitech.weartak_civ.cep.metric.MetricActivityContext
 import com.aitech.weartak_civ.cep.metric.MetricConfidenceThresholds
 import com.aitech.weartak_civ.cep.metric.MetricGatingPolicy
+import com.aitech.weartak_civ.cep.metric.MetricEstablishmentPolicy
+import com.aitech.weartak_civ.cep.metric.MetricValidityPolicy
 import com.aitech.weartak_civ.cep.metric.MetricProcessorType
 import com.aitech.weartak_civ.cep.metric.MetricSelectedOutputMapping
 import com.aitech.weartak_civ.cep.metric.MetricSpec
@@ -72,14 +76,50 @@ object RuleCompiler {
                             gating.getInt("fresh_within_sec")
                         } else {
                             null
-                        }
+                        },
+                        activityContext = when (gating.optString("activity_context", "ANY").uppercase()) {
+                            "RESTING" -> MetricActivityContext.RESTING
+                            "ACTIVE" -> MetricActivityContext.ACTIVE
+                            else -> MetricActivityContext.ANY
+                        },
+                        minContextDwellSec = gating.optLong("min_context_dwell_sec", 0L),
+                        restingCooldownSec = gating.optLong("resting_cooldown_sec", 0L)
                     )
                 } ?: MetricGatingPolicy(),
+                validity = o.optJSONObject("validity")?.let { validity ->
+                    MetricValidityPolicy(
+                        minValue = if (validity.has("min_value") && !validity.isNull("min_value")) {
+                            validity.getDouble("min_value")
+                        } else null,
+                        maxValue = if (validity.has("max_value") && !validity.isNull("max_value")) {
+                            validity.getDouble("max_value")
+                        } else null
+                    )
+                } ?: MetricValidityPolicy(),
                 baseline = MetricBaselinePolicy(
                     estimator = o.getJSONObject("baseline").optString("estimator", "trimmed_mean"),
+                    transform = o.getJSONObject("baseline").optString("transform", "none"),
                     windowSec = o.getJSONObject("baseline").getInt("window_sec"),
                     minSamples = o.getJSONObject("baseline").getInt("min_samples"),
                     maxStalenessSec = o.getJSONObject("baseline").getInt("max_staleness_sec"),
+                    establishment = o.optJSONObject("baseline")?.optJSONObject("establishment")?.let { establishment ->
+                        MetricEstablishmentPolicy(
+                            minCoverageSec = establishment.optLong("min_coverage_sec", 0L),
+                            minActiveDays = establishment.optInt("min_active_days", 0),
+                            minConfidence = establishment.optDouble("min_confidence", 0.0),
+                            maxGapSec = establishment.optLong("max_gap_sec", 0L)
+                        )
+                    } ?: MetricEstablishmentPolicy(),
+                    coverageTargetSec = o.getJSONObject("baseline").optLong("coverage_target_sec", 0L)
+                        .takeIf { it > 0L },
+                    stabilityWeight = o.getJSONObject("baseline").optDouble("stability_weight", 1.0),
+                    calculation = o.getJSONObject("baseline").optJSONObject("calculation_cache")?.let { cache ->
+                        MetricCalculationPolicy(
+                            warmingMaxAgeSec = cache.optLong("warming_max_age_sec", 900L),
+                            warmingSampleTrigger = cache.optLong("warming_sample_trigger", 10L),
+                            establishedMaxAgeSec = cache.optLong("established_max_age_sec", 21_600L)
+                        )
+                    } ?: MetricCalculationPolicy(),
                     confidenceThresholds = MetricConfidenceThresholds(
                         warming = confidence.getInt("warming"),
                         readyLow = confidence.getInt("ready_low"),
@@ -93,7 +133,11 @@ object RuleCompiler {
                     enterPercent = o.getJSONObject("trend").getDouble("enter_percent"),
                     returnToStableInnerPercent = o.getJSONObject("trend").getDouble("return_to_stable_inner_percent")
                 ),
-                selectedOutputs = MetricSelectedOutputMapping(selectedMap)
+                selectedOutputs = MetricSelectedOutputMapping(selectedMap),
+                topic = if (o.has("topic") && !o.isNull("topic")) o.getString("topic") else null,
+                scalarField = if (o.has("scalar_field") && !o.isNull("scalar_field")) {
+                    o.getString("scalar_field")
+                } else null
             )
         return try {
             val cadence = parseEngineCadence(root.optJSONObject("engine"))

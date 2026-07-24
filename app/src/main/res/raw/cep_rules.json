@@ -16,6 +16,7 @@
     {
       "id": "hrv.rmssd_ms",
       "source": "hrv.rmssd_ms",
+      "topic": "hrv",
       "processor": "baseline_trend",
       "source_hook": "samsung_hrv_rmssd",
       "gating": {
@@ -23,11 +24,26 @@
         "still_or_sleeping": true,
         "fresh_within_sec": 10
       },
+      "validity": {
+        "min_value": 1.0
+      },
       "baseline": {
-        "estimator": "trimmed_mean",
+        "estimator": "time_weighted_mean",
+        "transform": "ln",
         "window_sec": 604800,
         "min_samples": 20,
         "max_staleness_sec": 43200,
+        "establishment": {
+          "min_coverage_sec": 86400,
+          "min_active_days": 3,
+          "min_confidence": 0.50,
+          "max_gap_sec": 21600
+        },
+        "calculation_cache": {
+          "warming_max_age_sec": 900,
+          "warming_sample_trigger": 10,
+          "established_max_age_sec": 21600
+        },
         "confidence_thresholds": {
           "warming": 5,
           "ready_low": 10,
@@ -47,23 +63,51 @@
         "trend_long_term": "selected.trends.hrv.long_term",
         "low_threshold": "selected.thresholds.hrv.low_rmssd_ms",
         "low_threshold_warn": "selected.thresholds.hrv.low_rmssd_ms_warn",
-        "baseline_confidence": "selected.baseline.hrv.confidence"
+        "baseline_confidence": "selected.baseline.hrv.confidence",
+        "baseline_state": "selected.baseline.hrv.state",
+        "baseline_sample_count": "selected.baseline.hrv.sample_count",
+        "baseline_coverage_sec": "selected.baseline.hrv.coverage_sec",
+        "baseline_covered_sec": "selected.baseline.hrv.covered_sec",
+        "sampling_state": "selected.baseline.hrv.sampling_state"
       }
     },
     {
-      "id": "hr.resting_bpm",
+      "id": "hr.resting_bpm.resting",
       "source": "heart_rate",
+      "topic": "heart_rate",
+      "scalar_field": "bpm",
       "processor": "baseline_trend",
       "gating": {
         "on_wrist": true,
-        "still_or_sleeping": false,
-        "fresh_within_sec": 5
+        "still_or_sleeping": true,
+        "fresh_within_sec": 5,
+        "activity_context": "RESTING",
+        "min_context_dwell_sec": 60,
+        "resting_cooldown_sec": 300
+      },
+      "validity": {
+        "min_value": 20.0,
+        "max_value": 240.0
       },
       "baseline": {
         "estimator": "trimmed_mean",
+        "transform": "none",
         "window_sec": 86400,
         "min_samples": 20,
         "max_staleness_sec": 7200,
+        "coverage_target_sec": 21600,
+        "stability_weight": 1.0,
+        "establishment": {
+          "min_coverage_sec": 21600,
+          "min_active_days": 1,
+          "min_confidence": 0.50,
+          "max_gap_sec": 7200
+        },
+        "calculation_cache": {
+          "warming_max_age_sec": 900,
+          "warming_sample_trigger": 10,
+          "established_max_age_sec": 21600
+        },
         "confidence_thresholds": {
           "warming": 5,
           "ready_low": 10,
@@ -77,13 +121,73 @@
         "enter_percent": 6.0,
         "return_to_stable_inner_percent": 4.0
       },
-      "selected_outputs": {
+        "selected_outputs": {
+        "current_value": "selected.metrics.hr.current_bpm",
         "trend_direction": "selected.trends.hr.direction",
         "trend_short_term": "selected.trends.hr.short_term",
         "trend_long_term": "selected.trends.hr.long_term",
         "low_threshold": "selected.thresholds.hr.low_bpm",
         "low_threshold_warn": "selected.thresholds.hr.low_bpm_warn",
-        "baseline_confidence": "selected.baseline.hr.confidence"
+        "baseline_confidence": "selected.baseline.hr.confidence",
+        "baseline_state": "selected.baseline.hr.state",
+        "baseline_sample_count": "selected.baseline.hr.sample_count",
+        "baseline_coverage_sec": "selected.baseline.hr.coverage_sec",
+        "baseline_covered_sec": "selected.baseline.hr.covered_sec",
+        "sampling_state": "selected.baseline.hr.sampling_state"
+      }
+    },
+    {
+      "id": "hr.active_bpm",
+      "source": "heart_rate",
+      "topic": "heart_rate",
+      "processor": "baseline_trend",
+      "gating": {
+        "on_wrist": true,
+        "fresh_within_sec": 10,
+        "activity_context": "ACTIVE",
+        "min_context_dwell_sec": 30
+      },
+      "validity": { "min_value": 20.0, "max_value": 240.0 },
+      "baseline": {
+        "estimator": "trimmed_mean",
+        "transform": "none",
+        "window_sec": 604800,
+        "min_samples": 20,
+        "max_staleness_sec": 7200,
+        "coverage_target_sec": 21600,
+        "stability_weight": 0.0,
+        "establishment": {
+          "min_coverage_sec": 21600,
+          "min_active_days": 2,
+          "min_confidence": 0.50,
+          "max_gap_sec": 7200
+        },
+        "calculation_cache": {
+          "warming_max_age_sec": 900,
+          "warming_sample_trigger": 10,
+          "established_max_age_sec": 21600
+        },
+        "confidence_thresholds": { "warming": 5, "ready_low": 10, "medium": 20, "high": 40 }
+      },
+      "trend": {
+        "short_window_sec": 300,
+        "long_window_sec": 1800,
+        "enter_percent": 10.0,
+        "return_to_stable_inner_percent": 7.0
+      },
+      "selected_outputs": {
+        "current_value": "selected.metrics.hr.active.current_bpm",
+        "trend_direction": "selected.trends.hr.active.direction",
+        "trend_short_term": "selected.trends.hr.active.short_term",
+        "trend_long_term": "selected.trends.hr.active.long_term",
+        "low_threshold": "selected.thresholds.hr.active_low_bpm",
+        "low_threshold_warn": "selected.thresholds.hr.active_low_warn_bpm",
+        "baseline_confidence": "selected.baseline.hr.active.confidence",
+        "baseline_state": "selected.baseline.hr.active.state",
+        "baseline_sample_count": "selected.baseline.hr.active.sample_count",
+        "baseline_coverage_sec": "selected.baseline.hr.active.coverage_sec",
+        "baseline_covered_sec": "selected.baseline.hr.active.covered_sec",
+        "sampling_state": "selected.baseline.hr.active.sampling_state"
       }
     }
   ],
