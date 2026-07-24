@@ -134,7 +134,7 @@ class BaselineTrendProcessorConfidenceTest {
     }
 
     @Test
-    fun sampleMaturityCountsOnlyHotSamples_notWarmOrColdRepresentatives() {
+    fun sampleMaturityIncludesPersistedWarmAndColdEvidenceAfterRestart() {
         val spec = testSpec(minSamples = 10, windowSec = 30 * 86_400, maxStalenessSec = 86_400)
         val result = processor.compute(
             spec = spec,
@@ -177,11 +177,7 @@ class BaselineTrendProcessorConfidenceTest {
                 coldWindowSec = 30 * 24 * 3600L
             )
         )
-        val expectedMaturity = 2.0 / 10.0
-        val upperBoundWithoutMaturity = 1.0 * 1.0 * 1.0 * 1.0 // coverage*recency*stability ceilinged by horizon below
-        val horizonCeiling = 1.0 // 30-day window
-        val practicalUpperBound = expectedMaturity * upperBoundWithoutMaturity * horizonCeiling
-        assertTrue(result.confidence <= practicalUpperBound + 1e-6)
+        assertTrue("confidence=${result.confidence}", result.confidence > 0.20)
     }
 
     @Test
