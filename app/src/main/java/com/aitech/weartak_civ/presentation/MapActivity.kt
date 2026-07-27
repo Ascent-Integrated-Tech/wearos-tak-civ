@@ -8,6 +8,7 @@
  */
 package com.aitech.weartak_civ.presentation
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -51,6 +52,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Button
+import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.WearTakApplication
@@ -103,7 +105,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -128,6 +129,7 @@ import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.events.LocationUpdateRequired
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import org.greenrobot.eventbus.EventBus
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
@@ -150,7 +152,9 @@ import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
 import org.maplibre.compose.layers.LineLayer
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import org.maplibre.spatialk.geojson.FeatureCollection
@@ -158,8 +162,25 @@ import org.maplibre.spatialk.geojson.LineString
 import kotlin.String
 import kotlin.collections.component1
 import kotlin.collections.component2
+import androidx.navigation.NavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.Icon
+import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.aitech.weartak_civ.Utils.ChatRoom
+import com.aitech.weartak_civ.Utils.findChatRoomFromUserUid
+import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.service.BloodhoundService
+import com.aitech.weartak_civ.service.ChatService
 import org.maplibre.compose.expressions.dsl.asNumber
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.unit.Dp
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.log10
@@ -190,14 +211,49 @@ class MapActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
-                MapApp({finishAndRemoveTask()})
+                val context = LocalContext.current
+                MapCivApp({finishAndRemoveTask()}, context)
             }
+        }
+    }
+}
+
+@SuppressLint("StateFlowValueCalledInComposition")
+@Composable
+fun MapCivApp(exitActivity: () -> Unit, context: Context) {
+    val app = context.applicationContext as WearTakApplication
+
+    val dataRepository = remember(app) { app.repo }
+    val bhRepo = remember(app) { app.bhRepo }
+
+    val navController = rememberSwipeDismissableNavController()
+
+    val receivedUserListSetting by dataRepository
+        .receivedUserList
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
+
+    SwipeDismissableNavHost(
+        navController = navController,
+        startDestination = "map_screen"
+    ) {
+        composable("map_screen" ) {
+            MapApp({ exitActivity() }, navController)
+        }
+
+        composable(
+            "selected_user/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            SelectedUser(navController, index, receivedUserListSetting, chatRooms, context)
         }
     }
 }
 
 // DROPPED AND RECEIVED MARKER DATA
 // Converts marker data into GeoJSON features for MapLibre
+
 @Composable
 fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
     remember(markers) {
@@ -1113,7 +1169,7 @@ fun LayerTogglePopup(
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit) {
+fun MapApp(exitActivity: () -> Unit, navController: NavController) {
     // Access the application repository used by the map
     val context = LocalContext.current
 
@@ -1870,6 +1926,14 @@ fun MapApp(exitActivity: () -> Unit) {
                                                 it.role in visibleUserRolesLEO
                                         )
                     },
+                    onUserClick = { id, _ ->
+                        val index = receivedUserListSetting.indexOfFirst { it.uid == id }
+                        navController.navigate("selected_user/$index"){
+                            popUpTo(("selected_user/$index")) {
+                                inclusive = true
+                            }
+                        }
+                    },
                     camera = cameraState
                 )
             }
@@ -2112,9 +2176,96 @@ fun MapApp(exitActivity: () -> Unit) {
     }
 }
 
+@Composable
+fun SelectedUser(
+    navController: NavController,
+    index: Int,
+    receivedUserSetting: List<DataRepository.ReceivedUser>,
+    chatRooms: List<Utils.ChatRoom>,
+    context: Context,
+) {
+    Log.i(TAG, "User list: $receivedUserSetting")
+    var uid by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.uid.orEmpty()) }
+    var title by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.title.orEmpty()) }
+    var team by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.team.orEmpty()) }
 
 // MAP UI STATE
 // Controls popups, overlays, filters, and map buttons
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp)
+                    .verticalScroll(rememberScrollState()),
+
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.user_white),
+                    contentDescription = "Favorite icon",
+                    tint = TeamColors(team),
+                    modifier = Modifier.size(25.dp),
+                )
+                androidx.compose.material3.Text(
+                    text = title.ellipsizeMarkerTitle(14),
+                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 10.dp, bottom = 5.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Chip(
+                    onClick = {
+                            val intent = Intent(context, ChatActivity::class.java).apply {
+                                putExtra("user_uid", uid)
+                                putExtra("user_callsign", title)
+                                putExtra("from_maps", true)
+                            }
+                            context.startActivity(intent)
+
+                        navController.popBackStack()
+                    },
+                    enabled = true,
+                    label = { Text(text = "Open Chat") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                )
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                BackButton(
+                    onClick = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+        }
+    }
+}
+
+
 @Composable
 fun MapUi(
     moveUp: () -> Unit,

@@ -1710,7 +1710,6 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             "received_marker_detail/$index"
         else ->
             "marker_screen"
-
     }
 
     LaunchedEffect(licenseKey) {
