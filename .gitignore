@@ -50,5 +50,6 @@ google-services.json
 agent-rules
 /agent-rules
 AGENTS.md
+docs/
 .codex/
 docs/
