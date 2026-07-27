@@ -26,6 +26,7 @@ import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.coroutines.CancellationException
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
@@ -111,6 +112,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.emitAll
 import java.time.Instant
 import kotlinx.coroutines.flow.stateIn
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
@@ -123,12 +125,15 @@ import com.aitech.weartak_civ.service.HailService.HailLicenseStates
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
+import com.aitech.weartak_civ.data.secure.crypto.EncryptedSerializer.DecryptResult
+import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
 import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.withLock
 import java.time.Year
 import java.time.temporal.ChronoUnit
 import java.util.EnumMap
@@ -161,6 +166,7 @@ import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 import com.aitech.weartak_civ.manager.NetworkManager
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -2711,6 +2717,17 @@ class DataRepository(private val context: Context) {
         val p12CertPassword: String
     )
 
+    enum class TakServerAddResult {
+        ADDED,
+        DUPLICATE
+    }
+
+    enum class TakServerUpdateResult {
+        UPDATED,
+        DUPLICATE,
+        INVALID_INDEX
+    }
+
     private fun normalizeP12Password(password: String): String {
         val trimmed = password.trim()
         return if (trimmed.isEmpty()) "atakatak" else trimmed
@@ -2756,12 +2773,40 @@ class DataRepository(private val context: Context) {
             }
         }
 
+    suspend fun awaitTakServerList(): List<TakServerItem> {
+        awaitTakServerMigration()
+        return parseTakServerRead(takServerSecretsRepository.takServerListRead.first())
+    }
+
+    suspend fun tryAwaitTakServerList(): List<TakServerItem>? {
+        return try {
+            awaitTakServerList()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IllegalStateException) {
+            Log.e(TAG, "tryAwaitTakServerList: TAK list unavailable", error)
+            null
+        }
+    }
+
+    val getTakServerListReady: Flow<List<TakServerItem>> = flow {
+        awaitTakServerMigration()
+        emitAll(takServerSecretsRepository.takServerListRead.map(::parseTakServerRead))
+    }
+
+    private suspend fun awaitTakServerMigration() {
+        (context.applicationContext as WearTakApplication).awaitTakServerMigration()
+    }
+
     suspend fun storeTakServerList(newList: List<TakServerItem>) {
-        // Convert list to JSON
-        val normalizedList = normalizeTakServerList(newList)
-        val jsonString = gson.toJson(normalizedList)
-        Log.i(TAG, "storeTakServerList: writing list size=${newList.size}, len=${jsonString.length}")
-        takServerSecretsRepository.setTakServerListJson(jsonString)
+        awaitTakServerMigration()
+        TakServerEndpointIdentity.mutationMutex.withLock {
+            val uniqueList = normalizeTakServerList(newList)
+                .distinctBy(TakServerEndpointIdentity::key)
+            val jsonString = gson.toJson(uniqueList)
+            Log.i(TAG, "storeTakServerList: writing list size=${uniqueList.size}, len=${jsonString.length}")
+            takServerSecretsRepository.setTakServerListJson(jsonString)
+        }
 
 //        context.dataStore.edit { preferences ->
 //            // Convert list to JSON
@@ -2771,24 +2816,23 @@ class DataRepository(private val context: Context) {
 //        }
     }
 
-    suspend fun addTakServerItem(item: TakServerItem) {
-        val currentJson = takServerSecretsRepository.takServerListJson.first()
-        Log.i(TAG, "addTakServerItem: read current len=${currentJson?.length ?: 0}")
-        Log.i(TAG, "addTakServerItem: $item, currJsonList: ${currentJson.toString()}")
-        val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-            // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-            val typeToken = object : TypeToken<List<TakServerItem>>() {}
-            val type = typeToken.type
-            gson.fromJson(currentJson, type)
-        } else {
-            mutableListOf()
+    suspend fun addTakServerItem(item: TakServerItem): TakServerAddResult {
+        awaitTakServerMigration()
+        return TakServerEndpointIdentity.mutationMutex.withLock {
+            val currentList = readTakServerList()
+            val normalizedItem = normalizeTakServerItem(item)
+            val duplicate = currentList.any {
+                TakServerEndpointIdentity.key(it) == TakServerEndpointIdentity.key(normalizedItem)
+            }
+            if (duplicate) {
+                Log.w(TAG, "addTakServerItem: duplicate endpoint=${TakServerEndpointIdentity.key(normalizedItem)}")
+                return@withLock TakServerAddResult.DUPLICATE
+            }
+            currentList.add(normalizedItem)
+            writeTakServerList(currentList, "addTakServerItem")
+            TakServerAddResult.ADDED
         }
-        currentList.add(item)
-
-        val newJson = gson.toJson(currentList)
-        Log.i(TAG, "addTakServerItem: writing new len=${newJson.length}")
-        takServerSecretsRepository.setTakServerListJson(newJson)
-        Log.i(TAG, "addTakServerItem newJson: $newJson")
+    }
 
 //        context.dataStore.edit { preferences ->
 //            val currentJson = preferences[TAK_SERVER_LIST_KEY]
@@ -2807,26 +2851,14 @@ class DataRepository(private val context: Context) {
 //            preferences[TAK_SERVER_LIST_KEY] = newJson
 //            Log.d(TAG, "addTakServerItem newJson: $newJson")
 //        }
-    }
-
     suspend fun removeTakServerItem(item: TakServerItem) {
-        val currentJson = takServerSecretsRepository.takServerListJson.first()
-        Log.i(TAG, "removeTakServerItem: read current len=${currentJson?.length ?: 0}")
-        Log.i(TAG, "removeTakServerItem: $item, currJsonList: ${currentJson.toString()}")
-        val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-            // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-            val typeToken = object : TypeToken<List<TakServerItem>>() {}
-            val type = typeToken.type
-            gson.fromJson(currentJson, type)
-        } else {
-            mutableListOf()
+        awaitTakServerMigration()
+        TakServerEndpointIdentity.mutationMutex.withLock {
+            val currentList = readTakServerList()
+            val endpointKey = TakServerEndpointIdentity.key(item)
+            currentList.removeAll { TakServerEndpointIdentity.key(it) == endpointKey }
+            writeTakServerList(currentList, "removeTakServerItem")
         }
-
-        currentList.remove(item)
-
-        Log.i(TAG, "removeTakServerItem: writing new size=${currentList.size}")
-        takServerSecretsRepository.setTakServerListJson(gson.toJson(currentList))
-        Log.i(TAG, "removeTakServerItem newJson: ${gson.toJson(currentList)}")
 
 //        context.dataStore.edit { preferences ->
 //            val currentJson = preferences[TAK_SERVER_LIST_KEY]
@@ -2848,36 +2880,52 @@ class DataRepository(private val context: Context) {
     }
 
     // updateTakServerItem will act as addTakServerItem if oldItemIndex is greater than or equal to size of already stored list
-    suspend fun updateTakServerItem(oldItemIndex: Int, newItem: TakServerItem) {
-        val currentJson = takServerSecretsRepository.takServerListJson.first()
-        Log.i(TAG, "updateTakServerItem: read current len=${currentJson?.length ?: 0}")
-        Log.i(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")
-        val currentList: MutableList<TakServerItem> = if (!currentJson.isNullOrEmpty()) {
-            // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-            val typeToken = object : TypeToken<List<TakServerItem>>() {}
-            val type = typeToken.type
-            gson.fromJson(currentJson, type)
-        } else {
-            mutableListOf()
+    suspend fun updateTakServerItem(
+        oldItemIndex: Int,
+        newItem: TakServerItem
+    ): TakServerUpdateResult {
+        awaitTakServerMigration()
+        return TakServerEndpointIdentity.mutationMutex.withLock {
+            val currentList = readTakServerList()
+            if (oldItemIndex !in currentList.indices) {
+                return@withLock TakServerUpdateResult.INVALID_INDEX
+            }
+            val normalizedItem = normalizeTakServerItem(newItem)
+            val duplicateIndex = currentList.indexOfFirst {
+                TakServerEndpointIdentity.key(it) == TakServerEndpointIdentity.key(normalizedItem) &&
+                    it !== currentList[oldItemIndex]
+            }
+            if (duplicateIndex >= 0) {
+                Log.w(TAG, "updateTakServerItem: duplicate endpoint=${TakServerEndpointIdentity.key(normalizedItem)}")
+                return@withLock TakServerUpdateResult.DUPLICATE
+            }
+            currentList[oldItemIndex] = normalizedItem
+            writeTakServerList(currentList, "updateTakServerItem")
+            TakServerUpdateResult.UPDATED
         }
+    }
 
-        val currentListSize = currentList.size
-        if (oldItemIndex != -1) {
-            if (oldItemIndex < currentListSize) {
-                currentList[oldItemIndex] = newItem
-            } else {
-                currentList.add(newItem)
-                if (oldItemIndex != currentListSize) {
-                    Log.w(TAG, "updateTakServerItem: WARNING index($oldItemIndex) passed is greater than stored list size($currentListSize)")
-                }
+    private suspend fun writeTakServerList(list: List<TakServerItem>, operation: String) {
+        val json = gson.toJson(normalizeTakServerList(list))
+        Log.i(TAG, "$operation: writing list size=${list.size}, len=${json.length}")
+        takServerSecretsRepository.setTakServerListJson(json)
+    }
+
+    private suspend fun readTakServerList(): MutableList<TakServerItem> =
+        parseTakServerRead(takServerSecretsRepository.takServerListRead.first()).toMutableList()
+
+    private fun parseTakServerRead(result: DecryptResult?): List<TakServerItem> {
+        val json = when (result) {
+            null -> null
+            is DecryptResult.Success -> result.plaintext
+            is DecryptResult.Failure -> {
+                Log.e(TAG, "parseTakServerRead: encrypted store unavailable", result.error)
+                throw IllegalStateException("Unable to decrypt TAK server list", result.error)
             }
         }
-
-        val newJson = gson.toJson(currentList)
-        Log.i(TAG, "updateTakServerItem: writing new len=${newJson.length}")
-        takServerSecretsRepository.setTakServerListJson(newJson)
-        Log.i(TAG, "updateTakServerItem newJson: $newJson")
-
+        if (json.isNullOrEmpty()) return emptyList()
+        val type = object : TypeToken<List<TakServerItem>>() {}.type
+        return normalizeTakServerList(gson.fromJson<List<TakServerItem>>(json, type))
 //        context.dataStore.edit { preferences ->
 //            val currentJson = preferences[TAK_SERVER_LIST_KEY]
 //            Log.d(TAG, "updateTakServerItem oldIndex($oldItemIndex), newItem($newItem), currJsonList: ${currentJson.toString()}")

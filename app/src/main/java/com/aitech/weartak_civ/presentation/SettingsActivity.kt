@@ -271,6 +271,7 @@ import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DUPLICATE_STRING
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.category
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categoryRolesEntryLists
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.categorySettingsState
@@ -491,7 +492,9 @@ class SettingsActivity : ComponentActivity() {
 }
 
 suspend fun refreshTakServerSettings() {
-    takServerList = dataRepository.getTakServerList.first()
+    dataRepository.tryAwaitTakServerList()?.let { loadedTakServers ->
+        takServerList = loadedTakServers
+    }
     takServerListState.postValue(takServerList)
     constantReportingInterval = dataRepository.getConstantReportingInterval.first()
     constantReportingIntervalState.postValue(constantReportingInterval)
@@ -1453,9 +1456,9 @@ fun TakServerSetting(navController: NavController) {
                             //selectedIndexState.postValue(null)
                             CoroutineScope(Dispatchers.Main).launch {
                                 dataRepository.updateTakServerItem(index, takServerItem)
-                                Handler(Looper.getMainLooper()).postDelayed( { EventBus.getDefault().post(
-                                    MessageEvent(SERVER_TOGGLED, index)
-                                ) }, EVENT_SEND_DELAY_MS)
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    EventBus.getDefault().post(MessageEvent(SERVER_TOGGLED, index))
+                                }, EVENT_SEND_DELAY_MS)
                             } },
                         onPrimaryActionClick = {
                             Log.d(TAG, "Remove takServerItem ($takServerItem)")
@@ -1788,19 +1791,22 @@ fun NewServerPage(navController: NavController) {
                                 password.isNotBlank()) {
                                 val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
                                     isP12Cert, username, password, "", "")
-                                runBlocking {
-                                    dataRepository.addTakServerItem(takServerItem)
-                                }
-                                val mutableTakServerList = takServerListState.value?.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                                mutableTakServerList.add(takServerItem)
-                                takServerList = mutableTakServerList.toList()
-                                takServerListState.postValue(takServerList)
+                                val addResult = dataRepository.addTakServerItem(takServerItem)
                                 serverSettingsChanged.value = true
-
-                                Log.d(TAG, "serverSettingsChanged=${serverSettingsChanged.value}")
-                                Handler(Looper.getMainLooper()).postDelayed(
-                                    { EventBus.getDefault().post(MessageEvent(
-                                        SERVER_ADDED_VIA_UI, takServerList.size-1)) }, EVENT_SEND_DELAY_MS)
+                                if (addResult == DataRepository.TakServerAddResult.ADDED) {
+                                    val persistedList = dataRepository.tryAwaitTakServerList()
+                                        ?: return@launch
+                                    takServerList = persistedList
+                                    takServerListState.postValue(takServerList)
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        EventBus.getDefault().post(
+                                            MessageEvent(SERVER_ADDED_VIA_UI, persistedList.lastIndex)
+                                        )
+                                    }, EVENT_SEND_DELAY_MS)
+                                } else {
+                                    TAKConnectService.newServerAddedViaUiConnectionStatusLiveData
+                                        .postValue(TAK_SERVER_DUPLICATE_STRING)
+                                }
                             } else {
                                 Toast.makeText(
                                     mainActivity,
@@ -1820,15 +1826,17 @@ fun NewServerPage(navController: NavController) {
                     if (NetworkManager.isNetworkConnected) {
                         Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network connected")
                         isNetworkConnected.value = true
-                        displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
+                        val isDuplicate = remember { mutableStateOf(false) }
+                        displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
                         LoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog,shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
+                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog,shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged, isDuplicate)
                     } else {
                         Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network disconnected")
                         isNetworkConnected.value = false
-                        displayServerDialogs(false, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
+                        val isDuplicate = remember { mutableStateOf(false) }
+                        displayServerDialogs(false, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
                         //LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged)
+                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverSettingsChanged, isDuplicate)
                     }
                 }
             }
@@ -2039,24 +2047,27 @@ fun EditServerPage(
                                             username, password, "", "")
                                     }
 
-                                runBlocking {
+                                val updateResult = runBlocking {
                                     dataRepository.updateTakServerItem(index, changedTakServerDetail)
                                 }
+                                if (updateResult == DataRepository.TakServerUpdateResult.UPDATED) {
+                                    val mutableTakServerList = takServerListLocal.toMutableList()
+                                    mutableTakServerList.set(index, changedTakServerDetail)
+                                    takServerList = mutableTakServerList.toList()
+                                    takServerListState.postValue(takServerList)
 
-                                val mutableTakServerList = takServerListLocal.toMutableList()
-                                mutableTakServerList.set(index, changedTakServerDetail)
-                                takServerList = mutableTakServerList.toList()
-                                takServerListState.postValue(takServerList)
-
-                                if (serverConnSettingsChanged.value) {
-                                    Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value}")
-                                    EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
-                                } else {
-                                    navController.navigate("tak_server_screen") {
-                                        popUpTo(("tak_server_screen")) {
-                                            inclusive = true
+                                    if (serverConnSettingsChanged.value) {
+                                        Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value}")
+                                        EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
+                                    } else {
+                                        navController.navigate("tak_server_screen") {
+                                            popUpTo(("tak_server_screen")) { inclusive = true }
                                         }
                                     }
+                                } else if (updateResult == DataRepository.TakServerUpdateResult.DUPLICATE) {
+                                    TAKConnectService.takServerDetails.getOrNull(index)
+                                        ?.connectionStatusLiveData
+                                        ?.postValue(TAK_SERVER_DUPLICATE_STRING)
                                 }
                             } else {
                                 Log.d(TAG, "EditServerPage onClickConfirm: nothing has changed")
@@ -2082,16 +2093,18 @@ fun EditServerPage(
                         Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network connected")
                         val isNetworkConnected = remember { mutableStateOf(true)}
 
-                        displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
+                        val isDuplicate = remember { mutableStateOf(false) }
+                        displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
                         LoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
+                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged, isDuplicate)
                     } else {
                         Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network disconnected")
                         val isNetworkConnected = remember { mutableStateOf(false)}
 
-                        displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected)
+                        val isDuplicate = remember { mutableStateOf(false) }
+                        displayServerDialogs(isNetworkConnected.value, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
                         //LoadingDialog(shouldShowLoadingDialog)
-                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged)
+                        ServerRegistrationDialog(isNetworkConnected, shouldShowConfirmDialog, shouldShowLoadingDialog, navController, isServerConnected, serverConnSettingsChanged, isDuplicate)
                     }
                 }
             }
@@ -2546,7 +2559,8 @@ fun ServerRegistrationDialog(
     shouldShowLoadingDialog: MutableState<Boolean>,
     navController: NavController,
     isServerConnected: MutableState<Boolean>,
-    serverDetailsChanged: MutableState<Boolean>
+    serverDetailsChanged: MutableState<Boolean>,
+    isDuplicate: MutableState<Boolean>
 ) {
     val invalidCredText = stringResource(R.string.invalid_credentials_try_again)
     val retryText = stringResource(R.string.retry)
@@ -2561,27 +2575,31 @@ fun ServerRegistrationDialog(
                 shouldShowDialog.value = false
             },
             title = {
-                if (isServerConnected.value) {
+                if (isDuplicate.value) {
+                    Text(stringResource(R.string.duplicate_tak_server), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+                } else if (isServerConnected.value) {
                     Text(stringResource(R.string.registration_complete), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
                 } else {
                     Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 15.dp))
                 }
             },
             text = {
-                if (isNetworkConnected.value) {
-                    if (isServerConnected.value) {
-                        Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
+                if (!isDuplicate.value) {
+                    if (isNetworkConnected.value) {
+                        if (isServerConnected.value) {
+                            Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
+                        } else {
+                            Text(invalidCredText, textAlign = TextAlign.Center, fontSize = if(invalidCredText.length!!<35) 15.sp else 13.sp)
+                        }
                     } else {
-                        Text(invalidCredText, textAlign = TextAlign.Center, fontSize = if(invalidCredText.length!!<35) 15.sp else 13.sp)
+                        Log.d(TAG, "text=(${stringResource(R.string.network_disconnected_try_later)}), isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}")
+                        Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center)
                     }
-                } else {
-                    Log.d(TAG, "text=(${stringResource(R.string.network_disconnected_try_later)}), isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}")
-                    Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center)
                 }
             },
             confirmButton = {
                 Log.d(TAG, "ServerRegistrationDialog confirmButton: isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}, shouldShowDialog=${shouldShowDialog.value}")
-                if (isNetworkConnected.value && !isServerConnected.value) {
+                if (!isDuplicate.value && isNetworkConnected.value && !isServerConnected.value) {
                     // Create retry button only if network is connected && server is NOT connected
                     Log.d(TAG, "ServerRegistrationDialog confirmButton: RetryButton is shown")
                     Button(
@@ -2606,6 +2624,7 @@ fun ServerRegistrationDialog(
                     onClick = {
                         shouldShowDialog.value = false
                         serverDetailsChanged.value = false
+                        isDuplicate.value = false
                         navController.navigate("tak_server_screen") {
                             popUpTo(("tak_server_screen")) {
                                 inclusive = true
