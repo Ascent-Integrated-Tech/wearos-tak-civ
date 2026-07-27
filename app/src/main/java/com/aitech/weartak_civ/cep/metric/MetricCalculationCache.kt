@@ -15,6 +15,7 @@ data class CachedMetricCore(
 interface MetricCalculationCacheStore {
     fun load(metricId: String, configHash: String): CachedMetricCore?
     fun save(metricId: String, configHash: String, cached: CachedMetricCore)
+    fun clearAll() = Unit
 }
 
 class FileBackedMetricCalculationCacheStore(
@@ -51,6 +52,12 @@ class FileBackedMetricCalculationCacheStore(
         val temp = File(baseDir, "${file.name}.tmp")
         temp.writeText(json.toString())
         Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    override fun clearAll() {
+        baseDir.listFiles()?.forEach { file ->
+            if (file.isFile) Files.deleteIfExists(file.toPath())
+        }
     }
 
     private fun fileFor(metricId: String): File {

@@ -642,6 +642,17 @@ class CepEngine(
         metricOrchestrator.initialize()
     }
 
+    /**
+     * Manually reset and reinitialize user-specific metric history and state.
+     * This is intentionally not automatic because the runtime cannot identify a
+     * watch-user change reliably.
+     */
+    suspend fun resetAndReinitializeMetricsForUserChange(
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        metricOrchestrator.resetAndReinitializeForUserChange(featureStore, nowMs)
+    }
+
     internal fun processEventForTest(evt: CepEvent<*>) {
         windows.ingest(evt, featureStore, evt.ts)
         metricOrchestrator.onEvent(evt, featureStore)

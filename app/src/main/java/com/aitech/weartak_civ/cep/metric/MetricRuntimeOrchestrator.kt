@@ -98,6 +98,29 @@ class MetricRuntimeOrchestrator(
         registry = MetricRegistry(bindings)
     }
 
+    /**
+     * Destructively resets all metric state for a manually confirmed user change,
+     * then rebuilds the metric registry. The caller must invoke this explicitly;
+     * no user-change detection is performed by the runtime.
+     */
+    suspend fun resetAndReinitializeForUserChange(featureStore: FeatureStore, nowMs: Long) {
+        synchronized(runtimeLock) {
+            historyStore.clearAll()
+            calculationCacheStore.clearAll()
+            historyCache.clear()
+            lastCompactionMs.clear()
+            observedActivityContext = MetricActivityContext.UNKNOWN
+            contextSinceMs = null
+            lastActiveAtMs = null
+            unknownOffWristSinceMs = null
+            registry.allBindings().forEach { binding ->
+                binding.metricSpec.selectedOutputs.slotsToSelectedKeys.values
+                    .forEach(featureStore::clear)
+            }
+        }
+        initialize()
+    }
+
     fun onEvent(evt: CepEvent<*>, featureStore: FeatureStore) {
         synchronized(runtimeLock) {
             val nowMs = evt.ts

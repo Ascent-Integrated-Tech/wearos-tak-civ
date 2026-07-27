@@ -9,6 +9,7 @@ import kotlin.math.min
 
 interface MetricHistoryStore {
     fun historyVersion(metricId: String): Long = 0L
+    fun clearAll() = Unit
     fun appendHotSample(metricId: String, sample: NormalizedMetricSample)
     fun loadHotSamples(metricId: String, sinceMs: Long): List<NormalizedMetricSample>
     fun loadWarmBuckets(metricId: String, sinceMs: Long): List<MetricBucket>
@@ -35,6 +36,17 @@ class FileBackedMetricHistoryStore(
 
     override fun historyVersion(metricId: String): Long = synchronized(lock) {
         historyVersions[metricId] ?: 0L
+    }
+
+    override fun clearAll() {
+        synchronized(lock) {
+            hotSamples.clear()
+            bucketCache.clear()
+            historyVersions.clear()
+            baseDir.listFiles()?.forEach { file ->
+                if (file.isFile) Files.deleteIfExists(file.toPath())
+            }
+        }
     }
 
     override fun appendHotSample(metricId: String, sample: NormalizedMetricSample) {
