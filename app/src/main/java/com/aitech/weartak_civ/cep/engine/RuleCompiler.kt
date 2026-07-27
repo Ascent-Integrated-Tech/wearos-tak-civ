@@ -48,8 +48,8 @@ object RuleCompiler {
         val tickMs = engine?.optInt("window_tick_ms", 1000) ?: 1000
         val tickHz = (1000 / tickMs).coerceAtLeast(1)
         val ruleEvalIntervalMs = engine?.optInt("rule_eval_interval_ms", tickMs) ?: tickMs
-        val features = parseFeatures(root.optJSONArray("features"))
-        val rules = if (root.has("rules")) parseRules(root.optJSONArray("rules")) else emptyList()
+        val features = parseFeatureDefs(root.optJSONArray("features"))
+        val rules = if (root.has("rules")) parseRuleDefs(root.optJSONArray("rules")) else emptyList()
         val metrics = if (root.has("metrics")) parseMetrics(root.optJSONArray("metrics")) else emptyList()
         return CepConfig(tickHz, features, rules, metrics, ruleEvalIntervalMs)
     }
@@ -139,22 +139,6 @@ object RuleCompiler {
                     o.getString("scalar_field")
                 } else null
             )
-        return try {
-            val cadence = parseEngineCadence(root.optJSONObject("engine"))
-            val features = try {
-                parseFeatureDefs(root.optJSONArray("features"))
-            } catch (ex: Throwable) {
-                android.util.Log.e("CEP", "Failed to parse features", ex); emptyList()
-            }
-            val rules = try {
-                if (root.has("rules")) parseRuleDefs(root.optJSONArray("rules")) else emptyList()
-            } catch (ex: Throwable) {
-                android.util.Log.e("CEP", "Failed to parse rules", ex); emptyList()
-            }
-            CepConfig(cadence.tickHz, features, rules, cadence.ruleEvalIntervalMs)
-        } catch (t: Throwable) {
-            android.util.Log.e("CEP", "Failed to parse CEP config", t)
-            CepConfig(1, emptyList(), emptyList())
         }
         return out
     }

@@ -26,7 +26,7 @@ import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CepEngine(
-    private val appContext: Context?,
+    private val appContext: Context,
     private val scope: CoroutineScope,
     private val config: CepConfig,
     private val dataRepository: DataRepository
@@ -252,7 +252,6 @@ class CepEngine(
      * Call from start() and whenever the user changes pressure alert thresholds in settings.
      */
     fun updatePressureProfile() {
-        val repo = dataRepository ?: return
         scope.launch {
             loadPressureProfile()
             if (authoritative.get()) {
@@ -484,10 +483,9 @@ class CepEngine(
      * Call after engine start and whenever UI/settings save overrides (mirror updateHrProfile pattern).
      */
     suspend fun updateSustainOverrides() {
-        val repo = dataRepository ?: return
         Log.d("CEP", "updateSustainOverrides: loading threshold length values from DataRepository")
         try {
-            val loaded = repo.getCepSustainOverridesOnce()
+            val loaded = dataRepository.getCepSustainOverridesOnce()
             val overrideableIds: Set<String> = config.rules.filter { it.allowSustainOverride }.map { it.id }.toSet()
             sustainOverridesMain = loaded.main
                 .filterKeys { it in overrideableIds }
@@ -521,12 +519,12 @@ class CepEngine(
         val alert = AlertRegistry.get(ruleId) ?: return false
 
         if (alert.priority == 1) {
-            repo.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
+            dataRepository.clearPhysioAndAutoGenAlertRequestUid(alert.uid)
         } else {
-            repo.removePhysioAndAutoGenAlertByUid(alert.uid)
+            dataRepository.removePhysioAndAutoGenAlertByUid(alert.uid)
         }
         AlertRegistry.clear(ruleId)
-        repo.addAlertClearedEventCep(alert.uid)
+        dataRepository.addAlertClearedEventCep(alert.uid)
         Log.i("CEP", "Cleared active alert for rule=$ruleId reason=${reason ?: "unspecified"} uid=${alert.uid}")
         return true
     }
@@ -661,7 +659,6 @@ class CepEngine(
         runProductionTick(nowMs)
     }
 
-}
     fun handleTierEvent(p: Spo2TierEventPayload) {
         val dedupeKey = "${p.tier.name}|${p.state.name}|${p.ts}"
         synchronized(seenTierEventLru) {
