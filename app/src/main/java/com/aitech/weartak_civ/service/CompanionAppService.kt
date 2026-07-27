@@ -1034,7 +1034,7 @@ class CompanionAppService : Service() {
         // 1) Store servers
         Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
         repo.storeTakServerList(payload.takServerList)
-        val storedTakServerList = repo.getTakServerList.first()
+        val storedTakServerList = repo.awaitTakServerList()
         // reflect the settings ui.
         takServerList = storedTakServerList
         takServerListState.postValue(takServerList)

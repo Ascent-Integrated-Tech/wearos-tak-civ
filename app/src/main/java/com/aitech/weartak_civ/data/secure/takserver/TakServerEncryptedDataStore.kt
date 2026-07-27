@@ -34,12 +34,14 @@ class TakServerEncryptedDataStore(context: Context) {
     )
 
     fun encryptedString(key: Preferences.Key<String>): Flow<String?> =
+        encryptedStringResult(key).map { result ->
+            (result as? DecryptResult.Success)?.plaintext
+        }
+
+    fun encryptedStringResult(key: Preferences.Key<String>): Flow<DecryptResult?> =
         ds.data.map { prefs ->
             val enc = prefs[key] ?: return@map null
-            when (val res = EncryptedSerializer.decryptFromBase64(aead, enc, TakServerSecretsKeys.AAD)) {
-                is DecryptResult.Success -> res.plaintext
-                is DecryptResult.Failure -> null
-            }
+            EncryptedSerializer.decryptFromBase64(aead, enc, TakServerSecretsKeys.AAD)
         }
 
     suspend fun setEncryptedString(key: Preferences.Key<String>, value: String?) {
