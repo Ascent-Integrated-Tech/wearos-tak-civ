@@ -39,6 +39,7 @@ import com.aitech.weartak_civ.integration.plugin.PluginRepository
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -48,6 +49,8 @@ import live.ditto.DittoIdentity
 import live.ditto.android.DefaultAndroidDittoDependencies
 
 class WearTakApplication : Application() {
+
+    private val takServerMigrationReady = CompletableDeferred<Result<Unit>>()
 
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
@@ -93,7 +96,10 @@ class WearTakApplication : Application() {
             repo.storeEnableWearTakDevMode(false)
         }
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
+            val migrationResult = runCatching {
+                TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
+            }
+            takServerMigrationReady.complete(migrationResult)
         }
         CepProvider.init(this)
         // bootstrapEngine() inside getOrCreateEngine handles warm-up + start under the
@@ -104,6 +110,10 @@ class WearTakApplication : Application() {
         pluginManager = PluginManager(this, pluginIngress)
         pluginRepository = HostPluginRepository(this, pluginManager)
         pluginManager.startDeferred()
+    }
+
+    suspend fun awaitTakServerMigration() {
+        takServerMigrationReady.await().getOrThrow()
     }
 
     fun onPluginPackageRemoved(packageName: String) {

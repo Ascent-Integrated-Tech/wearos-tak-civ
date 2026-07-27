@@ -40,6 +40,7 @@
     <string name="registering_device_with_tak_server">Registering device with TAK Server</string>
     <string name="registration_complete">Registration Complete</string>
     <string name="registration_failed">Registration Failed</string>
+    <string name="duplicate_tak_server">Duplicate TAK Server</string>
     <string name="tak_server_registration_succeeded">TAK Server registration succeeded</string>
     <string name="invalid_credentials_try_again">Invalid Credentials, try again</string>
     <string name="network_disconnected_try_later">Network Disconnected, try later</string>

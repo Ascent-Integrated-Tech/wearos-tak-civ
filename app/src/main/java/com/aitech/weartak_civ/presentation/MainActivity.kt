@@ -141,6 +141,7 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -150,6 +151,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_
 import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
@@ -252,6 +254,7 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DUPLICATE_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import com.aitech.weartak_civ.Utils
@@ -924,7 +927,9 @@ class MainActivity : ComponentActivity() {
 
             // --- License / TAK server list ---
             license       = dataRepository.getLicense.first()
-            takServerList = dataRepository.getTakServerList.first()
+            dataRepository.tryAwaitTakServerList()?.let { loadedTakServers ->
+                takServerList = loadedTakServers
+            }
 
             // --- Core service enable flags ---
             enableLocationService          = dataRepository.getEnableLocationService.first()
@@ -1598,6 +1603,62 @@ class MainActivity : ComponentActivity() {
         return result
     }
 
+    private suspend fun reconcileManagedTakServers(
+        configuredServers: List<DataRepository.TakServerItem>,
+        managedConfigurationIsAuthoritative: Boolean
+    ): Boolean {
+        var changed = false
+        val handler = Handler(Looper.getMainLooper())
+        val uniqueManagedServers = configuredServers.distinctBy(TakServerEndpointIdentity::key)
+
+        for (managedServer in uniqueManagedServers) {
+            val endpointKey = TakServerEndpointIdentity.key(managedServer)
+            val index = takServerList.indexOfFirst {
+                TakServerEndpointIdentity.key(it) == endpointKey
+            }
+            if (index >= 0) {
+                val existing = takServerList[index]
+                if (managedServer != existing) {
+                    changed = true
+                    dataRepository.updateTakServerItem(index, managedServer)
+                    if (takServerConnDetailsChanged(existing, managedServer)) {
+                        handler.postDelayed({
+                            EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
+                        }, EVENT_SEND_DELAY_MS)
+                    }
+                    takServerList = dataRepository.awaitTakServerList()
+                }
+            } else if (dataRepository.addTakServerItem(managedServer) == DataRepository.TakServerAddResult.ADDED) {
+                changed = true
+                takServerList = dataRepository.awaitTakServerList()
+                val addedIndex = takServerList.indexOfFirst {
+                    TakServerEndpointIdentity.key(it) == endpointKey
+                }
+                if (addedIndex >= 0) {
+                    handler.postDelayed({
+                        EventBus.getDefault().post(MessageEvent(SERVER_ADDED, addedIndex))
+                    }, EVENT_SEND_DELAY_MS)
+                }
+            }
+        }
+
+        if (managedConfigurationIsAuthoritative) {
+            val managedKeys = uniqueManagedServers.map(TakServerEndpointIdentity::key).toSet()
+            val staleIndexes = takServerList.indices.filter {
+                TakServerEndpointIdentity.key(takServerList[it]) !in managedKeys
+            }.sortedDescending()
+            staleIndexes.forEachIndexed { order, staleIndex ->
+                dataRepository.removeTakServerItem(takServerList[staleIndex])
+                changed = true
+                takServerList = dataRepository.awaitTakServerList()
+                handler.postDelayed({
+                    EventBus.getDefault().post(MessageEvent(SERVER_REMOVED, staleIndex))
+                }, EVENT_SEND_DELAY_MS * (order + 1))
+            }
+        }
+        return changed
+    }
+
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, "=== === Handling Managed Config Update (calledOnCreate: $calledOnCreate) ===")
         // WEAR-508: ManagedConfiguration CEP overlay (`cep_configuration_json`) is owned
@@ -1684,8 +1745,6 @@ class MainActivity : ComponentActivity() {
         var serverCertPassword: String? = null
         var serverCertificate: String? = null
         val takServerListConfig: MutableList<DataRepository.TakServerItem> = mutableListOf()
-        val handler = Handler(Looper.getMainLooper())
-
         val serverParcels = appRestrictions.getParcelableArray("tak_server_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the servers in the list.
         if (serverParcels != null) {
             val serverCount = serverParcels.size
@@ -2017,56 +2076,10 @@ class MainActivity : ComponentActivity() {
                 EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
             }
 
-            changed = false
-            if (takServerListConfig.size > 0) {
-                for (i in takServerListConfig.indices) {
-                    if (i < takServerList.size) {
-                        val takServerConfig = takServerListConfig.get(i)
-                        val takServer = takServerList.get(i)
-                        // Server already present
-                        if (takServerConfig != takServer) {
-                            Log.d(
-                                TAG,
-                                "takServerListConfig.get($i).toString(): ${
-                                    takServerListConfig.get(i).toString()
-                                }"
-                            )
-                            changed = true
-                            dataRepository.updateTakServerItem(i, takServerListConfig.get(i))
-                            if (takServerConnDetailsChanged(takServer, takServerConfig)) {
-                                Log.d(
-                                    TAG,
-                                    "takServerListConfig.get($i) connection details has changed. Sending SERVER_DETAILS_CHANGED"
-                                )
-                                // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
-                                handler.postDelayed({
-                                    EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, i))
-                                }, EVENT_SEND_DELAY_MS)
-                            }
-                        }
-                    } else {
-                        changed = true
-                        Log.d(TAG, "Additional server($i) added. Sending SERVER_ADDED")
-                        dataRepository.addTakServerItem(takServerListConfig.get(i))
-
-                        handler.postDelayed({
-                            EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i))
-                        }, EVENT_SEND_DELAY_MS)
-                    }
-                }
-                if (changed) {
-                    if (takServerListConfig.size >= takServerList.size) {
-                        takServerList = takServerListConfig
-                    } else {
-                        val mutableTakServerList = takServerList.toMutableList()
-                        for (i in takServerListConfig.indices) {
-                            mutableTakServerList.set(i, takServerListConfig.get(i))
-                        }
-                        takServerList = mutableTakServerList.toList()
-                        Log.d(TAG, "takServerList: ${takServerList}")
-                    }
-                }
-            }
+            changed = reconcileManagedTakServers(
+                takServerListConfig,
+                serverParcels != null
+            )
 
             if ((null != esriEndpointConfigUpdate) && (esriEndpoint != esriEndpointConfigUpdate)) {
                 esriEndpoint = esriEndpointConfigUpdate
@@ -2975,9 +2988,15 @@ fun displayServerDialogs(
     loadingDialog: String?,
     shouldShowLoadingDialog: MutableState<Boolean>,
     shouldShowConfirmDialog: MutableState<Boolean>,
-    isServerConnected: MutableState<Boolean>) {
+    isServerConnected: MutableState<Boolean>,
+    isDuplicate: MutableState<Boolean>) {
     Log.d(TAG, "displayServerDialogs isNetworkConnected=$isNetworkConnected, loadingDialog=$loadingDialog, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}, shouldShowConfirmDialog=${shouldShowConfirmDialog.value}, isServerConnected=${isServerConnected.value}")
-    if (isNetworkConnected) {
+    isDuplicate.value = loadingDialog == TAK_SERVER_DUPLICATE_STRING
+    if (isDuplicate.value) {
+        shouldShowLoadingDialog.value = false
+        shouldShowConfirmDialog.value = true
+        isServerConnected.value = false
+    } else if (isNetworkConnected) {
         if (loadingDialog == TAK_SERVER_CONNECTING_STRING) {
             Log.d(TAG, "displayServerDialogs: TAK_SERVER_CONNECTING_STRING")
             shouldShowLoadingDialog.value = true
@@ -3926,6 +3945,7 @@ fun ServerDialogPreview() {
         trueBoolean,
         trueBoolean,
         rememberSwipeDismissableNavController(),
+        falseBoolean,
         falseBoolean,
         falseBoolean
     )

@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.data
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.preferencesDataStore
@@ -29,11 +30,15 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.delay
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -42,6 +47,9 @@ private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 class CompanionAppRepository(private val context: Context) {
     private val TAG = "WearTAK-CompanAppRepo"
+    private val companionSettingsRetryDelayMs = 1_000L
+    @Volatile
+    private var lastWearTakSettingsSnapshot: WearTakSettingsSnapshot? = null
 
     private val repo by lazy {
         try {
@@ -467,7 +475,7 @@ class CompanionAppRepository(private val context: Context) {
     suspend fun snapshotWearTakSettings(): WearTakSettingsSnapshot {
         return WearTakSettingsSnapshot(
             timeMillis    = System.currentTimeMillis(),
-            takServerList = repo.getTakServerList.first(),
+            takServerList = repo.awaitTakServerList(),
             reportIntSecs = repo.getConstantReportingInterval.first(),
             callsign      = repo.getCallsign.first()
         )
@@ -502,7 +510,7 @@ class CompanionAppRepository(private val context: Context) {
      */
     fun wearTakSettingsFlow(): Flow<WearTakSettingsSnapshot> {
         return combine(
-            repo.getTakServerList,                 // Flow<List<TakServerItem>>
+            repo.getTakServerListReady,            // Flow<List<TakServerItem>>
             repo.getConstantReportingInterval,     // StateFlow<Int> or Flow<Int>
             repo.getCallsign                      // Flow<String>
         ) { list, interval, callsign ->
@@ -519,12 +527,29 @@ class CompanionAppRepository(private val context: Context) {
                         old.reportIntSecs == new.reportIntSecs &&
                         old.takServerList == new.takServerList
             }
+            .onEach { snapshot -> lastWearTakSettingsSnapshot = snapshot }
+            .retryWhen { cause, _ ->
+                if (cause !is IllegalStateException) {
+                    return@retryWhen false
+                }
+                Log.e(TAG, "wearTakSettingsFlow: settings unavailable; retrying", cause)
+                delay(companionSettingsRetryDelayMs)
+                true
+            }
+            .catch { cause ->
+                Log.e(TAG, "wearTakSettingsFlow: collector stopped", cause)
+                lastWearTakSettingsSnapshot?.let { emit(it) }
+            }
     }
 
     fun settingsChangedDeltasFlow(): Flow<SettingsChangedPayload> = flow {
         var prev: WearTakSettingsSnapshot? = null
 
-        wearTakSettingsFlow().collect { cur ->
+        wearTakSettingsFlow()
+            .catch { cause ->
+                Log.e(TAG, "settingsChangedDeltasFlow: settings collector stopped", cause)
+            }
+            .collect { cur ->
             val p = prev
             prev = cur
 
