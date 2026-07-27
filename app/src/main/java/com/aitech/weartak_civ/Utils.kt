@@ -32,6 +32,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.annotation.DrawableRes
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.data.DataRepository
@@ -795,6 +796,10 @@ object Utils {
         val timeLastOpened: Long,
         var timeLastClosed: Long
     )
+
+    fun findChatRoomFromUserUid(userUid: String, chatRoomList: List<ChatRoom>): Int {
+        return chatRoomList.indexOfFirst { it.uid == userUid }
+    }
 
     /** Minimal data models for bloodhound. */
     data class BloodhoundItem(

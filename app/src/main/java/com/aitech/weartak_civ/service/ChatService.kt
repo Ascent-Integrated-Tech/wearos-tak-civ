@@ -120,6 +120,25 @@ class ChatService : Service() {
         dataRepository.sendChatMessage(uid, title, message, timeMillis)
     }
 
+    private fun createChatRoom(uid: String, titleCallsign: String): ChatRoom {
+        val newChatRoom = ChatRoom(
+            uid = uid,
+            title = titleCallsign,
+            messageList = emptyList(),
+            newMessagesPresent = false,
+            timeLastClosed = 0L,
+            timeLastOpened = 0L
+        )
+        chatRoomMap[uid] = newChatRoom
+        publishInboxToRepo()
+        return newChatRoom
+    }
+
+    fun resolveChatRoom(uid: String, cs: String): ChatRoom {
+        val existingChatRoom = chatRoomMap[uid]
+        return existingChatRoom ?: createChatRoom(uid, cs)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "ChatService onDestroy()")

@@ -91,6 +91,7 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.ChatMessage
+import com.aitech.weartak_civ.Utils.findChatRoomFromUserUid
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
@@ -99,6 +100,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -150,10 +152,17 @@ class ChatActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
+                    val uid = intent.getStringExtra("user_uid")
+
+                    val callsign = intent.getStringExtra("user_callsign")
+                    var fromMaps = intent.getBooleanExtra("from_maps", false)
                     ChatCivApp(
                         exitActivity = { finishAndRemoveTask() },
                         context = context,
-                        initialRoomUid = intent.getStringExtra(EXTRA_OPEN_ROOM_UID)
+                        initialRoomUid = intent.getStringExtra(EXTRA_OPEN_ROOM_UID),
+                        uid = uid,
+                        callsign = callsign,
+                        fromMaps = fromMaps
                     )
                 }
             }
@@ -163,9 +172,8 @@ class ChatActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?) {
+fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, uid: String?, callsign: String?, fromMaps: Boolean) {
     val navController = rememberSwipeDismissableNavController()
-    val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
     var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
@@ -174,22 +182,23 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
 
     val hasAnyNew = chatRooms.any { it.newMessagesPresent }
 
-    LaunchedEffect(licenseKey) {
+    var fromMapIndex = 0
+    if (uid != null && callsign != null) {
+        ChatService.getInstance()?.resolveChatRoom(uid, callsign)
+        fromMapIndex = findChatRoomFromUserUid(uid, chatRooms)
+    }
+
+    val actualStartDestination = when {
+        fromMaps -> "chat_screen_detailed/$fromMapIndex"
+        else -> "chat_screen"
+    }
+
+    LaunchedEffect(chatEnabledLive) {
         Log.d(TAG, "Launch chatEnabledLive = $chatEnabledLive")
         val currentDestination = navController.currentBackStackEntry?.destination?.route
-        val isValid = isLicenseValid()
 
         when {
-            !isValid && currentDestination != "invalid_license_screen" -> {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
-                exitActivity()
-            }
-            isValid && chatEnabledLive == true && currentDestination != "chat_screen" -> {
-                navController.navigate("chat_screen") {
-                    popUpTo(0) { inclusive = true } // clears the back stack
-                }
-            }
-            isValid && chatEnabledLive == false && currentDestination != "chat_disabled_screen" -> {
+            chatEnabledLive == false && currentDestination != "chat_disabled_screen" -> {
                 navController.navigate("chat_disabled_screen") {
                     popUpTo(0) { inclusive = true }
                 }
@@ -211,7 +220,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         navController = navController,
         startDestination =
         if (isLicenseValid()) {
-            if (chatEnabledLive == true) "chat_screen" else "chat_disabled_screen"
+            if (chatEnabledLive == true) actualStartDestination else "chat_disabled_screen"
         } else {
             "invalid_license_screen"
         }
@@ -255,8 +264,6 @@ fun ChatScreen(
 ) {
     Log.d(TAG, "Chat called")
     val context = LocalContext.current
-
-    //val rooms = sampleRooms
 
     WearTAKCIVTheme {
         Box(
@@ -384,10 +391,6 @@ fun ChatScreenDetailed(
         val chatRoomTitle = room?.title.orEmpty()
         val messageList = room?.messageList.orEmpty()
         val roomId = room?.uid
-        //val room = sampleMessages
-        //val chatRoomTitle = room?.title.orEmpty()
-        //val messageList = room?.messageList.orEmpty()
-        //val roomId = room?.uid
         val replyMessage by reply.observeAsState(initial = "")
 
 
@@ -572,7 +575,7 @@ fun TextSelectionScreen(
     titleText: String,
     onConfirm: () -> Unit,
     onCancel: () -> Unit ){
-//    val textBox = remember { mutableStateOf("") }
+
     var replyTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(
             TextFieldValue(
@@ -678,14 +681,12 @@ fun TextSelectionScreen(
         rowContent = {
             ConfirmCancelButtons(
                 onClickCancel = {
-//                    navController.popBackStack()
                     onCancel()
                 },
-            onClickConfirm = {
-                confirmedText.value = replyTextFieldValue.text
-                onConfirm()
-//                navController.popBackStack()
-            }
+                onClickConfirm = {
+                    confirmedText.value = replyTextFieldValue.text
+                    onConfirm()
+                }
             )
         },
         text = titleText
