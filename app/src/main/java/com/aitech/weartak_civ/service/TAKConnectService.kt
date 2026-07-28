@@ -615,6 +615,61 @@ class TAKConnectService: Service() {
             return TAK_CONNECT_SERVICE
         }
 
+        private fun readTextFileOrNull(f: java.io.File): String? =
+            try { f.readText() } catch (_: Exception) { null }
+
+        // does this tak server connection have a side loaded cert in  /sdcard/Android/data/com.aitech.weartak_civ/files/certs
+        private fun maybeLoadP12FromDisk(t: TakServerDetail): Boolean {
+            val certDir = java.io.File(context.getExternalFilesDir(null), "certs")
+            val binP12 = java.io.File(certDir, "${t.address}.p12")
+            val b64P12 = java.io.File(certDir, "${t.address}.p12.b64")
+            val pwdFile = java.io.File(certDir, "${t.address}.pwd")
+            Log.i(
+                TAG,
+                "P12 sideload check: certDir=${certDir.absolutePath}, " +
+                        "bin=${binP12.absolutePath} exists=${binP12.exists()} readable=${binP12.canRead()}, " +
+                        "b64=${b64P12.absolutePath} exists=${b64P12.exists()}, " +
+                        "pwd=${pwdFile.absolutePath} exists=${pwdFile.exists()}"
+            )
+
+            // don't load p12 if it doesn't exist
+            if (!binP12.exists() && !b64P12.exists()) return false
+
+            // fallback to "atakatak" if no password file provided.
+            val pwd = readTextFileOrNull(pwdFile)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "atakatak"
+
+            return try {
+                t.keyStore.load(null, null) // init empty
+
+                if (binP12.exists()) {
+                    java.io.FileInputStream(binP12).use {
+                        t.keyStore.load(it, pwd.toCharArray())
+                    }
+                } else {
+                    val b64 = readTextFileOrNull(b64P12)?.replace("\\s+".toRegex(), "") ?: return false
+                    val bytes = java.util.Base64.getDecoder().decode(b64)
+                    java.io.ByteArrayInputStream(bytes).use {
+                        t.keyStore.load(it, pwd.toCharArray())
+                    }
+                }
+
+                // We’re now using a file-based P12; mark password for KeyManagerFactory.init in connectTAKServer
+                t.isP12Cert = true                 // drive P12 path semantics later (password handling)
+                t.p12CertPassword = pwd
+
+                // Optional but very helpful during bring-up:
+                dumpKeyStoreAliases(t.keyStore, "$TAG/${t.address}")
+
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "maybeLoadP12FromDisk failed for ${t.address}: ${e.message}", e)
+                false
+            }
+        }
+
         private fun setIsAnyNetworkConnecting() {
             var anyTakConnecting = false
             for (takServerDetail in takServerDetails) {
@@ -1074,6 +1129,19 @@ class TAKConnectService: Service() {
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                     requestStatusIconsComplicationUpdate(context)
 
+                    // see if we have one locally
+                    if (!takServerDetail.isP12Cert) {
+                        Log.i(TAG, "Not P12 for ${takServerDetail.address} ... checking if p12 locally loaded ...")
+                        if (maybeLoadP12FromDisk(takServerDetail)) {
+                            Log.i(TAG, "Loaded PKCS12 from disk for ${takServerDetail.address}; short-circuiting to connect")
+                            takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
+                            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                            connectTAKServer(takServerDetail)
+                            return@launch            // <<< IMPORTANT
+                        } else {
+                            Log.w(TAG, "Didn't find a P12 for ${takServerDetail.address} in certs/")
+                        }
+                    }
 
                     if (takServerDetail.isP12Cert) {
                         Log.d(TAG, "isP12Cert true")
