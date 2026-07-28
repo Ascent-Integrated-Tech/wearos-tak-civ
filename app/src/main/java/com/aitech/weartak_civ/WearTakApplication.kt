@@ -27,7 +27,6 @@ import com.aitech.weartak_civ.integration.plugin.HostPluginRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
-import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.GunshotOnnxRepository
 import com.aitech.weartak_civ.data.UasOnnxRepository
@@ -44,7 +43,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -60,11 +58,9 @@ class WearTakApplication : Application() {
     lateinit var sitxRepo: SitxSecretsRepository; private set
     lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
-    lateinit var crmRepo: CrmDataRepository; private set
 
     lateinit var gunshotOnnxRepo: GunshotOnnxRepository; private set
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
-    val crmCsvLogger: CrmSessionCsvLogger by lazy { CrmSessionCsvLogger(applicationContext) }
 
     lateinit var pluginIngress: PluginIngressPort
         private set
@@ -85,14 +81,16 @@ class WearTakApplication : Application() {
         bhRepo = BloodhoundRepository(applicationContext)
         capRepo = CompanionAppRepository(applicationContext)
         audioRepo = AudioCaptureRepository(applicationContext)
-        crmRepo = CrmDataRepository(repo)
         gunshotOnnxRepo = GunshotOnnxRepository(applicationContext)
         uasOnnxRepo = UasOnnxRepository(applicationContext)
         sitxRepo = SitxSecretsRepository(SitxEncryptedDataStore(applicationContext))
 
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
-
+        // Wipe debug mode to false on every boot! 
+//        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+//            repo.storeEnableWearTakDevMode(false)
+//        }
         // Wipe debug mode to false on every boot!
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.storeEnableWearTakDevMode(false)

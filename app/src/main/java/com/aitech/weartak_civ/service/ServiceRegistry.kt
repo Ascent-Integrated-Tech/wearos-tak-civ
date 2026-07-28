@@ -46,7 +46,6 @@ class ServiceRegistry() {
         ServiceType.AUDIO_CAP to AudioCaptureService::class.java,
         ServiceType.ONNX_GUNSHOT to GunshotOnnxService::class.java,
         ServiceType.ONNX_UAS to UasOnnxService::class.java,
-        ServiceType.CRM_INFERENCE to CrmInferenceService::class.java,
         ServiceType.CEP_SIMULATION to CEPSimulationService::class.java
     )
 
@@ -75,7 +74,6 @@ class ServiceRegistry() {
         ServiceType.AUDIO_CAP to AudioCaptureService.isRunning,
         ServiceType.ONNX_GUNSHOT to GunshotOnnxService.isRunning,
         ServiceType.ONNX_UAS to UasOnnxService.isRunning,
-        ServiceType.CRM_INFERENCE to CrmInferenceService.isRunning,
         ServiceType.CEP_SIMULATION to CEPSimulationService.isRunning
     )
 

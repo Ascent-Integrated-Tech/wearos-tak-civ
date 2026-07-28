@@ -347,12 +347,6 @@
             </intent-filter>
         </service>
         <service
-            android:name=".service.CrmInferenceService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="specialUse"
-            android:stopWithTask="false" />
-        <service
             android:name=".service.ChatService"
             android:enabled="true"
             android:exported="false"
@@ -571,17 +565,6 @@
         <activity
             android:name=".presentation.ChatActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.aitech.weartak_civ"
-            android:theme="@style/MainActivityTheme.Starting">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-        <activity
-            android:name=".presentation.CrmReserveActivity"
-            android:exported="false"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
