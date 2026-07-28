@@ -303,7 +303,13 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProx
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityIntensitySettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityRadiusMeters
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bloodhoundProximityRadiusMetersSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmModerateMaxThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmModerateMaxThresholdSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmPoorMaxThreshold
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.crmPoorMaxThresholdSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundProximityVibrationSettingsState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCrmService
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCrmServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeight
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.loadoutWeightState
@@ -447,24 +453,6 @@ class SettingsActivity : ComponentActivity() {
         const val LABEL_ALERT_LENGTH = "Alert Length"
         const val UNIT_MINUTES = " minutes"
         const val UNIT_SECONDS = " seconds"
-//        val pluginList: List<PluginData> = listOf(
-//            PluginData(
-//                icon = R.drawable.settings,
-//                title = "Hello World",
-//                loadingStatus = "LOADED",
-//            ),
-//            PluginData(
-//                icon = R.drawable.tak_alert_icon,
-//                title = "Alerting",
-//                loadingStatus = "NOT LOADED",
-//            ),
-//            PluginData(
-//                icon = R.drawable.bloodhound,
-//                title = "Bloodhound",
-//                loadingStatus = "ERROR",
-//                errorType = "INCOMPATIBLE VERSION"
-//            )
-//        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -549,15 +537,11 @@ private fun applyStagedBloodhoundSettingsValues(): BloodhoundSettingsChanges {
     return changes
 }
 
-//data class PluginData(
-//    val icon: Int,
-//    val title: String,
-//    val loadingStatus: String,
-//    val errorType: String = ""
-//)
-
 fun loadSettingsValues(){
     enableLocationServiceSettingsState.postValue(enableLocationService)
+    enableCrmServiceSettingsState.postValue(enableCrmService)
+    crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
+    crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
     enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
     enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
     enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
@@ -1077,6 +1061,21 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
         composable("sitx_status_authorization_screen") {
             SitxStatusAuthorizationScreen(navController, sitxVm)
         }
+        composable("crm_thresholds_screen") {
+            CrmThresholdSettings(navController)
+        }
+
+        composable("crm_poor_threshold_screen") {
+            NumericEntryPage(
+                navController = navController,
+                metricSettingState = crmPoorMaxThresholdSettingsState,
+                maximum = 100,
+                minimum = 0,
+                label = "Poor Maximum",
+                context = context,
+                route = "crm_thresholds_screen"
+            )
+        }
         composable("plugins_screen"){
             PluginsScreen(navController, pluginVm, pluginList)
         }
@@ -1091,8 +1090,18 @@ fun WearTAKCivSettings(callsignLiveDataState: MutableLiveData<String>, licenseLi
             Log.d(TAG, "specific_plugin_screen index: $index")
             SpecificPluginScreen(navController, index, pluginList)
         }
+        composable("crm_moderate_threshold_screen") {
+            NumericEntryPage(
+                navController = navController,
+                metricSettingState = crmModerateMaxThresholdSettingsState,
+                maximum = 100,
+                minimum = 0,
+                label = "Moderate Maximum",
+                context = context,
+                route = "crm_thresholds_screen"
+            )
+        }
     }
-
 }
 
 @Composable
@@ -1184,6 +1193,75 @@ fun CallsignRoleTeamChip(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 3.dp)
+    )
+}
+
+@Composable
+fun CrmThresholdSettings(navController: NavController) {
+    WearTakCivScreenDimensions(
+        columnContent = {
+            DataMetricsChip(
+                route = "crm_poor_threshold_screen",
+                title = "Poor Maximum",
+                nameSecondary = crmPoorMaxThresholdSettingsState.value.toString(),
+                navController = navController
+            )
+
+            DataMetricsChip(
+                route = "crm_moderate_threshold_screen",
+                title = "Moderate Maximum",
+                nameSecondary = crmModerateMaxThresholdSettingsState.value.toString(),
+                navController = navController
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+        },
+        rowContent = {
+            ConfirmCancelButtons(
+                onClickCancel = {
+                    Log.d(TAG, "CRM threshold settings not saved")
+
+                    crmPoorMaxThresholdSettingsState.setValue(
+                        crmPoorMaxThreshold
+                    )
+                    crmModerateMaxThresholdSettingsState.setValue(
+                        crmModerateMaxThreshold
+                    )
+
+                    navController.navigate("settings_screen") {
+                        popUpTo("settings_screen") {
+                            inclusive = true
+                        }
+                    }
+                },
+                onClickConfirm = {
+                    val poorMax =
+                        crmPoorMaxThresholdSettingsState.value
+                            ?: crmPoorMaxThreshold
+
+                    val moderateMax =
+                        crmModerateMaxThresholdSettingsState.value
+                            ?: crmModerateMaxThreshold
+
+                    if (poorMax >= moderateMax) {
+                        Toast.makeText(
+                            mainActivity,
+                            "Poor maximum must be less than moderate maximum",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        return@ConfirmCancelButtons
+                    }
+
+                    navController.navigate("settings_screen") {
+                        popUpTo("settings_screen") {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
+        },
+        text = "CRM Thresholds"
     )
 }
 
@@ -3143,13 +3221,6 @@ fun AtmPressureAlertSettings(navController: NavController) {
                         }
                     }
                 })
-//                onClickConfirm = {
-//                    navController.navigate("settings_screen") {
-//                        popUpTo(("settings_screen")) {
-//                            inclusive = true
-//                        }
-//                    }
-//                })
         },
         text = stringResource(R.string.atm_pressure_alerts)
     )
@@ -6025,6 +6096,44 @@ fun SettingsScreen(
                     .padding(top = 3.dp)
             )
 
+            if (enableBetaFeatures) {
+                Chip(
+                    onClick = {
+                        crmPoorMaxThresholdSettingsState.postValue(
+                            crmPoorMaxThreshold
+                        )
+                        crmModerateMaxThresholdSettingsState.postValue(
+                            crmModerateMaxThreshold
+                        )
+
+                        navController.navigate("crm_thresholds_screen") {
+                            popUpTo("crm_thresholds_screen") {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    enabled = true,
+                    label = {
+                        Text(text = "CRM Settings")
+                    },
+                    secondaryLabel = {
+                        Text(
+                            text = "Thresholds →",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 3.dp)
+                )
+            }
+
             Chip(
                 onClick = {
                     birthYearSettingsState.postValue(birthYearState.value)
@@ -6196,6 +6305,9 @@ fun SettingsScreen(
                     var loadoutWeightChanged: Boolean = false
                     var restingHeartRateChanged: Boolean = false
                     var companionAppCheckedChanged: Boolean = false
+                    var crmCheckedChanged: Boolean = false
+                    var crmPoorThresholdChanged: Boolean = false
+                    var crmModerateThresholdChanged: Boolean = false
 
                     if (restingHrHighAlertBpmThreshold != restingHrHighAlertBpmThresholdState.value) {
                         settingsChanged = true; restingHeartRateHighThresholdChanged = true
@@ -6506,6 +6618,40 @@ fun SettingsScreen(
                         requestChatComplicationUpdate(context)
 
                     }
+                    if (enableCrmService != enableCrmServiceSettingsState.value) {
+                        settingsChanged = true
+                        crmCheckedChanged = true
+
+                        enableCrmService = enableCrmServiceSettingsState.value ?: enableCrmService
+
+                        runBlocking {
+                            enableCrmServiceSettingsState.postValue(enableCrmService)
+                        }
+                    }
+
+                    if (crmPoorMaxThreshold != crmPoorMaxThresholdSettingsState.value) {
+                        settingsChanged = true
+                        crmPoorThresholdChanged = true
+
+                        crmPoorMaxThreshold =
+                            crmPoorMaxThresholdSettingsState.value ?: crmPoorMaxThreshold
+
+                        runBlocking {
+                            crmPoorMaxThresholdSettingsState.postValue(crmPoorMaxThreshold)
+                        }
+                    }
+
+                    if (crmModerateMaxThreshold != crmModerateMaxThresholdSettingsState.value) {
+                        settingsChanged = true
+                        crmModerateThresholdChanged = true
+
+                        crmModerateMaxThreshold =
+                            crmModerateMaxThresholdSettingsState.value ?: crmModerateMaxThreshold
+
+                        runBlocking {
+                            crmModerateMaxThresholdSettingsState.postValue(crmModerateMaxThreshold)
+                        }
+                    }
                     if (enableImmersionAlerts != enableImmersionAlertsSettingsState.value) {
                         settingsChanged = true; immersionAlertsChanged = true
                         enableImmersionAlerts = enableImmersionAlertsSettingsState.value ?: enableImmersionAlerts
@@ -6688,6 +6834,22 @@ fun SettingsScreen(
 //                                        dataRepository.storeLicense(license)
 //
 //                                    }
+                            if (crmCheckedChanged) {
+                                Log.d(TAG, "Storing enableCrmService $enableCrmService")
+                                dataRepository.storeEnableCrmService(enableCrmService)
+                            }
+
+                            if (crmPoorThresholdChanged || crmModerateThresholdChanged) {
+                                Log.d(
+                                    TAG,
+                                    "Storing CRM thresholds poorMax=$crmPoorMaxThreshold moderateMax=$crmModerateMaxThreshold"
+                                )
+
+                                dataRepository.storeCrmThresholdRanges(
+                                    poorMax = crmPoorMaxThreshold,
+                                    moderateMax = crmModerateMaxThreshold,
+                                )
+                            }
                              if (birthYearChanged) {
                                  Log.d(TAG, "Storing Birth Year ($birthYearValue)")
                                  dataRepository.storeYearOfBirth(birthYearValue)
@@ -7130,67 +7292,6 @@ fun DebugVersionText(
             )
         }
     }
-    /*
-    Text(
-        modifier = Modifier
-            .padding(top = 7.dp)
-            .clickable {
-                val now = System.currentTimeMillis()
-
-                // Reset sequence if taps are too slow
-                if (now - lastVersionTapTime > timeoutMs) {
-                    versionTapCount = 0
-                }
-
-                versionTapCount++
-                lastVersionTapTime = now
-
-                // Countdown toasts on taps 5, 6, 7
-                if (versionTapCount in 5 until tapsRequired) {
-                    val remaining = tapsRequired - versionTapCount
-                    val msg = if (remaining == 1) {
-                        "1 more tap to toggle debug"
-                    } else {
-                        "$remaining more taps to toggle debug"
-                    }
-                    showTopToast(msg)
-                }
-
-                if (versionTapCount >= tapsRequired) {
-                    versionTapCount = 0
-
-                    coroutineScope.launch {
-                        // Read & toggle flag off main thread
-                        val currentlyEnabled =
-                            dataRepository.getEnableWearTakDevMode.first()
-                        val newValue = !currentlyEnabled
-
-                        dataRepository.storeEnableWearTakDevMode(newValue)
-
-                        Log.d(
-                            TAG,
-                            "~~~ DEBUG MODE ${if (newValue) "ENABLED" else "DISABLED"} ~~~"
-                        )
-
-                        withContext(Dispatchers.Main) {
-                            val toastText = if (newValue) {
-                                "Debug tools enabled (airplane mode off)"
-                            } else {
-                                "Debug tools disabled (airplane mode off)"
-                            }
-                            showTopToast(toastText)
-                        }
-
-                        // Optional hook if you want to e.g. trigger test alerts on enable
-                        onDebugToggled?.invoke(newValue)
-                    }
-                }
-            },
-        text = stringResource(R.string.version, versionNumber),
-        fontSize = 11.sp,
-        color = if (devModeEnabled) Color.Red else colors.primary,
-    )
-    */
 }
 
 fun convertSmsNumbersListToStringWithSeparator(smsNumbersList: List<DataRepository.SmsNumber>, separatorStr: String): String {
