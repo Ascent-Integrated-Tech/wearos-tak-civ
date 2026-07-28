@@ -94,7 +94,6 @@ class ServiceConfiguration(
         }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
         ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()
-        ServiceType.CRM_INFERENCE -> flowOf(true).distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,
@@ -134,8 +133,7 @@ class ServiceConfiguration(
 
         ServiceType.HEART_RATE,
         ServiceType.SKIN_TEMP,
-        ServiceType.ACTIVITY_RECOGNITION,
-        ServiceType.CRM_INFERENCE -> requiredPerms(ServiceType.PHYSIO)
+        ServiceType.ACTIVITY_RECOGNITION -> requiredPerms(ServiceType.PHYSIO)
 
         ServiceType.BLE_BEACON -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)

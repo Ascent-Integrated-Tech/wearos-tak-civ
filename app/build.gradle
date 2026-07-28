@@ -15,15 +15,15 @@ android {
     compileSdk 35
 
     androidResources {
-        noCompress 'onnx', 'tflite'
+        noCompress 'onnx'
     }
 
     defaultConfig {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 601
-        versionName "5.7.6.5"
+        versionCode 64
+        versionName "5.7.6.1"
 
         def buildGitUrl = gitUrl() ?: "unknown"
         def buildGitBranch = gitBranch() ?: "unknown"
@@ -149,8 +149,10 @@ android {
         }
     }
 }
-
+//TODO: MOLLY - change back after finished with your code
 dependencies {
+//    implementation files('/Users/mollyizzi/StudioProjects/weartak-plugin-architecture/weartak-plugin-sdk-release.aar')    //implementation fileTree(dir: 'libs', include: '*.aar')
+
     implementation files(rootProject.file('weartak-plugin-sdk-release.aar'))
     implementation files('libs/samsung-health-sensor-api-1.4.1.aar')
     implementation files('libs/hail-sdk.aar')
@@ -261,9 +263,6 @@ dependencies {
 
     // Onnx Runtime
     implementation libs.onnxruntime.android
-
-    // TensorFlow Lite runtime for CRM inference
-    implementation libs.tensorflow.lite
 
     implementation("org.maplibre.compose:maplibre-compose-material3:0.12.1")
     //implementation("org.maplibre.gl:android-plugin-annotation-v9:3.0.2")
