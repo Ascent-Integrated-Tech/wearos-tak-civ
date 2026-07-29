@@ -23,7 +23,7 @@ android {
         minSdk 34
         targetSdk 34
         versionCode 65
-        versionName "5.8.0"
+        versionName "5.8.0.1"
 
         def buildGitUrl = gitUrl() ?: "unknown"
         def buildGitBranch = gitBranch() ?: "unknown"
