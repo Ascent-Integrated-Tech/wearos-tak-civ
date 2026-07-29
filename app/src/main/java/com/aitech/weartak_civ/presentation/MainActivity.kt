@@ -3118,6 +3118,8 @@ fun selectedMetricValueFromKey(key: String?): String {
     val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
     val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
     val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
+    val latestSpo2 = dataRepository.latestSpo2.collectAsState()
+    val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
 
     val string: String = when (key) {
         "key_heart_rate" -> if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
@@ -3126,6 +3128,8 @@ fun selectedMetricValueFromKey(key: String?): String {
         "key_exertion" -> if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"
         "key_floors" -> if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
         "key_calories" -> if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
+        "key_spo2" -> latestSpo2.value?.let{ "${it.formatDecimal(1)}%" } ?: "---"
+        "key_spo2_tier" ->                latestSpo2TierEvent.value?.tier?.name ?: "NONE"
         else -> "ERROR"
     }
     physioMetricStringComplication = string
