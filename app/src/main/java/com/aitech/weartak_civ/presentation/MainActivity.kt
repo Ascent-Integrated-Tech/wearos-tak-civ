@@ -180,6 +180,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -2919,7 +2920,7 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.Center
                     ){
                         BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
-                        Spacer(modifier = Modifier.width(3.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         FilledIconButton(
                             onClick ={ context.startActivity(Intent(context, MapActivity::class.java)) },
                             modifier = Modifier.size(37.dp),
@@ -3609,7 +3610,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-            }),
+            }).widthIn(max = 115.dp),
 //        verticalAlignment = Alignment.CenterVertically
     ){
      if (bloodhoundChecked == true) {
@@ -3638,20 +3639,21 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                 }
         )
         Column (
-            modifier = Modifier.padding(start = 13.dp)
+            modifier = Modifier.padding(start = 7.dp)
         ) {
             if (bloodhoundChecked == true) {
                 if (activeItem != null) {
                     Text(
                         text = activeTarget,
-                        fontSize = 13.sp,
+                        fontSize = 10.sp,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.Medium,
                     )
 
                         Text(
                             text = activeDistanceText,
-                            fontSize = 15.sp,
+                            fontSize = 12.sp,
                             overflow = TextOverflow.Ellipsis,
                             fontWeight = FontWeight.SemiBold,
                         )
