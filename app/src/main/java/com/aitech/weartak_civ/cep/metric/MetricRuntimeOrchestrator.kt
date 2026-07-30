@@ -7,11 +7,14 @@ import com.aitech.weartak_civ.cep.model.NumericSample
 import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
 import com.aitech.weartak_civ.data.DataRepository
 import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class MetricRuntimeOrchestrator(
     private val dataRepository: DataRepository?,
     metricSpecs: List<MetricSpec>,
-    appContext: Context? = null,
+    private val appContext: Context? = null,
     private val historyStore: MetricHistoryStore = FileBackedMetricHistoryStore(
         baseDir = if (appContext != null) {
             File(appContext.filesDir, "metric_history")
@@ -186,7 +189,9 @@ class MetricRuntimeOrchestrator(
             observeActivityContext(featureStore, nowMs)
             val binding = registry.findById(metricId) ?: return null
             val context = buildGatingContext(binding.metricSpec, featureStore, nowMs)
-            return evaluate(binding, context, nowMs, forceRecalculate = true)
+            val result = evaluate(binding, context, nowMs, forceRecalculate = true)
+            MetricOutputMapper.publish(featureStore, binding.metricSpec.selectedOutputs, result, nowMs)
+            return result
         }
     }
 
@@ -195,9 +200,113 @@ class MetricRuntimeOrchestrator(
             observeActivityContext(featureStore, nowMs)
             return registry.allBindings().associate { binding ->
                 val context = buildGatingContext(binding.metricSpec, featureStore, nowMs)
-                binding.metricSpec.id to evaluate(binding, context, nowMs, forceRecalculate = true)
+                val result = evaluate(binding, context, nowMs, forceRecalculate = true)
+                MetricOutputMapper.publish(featureStore, binding.metricSpec.selectedOutputs, result, nowMs)
+                binding.metricSpec.id to result
             }
         }
+    }
+
+    /**
+     * Reads hydrated state and already-published outputs only. This never recalculates
+     * or persists data when the inspection screen is opened.
+     */
+    fun inspectAll(nowMs: Long, featureStore: FeatureStore): Map<String, MetricInspectionSnapshot> {
+        synchronized(runtimeLock) {
+            return registry.allBindings().associate { binding ->
+                val spec = binding.metricSpec
+                val state = registry.stateFor(spec.id)
+                restoreCachedCore(
+                    spec.id,
+                    FileBackedMetricCalculationCacheStore.configHash(spec),
+                    state
+                )
+                val core = state.cachedCore
+                val mapping = spec.selectedOutputs.slotsToSelectedKeys
+                val selectedState = mapping["baseline_state"]?.let(featureStore::any)
+                    ?.toString()
+                    ?.let { value -> runCatching { MetricEstablishmentState.valueOf(value) }.getOrNull() }
+                val establishmentState = selectedState ?: if (core == null) {
+                    MetricEstablishmentState.NO_DATA
+                } else {
+                    MetricEstablishmentState.WARMING
+                }
+                spec.id to MetricInspectionSnapshot(
+                    metricId = spec.id,
+                    displayName = displayNameFor(spec.id),
+                    unit = unitFor(spec.id),
+                    currentValue = mapping["current_value"]?.let(featureStore::latestAsDouble)
+                        ?: core?.latestValue,
+                    baseline = core?.baseline,
+                    state = establishmentState,
+                    confidence = mapping["baseline_confidence"]?.let(featureStore::latestAsDouble),
+                    calculatedAtMs = state.coreCalculatedAtMs.takeIf { it > 0L },
+                    dataThroughTsMs = core?.latestTsMs,
+                    trendDirection = mapping["trend_direction"]?.let(featureStore::any)?.toString()
+                )
+            }
+        }
+    }
+
+    /** Copies the authoritative metric files into a ZIP without changing them. */
+    fun exportFiles(destination: File) {
+        val stagingDir = appContext?.cacheDir?.let {
+            File(it, "metric_export_stage_${System.currentTimeMillis()}").also(File::mkdirs)
+        }
+        try {
+            synchronized(runtimeLock) {
+                snapshotExportFiles(stagingDir)
+            }
+            destination.parentFile?.mkdirs()
+            ZipOutputStream(FileOutputStream(destination)).use { zip ->
+                addStagedFiles(zip, stagingDir)
+                zip.putNextEntry(ZipEntry("export_metadata.txt"))
+                zip.write(
+                    buildString {
+                        appendLine("exported_at_ms=${System.currentTimeMillis()}")
+                        appendLine("metric_ids=${specs.joinToString(",") { it.id }}")
+                    }.toByteArray()
+                )
+                zip.closeEntry()
+            }
+        } finally {
+            stagingDir?.deleteRecursively()
+        }
+    }
+
+    private fun snapshotExportFiles(stagingDir: File?) {
+        if (stagingDir == null) return
+        listOf(
+            "metric_history" to appContext?.let { File(it.filesDir, "metric_history") },
+            "metric_results" to appContext?.let { File(it.filesDir, "metric_results") }
+        ).forEach { (entryRoot, directory) ->
+            directory?.listFiles()?.filter { it.isFile }?.forEach { file ->
+                val target = File(stagingDir, "$entryRoot/${file.name}")
+                target.parentFile?.mkdirs()
+                file.inputStream().use { input -> target.outputStream().use(input::copyTo) }
+            }
+        }
+    }
+
+    private fun addStagedFiles(zip: ZipOutputStream, stagingDir: File?) {
+        stagingDir?.walkTopDown()?.filter { it.isFile }?.forEach { file ->
+            val entryName = file.relativeTo(stagingDir).path.replace(File.separatorChar, '/')
+            zip.putNextEntry(ZipEntry(entryName))
+            file.inputStream().use { input -> input.copyTo(zip) }
+            zip.closeEntry()
+        }
+    }
+
+    private fun displayNameFor(metricId: String): String = when (metricId) {
+        "hrv.rmssd_ms" -> "HRV RMSSD"
+        "hr.resting_bpm.resting" -> "Resting Heart Rate"
+        "hr.active_bpm" -> "Active Heart Rate"
+        else -> metricId
+    }
+
+    private fun unitFor(metricId: String): String = when (metricId) {
+        "hrv.rmssd_ms" -> "ms"
+        else -> "bpm"
     }
 
     private fun compactHistoryIfDue(metricId: String, nowMs: Long) {

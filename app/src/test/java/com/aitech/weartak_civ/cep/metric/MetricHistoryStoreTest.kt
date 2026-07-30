@@ -193,7 +193,7 @@ class MetricHistoryStoreTest {
     }
 
     @Test
-    fun appendRollsHotSamplesOlderThanHotWindowIntoWarm() {
+    fun scheduledCompactionRollsHotSamplesOlderThanHotWindowIntoWarm() {
         val dir = Files.createTempDirectory("metric_history_append_rollup").toFile()
         val store = FileBackedMetricHistoryStore(dir)
         val metricId = "m.rollup"
@@ -202,6 +202,7 @@ class MetricHistoryStoreTest {
 
         store.appendHotSample(metricId, NormalizedMetricSample(55.0, oldTs))
         store.appendHotSample(metricId, NormalizedMetricSample(56.0, newTs))
+        store.compactHotToWarm(metricId, cutoffMs = 72L * FileBackedMetricHistoryStore.HOUR_MS)
 
         assertEquals(1, store.loadHotSamples(metricId, Long.MIN_VALUE).size)
         assertEquals(1, store.loadWarmBuckets(metricId, Long.MIN_VALUE).size)

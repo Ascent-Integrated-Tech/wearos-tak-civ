@@ -149,6 +149,20 @@ data class MetricComputationResult(
     val clearSelectedKeys: Set<String> = emptySet()
 )
 
+/** Read-only, UI-neutral view of a metric's current baseline state. */
+data class MetricInspectionSnapshot(
+    val metricId: String,
+    val displayName: String,
+    val unit: String,
+    val currentValue: Double?,
+    val baseline: Double?,
+    val state: MetricEstablishmentState,
+    val confidence: Double?,
+    val calculatedAtMs: Long?,
+    val dataThroughTsMs: Long?,
+    val trendDirection: String?
+)
+
 data class MetricBaselineCore(
     val baseline: Double? = null,
     val shortTerm: Double? = null,

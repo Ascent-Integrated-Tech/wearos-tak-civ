@@ -5,6 +5,13 @@ import com.aitech.weartak_civ.cep.engine.FeatureDef
 import com.aitech.weartak_civ.cep.engine.RuleAction
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
 import com.aitech.weartak_civ.cep.engine.RuleDef
+import com.aitech.weartak_civ.cep.metric.MetricBaselinePolicy
+import com.aitech.weartak_civ.cep.metric.MetricConfidenceThresholds
+import com.aitech.weartak_civ.cep.metric.MetricGatingPolicy
+import com.aitech.weartak_civ.cep.metric.MetricProcessorType
+import com.aitech.weartak_civ.cep.metric.MetricSelectedOutputMapping
+import com.aitech.weartak_civ.cep.metric.MetricSpec
+import com.aitech.weartak_civ.cep.metric.MetricTrendPolicy
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -25,6 +32,21 @@ class CepConfigMergerTest {
             action = RuleAction(type = "alert", severity = "INFO", message = "m")
         )
     }
+
+    private fun metric(id: String) = MetricSpec(
+        id = id,
+        source = "heart_rate",
+        processor = MetricProcessorType.BASELINE_TREND,
+        gating = MetricGatingPolicy(),
+        baseline = MetricBaselinePolicy(
+            windowSec = 3600,
+            minSamples = 1,
+            maxStalenessSec = 3600,
+            confidenceThresholds = MetricConfidenceThresholds(5, 10, 20, 40),
+        ),
+        trend = MetricTrendPolicy(60, 300, 5.0, 3.0),
+        selectedOutputs = MetricSelectedOutputMapping(emptyMap()),
+    )
 
     private fun overlay(
         rulesMode: String = "MERGE",
@@ -48,7 +70,7 @@ class CepConfigMergerTest {
     )
 
     @Test fun managedFeatureOverridesBuiltIn() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), ruleEvalIntervalMs = 1000)
         val managedFeature = FeatureDef.Window(id = "features.a", source = "newsrc", op = "max", windowSec = 30)
         val res = CepConfigMerger.merge(builtIn, overlay(features = listOf(managedFeature)), emptyList(), cadence)
         val survivor = res.config.features.first { it.id == "features.a" } as FeatureDef.Window
@@ -57,7 +79,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun pluginCannotOverrideBuiltIn() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), ruleEvalIntervalMs = 1000)
         val pluginVersion = FeatureDef.Window(id = "features.a", source = "plugin", op = "avg", windowSec = 5)
         val plugin = listOf(CepConfigMerger.PluginContribution(pluginId = "p", features = listOf(pluginVersion)))
         val res = CepConfigMerger.merge(builtIn, managed = null, plugin = plugin, defaultCadence = cadence)
@@ -67,7 +89,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun clearOnlyAffectsManagedOverlay() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), ruleEvalIntervalMs = 1000)
         val managed = overlay(features = listOf(feat("features.b")), rules = emptyList())
         val first = CepConfigMerger.merge(builtIn, managed, emptyList(), cadence)
         assertEquals(2, first.config.features.size)
@@ -78,14 +100,14 @@ class CepConfigMergerTest {
     }
 
     @Test fun replaceModeRemovesBuiltInFeaturesFromEffectiveSet() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), ruleEvalIntervalMs = 1000)
         val managed = overlay(featuresMode = "REPLACE", features = emptyList())
         val res = CepConfigMerger.merge(builtIn, managed, emptyList(), cadence)
         assertTrue(res.config.features.isEmpty())
     }
 
     @Test fun replaceModeRulesDropBuiltInsUnlessListedInOverlay() {
-        val builtIn = CepConfig(1, emptyList(), listOf(rule("r_builtin")), 1000)
+        val builtIn = CepConfig(1, emptyList(), listOf(rule("r_builtin")), ruleEvalIntervalMs = 1000)
         val managed = overlay(
             rulesMode = "REPLACE",
             rules = emptyList(),
@@ -96,7 +118,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun disableListsAppliedAfterMerge() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), ruleEvalIntervalMs = 1000)
         val managed = overlay(disabledRuleIds = setOf("r1"))
         val res = CepConfigMerger.merge(builtIn, managed, emptyList(), cadence)
         assertTrue(res.config.rules.isEmpty())
@@ -104,7 +126,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun disabledIdNoSurvivorIsSilentNoop() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), ruleEvalIntervalMs = 1000)
         // Targets nothing — must not fail.
         val managed = overlay(disabledRuleIds = setOf("r-nonexistent"))
         val res = CepConfigMerger.merge(builtIn, managed, emptyList(), cadence)
@@ -112,7 +134,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun managedOverlayFromCadence() {
-        val builtIn = CepConfig(1, emptyList(), emptyList(), 1000)
+        val builtIn = CepConfig(1, emptyList(), emptyList(), ruleEvalIntervalMs = 1000)
         val cadenceOverride = RuleCompiler.EngineCadence(tickHz = 10, ruleEvalIntervalMs = 200)
         val managed = overlay().copy(engineCadence = cadenceOverride)
         val res = CepConfigMerger.merge(builtIn, managed, emptyList(), cadence)
@@ -121,7 +143,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun emptyOverlayLeavesBuiltInsIntact() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), listOf(rule("r1")), ruleEvalIntervalMs = 1000)
         val res = CepConfigMerger.merge(builtIn, managed = null, plugin = emptyList(), defaultCadence = cadence)
         assertEquals(1, res.config.features.size)
         assertEquals(1, res.config.rules.size)
@@ -129,8 +151,25 @@ class CepConfigMergerTest {
         assertEquals(SourceLayer.BUILT_IN, res.ruleSource["r1"])
     }
 
+    @Test fun emptyOverlayPreservesBuiltInMetrics() {
+        val builtIn = CepConfig(
+            tickHz = 1,
+            features = emptyList(),
+            rules = emptyList(),
+            metrics = listOf(metric("hr.resting_bpm.resting")),
+            ruleEvalIntervalMs = 1000,
+        )
+        val res = CepConfigMerger.merge(
+            builtIn = builtIn,
+            managed = null,
+            plugin = emptyList(),
+            defaultCadence = cadence,
+        )
+        assertEquals(listOf("hr.resting_bpm.resting"), res.config.metrics.map { it.id })
+    }
+
     @Test fun pluginCollidingWithBuiltInProducesBlockedByBuiltinDiagnostic() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), ruleEvalIntervalMs = 1000)
         val pluginVersion = FeatureDef.Window(id = "features.a", source = "plugin", op = "avg", windowSec = 5)
         val plugin = listOf(CepConfigMerger.PluginContribution(pluginId = "com.acme.p", features = listOf(pluginVersion)))
         val res = CepConfigMerger.merge(builtIn, managed = null, plugin = plugin, defaultCadence = cadence)
@@ -142,7 +181,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun pluginCollidingWithManagedProducesBlockedByMdmDiagnostic() {
-        val builtIn = CepConfig(1, emptyList(), emptyList(), 1000)
+        val builtIn = CepConfig(1, emptyList(), emptyList(), ruleEvalIntervalMs = 1000)
         val pluginRule = rule("rule.shared")
         val managedRule = rule("rule.shared")
         val managed = overlay(rules = listOf(managedRule))
@@ -155,7 +194,7 @@ class CepConfigMergerTest {
     }
 
     @Test fun replaceModeManagedShadowingPluginRecordsCollision() {
-        val builtIn = CepConfig(1, emptyList(), emptyList(), 1000)
+        val builtIn = CepConfig(1, emptyList(), emptyList(), ruleEvalIntervalMs = 1000)
         val pluginFeat = FeatureDef.Window(id = "features.from_plugin", source = "p", op = "min", windowSec = 5)
         val plugin = listOf(CepConfigMerger.PluginContribution(pluginId = "com.acme.p", features = listOf(pluginFeat)))
         val managed = overlay(featuresMode = "REPLACE", features = emptyList())

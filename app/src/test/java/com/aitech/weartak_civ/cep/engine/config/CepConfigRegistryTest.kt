@@ -25,7 +25,7 @@ class CepConfigRegistryTest {
     }
 
     private fun registry(features: List<FeatureDef>, rules: List<RuleDef>): CepConfigRegistry {
-        val builtIn = CepConfig(1, features, rules, 1000)
+        val builtIn = CepConfig(1, features, rules, ruleEvalIntervalMs = 1000)
         return CepConfigRegistry(builtIn = builtIn, defaultCadence = RuleCompiler.parseEngineCadence(null))
     }
 
@@ -136,7 +136,7 @@ class CepConfigRegistryTest {
     }
 
     @Test fun managedAndBuiltInShadowPluginDeterministically() {
-        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), 1000)
+        val builtIn = CepConfig(1, listOf(feat("features.a")), emptyList(), ruleEvalIntervalMs = 1000)
         val reg = CepConfigRegistry(builtIn, RuleCompiler.parseEngineCadence(null))
         val plugin = listOf(
             CepConfigMerger.PluginContribution(

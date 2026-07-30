@@ -19,11 +19,13 @@ import com.aitech.weartak_civ.cep.model.payloads.Spo2Tier
 import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.cep.metric.MetricRuntimeOrchestrator
+import com.aitech.weartak_civ.cep.metric.MetricInspectionSnapshot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.cancelAndJoin
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.io.File
 
 class CepEngine(
     private val appContext: Context,
@@ -640,6 +642,30 @@ class CepEngine(
 
     internal suspend fun initializeMetricRuntimeForTest() {
         metricOrchestrator.initialize()
+    }
+
+    /** Read-only baseline inspection for the in-app diagnostics screen. */
+    suspend fun inspectBaselineMetrics(): Map<String, MetricInspectionSnapshot> =
+        withContext(Dispatchers.Default) {
+            metricOrchestrator.inspectAll(System.currentTimeMillis(), featureStore)
+        }
+
+    /** Force and persist all baseline cores without clearing history or runtime state. */
+    suspend fun recalculateAllBaselineMetrics(): Map<String, MetricInspectionSnapshot> =
+        withContext(Dispatchers.Default) {
+            val nowMs = System.currentTimeMillis()
+            metricOrchestrator.calculateAllNow(nowMs, featureStore)
+            metricOrchestrator.inspectAll(nowMs, featureStore)
+        }
+
+    /** Creates a local ZIP copy of metric history and cached results. */
+    suspend fun exportBaselineMetrics(): File = withContext(Dispatchers.IO) {
+        val output = File(
+            appContext.cacheDir,
+            "weartak_metrics_${System.currentTimeMillis()}.zip"
+        )
+        metricOrchestrator.exportFiles(output)
+        output
     }
 
     /**

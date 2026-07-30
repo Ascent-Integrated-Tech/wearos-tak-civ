@@ -28,6 +28,39 @@
     <string name="chat_command_enroll_text" translatable="false">%1$s: enter your login</string>
     <string name="beta_features">Beta Features</string>
     <string name="beta_features_desc">Show settings for beta features</string>
+    <string name="baseline_trends">Baseline Trends</string>
+    <string name="baseline_trends_desc">View calculated physiological baselines</string>
+    <string name="no_baseline_metrics">No baseline metrics configured</string>
+    <string name="calculating">Calculating…</string>
+    <string name="recalculate_trends">Recalculate trends now</string>
+    <string name="export_metric_files">Export metric files</string>
+    <string name="exporting">Exporting…</string>
+    <string name="reset_user_metrics">Reset user metrics</string>
+    <string name="resetting">Resetting…</string>
+    <string name="reset">Reset</string>
+    <string name="reset_user_metrics_title">Reset user metrics?</string>
+    <string name="reset_user_metrics_warning">This clears metric history, cached baselines, and runtime state for the current user.</string>
+    <string name="baseline_trends_recalculated">Baseline trends recalculated</string>
+    <string name="metric_files_exported">Metric files exported</string>
+    <string name="user_metrics_reset">User metrics reset</string>
+    <string name="export_chooser_title">Export WearTAK metric files</string>
+    <string name="metric_files_saved">Metric files saved to Downloads/WearTAK</string>
+    <string name="metric_files_save_failed">Unable to save metric files</string>
+    <string name="not_calculated_yet">Not calculated yet</string>
+    <string name="metric_value_format">%1$s %2$s</string>
+    <string name="baseline_value_format">Baseline: %1$s %2$s</string>
+    <string name="metric_state_format">State: %1$s</string>
+    <string name="metric_confidence_format">Confidence: %1$s%%</string>
+    <string name="last_calculated_format">Last calculated: %1$s</string>
+    <string name="data_through_format">Data through: %1$s</string>
+    <string name="metric_engine_unavailable">Metric engine is not available yet</string>
+    <string name="unable_recalculate_trends">Unable to recalculate baseline trends</string>
+    <string name="unable_export_metric_files">Unable to export metric files</string>
+    <string name="unable_reset_user_metrics">Unable to reset user metrics</string>
+    <string name="unable_read_baseline_trends">Unable to read baseline trends</string>
+    <string name="metric_hrv_rmssd">HRV RMSSD</string>
+    <string name="metric_resting_heart_rate">Resting Heart Rate</string>
+    <string name="metric_active_heart_rate">Active Heart Rate</string>
     <string name="gunshot_detection" translatable="false">DART</string>
     <string name="uas_detection" translatable="false">FALCON</string>
     <string name="audio_detection_trigger_threshold">Trigger Threshold</string>

@@ -10,6 +10,7 @@ import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
 import com.aitech.weartak_civ.cep.model.payloads.HrvPayload
 import com.aitech.weartak_civ.cep.model.payloads.OffBodyPayload
 import com.aitech.weartak_civ.cep.model.payloads.SleepPayload
+import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,7 +19,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 
+@RunWith(RobolectricTestRunner::class)
 class MetricRuntimeEngineIntegrationTest {
 
     @Test
@@ -69,7 +74,7 @@ class MetricRuntimeEngineIntegrationTest {
         val finalConfidence = snapshot["selected.baseline.hrv.confidence"] as? Double
         assertNotNull(finalConfidence)
         assertTrue(finalConfidence!! in 0.0..1.0)
-        assertTrue(finalConfidence > earlyConfidence)
+        assertTrue("final=$finalConfidence early=$earlyConfidence", finalConfidence > earlyConfidence)
         assertNotNull(snapshot["selected.trends.hrv.direction"])
         assertNotNull(snapshot["selected.trends.hrv.short_term"])
         assertNotNull(snapshot["selected.trends.hrv.long_term"])
@@ -384,11 +389,10 @@ class MetricRuntimeEngineIntegrationTest {
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val engine = CepEngine(
-            appContext = null,
+            appContext = RuntimeEnvironment.getApplication(),
             scope = scope,
             config = config,
-            yearOfBirth = 1990,
-            dataRepository = null
+            dataRepository = mockk(relaxed = true)
         )
         engine.initializeMetricRuntimeForTest()
         val ts = 1_000L
@@ -414,6 +418,9 @@ class MetricRuntimeEngineIntegrationTest {
     }
 
     private fun newEngine(): CepEngine {
+        val filesDir = RuntimeEnvironment.getApplication().filesDir
+        filesDir.resolve("metric_history").deleteRecursively()
+        filesDir.resolve("metric_results").deleteRecursively()
         val config = CepConfig(
             tickHz = 1,
             features = emptyList(),
@@ -423,11 +430,10 @@ class MetricRuntimeEngineIntegrationTest {
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         return CepEngine(
-            appContext = null,
+            appContext = RuntimeEnvironment.getApplication(),
             scope = scope,
             config = config,
-            yearOfBirth = 1990,
-            dataRepository = null
+            dataRepository = mockk(relaxed = true)
         )
     }
 

@@ -26,6 +26,8 @@ import com.aitech.weartak_civ.cep.engine.config.ValidationResult
 import com.aitech.weartak_civ.cep.engine.lifecycle.CepEngineHolder
 import com.aitech.weartak_civ.cep.plugin.PluginRegistry
 import com.aitech.weartak_civ.cep.plugin.PluginTrust
+import com.aitech.weartak_civ.cep.metric.MetricInspectionSnapshot
+import java.io.File
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -259,6 +261,25 @@ object CepProvider {
 
     /** Authoritative read of the running engine, or null before cold start. */
     fun currentEngine(): CepEngine? = holder.current()
+
+    /** Read-only baseline inspection for the in-app Beta Features screen. */
+    suspend fun inspectBaselineMetrics(): Map<String, MetricInspectionSnapshot> =
+        currentEngine()?.inspectBaselineMetrics().orEmpty()
+
+    /** Force and persist all baseline cores without clearing metric history. */
+    suspend fun recalculateAllBaselineMetrics(): Map<String, MetricInspectionSnapshot> =
+        currentEngine()?.recalculateAllBaselineMetrics().orEmpty()
+
+    /** Creates a local ZIP copy of metric history and cached results. */
+    suspend fun exportBaselineMetrics(): File? =
+        currentEngine()?.exportBaselineMetrics()
+
+    /** Performs the existing explicit user-metrics reset. */
+    suspend fun resetBaselineMetricsForUserChange(): Boolean {
+        val engine = currentEngine() ?: return false
+        engine.resetAndReinitializeMetricsForUserChange()
+        return true
+    }
 
     /** Returns the configured registry — useful for tests and for ManagedConfigApplyWorker. */
     fun registry(): CepConfigRegistry = registry

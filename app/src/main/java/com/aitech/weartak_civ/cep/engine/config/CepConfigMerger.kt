@@ -4,6 +4,7 @@ import com.aitech.weartak_civ.cep.engine.CepConfig
 import com.aitech.weartak_civ.cep.engine.FeatureDef
 import com.aitech.weartak_civ.cep.engine.RuleDef
 import com.aitech.weartak_civ.cep.engine.RuleCompiler
+import com.aitech.weartak_civ.cep.metric.MetricSpec
 
 /**
  * Pure merger for the WEAR-508 definitional layers.
@@ -44,7 +45,10 @@ object CepConfigMerger {
             managed == null -> RuleCompiler.EngineCadence(builtIn.tickHz, builtIn.ruleEvalIntervalMs)
             else -> defaultCadence
         }
-        return buildMergeResult(state, finalCadence)
+        // Metrics are built-in definitions today. They are not part of the feature/rule
+        // precedence maps, so carry them explicitly into the merged config instead of
+        // reconstructing CepConfig with its default empty metric list.
+        return buildMergeResult(state, finalCadence, builtIn.metrics)
     }
 
     private fun mergePluginLayer(state: MergeState, plugin: List<PluginContribution>) {
@@ -198,11 +202,16 @@ object CepConfigMerger {
         }
     }
 
-    private fun buildMergeResult(state: MergeState, finalCadence: RuleCompiler.EngineCadence): MergeResult {
+    private fun buildMergeResult(
+        state: MergeState,
+        finalCadence: RuleCompiler.EngineCadence,
+        metrics: List<MetricSpec>,
+    ): MergeResult {
         val mergedConfig = CepConfig(
             tickHz = finalCadence.tickHz,
             features = state.featuresById.values.toList(),
             rules = state.rulesById.values.toList(),
+            metrics = metrics,
             ruleEvalIntervalMs = finalCadence.ruleEvalIntervalMs,
         )
         return MergeResult(
