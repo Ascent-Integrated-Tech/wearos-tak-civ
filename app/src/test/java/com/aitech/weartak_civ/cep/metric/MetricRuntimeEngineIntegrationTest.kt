@@ -202,6 +202,8 @@ class MetricRuntimeEngineIntegrationTest {
             "trend_percent_deviation",
             "low_threshold",
             "low_threshold_warn",
+            "high_threshold",
+            "high_threshold_warn",
             "baseline_confidence",
             "baseline_state",
             "baseline_sample_count",

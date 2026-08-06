@@ -13,6 +13,7 @@ import com.aitech.weartak_civ.cep.metric.MetricProcessorType
 import com.aitech.weartak_civ.cep.metric.MetricSelectedOutputMapping
 import com.aitech.weartak_civ.cep.metric.MetricSpec
 import com.aitech.weartak_civ.cep.metric.MetricTrendPolicy
+import com.aitech.weartak_civ.cep.metric.MetricThresholdPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -113,6 +114,14 @@ object RuleCompiler {
                     coverageTargetSec = o.getJSONObject("baseline").optLong("coverage_target_sec", 0L)
                         .takeIf { it > 0L },
                     stabilityWeight = o.getJSONObject("baseline").optDouble("stability_weight", 1.0),
+                    thresholdPolicy = o.getJSONObject("baseline").optJSONObject("thresholds")?.let { thresholds ->
+                        MetricThresholdPolicy(
+                            lowAlertPercent = thresholds.optDouble("low_alert_percent", 0.20),
+                            lowWarningPercent = thresholds.optDouble("low_warning_percent", 0.10),
+                            highWarningPercent = thresholds.optDouble("high_warning_percent", 0.10),
+                            highAlertPercent = thresholds.optDouble("high_alert_percent", 0.20)
+                        )
+                    } ?: MetricThresholdPolicy(),
                     calculation = o.getJSONObject("baseline").optJSONObject("calculation_cache")?.let { cache ->
                         MetricCalculationPolicy(
                             warmingMaxAgeSec = cache.optLong("warming_max_age_sec", 900L),

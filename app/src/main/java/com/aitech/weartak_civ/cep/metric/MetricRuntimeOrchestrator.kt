@@ -50,6 +50,8 @@ class MetricRuntimeOrchestrator(
             "trend_percent_deviation",
             "low_threshold",
             "low_threshold_warn",
+            "high_threshold",
+            "high_threshold_warn",
             "baseline_confidence",
             "baseline_state",
             "baseline_sample_count",
@@ -70,7 +72,11 @@ class MetricRuntimeOrchestrator(
     )
 
     private val hookRegistry = MetricHookRegistry(
-        listOf(SamsungHrvRmssdHook(), HeartRateReservePercentHook())
+        listOf(
+            SamsungHrvRmssdHook(),
+            HeartRateReservePercentHook(),
+            PeripheralSkinTemperatureMedianHook()
+        )
     )
     private val processorRegistry = ProcessorRegistry(
         mapOf(MetricProcessorType.BASELINE_TREND to BaselineTrendProcessor())
@@ -184,6 +190,22 @@ class MetricRuntimeOrchestrator(
         }
     }
 
+    /**
+     * Allows the existing CEP HR rules to use personal resting-HR thresholds after the
+     * baseline is established. Profile/static thresholds remain in place beforehand.
+     */
+    fun applyRestingHrThresholds(featureStore: FeatureStore, nowMs: Long) {
+        synchronized(runtimeLock) {
+            if (featureStore.str("selected.baseline.hr.state") != MetricEstablishmentState.ESTABLISHED.name) {
+                return
+            }
+            val high = featureStore.latestAsDouble("selected.thresholds.hr.high_bpm") ?: return
+            val low = featureStore.latestAsDouble("selected.thresholds.hr.low_bpm") ?: return
+            featureStore.put("thresholds.hr.rest_high_bpm", high, nowMs)
+            featureStore.put("thresholds.hr.rest_low_bpm", low, nowMs)
+        }
+    }
+
     fun calculateNow(metricId: String, nowMs: Long, featureStore: FeatureStore): MetricComputationResult? {
         synchronized(runtimeLock) {
             observeActivityContext(featureStore, nowMs)
@@ -242,6 +264,8 @@ class MetricRuntimeOrchestrator(
                     confidence = mapping["baseline_confidence"]?.let(featureStore::latestAsDouble),
                     calculatedAtMs = state.coreCalculatedAtMs.takeIf { it > 0L },
                     dataThroughTsMs = core?.latestTsMs,
+                    coveredSeconds = core?.coveredSeconds ?: 0L,
+                    activeDays = core?.activeDays ?: 0,
                     trendDirection = mapping["trend_direction"]?.let(featureStore::any)?.toString()
                 )
             }
@@ -301,11 +325,13 @@ class MetricRuntimeOrchestrator(
         "hrv.rmssd_ms" -> "HRV RMSSD"
         "hr.resting_bpm.resting" -> "Resting Heart Rate"
         "hr.active_bpm" -> "Active Heart Rate"
+        "skin_temp.peripheral_median_c" -> "Peripheral Skin Temperature"
         else -> metricId
     }
 
     private fun unitFor(metricId: String): String = when (metricId) {
         "hrv.rmssd_ms" -> "ms"
+        "skin_temp.peripheral_median_c" -> "°C"
         else -> "bpm"
     }
 
@@ -486,6 +512,15 @@ class MetricRuntimeOrchestrator(
             }
             require(spec.baseline.stabilityWeight >= 0.0) {
                 "baseline.stability_weight must be >= 0 for metric=${spec.id}"
+            }
+            with(spec.baseline.thresholdPolicy) {
+                require(lowAlertPercent in 0.0..<1.0 && lowWarningPercent in 0.0..<1.0 &&
+                    highWarningPercent in 0.0..<1.0 && highAlertPercent in 0.0..<1.0) {
+                    "baseline threshold percentages must be in [0,1) for metric=${spec.id}"
+                }
+                require(lowWarningPercent <= lowAlertPercent && highWarningPercent <= highAlertPercent) {
+                    "warning thresholds must not exceed alert thresholds for metric=${spec.id}"
+                }
             }
             require(spec.baseline.estimator in setOf("trimmed_mean", "time_weighted_mean")) {
                 "Unsupported baseline.estimator=${spec.baseline.estimator} for metric=${spec.id}"

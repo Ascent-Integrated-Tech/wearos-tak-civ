@@ -164,8 +164,7 @@ class BaselineTrendProcessor : MetricProcessor {
         )
         state.lastDirection = nextDirection
 
-        val lowThreshold = baseline * 0.8
-        val lowThresholdWarn = baseline * 0.9
+        val thresholds = thresholdValues(baseline, spec.baseline.thresholdPolicy)
 
         return MetricComputationResult(
             valuesBySlot = mapOf(
@@ -175,8 +174,10 @@ class BaselineTrendProcessor : MetricProcessor {
                 "trend_long_term" to longTerm,
                 "trend_deviation" to deviation,
                 "trend_percent_deviation" to percentDeviation,
-                "low_threshold" to lowThreshold,
-                "low_threshold_warn" to lowThresholdWarn,
+                "low_threshold" to thresholds.lowAlert,
+                "low_threshold_warn" to thresholds.lowWarning,
+                "high_threshold" to thresholds.highAlert,
+                "high_threshold_warn" to thresholds.highWarning,
                 // Internal slot retained in computation result for debug/inspection.
                 "baseline_confidence" to confidence,
                 "baseline_state" to establishmentState.name,
@@ -228,8 +229,10 @@ class BaselineTrendProcessor : MetricProcessor {
             longTerm = longTerm,
             deviation = deviation,
             percentDeviation = percentDeviation,
-            lowThreshold = baseline * 0.8,
-            lowThresholdWarn = baseline * 0.9,
+            lowThreshold = thresholdValues(baseline, spec.baseline.thresholdPolicy).lowAlert,
+            lowThresholdWarn = thresholdValues(baseline, spec.baseline.thresholdPolicy).lowWarning,
+            highThreshold = thresholdValues(baseline, spec.baseline.thresholdPolicy).highAlert,
+            highThresholdWarn = thresholdValues(baseline, spec.baseline.thresholdPolicy).highWarning,
             confidenceBase = confidenceBase,
             sampleCount = sampleCount,
             coverageSeconds = coverageSeconds(boundedSamples),
@@ -279,6 +282,8 @@ class BaselineTrendProcessor : MetricProcessor {
                 "trend_percent_deviation" to core.percentDeviation,
                 "low_threshold" to core.lowThreshold,
                 "low_threshold_warn" to core.lowThresholdWarn,
+                "high_threshold" to core.highThreshold,
+                "high_threshold_warn" to core.highThresholdWarn,
                 "baseline_confidence" to confidence,
                 "baseline_state" to establishmentState.name,
                 "baseline_sample_count" to core.sampleCount,
@@ -341,6 +346,8 @@ class BaselineTrendProcessor : MetricProcessor {
                 "trend_percent_deviation" to null,
                 "low_threshold" to null,
                 "low_threshold_warn" to null,
+                "high_threshold" to null,
+                "high_threshold_warn" to null,
                 "baseline_confidence" to null,
                 "baseline_state" to establishmentState.name,
                 "baseline_sample_count" to 0L,
@@ -349,6 +356,22 @@ class BaselineTrendProcessor : MetricProcessor {
                 "sampling_state" to samplingState.name
             ),
             confidence = 0.0
+        )
+    }
+
+    private data class ThresholdValues(
+        val lowAlert: Double,
+        val lowWarning: Double,
+        val highWarning: Double,
+        val highAlert: Double
+    )
+
+    private fun thresholdValues(baseline: Double, policy: MetricThresholdPolicy): ThresholdValues {
+        return ThresholdValues(
+            lowAlert = baseline * (1.0 - policy.lowAlertPercent),
+            lowWarning = baseline * (1.0 - policy.lowWarningPercent),
+            highWarning = baseline * (1.0 + policy.highWarningPercent),
+            highAlert = baseline * (1.0 + policy.highAlertPercent)
         )
     }
 

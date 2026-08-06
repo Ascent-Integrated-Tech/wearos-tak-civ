@@ -89,6 +89,8 @@ class FileBackedMetricCalculationCacheStore(
             putNullable("percent_deviation", core.percentDeviation)
             putNullable("low_threshold", core.lowThreshold)
             putNullable("low_threshold_warn", core.lowThresholdWarn)
+            putNullable("high_threshold", core.highThreshold)
+            putNullable("high_threshold_warn", core.highThresholdWarn)
             put("confidence_base", core.confidenceBase)
             put("sample_count", core.sampleCount)
             put("coverage_seconds", core.coverageSeconds)
@@ -106,6 +108,8 @@ class FileBackedMetricCalculationCacheStore(
             percentDeviation = json.optDoubleOrNull("percent_deviation"),
             lowThreshold = json.optDoubleOrNull("low_threshold"),
             lowThresholdWarn = json.optDoubleOrNull("low_threshold_warn"),
+            highThreshold = json.optDoubleOrNull("high_threshold"),
+            highThresholdWarn = json.optDoubleOrNull("high_threshold_warn"),
             confidenceBase = json.getDouble("confidence_base"),
             sampleCount = json.getLong("sample_count"),
             coverageSeconds = json.getLong("coverage_seconds"),

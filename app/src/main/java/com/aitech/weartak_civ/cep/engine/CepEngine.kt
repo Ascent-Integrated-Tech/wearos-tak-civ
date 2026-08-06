@@ -161,6 +161,7 @@ class CepEngine(
         featureStore.beginTick()
         featureStore.logDerivedTick("CEP")
         metricOrchestrator.onTick(nowMs, featureStore)
+        metricOrchestrator.applyRestingHrThresholds(featureStore, nowMs)
         ruleEngine.processTick()
         checkAndClearAlerts()
     }

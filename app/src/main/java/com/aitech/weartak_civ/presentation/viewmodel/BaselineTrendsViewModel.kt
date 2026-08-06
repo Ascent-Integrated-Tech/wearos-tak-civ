@@ -152,7 +152,12 @@ class BaselineTrendsViewModel : ViewModel() {
     }
 
     private fun Collection<MetricInspectionSnapshot>.toDisplayOrder(): List<MetricInspectionSnapshot> {
-        val order = listOf("hr.resting_bpm.resting", "hr.active_bpm", "hrv.rmssd_ms")
+        val order = listOf(
+            "hr.resting_bpm.resting",
+            "hr.active_bpm",
+            "hrv.rmssd_ms",
+            "skin_temp.peripheral_median_c"
+        )
         return sortedBy { metric -> order.indexOf(metric.metricId).let { if (it < 0) Int.MAX_VALUE else it } }
     }
 }

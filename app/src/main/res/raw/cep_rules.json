@@ -97,6 +97,12 @@
         "max_staleness_sec": 7200,
         "coverage_target_sec": 21600,
         "stability_weight": 1.0,
+        "thresholds": {
+          "low_alert_percent": 0.20,
+          "low_warning_percent": 0.10,
+          "high_warning_percent": 0.10,
+          "high_alert_percent": 0.20
+        },
         "establishment": {
           "min_coverage_sec": 21600,
           "min_active_days": 1,
@@ -128,12 +134,69 @@
         "trend_long_term": "selected.trends.hr.long_term",
         "low_threshold": "selected.thresholds.hr.low_bpm",
         "low_threshold_warn": "selected.thresholds.hr.low_bpm_warn",
+        "high_threshold": "selected.thresholds.hr.high_bpm",
+        "high_threshold_warn": "selected.thresholds.hr.high_bpm_warn",
         "baseline_confidence": "selected.baseline.hr.confidence",
         "baseline_state": "selected.baseline.hr.state",
         "baseline_sample_count": "selected.baseline.hr.sample_count",
         "baseline_coverage_sec": "selected.baseline.hr.coverage_sec",
         "baseline_covered_sec": "selected.baseline.hr.covered_sec",
         "sampling_state": "selected.baseline.hr.sampling_state"
+      }
+    },
+    {
+      "id": "skin_temp.peripheral_median_c",
+      "source": "skin_temp",
+      "topic": "skin_temp",
+      "processor": "baseline_trend",
+      "source_hook": "skin_temp_peripheral_median",
+      "gating": {
+        "on_wrist": true,
+        "still_or_sleeping": true,
+        "fresh_within_sec": 120,
+        "activity_context": "RESTING",
+        "min_context_dwell_sec": 60,
+        "resting_cooldown_sec": 300
+      },
+      "validity": { "min_value": 15.0, "max_value": 45.0 },
+      "baseline": {
+        "estimator": "trimmed_mean",
+        "transform": "none",
+        "window_sec": 604800,
+        "min_samples": 20,
+        "max_staleness_sec": 43200,
+        "coverage_target_sec": 21600,
+        "stability_weight": 1.0,
+        "establishment": {
+          "min_coverage_sec": 21600,
+          "min_active_days": 3,
+          "min_confidence": 0.50,
+          "max_gap_sec": 21600
+        },
+        "calculation_cache": {
+          "warming_max_age_sec": 900,
+          "warming_sample_trigger": 10,
+          "established_max_age_sec": 21600
+        },
+        "confidence_thresholds": { "warming": 5, "ready_low": 10, "medium": 20, "high": 40 }
+      },
+      "trend": {
+        "short_window_sec": 3600,
+        "long_window_sec": 86400,
+        "enter_percent": 2.0,
+        "return_to_stable_inner_percent": 1.0
+      },
+      "selected_outputs": {
+        "current_value": "selected.metrics.skin_temp.peripheral_median_c",
+        "trend_direction": "selected.trends.skin_temp.direction",
+        "trend_short_term": "selected.trends.skin_temp.short_term",
+        "trend_long_term": "selected.trends.skin_temp.long_term",
+        "baseline_confidence": "selected.baseline.skin_temp.confidence",
+        "baseline_state": "selected.baseline.skin_temp.state",
+        "baseline_sample_count": "selected.baseline.skin_temp.sample_count",
+        "baseline_coverage_sec": "selected.baseline.skin_temp.coverage_sec",
+        "baseline_covered_sec": "selected.baseline.skin_temp.covered_sec",
+        "sampling_state": "selected.baseline.skin_temp.sampling_state"
       }
     },
     {

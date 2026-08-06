@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.cep.metric
 
 import com.aitech.weartak_civ.cep.model.payloads.HrvPayload
 import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
+import com.aitech.weartak_civ.cep.model.payloads.SkinTempPayload
 
 class SamsungHrvRmssdHook : MetricSourceHook {
     override val hookId: String = "samsung_hrv_rmssd"
@@ -41,5 +42,25 @@ class HeartRateReservePercentHook : MetricSourceHook {
         return percent.takeIf { it.isFinite() }?.let {
             NormalizedMetricSample(value = it, tsMs = payload.ts)
         }
+    }
+}
+
+class PeripheralSkinTemperatureMedianHook : MetricSourceHook {
+    override val hookId: String = "skin_temp_peripheral_median"
+
+    override fun normalize(payload: Any, context: MetricGatingContext): NormalizedMetricSample? {
+        if (!context.onWrist) return null
+        val temperatures = (payload as? SkinTempPayload)?.c_peripheral
+            ?.filter { it.isFinite() && it in -10.0..60.0 }
+            .orEmpty()
+        if (temperatures.isEmpty()) return null
+        val sorted = temperatures.sorted()
+        val middle = sorted.size / 2
+        val median = if (sorted.size % 2 == 0) {
+            (sorted[middle - 1] + sorted[middle]) / 2.0
+        } else {
+            sorted[middle]
+        }
+        return NormalizedMetricSample(median, (payload as SkinTempPayload).ts)
     }
 }

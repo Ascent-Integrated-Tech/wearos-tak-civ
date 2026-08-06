@@ -99,6 +99,7 @@ class WindowStore(private val ringConfig: RingConfig) {
             is SkinTempPayload -> {
                 arr.getOrPut(Topics.SKIN_TEMP) { TimedArrayRing(arrCap()) }.add(p.c_peripheral, tsMs)
                 latest[skin_temp] = p.c_peripheral
+                fs.put(skin_temp, p.c_peripheral, tsMs)
             }
             is AmbientPayload -> {
                 latest[ambient_temp_c] = p.temp_c

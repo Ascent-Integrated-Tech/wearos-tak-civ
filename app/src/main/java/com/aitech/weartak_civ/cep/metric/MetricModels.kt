@@ -24,7 +24,15 @@ data class MetricBaselinePolicy(
     val establishment: MetricEstablishmentPolicy = MetricEstablishmentPolicy(),
     val coverageTargetSec: Long? = null,
     val stabilityWeight: Double = 1.0,
+    val thresholdPolicy: MetricThresholdPolicy = MetricThresholdPolicy(),
     val calculation: MetricCalculationPolicy = MetricCalculationPolicy()
+)
+
+data class MetricThresholdPolicy(
+    val lowAlertPercent: Double = 0.20,
+    val lowWarningPercent: Double = 0.10,
+    val highWarningPercent: Double = 0.10,
+    val highAlertPercent: Double = 0.20
 )
 
 data class MetricCalculationPolicy(
@@ -160,6 +168,8 @@ data class MetricInspectionSnapshot(
     val confidence: Double?,
     val calculatedAtMs: Long?,
     val dataThroughTsMs: Long?,
+    val coveredSeconds: Long,
+    val activeDays: Int,
     val trendDirection: String?
 )
 
@@ -171,6 +181,8 @@ data class MetricBaselineCore(
     val percentDeviation: Double? = null,
     val lowThreshold: Double? = null,
     val lowThresholdWarn: Double? = null,
+    val highThreshold: Double? = null,
+    val highThresholdWarn: Double? = null,
     val confidenceBase: Double = 0.0,
     val sampleCount: Long = 0L,
     val coverageSeconds: Long = 0L,

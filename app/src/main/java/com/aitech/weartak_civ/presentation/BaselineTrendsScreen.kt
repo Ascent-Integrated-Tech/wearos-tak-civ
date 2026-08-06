@@ -218,6 +218,11 @@ private fun MetricTrendRow(metric: MetricInspectionSnapshot) {
     val through = metric.dataThroughTsMs?.let {
         stringResource(R.string.data_through_format, formatTimestamp(it))
     }
+    val collected = stringResource(
+        R.string.data_collected_format,
+        formatCoveredDuration(metric.coveredSeconds)
+    )
+    val activeDays = stringResource(R.string.data_active_days_format, metric.activeDays)
     Text(
         text = buildString {
             append(displayName)
@@ -227,6 +232,8 @@ private fun MetricTrendRow(metric: MetricInspectionSnapshot) {
             baseline?.let { append("$it\n") }
             append(state)
             confidence?.let { append("\n$it") }
+            append("\n$collected")
+            append("\n$activeDays")
             calculated?.let { append("\n$it") }
             through?.let { append("\n$it") }
         },
@@ -241,6 +248,21 @@ private fun formatTimestamp(timestampMs: Long): String =
 
 private fun formatNumber(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else "%.1f".format(value)
+
+@Composable
+private fun formatCoveredDuration(seconds: Long): String {
+    val notEnoughData = stringResource(R.string.duration_not_enough_data)
+    val safeSeconds = seconds.coerceAtLeast(0L)
+    if (safeSeconds < 60L) return notEnoughData
+    val totalMinutes = safeSeconds / 60L
+    val days = totalMinutes / (24L * 60L)
+    val hours = (totalMinutes % (24L * 60L)) / 60L
+    return when {
+        days > 0L -> stringResource(R.string.duration_days_hours, days, hours)
+        hours > 0L -> stringResource(R.string.duration_hours, hours)
+        else -> stringResource(R.string.duration_minutes, totalMinutes)
+    }
+}
 
 private fun saveExportToDownloads(context: android.content.Context, source: File): Boolean {
     if (!source.exists()) return false

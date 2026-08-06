@@ -53,6 +53,12 @@
     <string name="metric_confidence_format">Confidence: %1$s%%</string>
     <string name="last_calculated_format">Last calculated: %1$s</string>
     <string name="data_through_format">Data through: %1$s</string>
+    <string name="data_collected_format">Data collected: %1$s</string>
+    <string name="data_active_days_format">Active days: %1$d</string>
+    <string name="duration_not_enough_data">Not enough data</string>
+    <string name="duration_minutes">%1$d minutes</string>
+    <string name="duration_hours">%1$d hours</string>
+    <string name="duration_days_hours">%1$d days, %2$d hours</string>
     <string name="metric_engine_unavailable">Metric engine is not available yet</string>
     <string name="unable_recalculate_trends">Unable to recalculate baseline trends</string>
     <string name="unable_export_metric_files">Unable to export metric files</string>
