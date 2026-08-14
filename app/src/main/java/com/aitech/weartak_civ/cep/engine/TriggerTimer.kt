@@ -38,16 +38,22 @@ class TriggerTimer(
         val mature = elapsedSec >= effectiveSustainSec
         val cooldown = (now - lastFireAt) >= holdDownSec * 1000
         val mainFired = mature && cooldown
-        if (mainFired) lastFireAt = now
 
         val warnSec = sustainWarnSec
         var warnFired = false
         if (warnSec != null && warnSec in 1 until effectiveSustainSec && elapsedSec >= warnSec && !warnFiredThisEpisode) {
-            warnFiredThisEpisode = true
             warnFired = true
         }
 
         return TickResult(warnFired = warnFired, mainFired = mainFired)
+    }
+
+    fun consumeWarn() {
+        warnFiredThisEpisode = true
+    }
+
+    fun consumeMain(now: Long = System.currentTimeMillis()) {
+        lastFireAt = now
     }
 
     fun reset() {

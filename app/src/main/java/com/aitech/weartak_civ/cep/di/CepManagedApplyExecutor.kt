@@ -375,6 +375,7 @@ internal class CepManagedApplyExecutor(
         previous?.cancelAndJoin()
         onBeforeHygiene(previous, newEngine)
         newEngine.applyPressureAlertHygiene()
+        newEngine.applyPhysioAlertHygiene()
         newEngine.start()
 
         val removedRules = previousRules - newEngine.ruleIds

@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.integration.plugin.HostPluginRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
+import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.GunshotOnnxRepository
 import com.aitech.weartak_civ.data.UasOnnxRepository
@@ -36,11 +37,14 @@ import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.data.secure.takserver.TakServerEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.integration.plugin.PluginRepository
+import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -48,15 +52,19 @@ import live.ditto.android.DefaultAndroidDittoDependencies
 
 class WearTakApplication : Application() {
 
+    private val takServerMigrationReady = CompletableDeferred<Result<Unit>>()
+
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
     lateinit var sitxRepo: SitxSecretsRepository; private set
     lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
+    lateinit var crmRepo: CrmDataRepository; private set
 
     lateinit var gunshotOnnxRepo: GunshotOnnxRepository; private set
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
+    val crmCsvLogger: CrmSessionCsvLogger by lazy { CrmSessionCsvLogger(applicationContext) }
 
     lateinit var pluginIngress: PluginIngressPort
         private set
@@ -77,22 +85,23 @@ class WearTakApplication : Application() {
         bhRepo = BloodhoundRepository(applicationContext)
         capRepo = CompanionAppRepository(applicationContext)
         audioRepo = AudioCaptureRepository(applicationContext)
+        crmRepo = CrmDataRepository(repo)
         gunshotOnnxRepo = GunshotOnnxRepository(applicationContext)
         uasOnnxRepo = UasOnnxRepository(applicationContext)
         sitxRepo = SitxSecretsRepository(SitxEncryptedDataStore(applicationContext))
 
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
-        // Wipe debug mode to false on every boot! 
-//        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-//            repo.storeEnableWearTakDevMode(false)
-//        }
+
         // Wipe debug mode to false on every boot!
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.storeEnableWearTakDevMode(false)
         }
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
+            val migrationResult = runCatching {
+                TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()
+            }
+            takServerMigrationReady.complete(migrationResult)
         }
         CepProvider.init(this)
         // bootstrapEngine() inside getOrCreateEngine handles warm-up + start under the
@@ -103,6 +112,10 @@ class WearTakApplication : Application() {
         pluginManager = PluginManager(this, pluginIngress)
         pluginRepository = HostPluginRepository(this, pluginManager)
         pluginManager.startDeferred()
+    }
+
+    suspend fun awaitTakServerMigration() {
+        takServerMigrationReady.await().getOrThrow()
     }
 
     fun onPluginPackageRemoved(packageName: String) {

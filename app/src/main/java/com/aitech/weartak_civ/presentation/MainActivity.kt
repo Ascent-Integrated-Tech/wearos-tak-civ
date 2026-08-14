@@ -141,6 +141,7 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHAT_ENABLED_NO_NEW_MESSAGE
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -150,6 +151,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_
 import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
+import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
@@ -178,6 +180,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -202,6 +205,8 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLE_BEACON_SERVICE
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
+import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_CRM_POOR_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
@@ -252,6 +257,7 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DUPLICATE_STRING
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import com.aitech.weartak_civ.Utils
@@ -298,6 +304,7 @@ import java.io.File
 import com.aitech.weartak_civ.service.SitxTakService
 import kotlinx.serialization.SerialName
 import kotlin.Long
+import kotlin.text.get
 
 
 class MainActivity : ComponentActivity() {
@@ -387,6 +394,15 @@ class MainActivity : ComponentActivity() {
         var highAtmPressureAlertThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD)
         //Enable Global Health Events
         var enablePassiveDataService = false
+
+        // CRM
+        var enableCrmService: Boolean = false
+        val enableCrmServiceSettingsState = MutableLiveData(enableCrmService)
+        var crmPoorMaxThreshold: Int = DEFAULT_CRM_POOR_MAX_THRESHOLD
+        var crmModerateMaxThreshold: Int = DEFAULT_CRM_MODERATE_MAX_THRESHOLD
+        val crmPoorMaxThresholdSettingsState = MutableLiveData(crmPoorMaxThreshold)
+        val crmModerateMaxThresholdSettingsState = MutableLiveData(crmModerateMaxThreshold)
+
 
         var connectivityStatusComplication : String = ""
         var takServerStatusComplication : String = ""
@@ -589,6 +605,9 @@ class MainActivity : ComponentActivity() {
         //val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
+        var commitHash: String = ""
+
+
         var logFile: File? = null
 
 //        private lateinit var healthTrackingService: com.samsung.android.service.health.tracking.HealthTrackingService
@@ -921,7 +940,9 @@ class MainActivity : ComponentActivity() {
 
             // --- License / TAK server list ---
             license       = dataRepository.getLicense.first()
-            takServerList = dataRepository.getTakServerList.first()
+            dataRepository.tryAwaitTakServerList()?.let { loadedTakServers ->
+                takServerList = loadedTakServers
+            }
 
             // --- Core service enable flags ---
             enableLocationService          = dataRepository.getEnableLocationService.first()
@@ -949,6 +970,9 @@ class MainActivity : ComponentActivity() {
             onnxGunshotTriggerThresholdPercent = dataRepository.getOnnxGunshotTriggerThresholdPercent.first()
             enableOnnxUasService           = dataRepository.getEnableOnnxUasService.first()
             onnxUasTriggerThresholdPercent = dataRepository.getOnnxUasTriggerThresholdPercent.first()
+
+            // CRM
+            enableCrmService = dataRepository.getEnableCrmService.first()
 
             lowAtmPressureAlertThreshold = dataRepository.getLowAtmPressureAlertThreshold.first()
             highAtmPressureAlertThreshold = dataRepository.getHighAtmPressureAlertThreshold.first()
@@ -1430,7 +1454,7 @@ class MainActivity : ComponentActivity() {
         enableBloodhoundProximityVibrationSettingsState.postValue(enableBloodhoundProximityVibration)
         bloodhoundProximityRadiusMetersSettingsState.postValue(bloodhoundProximityRadiusMeters)
         bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
-
+        enableCrmServiceSettingsState.postValue(enableCrmService)
         enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
         onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
         enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
@@ -1595,6 +1619,62 @@ class MainActivity : ComponentActivity() {
         return result
     }
 
+    private suspend fun reconcileManagedTakServers(
+        configuredServers: List<DataRepository.TakServerItem>,
+        managedConfigurationIsAuthoritative: Boolean
+    ): Boolean {
+        var changed = false
+        val handler = Handler(Looper.getMainLooper())
+        val uniqueManagedServers = configuredServers.distinctBy(TakServerEndpointIdentity::key)
+
+        for (managedServer in uniqueManagedServers) {
+            val endpointKey = TakServerEndpointIdentity.key(managedServer)
+            val index = takServerList.indexOfFirst {
+                TakServerEndpointIdentity.key(it) == endpointKey
+            }
+            if (index >= 0) {
+                val existing = takServerList[index]
+                if (managedServer != existing) {
+                    changed = true
+                    dataRepository.updateTakServerItem(index, managedServer)
+                    if (takServerConnDetailsChanged(existing, managedServer)) {
+                        handler.postDelayed({
+                            EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
+                        }, EVENT_SEND_DELAY_MS)
+                    }
+                    takServerList = dataRepository.awaitTakServerList()
+                }
+            } else if (dataRepository.addTakServerItem(managedServer) == DataRepository.TakServerAddResult.ADDED) {
+                changed = true
+                takServerList = dataRepository.awaitTakServerList()
+                val addedIndex = takServerList.indexOfFirst {
+                    TakServerEndpointIdentity.key(it) == endpointKey
+                }
+                if (addedIndex >= 0) {
+                    handler.postDelayed({
+                        EventBus.getDefault().post(MessageEvent(SERVER_ADDED, addedIndex))
+                    }, EVENT_SEND_DELAY_MS)
+                }
+            }
+        }
+
+        if (managedConfigurationIsAuthoritative) {
+            val managedKeys = uniqueManagedServers.map(TakServerEndpointIdentity::key).toSet()
+            val staleIndexes = takServerList.indices.filter {
+                TakServerEndpointIdentity.key(takServerList[it]) !in managedKeys
+            }.sortedDescending()
+            staleIndexes.forEachIndexed { order, staleIndex ->
+                dataRepository.removeTakServerItem(takServerList[staleIndex])
+                changed = true
+                takServerList = dataRepository.awaitTakServerList()
+                handler.postDelayed({
+                    EventBus.getDefault().post(MessageEvent(SERVER_REMOVED, staleIndex))
+                }, EVENT_SEND_DELAY_MS * (order + 1))
+            }
+        }
+        return changed
+    }
+
     private fun handleManagedConfigUpdate(calledOnCreate: Boolean) {
         Log.v(TAG, "=== === Handling Managed Config Update (calledOnCreate: $calledOnCreate) ===")
         // WEAR-508: ManagedConfiguration CEP overlay (`cep_configuration_json`) is owned
@@ -1681,8 +1761,6 @@ class MainActivity : ComponentActivity() {
         var serverCertPassword: String? = null
         var serverCertificate: String? = null
         val takServerListConfig: MutableList<DataRepository.TakServerItem> = mutableListOf()
-        val handler = Handler(Looper.getMainLooper())
-
         val serverParcels = appRestrictions.getParcelableArray("tak_server_list")  // we don't know how many configurations will be set on the Knox Managed Configuration page, so we to loop through all the servers in the list.
         if (serverParcels != null) {
             val serverCount = serverParcels.size
@@ -2014,56 +2092,10 @@ class MainActivity : ComponentActivity() {
                 EventBus.getDefault().post(MessageEvent(CALLSIGN_TEAM_ROLE_CHANGED, 0))
             }
 
-            changed = false
-            if (takServerListConfig.size > 0) {
-                for (i in takServerListConfig.indices) {
-                    if (i < takServerList.size) {
-                        val takServerConfig = takServerListConfig.get(i)
-                        val takServer = takServerList.get(i)
-                        // Server already present
-                        if (takServerConfig != takServer) {
-                            Log.d(
-                                TAG,
-                                "takServerListConfig.get($i).toString(): ${
-                                    takServerListConfig.get(i).toString()
-                                }"
-                            )
-                            changed = true
-                            dataRepository.updateTakServerItem(i, takServerListConfig.get(i))
-                            if (takServerConnDetailsChanged(takServer, takServerConfig)) {
-                                Log.d(
-                                    TAG,
-                                    "takServerListConfig.get($i) connection details has changed. Sending SERVER_DETAILS_CHANGED"
-                                )
-                                // TODO: is there a sync for dataRepository so that we are guaranteed change when storing OR read from there without need for EventBus
-                                handler.postDelayed({
-                                    EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, i))
-                                }, EVENT_SEND_DELAY_MS)
-                            }
-                        }
-                    } else {
-                        changed = true
-                        Log.d(TAG, "Additional server($i) added. Sending SERVER_ADDED")
-                        dataRepository.addTakServerItem(takServerListConfig.get(i))
-
-                        handler.postDelayed({
-                            EventBus.getDefault().post(MessageEvent(SERVER_ADDED, i))
-                        }, EVENT_SEND_DELAY_MS)
-                    }
-                }
-                if (changed) {
-                    if (takServerListConfig.size >= takServerList.size) {
-                        takServerList = takServerListConfig
-                    } else {
-                        val mutableTakServerList = takServerList.toMutableList()
-                        for (i in takServerListConfig.indices) {
-                            mutableTakServerList.set(i, takServerListConfig.get(i))
-                        }
-                        takServerList = mutableTakServerList.toList()
-                        Log.d(TAG, "takServerList: ${takServerList}")
-                    }
-                }
-            }
+            changed = reconcileManagedTakServers(
+                takServerListConfig,
+                serverParcels != null
+            )
 
             if ((null != esriEndpointConfigUpdate) && (esriEndpoint != esriEndpointConfigUpdate)) {
                 esriEndpoint = esriEndpointConfigUpdate
@@ -2407,6 +2439,7 @@ class MainActivity : ComponentActivity() {
             if (enablePhysiologicalAlerts != enablePhysiologicalAlertsConfigUpdate) {
                 enablePhysiologicalAlerts = enablePhysiologicalAlertsConfigUpdate
                 Log.d(TAG, "enablePhysiologicalAlerts changed to $enablePhysiologicalAlerts")
+                CepProvider.getOrCreateEngine(context).updatePhysioAlertProfile()
                 Handler(Looper.getMainLooper()).postDelayed({
                     EventBus.getDefault().post(
                         MessageEvent(
@@ -2887,6 +2920,24 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.Center
                     ){
                         BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        FilledIconButton(
+                            onClick ={ context.startActivity(Intent(context, MapActivity::class.java)) },
+                            modifier = Modifier.size(37.dp),
+                            colors = IconButtonColors(
+                                containerColor = Color.DarkGray,
+                                contentColor = Color.Unspecified,
+                                disabledContentColor = Color.Gray,
+                                disabledContainerColor = Color.Black
+                            ),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.maps),
+                                contentDescription = "Favorite icon",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -2971,9 +3022,15 @@ fun displayServerDialogs(
     loadingDialog: String?,
     shouldShowLoadingDialog: MutableState<Boolean>,
     shouldShowConfirmDialog: MutableState<Boolean>,
-    isServerConnected: MutableState<Boolean>) {
+    isServerConnected: MutableState<Boolean>,
+    isDuplicate: MutableState<Boolean>) {
     Log.d(TAG, "displayServerDialogs isNetworkConnected=$isNetworkConnected, loadingDialog=$loadingDialog, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}, shouldShowConfirmDialog=${shouldShowConfirmDialog.value}, isServerConnected=${isServerConnected.value}")
-    if (isNetworkConnected) {
+    isDuplicate.value = loadingDialog == TAK_SERVER_DUPLICATE_STRING
+    if (isDuplicate.value) {
+        shouldShowLoadingDialog.value = false
+        shouldShowConfirmDialog.value = true
+        isServerConnected.value = false
+    } else if (isNetworkConnected) {
         if (loadingDialog == TAK_SERVER_CONNECTING_STRING) {
             Log.d(TAG, "displayServerDialogs: TAK_SERVER_CONNECTING_STRING")
             shouldShowLoadingDialog.value = true
@@ -3043,6 +3100,8 @@ fun selectedMetricIconFromKey(key: String?): Int {
         "key_steps" -> (R.drawable.steps)
         "key_skin_temp" -> (R.drawable.skin_temp)
         "key_exertion" -> (R.drawable.exertion)
+        "key_spo2" -> (R.drawable.oxygen_saturation)
+        "key_spo2_tier" -> (R.drawable.oxygen_saturation)
         "key_floors" -> (R.drawable.floors)
         "key_calories" -> (R.drawable.calories)
         else ->
@@ -3059,6 +3118,8 @@ fun selectedMetricValueFromKey(key: String?): String {
     val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
     val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
     val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
+    val latestSpo2 = dataRepository.latestSpo2.collectAsState()
+    val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
 
     val string: String = when (key) {
         "key_heart_rate" -> if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
@@ -3067,6 +3128,8 @@ fun selectedMetricValueFromKey(key: String?): String {
         "key_exertion" -> if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"
         "key_floors" -> if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
         "key_calories" -> if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
+        "key_spo2" -> latestSpo2.value?.let{ "${it.formatDecimal(1)}%" } ?: "---"
+        "key_spo2_tier" ->                latestSpo2TierEvent.value?.tier?.name ?: "NONE"
         else -> "ERROR"
     }
     physioMetricStringComplication = string
@@ -3551,7 +3614,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-            }),
+            }).widthIn(max = 115.dp),
 //        verticalAlignment = Alignment.CenterVertically
     ){
      if (bloodhoundChecked == true) {
@@ -3580,20 +3643,21 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
                 }
         )
         Column (
-            modifier = Modifier.padding(start = 13.dp)
+            modifier = Modifier.padding(start = 7.dp)
         ) {
             if (bloodhoundChecked == true) {
                 if (activeItem != null) {
                     Text(
                         text = activeTarget,
-                        fontSize = 13.sp,
+                        fontSize = 10.sp,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.Medium,
                     )
 
                         Text(
                             text = activeDistanceText,
-                            fontSize = 15.sp,
+                            fontSize = 12.sp,
                             overflow = TextOverflow.Ellipsis,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -3920,6 +3984,7 @@ fun ServerDialogPreview() {
         trueBoolean,
         trueBoolean,
         rememberSwipeDismissableNavController(),
+        falseBoolean,
         falseBoolean,
         falseBoolean
     )

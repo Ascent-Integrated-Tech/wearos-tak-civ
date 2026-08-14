@@ -8,20 +8,15 @@
  */
 package com.aitech.weartak_civ.presentation
 
+import android.annotation.SuppressLint
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Paint
-import androidx.compose.ui.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.Canvas
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -102,25 +97,14 @@ import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathNode
-import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -146,10 +130,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import org.greenrobot.eventbus.EventBus
-import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.expressions.dsl.Feature.get
 import org.maplibre.compose.expressions.dsl.all
@@ -160,28 +141,54 @@ import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
 import android.content.Context
+import androidx.compose.foundation.border
 import org.json.JSONObject
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.compose.expressions.dsl.collator
 import org.maplibre.compose.expressions.dsl.condition
 import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.dsl.switch
-import org.maplibre.compose.expressions.value.DpPaddingValue
-import org.maplibre.compose.expressions.value.OffsetValue
 import org.maplibre.compose.expressions.value.SymbolAnchor
 import org.maplibre.compose.expressions.value.SymbolZOrder
 import org.maplibre.compose.layers.LineLayer
-import kotlin.Long
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
 import org.maplibre.spatialk.geojson.FeatureCollection
 import org.maplibre.spatialk.geojson.LineString
 import kotlin.String
 import kotlin.collections.component1
 import kotlin.collections.component2
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.navigation.NavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.Icon
+import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.aitech.weartak_civ.Utils.ChatRoom
+import com.aitech.weartak_civ.Utils.findChatRoomFromUserUid
+import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
+import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.service.BloodhoundService
+import com.aitech.weartak_civ.service.ChatService
 import org.maplibre.compose.expressions.dsl.asNumber
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.unit.Dp
+import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.log10
+import kotlin.math.pow
 
+
+// MAP ACTIVITY SETUP
+// Creates the map screen and loads the main MapApp composable
 class MapActivity : ComponentActivity() {
 
     companion object Constants {
@@ -204,11 +211,49 @@ class MapActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WearTAKCIVTheme {
-                MapApp({finishAndRemoveTask()})
+                val context = LocalContext.current
+                MapCivApp({finishAndRemoveTask()}, context)
             }
         }
     }
 }
+
+@SuppressLint("StateFlowValueCalledInComposition")
+@Composable
+fun MapCivApp(exitActivity: () -> Unit, context: Context) {
+    val app = context.applicationContext as WearTakApplication
+
+    val dataRepository = remember(app) { app.repo }
+    val bhRepo = remember(app) { app.bhRepo }
+
+    val navController = rememberSwipeDismissableNavController()
+
+    val receivedUserListSetting by dataRepository
+        .receivedUserList
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
+
+    SwipeDismissableNavHost(
+        navController = navController,
+        startDestination = "map_screen"
+    ) {
+        composable("map_screen" ) {
+            MapApp({ exitActivity() }, navController)
+        }
+
+        composable(
+            "selected_user/{index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            SelectedUser(navController, index, receivedUserListSetting, chatRooms, context)
+        }
+    }
+}
+
+// DROPPED AND RECEIVED MARKER DATA
+// Converts marker data into GeoJSON features for MapLibre
+
 @Composable
 fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
     remember(markers) {
@@ -228,6 +273,8 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
             }
         )
     }
+
+// Shortens long marker titles so they do not cover nearby map content
 fun String.ellipsizeMarkerTitle(maxLength: Int = 12): String {
     return if (length > maxLength) {
         take(maxLength) + "..."
@@ -236,6 +283,7 @@ fun String.ellipsizeMarkerTitle(maxLength: Int = 12): String {
     }
 }
 
+// Map-ready version of a dropped or received marker
 data class MapMarkerItem(
     val uid: String,
     val markerType: String,
@@ -245,6 +293,8 @@ data class MapMarkerItem(
     val enQueuedToBeSent: Boolean,
     val cotType: DataRepository.MarkerCotType
 )
+
+// Selects the gray icon used for cleared markers
 @Composable
 fun grayMarkerIconFromString(markerType: String): Painter {
     val painter: Painter = when (markerType) {
@@ -262,14 +312,22 @@ fun grayMarkerIconFromString(markerType: String): Painter {
     }
     return painter
 }
+
+// Creates MapLibre symbol layers for dropped and received markers
 @Composable
 fun MarkersOnMap(
     markers: List<MapMarkerItem>,
     onMarkerClick: (id: String, title: String) -> Unit = { _, _ -> },
     camera: CameraState,
 ) {
+
+    // Skip marker layer creation when there are no markers
     if (markers.isEmpty()) return
+
+    // Convert the marker list into a MapLibre GeoJSON source
     val fc = rememberMarkerFeatures(markers)
+
+    // Group markers by type so each type can share an icon layer
     val typeGroups = remember(markers) { markers.groupBy { it.markerType } }
 
     val source = rememberGeoJsonSource(
@@ -277,6 +335,7 @@ fun MarkersOnMap(
     )
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
+    // Create one symbol layer for each marker type
     typeGroups.forEach { (markerType, group) ->
         val iconRes = markerIconFromString(markerType)
         val iconResGray = grayMarkerIconFromString(markerType)
@@ -329,6 +388,8 @@ fun MarkersOnMap(
     }
 }
 
+// ATOS TAG DATA
+// Converts and displays ATOS tags on the map
 @Composable
 fun rememberATOSFeatures(markers: List<ATOSItem>) =
     remember(markers) {
@@ -351,6 +412,7 @@ fun rememberATOSFeatures(markers: List<ATOSItem>) =
         )
     }
 
+// Map-ready version of an ATOS tag
 data class ATOSItem(
     val uid: String?,
     val iconType: String?,
@@ -359,8 +421,6 @@ data class ATOSItem(
     val lon: Double?,
     val color: String?,
     val hae: Double?
-//    val enQueuedToBeSent: Boolean,
-//    val cotType: DataRepository.MarkerCotType
 )
 
 private data class AtosMarkerVisualSpec(
@@ -385,6 +445,7 @@ private val atosMarkerVisualsByCotType = mapOf(
     "a-f-A-M" to AtosMarkerVisualSpec(R.drawable.ic_track_uas, R.drawable.ic_track_uas_no_gps),
 )
 
+// Creates MapLibre symbol layers for ATOS tags
 @Composable
 fun ATOSTagsOnMap(
     tags: List<ATOSItem>,
@@ -501,7 +562,8 @@ fun tintedPainter(@DrawableRes id: Int, color: Color): Painter {
     }
 }
 
-
+// OTHER USER DATA
+// Converts and displays connected users on the map
 @Composable
 fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
     remember(users) {
@@ -521,28 +583,34 @@ fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
         )
     }
 
+// Map-ready version of another connected user
 data class MapUserItem(
     val uid: String,
-//    val markerType: String,
     val type: String,
     val team: String,
     val title: String,
     val lat: Double?,
     val lon: Double?,
     val role: String?
-//    val enQueuedToBeSent: Boolean,
-//    val cotType: DataRepository.MarkerCotType
 )
 
+// Creates MapLibre symbol layers for connected users
 @Composable
 fun UsersOnMap(
     users: List<MapUserItem>,
     onUserClick: (id: String, title: String) -> Unit = { _, _ -> },
     camera: CameraState,
 ) {
+    // Skip user layer creation when there are no users
     if (users.isEmpty()) return
+
+    // Convert the user list into a MapLibre GeoJSON source
     val fc = rememberOtherUsersFeatures(users)
-    val typeGroups = remember(users) { users.groupBy { it.type } }
+
+    // Group users by type so each type can share a symbol layer
+    val typeGroups = remember(users) {
+        users.groupBy { it.type }
+    }
 
     val source = rememberGeoJsonSource(
         data = GeoJsonData.Features(fc)
@@ -599,6 +667,7 @@ fun UsersOnMap(
     }
 }
 
+// Converts a team color name into the matching Compose color
 fun TeamColors(team: String) : Color {
     val teamColor =  when (team){
         "White" -> Color.White
@@ -620,6 +689,8 @@ fun TeamColors(team: String) : Color {
     return teamColor
 }
 
+// BLOODHOUND TRACKING
+// Displays the active Bloodhound target and direction line
 data class MapBhoundItem(
     val uid: String,
     val distance: Double?,
@@ -627,6 +698,8 @@ data class MapBhoundItem(
     val lon: Double?,
     val orientation: Double?,
 )
+
+// Creates the GeoJSON line between the user and Bloodhound target
 @Composable
 fun rememberBhoundMapItem(
     bloodhound: MapBhoundItem,
@@ -661,6 +734,7 @@ fun rememberBhoundMapItem(
     }
 }
 
+// Creates the GeoJSON feature used for the Bloodhound label
 @Composable
 fun rememberBhoundLabelItem(
     bloodhound: MapBhoundItem,
@@ -704,6 +778,7 @@ fun rememberBhoundLabelItem(
     }
 }
 
+// Draws the Bloodhound line, target, direction, and distance label
 @Composable
 fun BhoundMap(
     item: MapBhoundItem,
@@ -762,16 +837,21 @@ fun BhoundMap(
     )
 }
 
+// MAP STYLE FILTERING
+// Removes hidden style layers before loading the map
 fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
+    // Load the original map style from the app assets
     val raw = context.assets.open("style.json")
         .bufferedReader().readText()
 
+    // Return the original style when every layer is visible
     if (hiddenLayerIds.isEmpty()) return raw
-
     val json = JSONObject(raw)
+    // Read the complete list of layers from the style
     val layers = json.getJSONArray("layers")
+    // Store only the layers that should remain visible
     val filtered = org.json.JSONArray()
-
+    // Copy each visible layer into the filtered style
     for (i in 0 until layers.length()) {
         val layer = layers.getJSONObject(i)
         val id = layer.optString("id")
@@ -783,13 +863,20 @@ fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): Strin
     json.put("layers", filtered)
     return json.toString()
 }
+
+// SHARED LAYER MENU COMPONENTS
+// Reusable models and rows for visibility options
 data class OverlayToggle(
+    // Holds the label, current visibility, and action for an overlay
     val label: String,
     val visible: Boolean,
     val onToggle: () -> Unit
 )
+
+// Displays one clickable visibility option with an eye icon
 @Composable
 fun ToggleRow(label: String, visible: Boolean, onToggle: () -> Unit) {
+    // Make the entire row clickable instead of only the icon
     Row(
         verticalAlignment = Alignment.Top,
         modifier = Modifier
@@ -812,6 +899,9 @@ fun ToggleRow(label: String, visible: Boolean, onToggle: () -> Unit) {
         Text(label, color = Color.White, fontSize = 10.sp)
     }
 }
+
+// LOCATION DETAIL POPUP
+// Displays coordinates and MGRS beside the user location puck
 @Composable
 fun PopupBox(
     anchor: DpOffset,
@@ -822,17 +912,19 @@ fun PopupBox(
 ){
     val density = LocalDensity.current
 
+    // Only create the popup while it is requested
     if (showPopup) {
-        // full screen background
+        // Keep the popup above the map and other overlays
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10F),
             contentAlignment = Alignment.Center
         ) {
-            // popup
+            // Position the popup beside the location puck
             Popup(
                 alignment = Alignment.TopStart,
+                // Move the popup slightly right so it does not cover the puck
                 offset = with(density) {
                     IntOffset(
                         x = (anchor.x + 12.dp).roundToPx(), // move popup to the right
@@ -866,11 +958,15 @@ fun PopupBox(
 }
 
 
+// LAYERS MENU
+// Controls map layers, overlays, teams, roles, and map controls
 @Composable
 fun LayerTogglePopup(
     topoLayers: List<Pair<String, String>>,
     hiddenLayers: Set<String>,
     onToggle: (String) -> Unit,
+    hideControls: Boolean,
+    onHideControlsToggle: () -> Unit,
     visibleUserTeams: Set<String>,
     visibleUserRoles: Set<String>,
     visibleUserRolesLEO: Set<String>,
@@ -885,9 +981,8 @@ fun LayerTogglePopup(
     availableUserRoles : Set<String>,
     availableUserRolesLEO : Set<String>,
     onDismiss: () -> Unit
-)
-
-{
+) {
+    // Center the menu within the circular watch display
     Popup(
         alignment = Alignment.Center,
         onDismissRequest = onDismiss
@@ -902,6 +997,7 @@ fun LayerTogglePopup(
                     RoundedCornerShape(8.dp)
                 ),
         ) {
+            // Allow every option to remain reachable on the small screen
             val scrollState = rememberScrollState()
 
             Column(
@@ -911,13 +1007,41 @@ fun LayerTogglePopup(
                     .verticalScroll(scrollState)
             ) {
                 Text(
+                    // Layers menu heading
+                    "Layers Menu", color = Color.White, fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    // Layers menu heading
+                    "Map Buttons", color = Color.White, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                // Menu option that hides or restores the extra map controls.
+                ToggleRow(
+                    label = "Map Buttons",
+
+                    // ToggleRow represents visibility, so the eye appears when
+                    // the map controls are currently visible.
+                    visible = !hideControls,
+
+                    // Switch between showing and hiding the controls.
+                    onToggle = onHideControlsToggle
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    // Layers menu heading
                     "Layers", color = Color.White, fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(Modifier.height(4.dp))
                 // style.json layers
                 topoLayers.forEach { (id, label) ->
-
+                    // A grouped option is visible when at least one of its layers is visible
                     val visible = when (id) {
                         "water" -> !listOf(
                             "water-fill",
@@ -955,14 +1079,9 @@ fun LayerTogglePopup(
                 }
 
                 Spacer(Modifier.height(8.dp))
-
-
-
-
-
-
                 Spacer(Modifier.height(4.dp))
 
+                // Build the team color section using teams currently on the map
                 val userTeams = listOf(
                     "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
                     "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
@@ -971,14 +1090,12 @@ fun LayerTogglePopup(
                 val totalOtherTeamCategories = userTeams.count { team ->
                     (teamColorCount[team] ?: 0) > 0
                 }
-
                 Text(
                     text = "Team Colors ($totalOtherTeamCategories)",
                     color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 10.sp
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
                 )
-
                 userTeams.forEach { team ->
                     val count = teamColorCount[team] ?: 0
                     val meSuffix = if (team == MainActivity.Constants.team) ", me" else ""
@@ -992,6 +1109,7 @@ fun LayerTogglePopup(
 
                 Spacer(Modifier.height(4.dp))
 
+                // Build the standard role section using roles currently on the map
                 val userRoles = listOf(
                     "Forward Observer", "HQ", "K9", "Medic", "RTO", "Sniper", "Team Lead", "Team Member"
                 ).filter { (it in availableUserRoles) && ((roleCounts[it] ?: 0) > 0)}
@@ -1001,7 +1119,7 @@ fun LayerTogglePopup(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Default Roles ($totalOtherDefaultRoleCategories)",
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White,
                     fontSize = 10.sp
                 )
@@ -1017,6 +1135,7 @@ fun LayerTogglePopup(
 
                 Spacer(Modifier.height(4.dp))
 
+                // Build the law enforcement role section using roles currently on the map
                 val userRolesLEO = listOf(
                     "Armed Surveillance", "Assistant Team Leader", "Aviation", "Bomb Tech", "Command Post", "Critical Response", "Hazards", "Negotiator", "Surveillance", "Tactical Communicator", "TOC"
                 ).filter { (it in availableUserRolesLEO) && ((roleCounts[it] ?: 0) > 0) }
@@ -1027,9 +1146,9 @@ fun LayerTogglePopup(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "LEO / Civil Use Roles (${totalLeoRoleCategories})",
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
                 userRolesLEO.forEach { role ->
                     val count = roleCounts[role] ?: 0
@@ -1046,27 +1165,52 @@ fun LayerTogglePopup(
     }
 }
 
+
+// MAIN MAP SCREEN
+// Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit) {
+fun MapApp(exitActivity: () -> Unit, navController: NavController) {
+    // Access the application repository used by the map
     val context = LocalContext.current
+
+    // Saves Layers menu settings between app sessions
+    val mapPreferences = remember {
+        context.getSharedPreferences(
+            "map_layer_preferences",
+            Context.MODE_PRIVATE
+        )
+    }
+
     val dataRepository = remember(context) {
         (context.applicationContext as WearTakApplication).repo
     }
+
+    //
     var hiddenLayers by remember {
-        mutableStateOf(emptySet<String>())
+        mutableStateOf(mapPreferences.getStringSet(
+            "hidden_layers",
+            emptySet()
+        )?.toSet() ?: emptySet()
+        )
     }
+
+    // Latest device location used by the puck and camera
     val locationFlow by dataRepository.latestLocation.collectAsState()
     // TODO: Will these always be not null?
+    // Use zero until the first valid location is received
     val lat = locationFlow?.latitude ?: 0.0
     val lon = locationFlow?.longitude ?: 0.0
-    //Log.i(TAG, "latitude = $lat | longitude = $lon")
-    //Log.i(TAG, "${locationFlow?.latitude ?: 0.0}")
+
+    // Initial map camera centered on the latest known location
     val cameraState = rememberCameraState(
         firstPosition = CameraPosition(
             target = Position(lon, lat),
-            zoom = 12.0,
+            zoom = 15.5,
         )
     )
+
+    // LAYER MENU CONFIGURATION
+    // Connects each menu option to its MapLibre style layer IDs
     val layerGroups = mapOf(
         "water" to setOf("water-fill", "water-lines", "water-outline"),
 
@@ -1095,6 +1239,8 @@ fun MapApp(exitActivity: () -> Unit) {
             "park"
         )
     )
+
+    // Define the map style options shown in the Layers menu
     val topoLayers = remember {
         listOf(
             "hillshade" to "Hillshade",
@@ -1104,30 +1250,126 @@ fun MapApp(exitActivity: () -> Unit) {
             "labels" to "Labels"
         )
     }
-    val scope = rememberCoroutineScope()
-    val myRole by dataRepository.getRole.collectAsStateWithLifecycle(initialValue = "")
 
+    val scope = rememberCoroutineScope()
+
+    // CAMERA ACTIONS
+    // Handles zooming and recentering the map
+    // Change zoom while preserving target, bearing, tilt, and padding
+
+    fun changeZoom(delta: Double) {
+        scope.launch {
+            val current = cameraState.position
+            val newZoom = (current.zoom + delta).coerceIn(0.0, 25.5)
+
+            cameraState.animateTo(
+                CameraPosition(
+                    target = current.target,
+                    zoom = newZoom,
+                    bearing = current.bearing,
+                    tilt = current.tilt,
+                    padding = current.padding
+                )
+            )
+        }
+    }
+
+    // Recenter the camera on the latest device location
+    fun snapToSelf() {
+        // Stop when the device does not have a valid location
+        val currentLocation = locationFlow ?: return
+
+        scope.launch {
+            val current = cameraState.position
+
+            cameraState.animateTo(
+                CameraPosition(
+                    target = Position(
+                        longitude = currentLocation.longitude,
+                        latitude = currentLocation.latitude
+                    ),
+                    zoom = 15.5,
+                    bearing = current.bearing,
+                    tilt = current.tilt
+                )
+            )
+        }
+    }
+
+    val myRole by dataRepository.getRole.collectAsStateWithLifecycle(initialValue = "")
     val markerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val locationProvider = remember(scope) {
         RepoLocationProvider(dataRepository.latestLocation, scope)
     }
     val userLocationState = rememberUserLocationState(locationProvider)
+    // Show the coordinate popup for the user location puck
     var showPopup by remember { mutableStateOf(false) }
-    var showUsers by remember { mutableStateOf(true) }
-    var showLayerToggle by remember { mutableStateOf(false) }
-    var showMarkers by remember { mutableStateOf(true) }
-    var visibleUserTeams by remember {
-        mutableStateOf(
-            setOf(
-                "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
-                "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
-                "Green", "Dark Green", "Brown"
+
+    // Show or hide connected users
+    var showUsers by remember { mutableStateOf(mapPreferences.getBoolean(
+        "show_Users",
+        true
             )
         )
     }
-    var visibleUserRoles by remember {
+
+    // Show or hide the Layers menu
+    var showLayerToggle by remember { mutableStateOf(false) }
+
+    // Hide zoom, snap-to-self, and the scale while keeping Layers and Back
+    var hideControls by remember { mutableStateOf(mapPreferences.getBoolean(
+        "hide_controls",
+        false
+            )
+        )
+    }
+
+    // Show or hide dropped and received markers
+    var showMarkers by remember { mutableStateOf(mapPreferences.getBoolean(
+        "show_markers",
+        true
+            )
+        )
+    }
+
+    // Show or hide ATOS tags
+    var showAtosTags by remember { mutableStateOf(mapPreferences.getBoolean(
+        "show_Atos_Tags",
+        true
+            )
+        )
+    }
+
+    // Default team selections used when no saved setting exists
+    val defaultVisibleTeams = setOf(
+        "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
+        "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
+        "Green", "Dark Green", "Brown"
+    )
+
+    // Loads the last selected team filters
+    var visibleUserTeams by remember {
         mutableStateOf(
-            setOf(
+            mapPreferences.getStringSet(
+                "visible_user_teams",
+                defaultVisibleTeams
+            )?.toSet() ?: defaultVisibleTeams
+        )
+    }
+//    // Team colors currently selected for display
+//    var visibleUserTeams by remember {
+//        mutableStateOf(
+//            setOf(
+//                "White", "Yellow", "Orange", "Magenta", "Red", "Maroon",
+//                "Purple", "Dark Blue", "Blue", "Cyan", "Teal",
+//                "Green", "Dark Green", "Brown"
+//            )
+//        )
+//    }
+
+    // Standard roles currently selected for display
+    val defaultVisibleUserRoles = setOf (
+//        mutableStateOf(
                 "Forward Observer",
                 "HQ",
                 "K9",
@@ -1136,12 +1378,38 @@ fun MapApp(exitActivity: () -> Unit) {
                 "Sniper",
                 "Team Lead",
                 "Team Member"
-            )
+//            )
+        )
+
+    // Loads the last selected role filters
+    var visibleUserRoles by remember {
+        mutableStateOf(
+            mapPreferences.getStringSet(
+                "visible_user_roles",
+                defaultVisibleUserRoles
+            )?.toSet() ?: defaultVisibleUserRoles
         )
     }
-    var visibleUserRolesLEO by remember {
-        mutableStateOf(
-            setOf(
+
+
+//    // Standard roles currently selected for display
+//    var visibleUserRoles by remember {
+//        mutableStateOf(
+//            setOf(
+//                "Forward Observer",
+//                "HQ",
+//                "K9",
+//                "Medic",
+//                "RTO",
+//                "Sniper",
+//                "Team Lead",
+//                "Team Member"
+//            )
+//        )
+//    }
+
+    val defaultVisibleUserRolesLEO =
+        setOf (
                 "Armed Surveillance",
                 "Assistant Team Leader",
                 "Aviation",
@@ -1153,13 +1421,22 @@ fun MapApp(exitActivity: () -> Unit) {
                 "Surveillance",
                 "Tactical Communicator",
                 "TOC"
-            )
+        )
+
+    // Loads the last selected role filters
+    var visibleUserRolesLEO by remember {
+        mutableStateOf(
+            mapPreferences.getStringSet(
+                "visible_user_roles",
+                defaultVisibleUserRolesLEO
+            )?.toSet() ?: defaultVisibleUserRolesLEO
         )
     }
-    var showAtosTags by remember { mutableStateOf(true) }
     val projection = cameraState.projection
 
-
+    // LOCATION PUCK POPUP POSITION
+    // Converts the map location into a screen position for the popup
+    // Recalculate when the location, projection, or camera changes
     val puckScreenOffset: DpOffset? = remember(
         locationFlow,
         projection,
@@ -1179,16 +1456,26 @@ fun MapApp(exitActivity: () -> Unit) {
             null
         }
     }
+
+    // REPOSITORY MAP DATA
+    // Collects markers, users, ATOS tags, and Bloodhound data
+
+    // Markers created locally by the current user
     val droppedMarkerListSetting by dataRepository
         .droppedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Markers received from other users
     val receivedMarkerListSetting by dataRepository
         .receivedMarkerList
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    // ATOS tags received from the repository
     val receivedAtosTagsSetting by dataRepository.receivedAtosTagList.collectAsStateWithLifecycle(
         initialValue = emptyList()
     )
+
+    // Connected users received from the repository
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
@@ -1196,7 +1483,14 @@ fun MapApp(exitActivity: () -> Unit) {
         (context.applicationContext as WearTakApplication).bhRepo
     }
 
+    // Active Bloodhound tracking data
     val activeItem by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
+
+
+    // MAP DATA CONVERSION
+    // Converts repository objects into map rendering models
+
+    // Convert locally dropped markers into map marker items
     val droppedMapMarkers = remember(droppedMarkerListSetting) {
         buildList {
             addAll(
@@ -1219,6 +1513,7 @@ fun MapApp(exitActivity: () -> Unit) {
         }
     }
 
+    // Convert received markers and skip markers without a location
     val receivedMapMarkers = remember(receivedMarkerListSetting) {
         buildList {
             addAll(
@@ -1242,6 +1537,7 @@ fun MapApp(exitActivity: () -> Unit) {
         }
     }
 
+    // Parse received ATOS tags and skip invalid results
     val receivedAtosTags = remember(receivedAtosTagsSetting) {
         buildList {
             addAll(
@@ -1277,10 +1573,12 @@ fun MapApp(exitActivity: () -> Unit) {
         }
     }
 
+    // Track ATOS IDs so the same contact is not rendered twice
     val renderedAtosUids = remember(receivedAtosTags) {
         receivedAtosTags.mapNotNull { it.uid }.toSet()
     }
 
+    // Convert connected users while excluding contacts already rendered as ATOS
     val receivedMapUsers = remember(receivedUserListSetting, renderedAtosUids) {
         buildList {
             addAll(
@@ -1306,6 +1604,11 @@ fun MapApp(exitActivity: () -> Unit) {
     }
     LaunchedEffect(receivedMapUsers) {
     }
+
+    // TEAM AND ROLE FILTERING
+    // Builds the options displayed in the Layers menu
+
+    // Teams currently present on the map
     val presentTeams = remember(receivedMapUsers, team) {
         buildSet {
             receivedMapUsers
@@ -1318,6 +1621,8 @@ fun MapApp(exitActivity: () -> Unit) {
             }
         }
     }
+
+    // Number of connected users assigned to each role
     val roleCounts = remember(receivedMapUsers) {
         receivedMapUsers
             .mapNotNull { it.role }
@@ -1326,6 +1631,8 @@ fun MapApp(exitActivity: () -> Unit) {
             .eachCount()
 
     }
+
+    // Number of connected users assigned to each role
     val teamColorCount = remember(receivedMapUsers) {
         receivedMapUsers
             .map { it.team }
@@ -1335,6 +1642,8 @@ fun MapApp(exitActivity: () -> Unit) {
             .toMutableMap()
 
     }
+
+    // Standard roles displayed in the normal role section
     val defaultRoleNames = setOf(
         "Forward Observer", "HQ", "K9", "Medic", "RTO", "Sniper", "Team Lead", "Team Member"
     )
@@ -1362,7 +1671,7 @@ fun MapApp(exitActivity: () -> Unit) {
 
     Log.d(TAG, receivedMapUsers.toString())
 
-    val activeBloodhound = remember(activeItem){
+    val activeBloodhound = remember(activeItem) {
         MapBhoundItem(
             uid = activeItem?.uid ?: "",
             distance = activeItem?.vector?.distance,
@@ -1371,6 +1680,9 @@ fun MapApp(exitActivity: () -> Unit) {
             orientation = activeItem?.vector?.bearing,
         )
     }
+
+    // MAP LIFECYCLE
+    // Requests a fresh location when the map returns to the screen
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -1388,28 +1700,58 @@ fun MapApp(exitActivity: () -> Unit) {
         }
     }
 
+// MAP RENDERING
+// Draws the map and all map content
     Box(Modifier.fillMaxSize()) {
-        var pointerOffset by remember { mutableStateOf<DpOffset?>(null) }
-        val anyEndpointConnected by dataRepository.anyEndpointConnected.collectAsStateWithLifecycle()
+
+        // Stores where the user long pressed the map
+        var pointerOffset by remember {
+            mutableStateOf<DpOffset?>(null)
+        }
+
+        // Rebuilds the map style when layer visibility changes
         val styleJson = remember(hiddenLayers) {
             buildFilteredStyleJson(context, hiddenLayers)
         }
+
+        // Main MapLibre map
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
-//            baseStyle = BaseStyle.Uri("asset://style.json"),
-            baseStyle = BaseStyle.Json(styleJson), // for layers?
+
+            // Uses the map style with hidden layers removed
+            baseStyle = BaseStyle.Json(styleJson),
+
+            // Controls the map camera position and zoom
             cameraState = cameraState,
+
+            // Disables MapLibre controls and prevents map rotation
             options = MapOptions(
                 ornamentOptions = OrnamentOptions.AllDisabled,
                 gestureOptions = GestureOptions.RotationLocked
             ),
-            zoomRange = 0f..25.5f, // important so your +5 doesn't exceed max
+
+            // Keeps zoom within the supported range
+            zoomRange = 0f..25.5f,
+
+            // Drops a marker when the user long presses the map
             onMapLongClick = { coordinates, offset ->
-                Utils.vibrateWatch(vibDurationMs = 100L, numberOfVibes = 1, timeBtwnVibesMs = 10L)
+
+                // Vibrates the watch to confirm the long press
+                Utils.vibrateWatch(
+                    vibDurationMs = 100L,
+                    numberOfVibes = 1,
+                    timeBtwnVibesMs = 10L
+                )
+
+                // Saves the selected screen position
                 pointerOffset = offset
+
+                // Uses the current time as the marker timestamp
                 val time = System.currentTimeMillis()
 
                 Log.d(TAG, "LongClick Map before launch")
+
+                // Sends the marker request in the background
                 markerScope.launch {
                     try {
                         Log.d(TAG, "LongClick coroutine started")
@@ -1418,13 +1760,14 @@ fun MapApp(exitActivity: () -> Unit) {
                             "About to call requestMarkerDrop type=$markerType time=$time coord=$coordinates"
                         )
 
+                        // Creates a marker at the selected coordinates
                         dataRepository.requestMarkerDrop(
                             markerType,
                             "",
                             "",
                             time,
                             lat = coordinates.latitude,
-                            lon = coordinates.longitude,
+                            lon = coordinates.longitude
                         )
 
                         Log.d(TAG, "requestMarkerDrop finished")
@@ -1432,37 +1775,42 @@ fun MapApp(exitActivity: () -> Unit) {
                         Log.e(TAG, "requestMarkerDrop failed", e)
                     }
                 }
-//                if (!anyEndpointConnected) {
-//                    Toast.makeText(
-//                        mainActivity,
-//                        "No endpoint connected, will send point when reconnected", Toast.LENGTH_LONG).show()
-//                }
+
+                // Allows MapLibre to continue handling the click
                 ClickResult.Pass
             }
-
         ) {
+            // Displays the location puck when a location is available
             if (locationProvider.location.collectAsState().value != null) {
                 LocationPuck(
                     idPrefix = "me",
                     locationState = userLocationState,
                     cameraState = cameraState,
+
+                    // Uses the current team color for the location puck
                     colors = LocationPuckColors(
                         dotFillColorCurrentLocation = TeamColors(team)
                     ),
+
+                    // Recenters the map and opens location details
                     onClick = {
                         scope.launch {
                             val current = cameraState.position
+
+                            // Moves the camera to the current location
                             cameraState.animateTo(
                                 CameraPosition(
                                     target = Position(
                                         latitude = lat,
                                         longitude = lon
                                     ),
+
+                                    // Keeps the current zoom and map orientation
                                     zoom = current.zoom,
                                     bearing = current.bearing,
                                     tilt = current.tilt,
 
-                                    // More right padding pushes the target visually left
+                                    // Shifts the location left to make room for the popup
                                     padding = PaddingValues(
                                         start = 0.dp,
                                         top = 0.dp,
@@ -1472,52 +1820,105 @@ fun MapApp(exitActivity: () -> Unit) {
                                 )
                             )
 
+                            // Opens the location detail popup
                             showPopup = true
                         }
                     }
                 )
             }
+
+            // Displays dropped and received markers
             if (showMarkers) {
+
+                // Displays markers dropped by the current user
                 MarkersOnMap(
-                    markers = droppedMapMarkers.filter { (null != it.lat) && (null != it.lon) },
-                    onMarkerClick = { id, title ->
-                        val index = droppedMarkerListSetting.indexOfFirst { it.uid == id }
-                        if (droppedMapMarkers.get(index).cotType != DataRepository.MarkerCotType.CLEAR) {
+                    markers = droppedMapMarkers.filter {
+                        it.lat != null && it.lon != null
+                    },
+
+                    // Opens the selected dropped marker
+                    onMarkerClick = { id, _ ->
+
+                        // Finds the selected marker in the repository list
+                        val index = droppedMarkerListSetting.indexOfFirst {
+                            it.uid == id
+                        }
+
+                        // Opens markers that still exist and have not been cleared
+                        if (
+                            index != -1 &&
+                            droppedMapMarkers[index].cotType !=
+                            DataRepository.MarkerCotType.CLEAR
+                        ) {
                             Log.d(TAG, "Index from map: $index")
-                            val intent = Intent(context, MarkerActivity::class.java).apply {
+
+                            // Opens the marker edit screen
+                            val intent = Intent(
+                                context,
+                                MarkerActivity::class.java
+                            ).apply {
                                 putExtra("marker_index", index)
-                                putExtra("start_route", "edit_marker_screen/$index")
+                                putExtra(
+                                    "start_route",
+                                    "edit_marker_screen/$index"
+                                )
                                 putExtra("from_maps", true)
                             }
+
                             context.startActivity(intent)
                         }
                     },
-                    cameraState
+                    camera = cameraState
                 )
+
+                // Displays markers received from other users
                 MarkersOnMap(
                     markers = receivedMapMarkers,
+
+                    // Opens the selected received marker
                     onMarkerClick = { id, _ ->
-                        val index = receivedMarkerListSetting.indexOfFirst { it.uid == id }
+
+                        // Finds the selected marker in the repository list
+                        val index = receivedMarkerListSetting.indexOfFirst {
+                            it.uid == id
+                        }
+
+                        // Makes sure the marker was found
                         if (index != -1) {
-                            val intent = Intent(context, MarkerActivity::class.java).apply {
+
+                            // Opens the received marker detail screen
+                            val intent = Intent(
+                                context,
+                                MarkerActivity::class.java
+                            ).apply {
                                 putExtra("marker_index", index)
-                                putExtra("start_route", "received_marker_detail/$index")
+                                putExtra(
+                                    "start_route",
+                                    "received_marker_detail/$index"
+                                )
                                 putExtra("from_maps", true)
                             }
+
                             context.startActivity(intent)
                         }
                     },
                     camera = cameraState
                 )
             }
+
+            // Displays ATOS tags
             if (showAtosTags) {
-            ATOSTagsOnMap(
-                tags = receivedAtosTags,
-                camera = cameraState
-            )
-                }
+                ATOSTagsOnMap(
+                    tags = receivedAtosTags,
+                    camera = cameraState
+                )
+            }
+
+            // Displays users that match the selected filters
             if (showUsers) {
                 UsersOnMap(
+
+                    // Filters users by team and role
                     users = receivedMapUsers.filter {
                         it.team in visibleUserTeams &&
                                 (
@@ -1525,83 +1926,81 @@ fun MapApp(exitActivity: () -> Unit) {
                                                 it.role in visibleUserRolesLEO
                                         )
                     },
+                    onUserClick = { id, _ ->
+                        val index = receivedUserListSetting.indexOfFirst { it.uid == id }
+                        navController.navigate("selected_user/$index"){
+                            popUpTo(("selected_user/$index")) {
+                                inclusive = true
+                            }
+                        }
+                    },
                     camera = cameraState
                 )
             }
+
+            // Displays the active Bloodhound target
             BhoundMap(
                 item = activeBloodhound,
                 userLat = lat,
                 userLon = lon,
                 camera = cameraState
             )
-//            ATOSTagsOnMap(
-//                tags = receivedAtosTags,
-//                camera = cameraState
-//            )
-//            UsersOnMap(
-//                users = receivedMapUsers,
-//                camera = cameraState
-//            )
         }
 
+        // Displays location details beside the location puck
         if (showPopup && puckScreenOffset != null) {
             PopupBox(
                 showPopup = showPopup,
                 anchor = puckScreenOffset,
                 lat = lat,
                 lon = lon,
-                onClickOutside = { showPopup = false }
+
+                // Closes the popup when the user taps outside
+                onClickOutside = {
+                    showPopup = false
+                }
             )
         }
 
-//        PopupBox(showPopup = showPopup, onClickOutside = {showPopup = false})
+        // Displays the controls around the map
+        MapControlsOverlay(
+            cameraState = cameraState,
 
-        Image(
-            painter = painterResource(R.drawable.north_arrow),
-            contentDescription = "North Arrow",
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .size(40.dp),
-            alignment = Alignment.TopCenter
+            // Enables snap-to-self when a location is available
+            locationAvailable = locationFlow != null,
+
+            // Zooms in one level
+            onZoomIn = {
+                changeZoom(1.0)
+            },
+
+            // Controls whether optional map controls are hidden
+            hideControls = hideControls,
+
+            // Zooms out one level
+            onZoomOut = {
+                changeZoom(-1.0)
+            },
+
+            // Recenters the map on the current location
+            onCenterOnSelf = {
+                snapToSelf()
+            },
+
+            // Opens the Layers menu
+            onOpenLayers = {
+                showLayerToggle = true
+            },
+
+            // Exits the map screen
+            onBack = {
+                exitActivity()
+            }
         )
-        val current = cameraState.position
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
-        ) {
 
-            ScaleBar(
-                cameraState.metersPerDpAtTarget,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .width(100.dp),
-                color = colors.primary,
-                textStyle = MaterialTheme.typography.body2,
-                barWidth = 1.dp
-            )
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
-                    onClick = { exitActivity() }
-                )
-                Button(
-                    onClick = { showLayerToggle = true },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.overlay_manager),
-                        contentDescription = "Layers"
-                    )
-                }
-            } // closes Row
-        } // closes inner Box
-
+        // Displays the Layers menu
         if (showLayerToggle) {
-
             LayerTogglePopup(
-
                 topoLayers = topoLayers,
                 hiddenLayers = hiddenLayers,
                 visibleUserTeams = visibleUserTeams,
@@ -1613,48 +2012,258 @@ fun MapApp(exitActivity: () -> Unit) {
                 teamColorCount = teamColorCount,
                 availableUserRoles = presentUserRoles,
                 availableUserRolesLEO = presentUserRolesLEO,
-                onTeamToggle = { team ->
-                    visibleUserTeams =
-                        if (team in visibleUserTeams) visibleUserTeams - team
-                        else visibleUserTeams + team
+
+                // Shows whether the optional map controls are hidden
+                hideControls = hideControls,
+
+                // Hides or restores the optional map controls
+                onHideControlsToggle = {
+                    val updatedValue = !hideControls
+
+                    // Updates the screen
+                    hideControls = updatedValue
+
+                    // Saves the selection
+                    mapPreferences.edit()
+                        .putBoolean(
+                            "hide_controls",
+                            updatedValue
+                        )
+                        .apply()
                 },
+
+                // Shows or hides users from the selected team
+                onTeamToggle = { team ->
+                    val updatedTeams =
+                        if (team in visibleUserTeams) {
+                            visibleUserTeams - team
+                        } else {
+                            visibleUserTeams + team
+                        }
+
+                    visibleUserTeams = updatedTeams
+
+                    mapPreferences.edit()
+                        .putStringSet(
+                            "visible_user_teams",
+                            updatedTeams
+                        )
+                        .apply()
+                },
+
+                // Shows or hides the selected map layer
                 onToggle = { id ->
+
+                    // Gets every style layer in the selected group
                     val layers = layerGroups[id] ?: setOf(id)
 
-                    hiddenLayers =
+                    val updatedHiddenLayers =
                         if (layers.all { it in hiddenLayers }) {
                             hiddenLayers - layers
                         } else {
                             hiddenLayers + layers
                         }
+
+                    // Updates the screen
+                    hiddenLayers = updatedHiddenLayers
+
+                    // Saves the selection for the next app session
+                    mapPreferences.edit()
+                        .putStringSet(
+                            "hidden_layers",
+                            updatedHiddenLayers
+                        )
+                        .apply()
                 },
+
+//                    // Removes hidden layers or adds visible layers
+//                    hiddenLayers =
+//                        if (layers.all { it in hiddenLayers }) {
+//                            hiddenLayers - layers
+//                        } else {
+//                            hiddenLayers + layers
+//                        }
+
+
+
+
+                // Shows or hides users with the selected role
                 onRoleToggle = { role ->
-                    visibleUserRoles =
-                        if (role in visibleUserRoles) visibleUserRoles - role
-                        else visibleUserRoles + role
+                    val updatedRoles =
+                        if (role in visibleUserRoles) {
+                            visibleUserRoles - role
+                        } else {
+                            visibleUserRoles + role
+                        }
+                    // update the screen
+                    visibleUserRoles = updatedRoles
+
+                    // save the selected role
+                    mapPreferences.edit()
+                        .putStringSet(
+                            "visible_user_roles",
+                            updatedRoles
+                        )
+                        .apply()
                 },
 
+                // Shows or hides users with the selected LEO role
                 onLeoRoleToggle = { role ->
-                    visibleUserRolesLEO =
-                        if (role in visibleUserRolesLEO) visibleUserRolesLEO - role
-                        else visibleUserRolesLEO + role
+                    val updatedRoles =
+                        if (role in visibleUserRolesLEO) {
+                            visibleUserRolesLEO - role
+                        } else {
+                            visibleUserRolesLEO + role
+                        }
+
+                    // update the screen
+                    visibleUserRolesLEO = updatedRoles
+
+                    // save the selected role
+                    mapPreferences.edit()
+                        .putStringSet(
+                            "visible_user_roles",
+                            updatedRoles
+                        )
+                        .apply()
+
                 },
 
+                // Creates the main overlay visibility options
                 overlays = listOf(
-                    OverlayToggle("Markers", showMarkers) { showMarkers = !showMarkers },
-                    OverlayToggle("Users", showUsers) { showUsers = !showUsers },
-                    OverlayToggle("ATOS", showAtosTags) { showAtosTags = !showAtosTags },
+                    OverlayToggle(
+                        "Markers",
+                        showMarkers
+                    ) {
+                        val updatedValue = !showMarkers
+
+                        // Updates and saves marker visibility
+                        showMarkers = updatedValue
+                        mapPreferences.edit()
+                            .putBoolean("show_markers", updatedValue)
+                            .apply()
+                    },
+                    OverlayToggle(
+                        "Users",
+                        showUsers
+                    ) {
+                        val updatedValue = !showUsers
+                        // Updates and saves marker visibility
+                        showUsers = updatedValue
+                        mapPreferences.edit()
+                            .putBoolean("show_users", updatedValue)
+                            .apply()
+                    },
+                    OverlayToggle(
+                        "ATOS",
+                        showAtosTags
+                    ) {
+                        val updatedValue = !showAtosTags
+                        // Updates and saves marker visibility
+                        showAtosTags = updatedValue
+                        mapPreferences.edit()
+                            .putBoolean("show_Atos_Tags", updatedValue)
+                            .apply()
+                    },
                 ),
-                onDismiss = { showLayerToggle = false }
+
+                // Closes the Layers menu
+                onDismiss = {
+                    showLayerToggle = false
+                }
             )
         }
     }
 }
 
+@Composable
+fun SelectedUser(
+    navController: NavController,
+    index: Int,
+    receivedUserSetting: List<DataRepository.ReceivedUser>,
+    chatRooms: List<Utils.ChatRoom>,
+    context: Context,
+) {
+    Log.i(TAG, "User list: $receivedUserSetting")
+    var uid by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.uid.orEmpty()) }
+    var title by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.title.orEmpty()) }
+    var team by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.team.orEmpty()) }
 
+// MAP UI STATE
+// Controls popups, overlays, filters, and map buttons
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp)
+                    .verticalScroll(rememberScrollState()),
 
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.user_white),
+                    contentDescription = "Favorite icon",
+                    tint = TeamColors(team),
+                    modifier = Modifier.size(25.dp),
+                )
+                androidx.compose.material3.Text(
+                    text = title.ellipsizeMarkerTitle(14),
+                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 10.dp, bottom = 5.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
 
+                Spacer(modifier = Modifier.height(10.dp))
 
+                Chip(
+                    onClick = {
+                            val intent = Intent(context, ChatActivity::class.java).apply {
+                                putExtra("user_uid", uid)
+                                putExtra("user_callsign", title)
+                                putExtra("from_maps", true)
+                            }
+                            context.startActivity(intent)
+
+                        navController.popBackStack()
+                    },
+                    enabled = true,
+                    label = { Text(text = "Open Chat") },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                )
+            }
+
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                BackButton(
+                    onClick = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+        }
+    }
+}
 
 
 @Composable
@@ -1792,6 +2401,354 @@ fun MapUi(
         ) { Text("−", modifier = Modifier.rotate(-45f)) }
     }
 }
+
+@Composable
+private fun MapControlsOverlay(
+    cameraState: CameraState,
+    locationAvailable: Boolean,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onCenterOnSelf: () -> Unit,
+    onOpenLayers: () -> Unit,
+    // Determines whether the optional map controls should be hidden.
+    hideControls: Boolean,
+    onBack: () -> Unit
+) {
+    val buttonSize = 40.dp
+    val iconSize = 40.dp
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(10.dp)
+    ) {
+        // Hide these optional controls when Hide Controls is selected.
+        if (!hideControls) {
+
+            // Zoom in.
+            CircularMapButton(
+                onClick = onZoomIn,
+                size = buttonSize,
+                showBorder = true,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = 26.dp, y = 20.dp)
+            ) {
+                Text(
+                    text = "+",
+                    color = Color.White,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Light
+                )
+            }
+
+            // Center the map on the user's location.
+            CircularMapButton(
+                onClick = onCenterOnSelf,
+                enabled = locationAvailable,
+                size = buttonSize,
+                showBorder = false,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = 4.dp)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.lock_on_self),
+                    contentDescription = "Center on my location",
+                    modifier = Modifier.size(iconSize),
+                    colorFilter = ColorFilter.tint(Color.White)
+                )
+            }
+
+            // Zoom out.
+            CircularMapButton(
+                onClick = onZoomOut,
+                size = buttonSize,
+                showBorder = true,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = 24.dp, y = (-24).dp)
+            ) {
+                Text(
+                    text = "−",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Light
+                )
+            }
+            val metersPerDp = cameraState.metersPerDpAtTarget
+            val zoom = cameraState.position.zoom
+
+            LaunchedEffect(metersPerDp, zoom) {
+                val fiftyMeterWidthDp = 50.0 / metersPerDp
+                val twoHundredFeetInMeters = 200.0 / METERS_TO_FEET
+                val twoHundredFeetWidthDp =
+                    twoHundredFeetInMeters / metersPerDp
+
+                Log.d(
+                    TAG,
+                    """
+        Scale verification:
+        zoom=$zoom
+        metersPerDp=$metersPerDp
+        50m width=${fiftyMeterWidthDp}dp
+        200ft meters=${twoHundredFeetInMeters}m
+        200ft width=${twoHundredFeetWidthDp}dp
+        """.trimIndent()
+                )
+            }
+            DynamicScaleBar(
+                metersPerDp = cameraState.metersPerDpAtTarget,
+                useDefaultDistances =
+                    abs(cameraState.position.zoom - 15.5) < 0.01,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(
+                        x = 18.dp,
+                        y = (-14).dp
+                    )
+                    .width(110.dp)
+            )
+//            ScaleBar(
+//                metersPerDp = cameraState.metersPerDpAtTarget,
+//                modifier = Modifier
+//                    .align(Alignment.BottomCenter)
+//                    .offset(x = 18.dp, y = (-14).dp)
+//                    .width(110.dp),
+//                color = Color.White,
+//                textStyle = MaterialTheme.typography.body2.copy(
+//                    color = Color.White,
+//                    fontSize = 9.sp
+//                ),
+//                barWidth = 1.dp
+//            )
+        }
+
+        // Always visible so the user can reopen the menu and restore controls.
+        CircularMapButton(
+            onClick = onOpenLayers,
+            size = buttonSize,
+            showBorder = false,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = (-2).dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.overlay_manager),
+                contentDescription = "Layers",
+                modifier = Modifier.size(iconSize),
+                colorFilter = ColorFilter.tint(Color.White)
+            )
+        }
+
+        // Always visible so the user can leave the map.
+        CircularMapButton(
+            onClick = onBack,
+            size = buttonSize,
+            modifier = Modifier.align(Alignment.CenterEnd)
+        ) {
+            Text(
+                text = "‹",
+                color = Color.White,
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun CircularMapButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+    enabled: Boolean = true,
+    showBorder: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(
+                if (showBorder) {
+                    Color.Black.copy(alpha = 0.18f)
+                } else {
+                    Color.Transparent
+                }
+            )
+            .then(
+                if (showBorder) {
+                    Modifier.border(
+                        width = 2.dp,
+                        color = if (enabled) {
+                            Color.White
+                        } else {
+                            Color.White.copy(alpha = 0.4f)
+                        },
+                        shape = CircleShape
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(
+                enabled = enabled,
+                indication = null,
+                interactionSource = remember {
+                    MutableInteractionSource()
+                }
+            ) {
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
+}
+@Composable
+private fun DynamicScaleBar(
+    metersPerDp: Double,
+    useDefaultDistances: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (!metersPerDp.isFinite() || metersPerDp <= 0.0) return
+
+    BoxWithConstraints(modifier = modifier) {
+        val maxDistanceMeters = metersPerDp * maxWidth.value
+
+        val meters = if (useDefaultDistances) {
+            50.0
+        } else {
+            niceScaleDistance(maxDistanceMeters)
+        }
+
+        val feet = if (useDefaultDistances) {
+            200.0
+        } else {
+            niceScaleDistance(
+                maxDistanceMeters * METERS_TO_FEET
+            )
+        }
+
+        Column {
+            ScaleLine(
+                label = "${formatScaleDistance(feet)} ft",
+                distanceMeters = feet / METERS_TO_FEET,
+                metersPerDp = metersPerDp
+            )
+
+            ScaleLine(
+                label = "${formatScaleDistance(meters)} m",
+                distanceMeters = meters,
+                metersPerDp = metersPerDp
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScaleLine(
+    label: String,
+    distanceMeters: Double,
+    metersPerDp: Double
+) {
+    val lineWidth =
+        (distanceMeters / metersPerDp).toFloat().dp
+
+    Column {
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 9.sp,
+            lineHeight = 9.sp
+        )
+
+        Canvas(
+            modifier = Modifier
+                .width(lineWidth)
+                .height(4.dp)
+        ) {
+            val stroke = 1.dp.toPx()
+
+            // Horizontal line
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(
+                    0f,
+                    0f
+                ),
+                end = androidx.compose.ui.geometry.Offset(
+                    size.width,
+                    0f
+                ),
+                strokeWidth = stroke
+            )
+
+            // Left tick
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(
+                    0f,
+                    0f
+                ),
+                end = androidx.compose.ui.geometry.Offset(
+                    0f,
+                    size.height
+                ),
+                strokeWidth = stroke
+            )
+
+            // Right tick
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(
+                    size.width,
+                    0f
+                ),
+                end = androidx.compose.ui.geometry.Offset(
+                    size.width,
+                    size.height
+                ),
+                strokeWidth = stroke
+            )
+        }
+    }
+}
+
+private fun niceScaleDistance(
+    maxDistance: Double
+): Double {
+    if (!maxDistance.isFinite() || maxDistance <= 0.0) {
+        return 1.0
+    }
+
+    val power =
+        10.0.pow(floor(log10(maxDistance)))
+
+    val normalized = maxDistance / power
+
+    val multiplier = when {
+        normalized >= 5.0 -> 5.0
+        normalized >= 2.0 -> 2.0
+        else -> 1.0
+    }
+
+    return multiplier * power
+}
+
+private fun formatScaleDistance(
+    distance: Double
+): String {
+    return if (distance >= 1.0) {
+        distance.roundToInt().toString()
+    } else {
+        "%.1f".format(distance)
+    }
+}
+
+private const val METERS_TO_FEET = 3.280839895
+
 
 
 @Preview(widthDp = 192, heightDp = 192, showBackground = true)

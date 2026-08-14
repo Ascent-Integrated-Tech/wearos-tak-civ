@@ -279,6 +279,7 @@ object CepProvider {
         runBlocking { engine.warmUp() }
         check(holder.install(engine)) { "CepEngineHolder already initialized before bootstrap" }
         runBlocking { engine.applyPressureAlertHygiene() }
+        runBlocking { engine.applyPhysioAlertHygiene() }
         // The cold-start install IS an authoritative install — set the in-memory hash
         // BEFORE start() launches coroutines so any concurrent managed-config worker that
         // reads `latestAppliedHash` sees the correct baseline.

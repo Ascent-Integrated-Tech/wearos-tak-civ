@@ -117,6 +117,8 @@ object ReasonCodes {
     const val POST_COMPOSE_ORPHAN = "post_compose_orphan"
     const val RESERVED_ID = "reserved_id"
     const val NEGATIVE_DURATION = "negative_duration"
+    const val INVALID_CONFIG = "invalid_config"
+    const val MISSING_RENDER_VALUES = "missing_render_values"
     const val CACHED_OVERLAY_NOW_INVALID = "cached_overlay_now_invalid"
     const val NOOP_RECOMPOSE = "noop_recompose"
     const val CLEAR_SUPERSEDES_RULES_ARRAY = "clear_supersedes_rules_array"

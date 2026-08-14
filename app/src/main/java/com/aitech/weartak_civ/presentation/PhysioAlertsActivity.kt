@@ -75,7 +75,9 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.PhysioStatusAndAlertingComplicationService
+import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
@@ -91,6 +93,11 @@ import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.aitech.weartak_civ.presentation.CrmReserveActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModelFactory
 
 class PhysioAlertsActivity : ComponentActivity() {
     companion object {
@@ -107,6 +114,7 @@ class PhysioAlertsActivity : ComponentActivity() {
         enableEdgeToEdge()
         Log.d(TAG, "Physio Oncreate Called")
         dataRepository = DataRepository(applicationContext)
+
         selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
         setContent {
             WearTAKCIVTheme {
@@ -166,8 +174,12 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
             }
     ) {
         composable("alerts_screen") {
-            AlertsScreen(navController, exitActivity, enablePhysioAlerts, alerts)
-
+            AlertsScreen(
+                navController = navController,
+                exitActivity = exitActivity,
+                alertsEnabled = enablePhysioAlerts,
+                alerts = alerts,
+            )
         }
 
         composable("alerts_disabled_screen") {
@@ -237,6 +249,9 @@ fun alertCategoryFromString(category: String): String {
         "CAT_HR_ALERT" -> "High Exertion"
         "CAT_IMMERSION_WARN" -> "Immersion Warning"
         "CAT_IMMERSION_ALERT" -> "Immersion Alert"
+        "CAT_SPO2_WARN" -> "Low SpO2"
+        "CAT_SPO2_ALERT" -> "Low SpO2"
+        "CAT_SPO2_EMERGENCY" -> "Severe Hypoxemia"
         "CAT_LOW_PRESSURE_ALERT" -> "Low Pressure Alert"
         "CAT_HIGH_PRESSURE_ALERT" -> "High Pressure Alert"
         else ->
@@ -260,7 +275,9 @@ fun AlertsScreen(
         columnContent = {
             LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
                item() {
-                   ExpandableCard()
+                   ExpandableCard(
+                       navController = navController
+                   )
                }
                 itemsIndexed(alerts) { index, alert ->
                     // room.messageList is the List<ChatMessage>
@@ -345,8 +362,18 @@ fun AlertsScreen(
 }
 
 @Composable
-fun ExpandableCard() {
+fun ExpandableCard(navController: NavController) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val app = context.applicationContext as WearTakApplication
+
+    val crmViewModel: CrmViewModel = viewModel(
+        factory = CrmViewModelFactory(
+            crmDataRepository = app.crmRepo,
+            dataRepository = app.repo,
+        )
+    )
+
     val heartRateFlow = dataRepository.latestHeartRate.collectAsState()
     val exertionFlow = dataRepository.latestExertion.collectAsState()
     val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
@@ -355,6 +382,23 @@ fun ExpandableCard() {
     val latestSpo2 = dataRepository.latestSpo2.collectAsState()
     val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
     val latestSpo2Debug = dataRepository.latestSpo2DebugState.collectAsState()
+    val crmUiState by crmViewModel.uiState.collectAsStateWithLifecycle()
+    val betaFeaturesEnabled by dataRepository.getEnableBetaFeatures
+        .collectAsStateWithLifecycle(
+            initialValue = MainActivity.enableBetaFeatures
+        )
+    
+    val crmScoreText = if (deviceWorn.value && crmUiState.hasValidScore) {
+        "${crmUiState.score}"
+    } else {
+        "---"
+    }
+
+    val openCrmReserveScreen = {
+        Log.d(TAG, "Opening CRM Reserve screen")
+        context.startActivity(Intent(context, CrmReserveActivity::class.java))
+    }
+
     val logOutput = """
                     === === Physiological User Metrics === ===
                     ${String.format("%-25s %-30s", "heartRateFlow:", heartRateFlow.value)}
@@ -366,16 +410,20 @@ fun ExpandableCard() {
 
                     """.trimIndent()
     Log.i(TAG, logOutput)
-    val activePhysioMetrics = listOf(
-        Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" /* + stringResource(R.string.bpm) */ else "---"),
-        Utils.SelectedPhysioMetric("key_steps",painterResource(id = R.drawable.steps), stringResource(R.string.steps), if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"),
-        Utils.SelectedPhysioMetric("key_skin_temp",painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"),
-        Utils.SelectedPhysioMetric("key_exertion",painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"),
-        Utils.SelectedPhysioMetric("key_floors",painterResource(id = R.drawable.floors), stringResource(R.string.floors), if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"),
-        Utils.SelectedPhysioMetric("key_calories",painterResource(id = R.drawable.calories), stringResource(R.string.calories), if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"),
-        Utils.SelectedPhysioMetric("key_spo2", painterResource(id = R.drawable.heart_rate), "SpO2", latestSpo2.value?.let { "${it.formatDecimal(1)}%" } ?: "---"),
-        Utils.SelectedPhysioMetric("key_spo2_tier", painterResource(id = R.drawable.heart_rate), "SpO2 Tier", latestSpo2TierEvent.value?.tier?.name ?: "NONE")
-    )
+
+
+
+    val activePhysioMetrics = buildList {
+        add(Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" else "---"))
+        add(Utils.SelectedPhysioMetric("key_steps", painterResource(id = R.drawable.steps), stringResource(R.string.steps), dailyMetricsFlow.value?.steps?.toString() ?: "0"))
+        add(Utils.SelectedPhysioMetric("key_skin_temp", painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"))
+        if (betaFeaturesEnabled) add(Utils.SelectedPhysioMetric("key_crm", painterResource(id = R.drawable.heart_rate), "CRM", crmScoreText))
+        add(Utils.SelectedPhysioMetric("key_exertion", painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value && exertionFlow.value.toFloat() >= 0.0) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"))
+        add(Utils.SelectedPhysioMetric("key_floors", painterResource(id = R.drawable.floors), stringResource(R.string.floors), dailyMetricsFlow.value?.floors?.toInt()?.toString() ?: "0"))
+        add(Utils.SelectedPhysioMetric("key_calories", painterResource(id = R.drawable.calories), stringResource(R.string.calories), dailyMetricsFlow.value?.calories?.toInt()?.toString() ?: "0"))
+        add(Utils.SelectedPhysioMetric("key_spo2", painterResource(id = R.drawable.oxygen_saturation), "SpO2", latestSpo2.value?.let { "${it.formatDecimal(1)}%" } ?: "---"))
+        add(Utils.SelectedPhysioMetric("key_spo2_tier", painterResource(id = R.drawable.oxygen_saturation), "SpO2 Tier", latestSpo2TierEvent.value?.tier?.name ?: "NONE"))
+    }
 
     Card(
 //        shape = RoundedCornerShape(8.dp),
@@ -407,7 +455,12 @@ fun ExpandableCard() {
                         physioMetric.icon,
                         physioMetric.metric,
                         physioMetric.value,
-                        physioMetric.key
+                        physioMetric.key,
+                        onClickOverride = if (physioMetric.key == "key_crm") {
+                            openCrmReserveScreen
+                        } else {
+                            null
+                        }
                     )
                 }
             }
@@ -433,8 +486,11 @@ fun ExpandableCard() {
                 modifier = Modifier.fillMaxWidth()
             )
         } else {
-            val indices = listOf(0, 3)
-            val hrExertion = activePhysioMetrics.slice(indices)
+            val primaryMetric = activePhysioMetrics.firstOrNull()
+            val crmMetric = activePhysioMetrics.firstOrNull { it.key == "key_crm" }
+            val fallbackMetric = activePhysioMetrics.firstOrNull { it != primaryMetric && it.key != "key_crm" }
+            val physioMetricsSummary = listOfNotNull(primaryMetric, crmMetric ?: fallbackMetric)
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -449,39 +505,27 @@ fun ExpandableCard() {
                     contentDescription = "",
                 )
             }
+
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                modifier = Modifier.height(50.dp),
+                modifier = Modifier.height(92.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                items(hrExertion) { physioMetric ->
+                items(physioMetricsSummary) { physioMetric ->
                     MetricItem(
                         physioMetric.icon,
                         physioMetric.metric,
                         physioMetric.value,
-                        physioMetric.key
+                        physioMetric.key,
+                        onClickOverride = if (physioMetric.key == "key_crm") {
+                            openCrmReserveScreen
+                        } else {
+                            null
+                        }
                     )
                 }
             }
-//            Row(modifier = Modifier.fillMaxWidth(),
-//                verticalAlignment = Alignment.CenterVertically,
-//                horizontalArrangement = Arrangement.SpaceBetween,
-//                ) {
-//                MetricItem(
-//                    painterResource(id = R.drawable.heart_rate),
-//                    stringResource(R.string.heart_rate),
-//                    if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---",
-//                    "key_heart_rate"
-//                )
-//                Spacer(modifier = Modifier.width(7.dp))
-//                MetricItem(
-//                        painterResource(id = R.drawable.exertion),
-//                        stringResource(R.string.exertion),
-//                    if (deviceWorn.value) "${exertionFlow.value.toFloat().formatDecimal(2)}%" else "---",
-//                    "key_exertion"
-//                    )
-//            }
         }
     }
 }
@@ -494,13 +538,14 @@ fun MetricItem(
     icon: Painter?,
     metricTitle: String,
     metricVal: String,
-    metricKey: String
+    metricKey: String,
+    onClickOverride: (() -> Unit)? = null,
 ) {
     val selectedMetric = selectedPhysioMetricSettingsState.observeAsState()
 
     Row(
         modifier = Modifier.then(
-                if (selectedMetric.value == metricKey) {
+                if (selectedMetric.value == metricKey && onClickOverride == null) {
                     Modifier.border(
                         width = 3.dp,
                         color = colors.primary.copy(alpha = 0.6f),
@@ -510,11 +555,13 @@ fun MetricItem(
                    Modifier
                 }
             ).padding(4.dp)
-            .clickable(onClick = {
-                selectedPhysioMetricSettingsState.postValue(
-                    metricKey
-                )
-            })
+            .clickable(
+                onClick = {
+                    Log.d(TAG, "MetricItem clicked: $metricKey")
+                    onClickOverride?.invoke()
+                        ?: selectedPhysioMetricSettingsState.postValue(metricKey)
+                }
+            )
     ) {
         if (icon != null) {
             Icon(

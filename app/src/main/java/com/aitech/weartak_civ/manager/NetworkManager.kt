@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
+import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.WifiSsidRcvd
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.greenrobot.eventbus.EventBus
+import java.net.Inet4Address
 
 class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags)  {
 
@@ -35,6 +37,45 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     private val handler = Handler(Looper.getMainLooper())
     private val _wifiNetwork = MutableStateFlow<Network?>(null)
     val wifiNetwork: StateFlow<Network?> = _wifiNetwork.asStateFlow()
+
+    enum class NetworkTransport {
+        WIFI,
+        CELL,
+        NONE
+    }
+
+    data class NetworkSnapshot(
+        val type: NetworkTransport,
+        val ssid: String?,
+        val ip: String?,
+    )
+
+    private val _networkSnapshot = MutableStateFlow(
+        NetworkSnapshot(
+            type = NetworkTransport.NONE,
+            ssid = null,
+            ip = null
+        )
+    )
+
+    val networkSnapshot: StateFlow<NetworkSnapshot> =
+        _networkSnapshot.asStateFlow()
+
+    private fun getIpAddress(network: Network?): String? {
+        if (network == null) return null
+
+        return connectivityManager
+            ?.getLinkProperties(network)
+            ?.linkAddresses
+            ?.asSequence()
+            ?.map { it.address }
+            ?.filterIsInstance<Inet4Address>()
+            ?.firstOrNull { address ->
+                !address.isLoopbackAddress &&
+                        !address.isLinkLocalAddress
+            }
+            ?.hostAddress
+    }
 
     fun init() {
         Log.d(TAG, "Initializing NetworkManager")
@@ -134,6 +175,22 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 requestStatusIconsComplicationUpdate(context)
             }
         }
+
+        val transport = when {
+            isWifi -> NetworkTransport.WIFI
+            isCellular -> NetworkTransport.CELL
+            else -> NetworkTransport.NONE
+        }
+
+        _networkSnapshot.value = NetworkSnapshot(
+            type = transport,
+            ssid = if (transport == NetworkTransport.WIFI) {
+                currWifiSsid ?: connectedWifiSsid
+            } else {
+                null
+            },
+            ip = getIpAddress(activeNetwork)
+        )
 
         //Log.i(TAG, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")
         //writeToLogFileLocation(logFile, "isNetworkConnected = $isNetworkConnected; isWifi = $isWifi; isCellular = $isCellular")

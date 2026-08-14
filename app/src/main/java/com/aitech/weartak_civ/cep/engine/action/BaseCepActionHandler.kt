@@ -5,6 +5,7 @@
 package com.aitech.weartak_civ.cep.engine.action
 
 import com.aitech.weartak_civ.cep.engine.ExitCondition
+import com.aitech.weartak_civ.cep.engine.MessageTemplate
 import kotlinx.coroutines.CoroutineScope
 import java.util.UUID
 
@@ -21,13 +22,8 @@ abstract class BaseCepActionHandler(
     protected val appScope: CoroutineScope
 ) : ActionHandler {
 
-    protected val PLACEHOLDER_REGEX = "\\{([a-zA-Z0-9._-]+)\\}".toRegex()
-
     protected fun expandMessage(template: String, snapshot: Map<String, Any?>): String {
-        if (!template.contains("{")) return template
-        return PLACEHOLDER_REGEX.replace(template) { match ->
-            snapshot[match.groupValues[1]]?.toString() ?: "?"
-        }
+        return MessageTemplate.expand(template, snapshot)
     }
 
     protected fun sevToPriority(sev: Severity): Int = when (sev) {
