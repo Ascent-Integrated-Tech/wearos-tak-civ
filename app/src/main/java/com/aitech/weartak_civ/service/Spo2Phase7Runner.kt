@@ -105,8 +105,8 @@ class Spo2Phase7Runner(
                 readings = listOf(
                     Spo2SimInput(89.0), Spo2SimInput(89.0), Spo2SimInput(89.0), Spo2SimInput(89.0),
                 ),
-            ) { sequencer, observer, elapsedMs ->
-                sequencer.onInvalid(now + 360_000L, InvalidReason.TIMEOUT)
+            ) { sequencer, ops, observer, elapsedMs ->
+                sequencer.onInvalid(ops, now + 360_000L, InvalidReason.TIMEOUT)
                 observer.awaitSpo2Activity(elapsedMs + 360_000L)
             }
             Spo2Phase7Scenario.SPO2_TRANSPORT_DUAL_PATH_SAFETY -> {
@@ -210,7 +210,7 @@ class Spo2Phase7Runner(
         readings: List<Spo2SimInput>,
         riskProfile: String = "default",
         seedBaselines: Boolean = true,
-        postReadings: suspend (Spo2Sequencer, SimulationObserver, Long) -> Unit = { _, _, _ -> },
+        postReadings: suspend (Spo2Sequencer, Spo2EngineOps, SimulationObserver, Long) -> Unit = { _, _, _, _ -> },
     ): Pair<Set<String>, Map<String, Int>> {
         val appContext = env.applicationContext
         val cepEngine = CepProvider.getOrCreateEngine(appContext)
@@ -222,22 +222,19 @@ class Spo2Phase7Runner(
         }
         val now = System.currentTimeMillis()
         cepEngine.updateSpo2Profile()
+        val spo2Ops = buildSpo2EngineOps(cepEngine) { payload ->
+            Log.i(env.loggerTag, "[P7][$scenario] publish tier=${payload.tier} state=${payload.state} pct=${payload.pct} ts=${payload.ts} reason=${payload.reason}")
+        }
         val observer = SimulationObserver(scenario.name)
 
-        val sequencer = Spo2Sequencer(
-            profile = profile,
-            publish = { payload ->
-                Log.i(env.loggerTag, "[P7][$scenario] publish tier=${payload.tier} state=${payload.state} pct=${payload.pct} ts=${payload.ts} reason=${payload.reason}")
-                cepEngine.handleTierEvent(payload)
-            },
-            ingest = { path, value, ts -> cepEngine.ingest(path, value, ts) },
-        )
+        val sequencer = Spo2Sequencer(profile = profile)
 
         var ts = now
         var elapsedMs = 0L
         for (reading in readings) {
             emitSpo2Context(ts, reading.activityState, confidence = if (reading.motionOk) 90 else 20, onWrist = 1)
             sequencer.onValid(
+                ops = spo2Ops,
                 pct = reading.pct,
                 ts = ts,
                 activityState = reading.activityState,
@@ -250,7 +247,7 @@ class Spo2Phase7Runner(
             observer.awaitSpo2Activity(elapsedMs)
             ts += reading.stepMs
         }
-        postReadings(sequencer, observer, elapsedMs)
+        postReadings(sequencer, spo2Ops, observer, elapsedMs)
         observer.report(env.loggerTag)
         return observer.firedRuleIds().filter { it.startsWith("spo2_") }.toSet() to
             observer.firedRuleCounts().filterKeys { it.startsWith("spo2_") }

@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.service
 
 import android.util.Log
+import com.aitech.weartak_civ.cep.engine.CepEngine
 import com.aitech.weartak_civ.cep.engine.ProfileStore
 import com.aitech.weartak_civ.cep.model.payloads.Spo2EdgeState
 import com.aitech.weartak_civ.cep.model.payloads.Spo2Tier
@@ -35,6 +36,30 @@ enum class ResetReason { OFF_WRIST, SERVICE_STOP, USER_MANUAL }
 
 data class Spo2ValidReading(val pct: Double, val ts: Long, val family: String, val altitudeBucket: Int)
 data class Spo2SequencerSnapshot(val ringSize: Int, val currentTier: Spo2Tier, val lastValidTs: Long, val invalidRunCount: Int)
+interface Spo2EngineOps {
+    fun ingest(path: String, value: Double, ts: Long)
+    fun syncProfile()
+    fun publish(payload: Spo2TierEventPayload)
+}
+
+internal fun buildSpo2EngineOps(
+    engine: CepEngine,
+    onPublish: (Spo2TierEventPayload) -> Unit = {}
+): Spo2EngineOps = object : Spo2EngineOps {
+    override fun ingest(path: String, value: Double, ts: Long) {
+        engine.ingest(path, value, ts)
+    }
+
+    override fun syncProfile() {
+        engine.updateSpo2Profile()
+    }
+
+    override fun publish(payload: Spo2TierEventPayload) {
+        engine.handleTierEvent(payload)
+        onPublish(payload)
+    }
+}
+
 private data class ActiveBaselineSelection(
     val selectedFamilyForUpdate: String,
     val dominantWindowFamily: String?,
@@ -49,8 +74,6 @@ private data class TierPredicates(
 
 class Spo2Sequencer(
     private val profile: ProfileStore,
-    private val publish: (Spo2TierEventPayload) -> Unit,
-    private val ingest: (path: String, value: Double, tsMs: Long) -> Unit,
     private val config: Spo2SequencerConfig = Spo2SequencerConfig(),
 ) {
     private val lock = ReentrantLock()
@@ -63,6 +86,7 @@ class Spo2Sequencer(
     private var invalidRunCount = 0
 
     fun onValid(
+        ops: Spo2EngineOps,
         pct: Double,
         ts: Long,
         activityState: String,
@@ -73,12 +97,12 @@ class Spo2Sequencer(
     ) = lock.withLock {
         if (!isPctInRange(pct)) {
             invalidRunCount += 1
-            ingest("spo2.status_ok", 0.0, ts)
+            ops.ingest("spo2.status_ok", 0.0, ts)
             return
         }
         val valid = statusOk && motionOk && ppgRedSustainedMs >= config.ppgRedSustainRequiredMs
         if (!valid) {
-            ingest("spo2.status_ok", if (statusOk) 1.0 else 0.0, ts)
+            ops.ingest("spo2.status_ok", if (statusOk) 1.0 else 0.0, ts)
             invalidRunCount += 1
             return
         }
@@ -100,9 +124,9 @@ class Spo2Sequencer(
         lastValidTs = ts
         invalidRunCount = 0
 
-        ingest("spo2.pct", pct, ts)
-        ingest("spo2.status_ok", 1.0, ts)
-        ingest("spo2.ppg_red_sustained_ms", ppgRedSustainedMs.toDouble(), ts)
+        ops.ingest("spo2.pct", pct, ts)
+        ops.ingest("spo2.status_ok", 1.0, ts)
+        ops.ingest("spo2.ppg_red_sustained_ms", ppgRedSustainedMs.toDouble(), ts)
 
         if (selectedFamilyForUpdate != null) {
             profile.updateSpo2BaselinesEma(
@@ -115,6 +139,7 @@ class Spo2Sequencer(
         } else {
             Log.d("CEP_SPO2", "baseline_update_abstain reason=ACTIVITY_UNCLASSIFIED activity=$activityState pct=$pct bucket=$bucket")
         }
+        ops.syncProfile()
         val baselineSelection = resolveActiveBaselineSelection(selectedFamilyForUpdate ?: "resting", bucket)
         val n = if (profile.userRiskProfile() == "trauma") max(2, config.consecutiveRequired / config.traumaSustainDivisor) else config.consecutiveRequired
         val lastNReadings = ring.takeLast(n)
@@ -143,11 +168,11 @@ class Spo2Sequencer(
                 currentTier = targetTier
                 lastEdgeTs = ts
                 clearCandidateSince = null
-                publish(Spo2TierEventPayload(targetTier, Spo2EdgeState.ENTER, pct, ts))
+                ops.publish(Spo2TierEventPayload(targetTier, Spo2EdgeState.ENTER, pct, ts))
             }
         } else if (targetTier != Spo2Tier.NONE && ts - lastHeldEmitTs >= config.heldIntervalMs) {
             lastHeldEmitTs = ts
-            publish(Spo2TierEventPayload(targetTier, Spo2EdgeState.HELD, pct, ts))
+            ops.publish(Spo2TierEventPayload(targetTier, Spo2EdgeState.HELD, pct, ts))
         }
 
         if (currentTier != Spo2Tier.NONE) {
@@ -159,7 +184,7 @@ class Spo2Sequencer(
             }
             if (pct >= clearThreshold) {
                 if (clearCandidateSince == null) clearCandidateSince = ts else if (ts - (clearCandidateSince ?: ts) >= config.clearSustainMs) {
-                    publish(Spo2TierEventPayload(currentTier, Spo2EdgeState.CLEAR, pct, ts, reason = "HYSTERESIS"))
+                    ops.publish(Spo2TierEventPayload(currentTier, Spo2EdgeState.CLEAR, pct, ts, reason = "HYSTERESIS"))
                     currentTier = Spo2Tier.NONE
                     clearCandidateSince = null
                 }
@@ -169,21 +194,21 @@ class Spo2Sequencer(
         }
     }
 
-    fun onInvalid(ts: Long, reason: InvalidReason) = lock.withLock {
+    fun onInvalid(ops: Spo2EngineOps, ts: Long, reason: InvalidReason) = lock.withLock {
         invalidRunCount += 1
-        ingest("spo2.status_ok", 0.0, ts)
+        ops.ingest("spo2.status_ok", 0.0, ts)
         if (lastValidTs != 0L && (ts - lastValidTs) > config.maxGapMs) ring.clear()
         if (currentTier != Spo2Tier.NONE && lastValidTs != 0L && (ts - lastValidTs) > 5 * 60_000L) {
-            publish(Spo2TierEventPayload(currentTier, Spo2EdgeState.CLEAR, Double.NaN, ts, reason = "LONG_SENSOR_OUTAGE"))
+            ops.publish(Spo2TierEventPayload(currentTier, Spo2EdgeState.CLEAR, Double.NaN, ts, reason = "LONG_SENSOR_OUTAGE"))
             currentTier = Spo2Tier.NONE
             clearCandidateSince = null
         }
         Log.d("CEP_SPO2", "onInvalid reason=$reason run=$invalidRunCount")
     }
 
-    fun reset(reason: ResetReason) = lock.withLock {
+    fun reset(ops: Spo2EngineOps, reason: ResetReason) = lock.withLock {
         val now = System.currentTimeMillis()
-        if (currentTier != Spo2Tier.NONE) publish(Spo2TierEventPayload(currentTier, Spo2EdgeState.CLEAR, Double.NaN, now, reason = reason.name))
+        if (currentTier != Spo2Tier.NONE) ops.publish(Spo2TierEventPayload(currentTier, Spo2EdgeState.CLEAR, Double.NaN, now, reason = reason.name))
         ring.clear()
         currentTier = Spo2Tier.NONE
         lastEdgeTs = 0
@@ -191,7 +216,7 @@ class Spo2Sequencer(
         lastValidTs = 0
         clearCandidateSince = null
         invalidRunCount = 0
-        ingest("spo2.status_ok", 0.0, now)
+        ops.ingest("spo2.status_ok", 0.0, now)
     }
 
     fun snapshot(): Spo2SequencerSnapshot = lock.withLock {

@@ -1023,6 +1023,12 @@
       "when": {
         "all": [
           {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
+          {
             "ref": "features.motion.active",
             "is": true
           },
@@ -1046,6 +1052,13 @@
         "tags": [
           "hr",
           "recalibration"
+        ],
+        "exit_logic": "OR",
+        "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          }
         ]
       }
     },
@@ -1053,6 +1066,12 @@
       "id": "hr_high_threshold_resting_alert",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1087,6 +1106,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.heart_rate",
             "exit_below": "features.hr.high_threshold_bpm",
             "exit_above": null,
@@ -1107,6 +1130,12 @@
       "id": "hr_high_threshold_resting_warning",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1139,6 +1168,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.heart_rate",
             "exit_below": "features.hr.high_threshold_bpm",
             "exit_above": null,
@@ -1159,6 +1192,12 @@
       "id": "hr_hrmax_exercise_60s_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "not": {
               "eq_key": [
@@ -1199,6 +1238,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 100.0,
             "hysteresis": 2.0
@@ -1206,13 +1249,20 @@
         ],
         "exit_below_hrr_percent": 100.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_hrmax_rest_immediate_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1252,6 +1302,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 100.0,
             "hysteresis": 2.0
@@ -1259,15 +1313,26 @@
         ],
         "exit_below_hrr_percent": 100.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_low_threshold_3s_alert",
       "when": {
-        "gte_keys": [
-          "features.hr.low_threshold_bpm",
-          "features.heart_rate"
+        "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
+          {
+            "gte_keys": [
+              "features.hr.low_threshold_bpm",
+              "features.heart_rate"
+            ]
+          }
         ]
       },
       "sustained_for_sec": 300,
@@ -1283,13 +1348,26 @@
         "isTak": true,
         "isLocal": true,
         "priority_from": "severity",
-        "timeout": 60
+        "timeout": 60,
+        "exit_logic": "OR",
+        "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          }
+        ]
       }
     },
     {
       "id": "hr_low_threshold_resting_alert",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1336,6 +1414,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.heart_rate",
             "exit_below": null,
             "exit_above": "features.hr.low_threshold_bpm",
@@ -1356,6 +1438,12 @@
       "id": "hr_low_threshold_resting_warning",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1402,6 +1490,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.heart_rate",
             "exit_below": null,
             "exit_above": "features.hr.low_threshold_bpm",
@@ -1422,6 +1514,12 @@
       "id": "hr_low_threshold_resting_alert_static",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1468,12 +1566,17 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.heart_rate",
             "exit_below": null,
             "exit_above": "thresholds.hr.rest_low_bpm",
             "hysteresis": 2.0
           }
         ],
+        "exit_logic": "OR",
         "exit_sustain_sec": 10
       }
     },
@@ -1481,6 +1584,12 @@
       "id": "hr_rest_brady_10min_emergency_static",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1522,6 +1631,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.heart_rate",
             "exit_below": null,
             "exit_above": 40,
@@ -1530,13 +1643,20 @@
         ],
         "exit_below_bpm": 40.0,
         "exit_hysteresis_bpm": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone1_rest_10min_alert",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1576,6 +1696,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 50.0,
             "hysteresis": 2.0
@@ -1583,13 +1707,20 @@
         ],
         "exit_below_hrr_percent": 50.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone2_rest_60s_alert",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1629,6 +1760,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 60.0,
             "hysteresis": 2.0
@@ -1636,13 +1771,20 @@
         ],
         "exit_below_hrr_percent": 60.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone3_exercise_30s_warn",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "not": {
               "eq_key": [
@@ -1684,6 +1826,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 70.0,
             "hysteresis": 2.0
@@ -1691,13 +1837,20 @@
         ],
         "exit_below_hrr_percent": 70.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone3_rest_30s_alert",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1737,6 +1890,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 70.0,
             "hysteresis": 2.0
@@ -1744,13 +1901,20 @@
         ],
         "exit_below_hrr_percent": 70.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "exertion_warning_hr_zone4_exercise",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           { "not": { "eq_key": ["activity.state", "STILL"] }},
           { "eq_key": ["sleep.is_sleeping", false] },
           {"gte_key": ["offbody.on_wrist", 0.5]},
@@ -1767,6 +1931,10 @@
         "isTak": true,
         "isLocal": true,
         "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
           {
             "feature": "features.hrr_percent",
             "exit_below": "features.hr.exertion_warning_threshold_hrr_percent",
@@ -1789,6 +1957,12 @@
       "id": "hr_zone4_exercise_10min_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           { "not": { "eq_key": ["activity.state", "STILL"] } },
           { "eq_key": ["sleep.is_sleeping", false] },
           { "ref": "features.hr.exertion_warning_active", "is": true }
@@ -1803,6 +1977,10 @@
         "isTak": false,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": "features.hr.exertion_warning_threshold_hrr_percent",
             "hysteresis": 2.0
@@ -1810,13 +1988,20 @@
         ],
         "exit_below_hrr_percent": "features.hr.exertion_warning_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone4_exercise_10min_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           { "not": { "eq_key": ["activity.state", "STILL"] } },
           { "eq_key": ["sleep.is_sleeping", false] },
           { "ref": "features.hr.exertion_warning_active", "is": true }
@@ -1831,6 +2016,10 @@
         "isTak": false,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": "features.hr.exertion_warning_threshold_hrr_percent",
             "hysteresis": 2.0
@@ -1838,13 +2027,20 @@
         ],
         "exit_below_hrr_percent": "features.hr.exertion_warning_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone4_rest_immediate_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -1884,6 +2080,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 80.0,
             "hysteresis": 2.0
@@ -1891,13 +2091,20 @@
         ],
         "exit_below_hrr_percent": 80.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "exertion_alert_hr_zone5_exercise",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           { "not": { "eq_key": ["activity.state", "STILL"] }},
           { "eq_key": ["sleep.is_sleeping", false] },
           {"gte_key": ["offbody.on_wrist", 0.5]},
@@ -1914,6 +2121,10 @@
         "isTak": true,
         "isLocal": true,
         "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
           {
             "feature": "features.hrr_percent",
             "exit_below": "features.hr.exertion_alert_threshold_hrr_percent",
@@ -1936,6 +2147,12 @@
       "id": "hr_zone5_exercise_5min_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           { "not": { "eq_key": ["activity.state", "STILL"] } },
           { "eq_key": ["sleep.is_sleeping", false] },
           { "gte_keys": ["features.hrr_percent", "features.hr.exertion_alert_threshold_hrr_percent"] }
@@ -1943,11 +2160,15 @@
       },
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
-      "action": {
+        "action": {
         "type": "log",
         "severity": "EMERGENCY",
         "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
         "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
           {
             "feature": "features.hrr_percent",
             "exit_below": "features.hr.exertion_alert_threshold_hrr_percent",
@@ -1956,13 +2177,20 @@
         ],
         "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone5_exercise_5min_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           { "not": { "eq_key": ["activity.state", "STILL"] } },
           { "eq_key": ["sleep.is_sleeping", false] },
           { "gte_keys": ["features.hrr_percent", "features.hr.exertion_alert_threshold_hrr_percent"] }
@@ -1970,11 +2198,15 @@
       },
       "sustained_for_sec": 180,
       "allow_sustain_override": true,
-      "action": {
+        "action": {
         "type": "nonelog",
         "severity": "EMERGENCY",
         "message": "Exertion Alert: Above {features.hr.exertion_alert_threshold_hrr_percent}%",
         "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
           {
             "feature": "features.hrr_percent",
             "exit_below": "features.hr.exertion_alert_threshold_hrr_percent",
@@ -1983,13 +2215,20 @@
         ],
         "exit_below_hrr_percent": "features.hr.exertion_alert_threshold_hrr_percent",
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hr_zone5_rest_immediate_emergency",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "eq_key": [
               "activity.state",
@@ -2029,6 +2268,10 @@
         "timeout": 60,
         "monitor": [
           {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          },
+          {
             "feature": "features.hrr_percent",
             "exit_below": 90.0,
             "hysteresis": 2.0
@@ -2036,13 +2279,20 @@
         ],
         "exit_below_hrr_percent": 90.0,
         "exit_hysteresis_hrr_percent": 2.0,
-        "exit_sustain_sec": 10
+        "exit_sustain_sec": 10,
+        "exit_logic": "OR"
       }
     },
     {
       "id": "hrv_drop_alert",
       "when": {
         "all": [
+          {
+            "gte_key": [
+              "settings.physio.alerts_enabled",
+              1.0
+            ]
+          },
           {
             "gte_key": [
               "features.hrv.rmssd_drop_ratio",
@@ -2063,6 +2313,13 @@
         "tags": [
           "hrv",
           "corroborator"
+        ],
+        "exit_logic": "OR",
+        "monitor": [
+          {
+            "feature": "settings.physio.alerts_enabled",
+            "exit_below": 1.0
+          }
         ]
       }
     },
@@ -2107,7 +2364,9 @@
         "priority_from": "severity",
         "sendSms": false,
         "timeout": 120
-      }
+      },
+      "on_missing_render": "suppress",
+      "snapshot_keys": ["spo2.pct", "profile.spo2_active_baseline_pct"]
     },
     {
       "id": "spo2_alert_sustained_hypoxemia",
@@ -2134,7 +2393,9 @@
         "priority_from": "severity",
         "sendSms": false,
         "timeout": 180
-      }
+      },
+      "on_missing_render": "suppress",
+      "snapshot_keys": ["spo2.pct"]
     },
     {
       "id": "spo2_emergency_severe_hypoxemia",
@@ -2159,7 +2420,9 @@
         "priority_from": "severity",
         "sendSms": true,
         "timeout": 300
-      }
+      },
+      "on_missing_render": "degrade",
+      "snapshot_keys": ["spo2.pct"]
     },
     {
       "id": "spo2_clear_any",
@@ -2175,7 +2438,7 @@
       "action": {
         "type": "log",
         "severity": "INFO",
-        "message": "SpO2 tier cleared (pct={spo2.pct}%).",
+        "message": "SpO2 tier cleared.",
         "tags": ["spo2", "clear"],
         "isTak": false,
         "isLocal": true

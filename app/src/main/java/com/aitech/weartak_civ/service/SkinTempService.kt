@@ -22,23 +22,21 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
-import com.aitech.weartak_civ.Utils.writeToLogFileLocation
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.di.CepProvider
+import com.aitech.weartak_civ.cep.engine.CepEngine
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
 import com.aitech.weartak_civ.cep.model.payloads.PpgPayload
 import com.aitech.weartak_civ.cep.model.payloads.SkinTempPayload
 import com.aitech.weartak_civ.cep.model.payloads.Spo2Payload
 import com.aitech.weartak_civ.cep.model.payloads.HrvPayload
-import com.aitech.weartak_civ.cep.model.payloads.Spo2TierEventPayload
-//import com.aitech.weartak_civ.cep.CepProvider
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
-//import com.aitech.weartak_civ.cep.CepProvider
 import com.samsung.android.service.health.tracking.HealthTrackingService
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTrackerException
@@ -61,6 +59,10 @@ import org.greenrobot.eventbus.ThreadMode
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import com.aitech.weartak_civ.data.CrmDataRepository.CrmSamplingState
+import com.aitech.weartak_civ.service.crm.CrmPpgPreprocessor
+import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
+import kotlinx.coroutines.flow.first
 import kotlin.math.pow
 
 class SkinTempService : Service() {
@@ -75,12 +77,34 @@ class SkinTempService : Service() {
         private const val MIN_SKIN_TEMP_INTERVAL_MS = 10_000L
         val LOG_FILENAME = "skin_temp.log"
         val context: Context = mainActivity.applicationContext
+        const val ACTION_START_CRM_PPG =
+            "com.aitech.weartak_civ.action.START_CRM_PPG"
 
+        const val ACTION_STOP_CRM_PPG =
+            "com.aitech.weartak_civ.action.STOP_CRM_PPG"
+
+        val ppgChannelType = PpgType.GREEN
+        val ppgHealthTrackerType = HealthTrackerType.PPG_ON_DEMAND
+        val ppgSet = ValueKey.PpgSet.PPG_GREEN
+        val ppgOnDemandFrequency = 100
     }
+
+    @Volatile
+    private var crmPpgSamplingRequested: Boolean = false
+
+    @Volatile
+    private var crmPpgSamplingActive: Boolean = false
 
     private val sharedRepo: DataRepository
         get() = MainActivity.dataRepository
 
+    private val crmRepo: CrmDataRepository by lazy {
+        try {
+            (applicationContext as WearTakApplication).crmRepo
+        } catch (_: Throwable) {
+            CrmDataRepository(sharedRepo)
+        }
+    }
     private lateinit var healthService: HealthTrackingService
     private lateinit var skinTracker: HealthTracker
     private lateinit var spo2Tracker: HealthTracker
@@ -141,6 +165,7 @@ class SkinTempService : Service() {
     @Volatile private var lastPpgRaw: Int? = null
     private var lastPpgRawLogElapsedMs: Long = 0L
     private val PPG_RAW_LOG_PERIOD_MS = 2_000L
+    private var lastCrmPpgSourceLogElapsedMs: Long = 0L
 
     // CEP emitter loop
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -173,6 +198,10 @@ class SkinTempService : Service() {
     private var nextFireMs = 0L          // wall-clock target for the next run
     // One monotonic clock – the same one Handler uses
     private val nowUptime get() = SystemClock.uptimeMillis()
+
+    private val crmCsvLogger: CrmSessionCsvLogger by lazy {
+        (applicationContext as WearTakApplication).crmCsvLogger
+    }
 
     // One function that always schedules the NEXT reading
     private fun scheduleNextReading() {
@@ -260,7 +289,7 @@ class SkinTempService : Service() {
             pushColdInputsOkFlag()
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
-                startPpgContinuousIfSelected()
+//                startPpgContinuousIfSelected()
                 // Start HR tracker and apply screen policy
                 startHrTracker()
                 if (!isInteractiveNow) {
@@ -273,6 +302,11 @@ class SkinTempService : Service() {
                 scheduleNextReading()
                 startEmitLoopIfNeeded()
             }
+
+            if (crmPpgSamplingRequested) {
+                startCrmPpgSampling()
+            }
+
         }
 
         override fun onConnectionFailed(e: HealthTrackerException) {
@@ -459,11 +493,12 @@ class SkinTempService : Service() {
 
     // Initialize PPG capability: prefer continuous if available, fall back to on-demand
     private fun initPpgCapability() {
-        val ppgValueSet: Set<PpgType> = hashSetOf(PpgType.GREEN)
-        val candidates = listOf(
-            HealthTrackerType.PPG_CONTINUOUS,
-            HealthTrackerType.PPG_ON_DEMAND
-        )
+        val ppgValueSet: Set<PpgType> = hashSetOf(ppgChannelType)
+//        val candidates = listOf(
+//            HealthTrackerType.PPG_CONTINUOUS,
+//            HealthTrackerType.PPG_ON_DEMAND
+//        )
+        val candidates = listOf(ppgHealthTrackerType)
 
         ppgTracker = null
         ppgTrackerType = null
@@ -475,7 +510,7 @@ class SkinTempService : Service() {
                 ppgTracker = tracker
                 ppgTrackerType = type
                 ppgAvailable = true
-                //Log.i(TAG, "[PPG] Using tracker type=$type with PpgTypeSet=$ppgValueSet")
+                Log.i(TAG, "[PPG] Using tracker type=$type with PpgTypeSet=$ppgValueSet")
                 break
             } catch (t: Throwable) {
                 Log.w(TAG, "[PPG] Failed to create tracker for type=$type (will try next)", t)
@@ -487,19 +522,163 @@ class SkinTempService : Service() {
         }
     }
 
-    private fun startPpgContinuousIfSelected() {
-        val tracker = ppgTracker ?: return
-        if (!ppgAvailable) return
-        if (ppgTrackerType != HealthTrackerType.PPG_CONTINUOUS) return
-        try {
+    private fun startPpgContinuousIfSelected(): Boolean {
+        val tracker = ppgTracker ?: return false
+
+        if (!ppgAvailable) return false
+        if (ppgTrackerType != HealthTrackerType.PPG_CONTINUOUS) return false
+        if (ppgRunning) return true
+
+        return try {
             tracker.setEventListener(ppgEventListener)
             ppgRunning = true
             Log.i(TAG, "[PPG] Continuous listener started")
+            true
         } catch (t: Throwable) {
             Log.e(TAG, "[PPG] Failed to start continuous listener", t)
             ppgAvailable = false
             ppgTracker = null
             ppgTrackerType = null
+            false
+        }
+    }
+
+    private fun startCrmPpgSampling() {
+        crmPpgSamplingRequested = true
+
+        if (crmPpgSamplingActive) {
+            crmRepo.updateSamplingState(CrmSamplingState.SAMPLING)
+            return
+        }
+
+        if (!deviceWorn) {
+            crmPpgSamplingActive = false
+            crmRepo.updateSamplingState(CrmSamplingState.NOT_WORN)
+            publishCrmPpgUnavailable("device_not_worn")
+            return
+        }
+
+        if (!ppgAvailable || ppgTracker == null || ppgTrackerType == null) {
+            crmPpgSamplingActive = false
+            crmRepo.updateSamplingState(CrmSamplingState.UNAVAILABLE)
+            publishCrmPpgUnavailable("ppg_unavailable")
+            return
+        }
+
+        if (measureState.get() != MeasurementState.IDLE) {
+            crmRepo.updateSamplingState(CrmSamplingState.STARTING)
+            Log.i(
+                TAG,
+                "[CRM_PPG] Waiting for measurement cycle; state=${measureState.get()}"
+            )
+            return
+        }
+
+        backgroundHandler.post {
+            val started = if (
+                ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND
+            ) {
+                startPpgStreamOnDemand()
+            } else {
+                Log.e(
+                    TAG,
+                    "[CRM_PPG] Wrong tracker type. Expected PPG_ON_DEMAND, actual=$ppgTrackerType"
+                )
+                false
+            }
+
+            if (started) {
+                crmPpgSamplingActive = true
+
+                serviceScope.launch {
+                    val callsignAtSessionStart = sharedRepo.getCallsign.first()
+                    val wearTakInfo = sharedRepo.wearTakInfo
+
+                    crmCsvLogger.startSession(
+                        channel = "ValueKey.PpgSet.PPG_GREEN",
+                        trackerType = ppgTrackerType.toString(),
+                        nominalSampleRateHz = ppgOnDemandFrequency,
+                        wearTakUid = MainActivity.device_uid,
+                        callsignAtSessionStart = callsignAtSessionStart,
+                        appVersionName = wearTakInfo.versionNumber,
+                        appVersionCode = wearTakInfo.versionCode,
+                        gitBranch = wearTakInfo.gitBranch,
+                        gitCommit = wearTakInfo.gitCommit,
+                        buildType = wearTakInfo.buildType,
+                    )
+                }
+
+                crmRepo.updateSamplingState(CrmSamplingState.SAMPLING)
+                Log.i(TAG, "[CRM_PPG] Sampling started tracker=$ppgTrackerType")
+            } else {
+                crmPpgSamplingActive = false
+                crmRepo.updateSamplingState(CrmSamplingState.ERROR)
+                Log.e(TAG, "[CRM_PPG] Failed to start tracker=$ppgTrackerType")
+            }
+        }
+    }
+
+    private fun stopCrmPpgSampling() {
+        val wasCrmSamplingActive = crmPpgSamplingActive
+
+        crmPpgSamplingRequested = false
+        crmPpgSamplingActive = false
+
+        backgroundHandler.post {
+            try {
+                if (
+                    wasCrmSamplingActive &&
+                    ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND
+                ) {
+                    stopPpgStreamOnDemand()
+                }
+
+                crmCsvLogger.stopSession("user_stopped")
+                crmRepo.updateSamplingState(CrmSamplingState.IDLE)
+
+                Log.i(
+                    TAG,
+                    "[CRM_PPG] Sampling stopped tracker=$ppgTrackerType active=$wasCrmSamplingActive"
+                )
+            } catch (t: Throwable) {
+                crmRepo.updateSamplingState(CrmSamplingState.ERROR)
+                Log.e(TAG, "[CRM_PPG] Failed to stop sampling", t)
+            }
+        }
+    }
+
+    private fun startPpgStreamOnDemand(): Boolean {
+        val tracker = ppgTracker ?: return false
+
+        if (!ppgAvailable) return false
+        if (ppgTrackerType != HealthTrackerType.PPG_ON_DEMAND) return false
+        if (ppgRunning) return true
+
+        return try {
+            ppgStartUptimeMs = 0L
+            ppgSamples.clear()
+
+            tracker.setEventListener(ppgEventListener)
+            ppgRunning = true
+
+            Log.i(TAG, "[PPG] On-demand listener started")
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "[PPG] Failed to start on-demand listener", t)
+            false
+        }
+    }
+
+    private fun stopPpgStreamOnDemand() {
+        if (ppgTrackerType != HealthTrackerType.PPG_ON_DEMAND) return
+        if (!ppgRunning) return
+
+        try {
+            ppgTracker?.unsetEventListener()
+            ppgRunning = false
+            Log.i(TAG, "[PPG] On Demand listener stopped")
+        } catch (t: Throwable) {
+            Log.e(TAG, "[PPG] Failed to stop On Demand listener", t)
         }
     }
 
@@ -546,11 +725,13 @@ class SkinTempService : Service() {
                             val ppgRedSustainedMs = ppgRedSustainedForValidation(ts)
                             val altitudeBucket = currentAltitudeBucket()
                             val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
+                            val spo2Ops = createSpo2EngineOps(cepEngine)
                             cepEngine.ingest("activity.confidence", lastActivityConfidence.toDouble(), ts)
                             cepEngine.ingest("spo2.status_ok", 1.0, ts)
                             cepEngine.ingest("spo2.ppg_red_sustained_ms", ppgRedSustainedMs.toDouble(), ts)
                             if (lastSpo2Pct != null) {
                                 spo2Sequencer.onValid(
+                                    ops = spo2Ops,
                                     pct = lastSpo2Pct!!,
                                     ts = ts,
                                     activityState = activityState,
@@ -563,7 +744,6 @@ class SkinTempService : Service() {
                                 lastSpo2ResetReason = null
                                 serviceScope.launch { sharedRepo.storeLatestSpo2(lastSpo2Pct) }
                                 serviceScope.launch { updateSpo2DebugState() }
-                                cepEngine.updateSpo2Profile()
                             }
                             lastSpo2OutcomeWasTimeout = false
                             lastSpo2EndedAsTimeout = false
@@ -622,6 +802,13 @@ class SkinTempService : Service() {
     }
 
     private fun startSpo2ThenPpgCycle() {
+        if (crmPpgSamplingRequested || crmPpgSamplingActive) {
+            Log.d(
+                TAG,
+                "[SPO2] Skipping scheduled cycle while CRM PPG sampling is active"
+            )
+            return
+        }
         // Stillness + strict 1-hour throttle (monotonic) with additive timeout backoff
         if (!isStill || lastActivityConfidence < ACTIVITY_STILL_CONFIDENCE_MIN) {
             //Log.i(TAG, "[SPO2] Skipping: not STILL/conf too low (isStill=$isStill, conf=$lastActivityConfidence, min=$ACTIVITY_STILL_CONFIDENCE_MIN)")
@@ -736,18 +923,50 @@ class SkinTempService : Service() {
 
     private val ppgEventListener = object : HealthTracker.TrackerEventListener {
         override fun onDataReceived(dataPoints: List<DataPoint>) {
+            if (!deviceWorn) {
+                Log.d(TAG, "Ignoring PPG callback while device is not worn.")
+                return
+            }
             val now = SystemClock.uptimeMillis()
             if (ppgStartUptimeMs == 0L) ppgStartUptimeMs = now
             try {
                 dataPoints.forEach { dp ->
                     // Capture raw PPG sample (PPG_GREEN is Int)
                     try {
-                        val raw: Int = dp.getValue(ValueKey.PpgSet.PPG_GREEN)
+                        val raw: Int = dp.getValue(ppgSet)
+                        val sampleUptimeMs = SystemClock.uptimeMillis()
                         lastPpgRaw = raw
                         // Maintain rolling 20s window
-                        appendPpgSampleAndPrune(raw)
+                        appendPpgSampleAndPrune(raw, sampleUptimeMs)
+//                        publishCrmRawPpgSample(sampleUptimeMs, raw)
+                        if (crmPpgSamplingActive) {
+                            if (crmPpgSamplingActive) {
+                                crmCsvLogger.logRawPpg(
+                                    uptimeMillis = sampleUptimeMs,
+                                    rawValue = raw.toFloat(),
+                                    channel = ppgSet.toString(),
+                                    trackerType = ppgTrackerType?.name ?: "UNKNOWN",
+                                    nominalSampleRateHz = ppgOnDemandFrequency,
+                                    deviceWorn = deviceWorn,
+                                )
+
+                                publishCrmRawPpgSample(
+                                    sampleUptimeMs = sampleUptimeMs,
+                                    raw = raw,
+                                )
+                            }
+                            publishCrmRawPpgSample(
+                                sampleUptimeMs = sampleUptimeMs,
+                                raw = raw,
+                            )
+                        }
                         // For on-demand burst, also store in burst buffer
-                        ppgSamples.add(raw.toFloat())
+                        if (
+                            measureState.get() == MeasurementState.PPG_RUNNING &&
+                            ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND
+                        ) {
+                            ppgSamples.add(raw.toFloat())
+                        }
                     } catch (_: Throwable) {
                         // ignore bad datapoint
                     }
@@ -762,7 +981,10 @@ class SkinTempService : Service() {
             maybeLogPpgRaw()
 
             // Stop-after-duration is ONLY for on-demand (burst) mode.
-            if (ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND) {
+            if (
+                ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND &&
+                measureState.get() == MeasurementState.PPG_RUNNING
+            ) {
                 if (now - ppgStartUptimeMs >= ppgBurstDurationMs) {
                     completePpgPhase("window end")
                 }
@@ -771,7 +993,20 @@ class SkinTempService : Service() {
         override fun onFlushCompleted() {}
         override fun onError(error: HealthTracker.TrackerError) {
             Log.e(TAG, "PPG TrackerError: $error")
-            completePpgPhase("error")
+
+            if (crmPpgSamplingActive) {
+                crmPpgSamplingRequested = false
+                crmPpgSamplingActive = false
+
+                crmRepo.updateSamplingState(CrmSamplingState.ERROR)
+                publishCrmPpgUnavailable("tracker_error:$error")
+            }
+
+            if (measureState.get() == MeasurementState.PPG_RUNNING) {
+                completePpgPhase("error")
+            } else if (ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND) {
+                stopPpgStreamOnDemand()
+            }
         }
     }
 
@@ -918,8 +1153,7 @@ class SkinTempService : Service() {
     }
 
     // Rolling window helpers
-    private fun appendPpgSampleAndPrune(rawInt: Int) {
-        val now = SystemClock.uptimeMillis()
+    private fun appendPpgSampleAndPrune(rawInt: Int, now: Long = SystemClock.uptimeMillis()) {
         val v = rawInt.toFloat()
         ppgWindow.addLast(TimedSample(now, v))
         val cutoff = now - PPG_WINDOW_MS
@@ -972,6 +1206,33 @@ class SkinTempService : Service() {
         //writeToLogFileLocation(logFile, logLine)
     }
 
+    private fun publishCrmRawPpgSample(sampleUptimeMs: Long, raw: Int) {
+        val accepted = crmRepo.tryPublishRawPpgSample(
+            uptimeMillis = sampleUptimeMs,
+            rawValue = raw.toFloat(),
+            sourceAvailable = ppgAvailable,
+            deviceWorn = deviceWorn
+        )
+        maybeLogCrmPpgSource(raw, accepted)
+    }
+
+    private fun publishCrmPpgUnavailable(reason: String) {
+        crmRepo.tryPublishPpgSourceUnavailable(
+            uptimeMillis = SystemClock.uptimeMillis(),
+            reason = reason
+        )
+    }
+
+    private fun maybeLogCrmPpgSource(raw: Int, accepted: Boolean) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed - lastCrmPpgSourceLogElapsedMs < PPG_RAW_LOG_PERIOD_MS) return
+        lastCrmPpgSourceLogElapsedMs = nowElapsed
+        Log.d(
+            TAG,
+            "[CRM_PPG_SOURCE] raw=$raw emitted=$accepted worn=$deviceWorn available=$ppgAvailable tracker=$ppgTrackerType"
+        )
+    }
+
     private fun completePpgPhase(reason: String) {
         // Only stop the tracker for on-demand mode; keep continuous listener running
         if (ppgTrackerType != HealthTrackerType.PPG_CONTINUOUS) {
@@ -1005,6 +1266,10 @@ class SkinTempService : Service() {
     private fun finishMeasurementCycle() {
         measureState.set(MeasurementState.IDLE)
         Log.i(TAG, "[MEAS] Cycle end → IDLE")
+
+        if (crmPpgSamplingRequested && !crmPpgSamplingActive) {
+            startCrmPpgSampling()
+        }
     }
     private fun computeAmplitudeP5P95(samples: List<Float>): Double {
         if (samples.isEmpty()) return 0.0
@@ -1028,26 +1293,27 @@ class SkinTempService : Service() {
         return norm.coerceIn(0f, 1f)
     }
 
+    private fun createSpo2EngineOps(cepEngine: CepEngine) = buildSpo2EngineOps(
+        engine = cepEngine,
+        onPublish = { payload ->
+            serviceScope.launch { sharedRepo.storeLatestSpo2TierEvent(payload) }
+            serviceScope.launch {
+                val evt = CepEvent(Topics.SPO2_TIER_EVENT, payload, payload.ts)
+                if (!CepBus.tryEmit(evt)) {
+                    CepBus.emit(evt)
+                }
+            }
+        }
+    )
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SkinTempService onCreate()")
         isRunning.set(true)
         startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
         deviceWorn = sharedRepo.latestIsDeviceWorn.value
-        val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
         spo2Sequencer = Spo2Sequencer(
             profile = CepProvider.getProfile(applicationContext),
-            publish = { payload ->
-                cepEngine.handleTierEvent(payload)
-                serviceScope.launch { sharedRepo.storeLatestSpo2TierEvent(payload) }
-                serviceScope.launch {
-                    val evt = CepEvent(Topics.SPO2_TIER_EVENT, payload, payload.ts)
-                    if (!CepBus.tryEmit(evt)) {
-                        CepBus.emit(evt)
-                    }
-                }
-            },
-            ingest = { path, value, ts -> cepEngine.ingest(path, value, ts) },
         )
 
         deleteLogFile()
@@ -1112,9 +1378,23 @@ class SkinTempService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "SkinTempService OnStartCommand()")
-        //writeToLogFileLocation(logFile, "---------------New Session of SkinTempService ---------------\n")
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
+        Log.d(TAG, "SkinTempService onStartCommand action=${intent?.action}")
+
+        when (intent?.action) {
+            ACTION_START_CRM_PPG -> {
+                startCrmPpgSampling()
+            }
+
+            ACTION_STOP_CRM_PPG -> {
+                stopCrmPpgSampling()
+            }
+        }
+
         return START_NOT_STICKY
     }
 
@@ -1139,7 +1419,7 @@ class SkinTempService : Service() {
         stopPpgTracker()
         stopHrTracker(true)
         if (::spo2Sequencer.isInitialized) {
-            spo2Sequencer.reset(ResetReason.SERVICE_STOP)
+            spo2Sequencer.reset(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ResetReason.SERVICE_STOP)
             lastSpo2InvalidReason = ResetReason.SERVICE_STOP.name
             lastSpo2ResetReason = ResetReason.SERVICE_STOP.name
             CoroutineScope(Dispatchers.IO).launch { clearSpo2RepositoryState() }
@@ -1149,6 +1429,9 @@ class SkinTempService : Service() {
         measureState.set(MeasurementState.IDLE)
         // Push cold-stress inputs flag (PPG will be unavailable after destroy)
         ppgAvailable = false
+        crmPpgSamplingRequested = false
+        crmPpgSamplingActive = false
+        crmRepo.updateSamplingState(CrmSamplingState.IDLE)
         pushColdInputsOkFlag()
         healthService.disconnectService()
         handlerThread.quitSafely()
@@ -1165,38 +1448,50 @@ class SkinTempService : Service() {
         // Clear old callbacks so they don’t pile up
         backgroundHandler.removeCallbacksAndMessages(null)
 
-        if (nowWorn) {
-            deviceWorn = true
-            // HR continuous starts and follow screen policy
-            startHrTracker()
-            if (!isInteractiveNow) {
-                enableScreenOffFlushLoop()
-                flushHr("worn_event_screen_off")
+        if (nowWorn != deviceWorn) {
+            if (nowWorn) {
+                deviceWorn = true
+                // HR continuous starts and follow screen policy
+                startHrTracker()
+                if (!isInteractiveNow) {
+                    enableScreenOffFlushLoop()
+                    flushHr("worn_event_screen_off")
+                } else {
+                    disableScreenOffFlushLoop()
+                }
+                startSkinTracker()    // immediate snapshot
+                scheduleNextReading()
+                startEmitLoopIfNeeded()
+                if (crmPpgSamplingRequested) {
+                    startCrmPpgSampling()
+                }
+                //writeToLogFileLocation(logFile, "deviceWorn=true.")
             } else {
-                disableScreenOffFlushLoop()
+                deviceWorn = false
+                spo2Sequencer.reset(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ResetReason.OFF_WRIST)
+                lastSpo2InvalidReason = ResetReason.OFF_WRIST.name
+                lastSpo2ResetReason = ResetReason.OFF_WRIST.name
+                ppgRedFirstContinuouslyOkSinceMs = 0L
+                ppgRedSustainedAtPauseMs = 0L
+                ppgPauseStartedAtMs = 0L
+                clearSpo2RepositoryStateAsync()
+                stopHrTracker(true)
+                stopSkinTracker(true)     // shut it down
+                stopSpo2Tracker()
+                stopPpgTracker()
+                stopEmitLoop()
+                spo2TimeoutCleanup()
+                ppgTimeoutCleanup()
+                measureState.set(MeasurementState.IDLE)
+                publishCrmPpgUnavailable("device_not_worn")
+                crmPpgSamplingActive = false
+                if (crmPpgSamplingRequested) {
+                    crmRepo.updateSamplingState(CrmSamplingState.NOT_WORN)
+                }
+                crmCsvLogger.stopSession("device_not_worn")
+
+                //writeToLogFileLocation(logFile, "deviceWorn=false.")
             }
-            startSkinTracker()    // immediate snapshot
-            scheduleNextReading()
-            startEmitLoopIfNeeded()
-            //writeToLogFileLocation(logFile, "deviceWorn=true.")
-        } else {
-            deviceWorn = false
-            spo2Sequencer.reset(ResetReason.OFF_WRIST)
-            lastSpo2InvalidReason = ResetReason.OFF_WRIST.name
-            lastSpo2ResetReason = ResetReason.OFF_WRIST.name
-            ppgRedFirstContinuouslyOkSinceMs = 0L
-            ppgRedSustainedAtPauseMs = 0L
-            ppgPauseStartedAtMs = 0L
-            clearSpo2RepositoryStateAsync()
-            stopHrTracker(true)
-            stopSkinTracker(true)     // shut it down
-            stopSpo2Tracker()
-            stopPpgTracker()
-            stopEmitLoop()
-            spo2TimeoutCleanup()
-            ppgTimeoutCleanup()
-            measureState.set(MeasurementState.IDLE)
-            //writeToLogFileLocation(logFile, "deviceWorn=false.")
         }
     }
 
@@ -1264,7 +1559,7 @@ class SkinTempService : Service() {
         lastSpo2OutcomeWasTimeout = endedAsTimeout
         lastSpo2EndedAsTimeout = endedAsTimeout
         lastSpo2OutcomeWallMs = System.currentTimeMillis()
-        spo2Sequencer.onInvalid(ts, reason)
+        spo2Sequencer.onInvalid(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ts, reason)
         lastSpo2InvalidReason = reason.name
         // Clear transient UI/debug-facing state so invalid outcomes do not keep stale SpO2/tier snapshots.
         serviceScope.launch { sharedRepo.storeLatestSpo2(null) }

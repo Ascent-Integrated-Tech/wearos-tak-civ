@@ -30,6 +30,7 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
+import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
 import com.aitech.weartak_civ.data.GeofenceRepository
 import com.aitech.weartak_civ.data.parsers.GeofenceCotParser
 import com.aitech.weartak_civ.events.MessageEvent
@@ -132,6 +133,7 @@ class TAKConnectService: Service() {
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
         var privateKey: PrivateKey? = null,
         var secureSocket : SSLSocket? = null,
+        var duplicateEndpointSuppressed: Boolean = false,
     )
 
     override fun onCreate() {
@@ -219,7 +221,8 @@ class TAKConnectService: Service() {
 
     fun setFromDatastore() {
         runBlocking {
-            val takServers : List<TakServerItem> = dataRepository.getTakServerList.first()
+            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
+                ?: return@runBlocking
             takServerDetails = mutableListOf()
             for (takServer in takServers) {
                 takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
@@ -228,6 +231,7 @@ class TAKConnectService: Service() {
                 Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
                 Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
+            refreshDuplicateEndpointSuppression()
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             esriEndpoint = dataRepository.getEsriEndpoint.first()
 
@@ -327,7 +331,8 @@ class TAKConnectService: Service() {
     private fun onServerAdded(message: String, index: Int) {
         Log.d(TAG, "Received $message message with index($index)")
         runBlocking {
-            val takServers: List<TakServerItem> = dataRepository.getTakServerList.first()
+            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
+                ?: return@runBlocking
             if (takServers.size - 1 != index) {
                 // We could do nothing here but if there is a bug we are trying to take care of it
                 Log.w(TAG, "SERVER_ADDED index($index) != takServers.size(${takServers.size})-1")
@@ -342,8 +347,9 @@ class TAKConnectService: Service() {
                 Log.d(TAG, "Updating server at index $index")
                 takServerDetails.set(index, takServerDetail)
             }
+            refreshDuplicateEndpointSuppression()
             // Delete server name file (if it exists)
-            Companion.deleteFile("${takServerDetail.address}.jks")
+            Companion.deleteFile(certificateCacheFileName(takServerDetail))
             if (isNetworkConnected) {
                 if (SERVER_ADDED_VIA_UI == message) {
                     Log.d(TAG, "Previous newServerAddedViaUi=$newServerAddedViaUi; newServerAddedViaUiConnectionStatusLiveData=${newServerAddedViaUiConnectionStatusLiveData.value}")
@@ -375,7 +381,8 @@ class TAKConnectService: Service() {
         val oldAddress = oldTakServerDetail.address
         var serverConnDetailsChanged = false
         runBlocking {
-            val takServers: List<TakServerItem> = dataRepository.getTakServerList.first()
+            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
+                ?: return@runBlocking
             val takServer = takServers.get(index)
             if (takServer.address != oldAddress || takServer.port != oldTakServerDetail.port ||
                 takServer.isEnabled != oldTakServerDetail.isEnabled || takServer.isP12Cert != oldTakServerDetail.isP12Cert ||
@@ -390,16 +397,18 @@ class TAKConnectService: Service() {
             takServerDetail.username = takServer.username; takServerDetail.password = takServer.password
             takServerDetail.p12Cert = takServer.p12Cert; takServerDetail.p12CertPassword = takServer.p12CertPassword
             takServerDetail.numConnAttempts = 0
+            refreshDuplicateEndpointSuppression()
         }
         if (serverConnDetailsChanged) {
             Log.d(TAG, "serverConnDetailsChanged $serverConnDetailsChanged")
             // Delete old server name file
-            Companion.deleteFile("$oldAddress.jks")
+            Companion.deleteFile(certificateCacheFileName(oldTakServerDetail))
             val newTakServerDetail = takServerDetails.get(index)
             // Delete new server name file (if it exists)
-            val newAddress = newTakServerDetail.address
-            if (oldAddress != newAddress) {
-                Companion.deleteFile("$newAddress.jks")
+            val oldEndpointKey = TakServerEndpointIdentity.key(oldTakServerDetail.address, oldTakServerDetail.port)
+            val newEndpointKey = TakServerEndpointIdentity.key(newTakServerDetail.address, newTakServerDetail.port)
+            if (oldEndpointKey != newEndpointKey) {
+                Companion.deleteFile(certificateCacheFileName(newTakServerDetail))
             }
             newTakServerDetail.secureSocket?.close()
             newTakServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
@@ -407,7 +416,7 @@ class TAKConnectService: Service() {
             if (isNetworkConnected) {
                 setIsAnyNetworkConnected()
                 setIsAnyNetworkConnecting()
-                if (newTakServerDetail.isEnabled) {
+                if (newTakServerDetail.isEnabled && !newTakServerDetail.duplicateEndpointSuppressed) {
                     getClientCertificateAndConnect(newTakServerDetail)
                 }
             } else {
@@ -476,6 +485,7 @@ class TAKConnectService: Service() {
             setIsAnyNetworkConnecting()
         }
         takServerDetails.removeAt(index)
+        refreshDuplicateEndpointSuppression()
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -528,14 +538,32 @@ class TAKConnectService: Service() {
 
         requestStatusIconsComplicationUpdate(context)
 
+        refreshDuplicateEndpointSuppression()
         for (takServer in takServerDetails) {
-            if (takServer.isEnabled) {
+            if (takServer.isEnabled && !takServer.duplicateEndpointSuppressed) {
                 getClientCertificateAndConnect(takServer)
             }
         }
     }
 
+    private fun refreshDuplicateEndpointSuppression() {
+        val seenEndpoints = mutableSetOf<String>()
+        takServerDetails.forEach { detail ->
+            val isDuplicate = !seenEndpoints.add(
+                TakServerEndpointIdentity.key(detail.address, detail.port)
+            )
+            detail.duplicateEndpointSuppressed = isDuplicate
+            if (isDuplicate) {
+                detail.secureSocket?.close()
+                detail.secureSocket = null
+                detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
+                detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+            }
+        }
+    }
+
     companion object {
+        private const val SHA256_ALGORITHM = "SHA-256"
         const val TAK_SERVER_DISCONNECTED = 0
         const val TAK_SERVER_DISCONNECTED_STRING = "DISCONNECTED"
 
@@ -551,6 +579,7 @@ class TAKConnectService: Service() {
 
         const val TAK_SERVER_CONNECTION_FAILED = 5
         const val TAK_SERVER_CONNECTION_FAILED_STRING = "CONNECTION_FAILED"
+        const val TAK_SERVER_DUPLICATE_STRING = "DUPLICATE"
 
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
@@ -584,6 +613,61 @@ class TAKConnectService: Service() {
         private val TAK_CONNECT_SERVICE = TAKConnectService()
         public fun getInstance() : TAKConnectService {
             return TAK_CONNECT_SERVICE
+        }
+
+        private fun readTextFileOrNull(f: java.io.File): String? =
+            try { f.readText() } catch (_: Exception) { null }
+
+        // does this tak server connection have a side loaded cert in  /sdcard/Android/data/com.aitech.weartak_civ/files/certs
+        private fun maybeLoadP12FromDisk(t: TakServerDetail): Boolean {
+            val certDir = java.io.File(context.getExternalFilesDir(null), "certs")
+            val binP12 = java.io.File(certDir, "${t.address}.p12")
+            val b64P12 = java.io.File(certDir, "${t.address}.p12.b64")
+            val pwdFile = java.io.File(certDir, "${t.address}.pwd")
+            Log.i(
+                TAG,
+                "P12 sideload check: certDir=${certDir.absolutePath}, " +
+                        "bin=${binP12.absolutePath} exists=${binP12.exists()} readable=${binP12.canRead()}, " +
+                        "b64=${b64P12.absolutePath} exists=${b64P12.exists()}, " +
+                        "pwd=${pwdFile.absolutePath} exists=${pwdFile.exists()}"
+            )
+
+            // don't load p12 if it doesn't exist
+            if (!binP12.exists() && !b64P12.exists()) return false
+
+            // fallback to "atakatak" if no password file provided.
+            val pwd = readTextFileOrNull(pwdFile)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "atakatak"
+
+            return try {
+                t.keyStore.load(null, null) // init empty
+
+                if (binP12.exists()) {
+                    java.io.FileInputStream(binP12).use {
+                        t.keyStore.load(it, pwd.toCharArray())
+                    }
+                } else {
+                    val b64 = readTextFileOrNull(b64P12)?.replace("\\s+".toRegex(), "") ?: return false
+                    val bytes = java.util.Base64.getDecoder().decode(b64)
+                    java.io.ByteArrayInputStream(bytes).use {
+                        t.keyStore.load(it, pwd.toCharArray())
+                    }
+                }
+
+                // We’re now using a file-based P12; mark password for KeyManagerFactory.init in connectTAKServer
+                t.isP12Cert = true                 // drive P12 path semantics later (password handling)
+                t.p12CertPassword = pwd
+
+                // Optional but very helpful during bring-up:
+                dumpKeyStoreAliases(t.keyStore, "$TAG/${t.address}")
+
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "maybeLoadP12FromDisk failed for ${t.address}: ${e.message}", e)
+                false
+            }
         }
 
         private fun setIsAnyNetworkConnecting() {
@@ -833,6 +917,19 @@ class TAKConnectService: Service() {
             }
         }
 
+        private fun certificateCacheFileName(takServerDetail: TakServerDetail): String =
+            certificateCacheFileName(takServerDetail.address, takServerDetail.port)
+
+        private fun certificateCacheFileName(address: String, port: Int): String {
+            val endpoint = TakServerEndpointIdentity.key(address, port)
+            val digest = MessageDigest.getInstance(SHA256_ALGORITHM).digest(endpoint.toByteArray())
+            val encoded = android.util.Base64.encodeToString(
+                digest,
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+            ).trimEnd('=')
+            return "tak_${encoded}.jks"
+        }
+
         fun loadKeyStore(keyStore : KeyStore, fileName: String, password: String): Boolean {
             return runBlocking {
                 try {
@@ -865,7 +962,7 @@ class TAKConnectService: Service() {
         }
 
         fun setKeystore(takServerDetail: TakServerDetail, signClientResponse: SignClientResponse): Boolean {
-            val takServer = takServerDetail.address
+            val cacheFileName = certificateCacheFileName(takServerDetail)
             var retVal = true
 
             try {
@@ -896,12 +993,12 @@ class TAKConnectService: Service() {
                 takServerDetail.keyStore.setKeyEntry(KEY_ALIAS, takServerDetail.privateKey, keystorePassword, chain)
                 runBlocking {
                     try {
-                        MainActivity.mainActivity.openFileOutput("$takServer.jks", Context.MODE_PRIVATE).use { fos ->
+                        MainActivity.mainActivity.openFileOutput(cacheFileName, Context.MODE_PRIVATE).use { fos ->
                             takServerDetail.keyStore.store(fos, keystorePassword)
-                            Log.i(TAG, "Keystore stored successfully in $takServer.jks")
+                            Log.i(TAG, "Keystore stored successfully in $cacheFileName")
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Not able to store keystore file as $takServer.jks. Error: ${e.message}")
+                        Log.w(TAG, "Not able to store keystore file as $cacheFileName. Error: ${e.message}")
                         retVal = true // Really no need for this but....
                     }
                 }
@@ -996,14 +1093,18 @@ class TAKConnectService: Service() {
         }
 
         private fun sha256(bytes: ByteArray): String {
-            val md = MessageDigest.getInstance("SHA-256").digest(bytes)
+            val md = MessageDigest.getInstance(SHA256_ALGORITHM).digest(bytes)
             // Android Base64
             return android.util.Base64.encodeToString(md, android.util.Base64.NO_WRAP)
             // If not on Android, use:
             // return java.util.Base64.getEncoder().encodeToString(md)
         }
 
-        fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
+    fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
+            if (takServerDetail.duplicateEndpointSuppressed) {
+                Log.w(TAG, "TAK connection suppressed for duplicate endpoint=${takServerDetail.address}:${takServerDetail.port}")
+                return
+            }
             if (isCompanionAppConnected) {
                 Log.w(TAG, "TAK reconnect suppressed (cert): Companion App is active")
                 return
@@ -1028,6 +1129,19 @@ class TAKConnectService: Service() {
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                     requestStatusIconsComplicationUpdate(context)
 
+                    // see if we have one locally
+                    if (!takServerDetail.isP12Cert) {
+                        Log.i(TAG, "Not P12 for ${takServerDetail.address} ... checking if p12 locally loaded ...")
+                        if (maybeLoadP12FromDisk(takServerDetail)) {
+                            Log.i(TAG, "Loaded PKCS12 from disk for ${takServerDetail.address}; short-circuiting to connect")
+                            takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
+                            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                            connectTAKServer(takServerDetail)
+                            return@launch            // <<< IMPORTANT
+                        } else {
+                            Log.w(TAG, "Didn't find a P12 for ${takServerDetail.address} in certs/")
+                        }
+                    }
 
                     if (takServerDetail.isP12Cert) {
                         Log.d(TAG, "isP12Cert true")
@@ -1103,15 +1217,15 @@ class TAKConnectService: Service() {
                             //    at com.android.org.conscrypt.ConscryptEngine.readPlaintextData(ConscryptEngine.java:1079)
                             //    at com.android.org.conscrypt.ConscryptEngine.unwrap(ConscryptEngine.java:876)
                             //    ... 16 more                                                                                                      ... 16 more
-                            deleteFile("${takServerDetail.address}.jks")
+                            deleteFile(certificateCacheFileName(takServerDetail))
                         }
-                        if (loadKeyStore(takServerDetail.keyStore, "${takServerDetail.address}.jks", KEYSTORE_PASS)) {
+                        if (loadKeyStore(takServerDetail.keyStore, certificateCacheFileName(takServerDetail), KEYSTORE_PASS)) {
                             Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
                             takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                             connectTAKServer(takServerDetail)
                         } else {
-                            deleteFile("${takServerDetail.address}.jks")
+                            deleteFile(certificateCacheFileName(takServerDetail))
                             Log.i(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
                             val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
                             var signClientResponse: SignClientResponse? = null
@@ -1130,7 +1244,7 @@ class TAKConnectService: Service() {
                                         takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                                         connectTAKServer(takServerDetail)
                                     } else {
-                                        deleteFile("${takServerDetail.address}.jks")
+                                        deleteFile(certificateCacheFileName(takServerDetail))
                                         Log.e(TAG, "ERROR in setKeystore: Cannot connect to TAK Server")
                                         takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
                                         takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
@@ -1560,7 +1674,7 @@ class TAKConnectService: Service() {
                         Log.i(TAG, "Connecting to TAK server ${takServerDetail.address}. Hence not sending this message: $msg")
                         continue
                     }
-                    if (takServerDetail.isEnabled) {
+                    if (takServerDetail.isEnabled && !takServerDetail.duplicateEndpointSuppressed) {
                         if (isNotPli) {
                             // Send immediately
                             sendData(takServerDetail, msg, isNotPli, currTime)
