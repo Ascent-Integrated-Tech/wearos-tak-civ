@@ -678,4 +678,15 @@
     <string name="server_connected_multicast">Server Connected Multicast</string>
     <string name="marker_stored_error_msg">Marker details stored and will be sent when connected and/or location is updated</string>
     <string name="group">Group</string>
+    <string name="cell_ditto_connected_location_enabled">Cell, Ditto Connected, Location Enabled</string>
+    <string name="cell_ditto_connected_location_disabled">Cell, Ditto Connected, Location Disabled</string>
+    <string name="cell_some_servers_connected_location_enabled">Cell, Some Servers Connected, Location Enabled</string>
+    <string name="cell_some_servers_connected_location_disabled">Cell, Some Servers Connected, Location Disabled</string>
+    <string name="wifi_ditto_connected_location_enabled">Wifi, Ditto Connected, Location Enabled</string>
+    <string name="wifi_ditto_connected_location_disabled">Wifi, Ditto Connected, Location Disabled</string>
+    <string name="wifi_some_servers_connected_location_enabled">Wifi, Some Servers Connected, Location Enabled</string>
+    <string name="wifi_some_servers_connected_location_disabled">Wifi, Some Servers Connected, Location Disabled</string>
+    <string name="airplane_mode_some_servers_connected_location_enabled">Airplane Mode, Some Servers Connected, Location Enabled</string>
+    <string name="airplane_mode_some_servers_connected_location_disabled">Airplane Mode, Some Servers Connected, Location Disabled</string>
+    <string name="some_servers_connected">Some Servers Connected</string>
 </resources>

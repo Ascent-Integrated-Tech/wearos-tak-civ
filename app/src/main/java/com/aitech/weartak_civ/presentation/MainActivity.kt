@@ -299,9 +299,11 @@ import kotlinx.coroutines.launch
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
 import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import java.io.File
 import com.aitech.weartak_civ.service.SitxTakService
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.takServerDetails
 import kotlinx.serialization.SerialName
 import kotlin.Long
 import kotlin.text.get
@@ -3232,7 +3234,7 @@ fun HeartRate(context: Context) {
 }
 
 enum class Connectivity { CELL, WIFI, BLUETOOTH, AIRPLANE, NONE }
-enum class TakServer { CONNECTED, CONNECTED_MULTICAST , CONNECTING, DISCONNECTED }
+enum class TakServer { CONNECTED, CONNECTED_MULTICAST, SOME_SERVERS_CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     if (networkManager == null) return Connectivity.NONE
@@ -3257,15 +3259,27 @@ fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
     if ((takConnectService == null) && (enableSitxService == false) && (enableMulticastOnWifi == false)) {
         return TakServer.DISCONNECTED
     }
+    val takServerSettingList = takServerListState.value
+    val anyTakServerDisconnected = takServerDetails.any {
+        it.connectionStatus.plain == 0
+        it.connectionStatus.plain == 5
+    }
+    val endpoints = dataRepository.endpointConnected.value
 
-    val connected = (TAKConnectService.isAnyTakConnectedLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED)
+    val connected = ((TAKConnectService.isAnyTakConnectedLiveData.value == true)&&(!anyTakServerDisconnected)) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED)
     val connecting = (TAKConnectService.isAnyTakConnectingLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTING)
-    val connectedMulticast = dataRepository.multicastPublisherRunning.value
+    val connectedMulticast = (dataRepository.multicastPublisherRunning.value) && (endpoints.equals (DataRepository.Endpoint.MULTICAST))
+    val someServersConn = ((TAKConnectService.isAnyTakConnectedLiveData.value == true) && (takServerSettingList!!.size > 1) && (anyTakServerDisconnected) && (endpoints.contains(DataRepository.Endpoint.TAK_SERVER)))
+    Log.d(TAG, "connected = $connected")
+    Log.d(TAG, "connecting = $connecting")
+    Log.d(TAG, "connectedMulticast = ${connectedMulticast}")
+    Log.d(TAG, "someServersConn = $someServersConn")
 
     return when {
         connected -> TakServer.CONNECTED
         connecting -> TakServer.CONNECTING
         connectedMulticast -> TakServer.CONNECTED_MULTICAST
+        someServersConn -> TakServer.SOME_SERVERS_CONNECTED
         else -> TakServer.DISCONNECTED
     }
 }
@@ -3293,6 +3307,7 @@ fun buildComplicationString(
         TakServer.CONNECTED -> getString(context, R.string.server_connected)
         TakServer.CONNECTING -> getString(context, R.string.server_connecting)
         TakServer.CONNECTED_MULTICAST -> getString(context, R.string.server_connected_multicast)
+        TakServer.SOME_SERVERS_CONNECTED -> getString(context, R.string.some_servers_connected)
         TakServer.DISCONNECTED -> getString(context, R.string.server_disconnected)
     }
     val locLabel = if (locationEnabled) getString(context, R.string.location_enabled) else getString(context, R.string.location_disabled)
@@ -3340,6 +3355,11 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val anyTakServerConnected by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
         val anyTakServerConnecting by TAKConnectService.isAnyTakConnectingLiveData.observeAsState()
+        val anyTakServerDisconnected = takServerDetails.any {
+            it.connectionStatus.plain == 0
+            it.connectionStatus.plain == 5
+        }
+        val takServerSettingList by takServerListState.observeAsState(initial = emptyList())
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
@@ -3347,14 +3367,24 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
 //        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
 //        val companionConnected = DataRepository.Endpoint.COMPANION_APP in endpoints
         val companionConnected by dataRepository.isCompanionConnected.collectAsStateWithLifecycle()
+        val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
         val multicastConnected by dataRepository.multicastPublisherRunning.collectAsStateWithLifecycle()
         val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
+
+//        Log.d(TAG, "endpoints = $endpoints")
+//        Log.d(TAG, "anyTakServerConnected = $anyTakServerConnected")
+//        Log.d(TAG, "takServerSettingList = ${takServerSettingList.size}")
+//        Log.d(TAG, "anyTakServerDisconnected = $anyTakServerDisconnected")
+//        Log.d(TAG, "takServerDetails = $takServerDetails")
 
         val painter = when {
             companionConnected ->
                 painterResource(R.drawable.tak_companion_app_connected)
 
-            ((anyTakServerConnected == true) || sitxEvent is SitxServiceEvent.SocketsConnected) ->
+            ((anyTakServerConnected == true) && (takServerSettingList.size > 1) && (anyTakServerDisconnected)) ->
+                painterResource(R.drawable.tak_server_some_connected)
+
+            ((anyTakServerConnected == true && !anyTakServerDisconnected) || sitxEvent is SitxServiceEvent.SocketsConnected) ->
                 painterResource(R.drawable.tak_server_connected)
 
             ((anyTakServerConnecting == true) ||
@@ -3603,18 +3633,20 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
 
     requestBloodhoundComplicationUpdate(context)
  Row(
-        modifier = Modifier.clickable(
-            onClick = {
-                if (bloodhoundChecked == true) {
-                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
-                } else {
-                    Toast.makeText(
-                        context,
-                        "Bloodhound is disabled. Please enable it in Settings.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }).widthIn(max = 115.dp),
+        modifier = Modifier
+            .clickable(
+                onClick = {
+                    if (bloodhoundChecked == true) {
+                        context.startActivity(Intent(context, BloodhoundActivity::class.java))
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Bloodhound is disabled. Please enable it in Settings.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                })
+            .widthIn(max = 115.dp),
 //        verticalAlignment = Alignment.CenterVertically
     ){
      if (bloodhoundChecked == true) {
