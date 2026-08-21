@@ -32,6 +32,10 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
         var cellServerConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var cellServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var cellServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var cellDittoConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var cellDittoConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var cellSomeServersConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var cellSomeServersConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var wifiServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
         var wifiServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var wifiServerConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
@@ -40,6 +44,10 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
         var wifiServerConnectedMulticastLocationDisabledComplicationData: SmallImageComplicationData? = null
         var wifiServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var wifiServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var wifiDittoConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var wifiDittoConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var wifiSomeServersConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var wifiSomeServersConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var bluetoothServerConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var bluetoothServerConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var bluetoothServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
@@ -50,6 +58,8 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
         var airplaneModeServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var airplaneModeServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
         var airplaneModeServerDisconnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
+        var airplaneModeSomeServersConnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
+        var airplaneModeSomeServersConnectedLocationDisabledComplicationData: SmallImageComplicationData? = null
         var noConnectionServerConnectingLocationEnabledComplicationData: SmallImageComplicationData? = null
         var noConnectServerConnectingLocationDisabledComplicationData: SmallImageComplicationData? = null
         var noConnectServerDisconnectedLocationEnabledComplicationData: SmallImageComplicationData? = null
@@ -122,6 +132,38 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
                     return cellServerDisconnectedLocationDisabledComplicationData
                 }
             }
+            getString(R.string.cell_ditto_connected_location_enabled) -> when (null != cellDittoConnectedLocationEnabledComplicationData) {
+                true -> cellDittoConnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new cellDittoConnectedLocationEnabledComplicationData")
+                    cellDittoConnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.cell_ditto_connected_location_enabled), getString(R.string.cell_ditto_connected_location_enabled))
+                    return cellDittoConnectedLocationEnabledComplicationData
+                }
+            }
+            getString(R.string.cell_ditto_connected_location_disabled) -> when (null != cellDittoConnectedLocationDisabledComplicationData) {
+                true -> cellDittoConnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new cellDittoConnectedLocationDisabledComplicationData")
+                    cellDittoConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.cell_ditto_connected_location_disabled), getString(R.string.cell_ditto_connected_location_disabled) )
+                    return cellDittoConnectedLocationDisabledComplicationData
+                }
+            }
+            getString(R.string.cell_some_servers_connected_location_enabled) -> when (null != cellSomeServersConnectedLocationEnabledComplicationData) {
+                true -> cellSomeServersConnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new cellSomeServersConnectedLocationEnabledComplicationData")
+                    cellSomeServersConnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.cell_some_server_connected_location_enabled), getString(R.string.cell_some_servers_connected_location_enabled))
+                    return cellSomeServersConnectedLocationEnabledComplicationData
+                }
+            }
+            getString(R.string.cell_some_servers_connected_location_disabled) -> when (null != cellSomeServersConnectedLocationDisabledComplicationData) {
+                true -> cellSomeServersConnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new cellSomeServersConnectedLocationDisabledComplicationData")
+                    cellSomeServersConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.cell_some_server_connected_location_disabled), getString(R.string.cell_some_servers_connected_location_disabled))
+                    return cellSomeServersConnectedLocationDisabledComplicationData
+                }
+            }
             getString(R.string.wifi_server_connecting_location_enabled) -> when (null != wifiServerConnectingLocationEnabledComplicationData) {
                 true -> wifiServerConnectingLocationEnabledComplicationData
                 false -> {
@@ -184,6 +226,38 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
                     Log.d(TAG, "Creating new wifiServerDisconnectedLocationDisabledComplicationData")
                     wifiServerDisconnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_server_disconnected_location_disabled), getString(R.string.wifi_server_disconnected_location_disabled))
                     return wifiServerDisconnectedLocationDisabledComplicationData
+                }
+            }
+            getString(R.string.wifi_ditto_connected_location_enabled) -> when (null != wifiDittoConnectedLocationEnabledComplicationData) {
+                true -> wifiDittoConnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiDittoConnectedLocationEnabledComplicationData")
+                    wifiDittoConnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_ditto_connected_location_enabled), getString(R.string.wifi_ditto_connected_location_enabled))
+                    return wifiDittoConnectedLocationEnabledComplicationData
+                }
+            }
+            getString(R.string.wifi_ditto_connected_location_disabled) -> when (null != wifiDittoConnectedLocationDisabledComplicationData) {
+                true -> wifiDittoConnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiDittoConnectedLocationDisabledComplicationData")
+                    wifiDittoConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_ditto_connected_location_disabled), getString(R.string.wifi_ditto_connected_location_disabled))
+                    return wifiDittoConnectedLocationDisabledComplicationData
+                }
+            }
+            getString(R.string.wifi_some_servers_connected_location_enabled) -> when (null != wifiSomeServersConnectedLocationEnabledComplicationData) {
+                true -> wifiSomeServersConnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiSomeServersConnectedLocationEnabledComplicationData")
+                    wifiSomeServersConnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_some_servers_connected_location_enabled), getString(R.string.wifi_some_servers_connected_location_enabled))
+                    return wifiSomeServersConnectedLocationEnabledComplicationData
+                }
+            }
+            getString(R.string.wifi_some_servers_connected_location_disabled) -> when (null != wifiSomeServersConnectedLocationDisabledComplicationData) {
+                true -> wifiSomeServersConnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new wifiSomeServersConnectedLocationDisabledComplicationData")
+                    wifiSomeServersConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.wifi_some_servers_connected_location_disabled), getString(R.string.wifi_some_servers_connected_location_disabled))
+                    return wifiSomeServersConnectedLocationDisabledComplicationData
                 }
             }
             "Bluetooth, Server Connected, Location Enabled" -> when (null != bluetoothServerConnectedLocationEnabledComplicationData) {
@@ -264,6 +338,22 @@ class StatusIconsComplicationService : SuspendingComplicationDataSourceService()
                     Log.d(TAG, "Creating new airplaneModeServerDisconnectedLocationDisabledComplicationData")
                     airplaneModeServerDisconnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplanemode_server_disconnected_location_disabled), "Airplane Mode, Server Disconnected, Location Disabled")
                     return airplaneModeServerDisconnectedLocationDisabledComplicationData
+                }
+            }
+            getString(R.string.airplane_mode_some_servers_connected_location_enabled) -> when (null != airplaneModeSomeServersConnectedLocationEnabledComplicationData) {
+                true -> airplaneModeSomeServersConnectedLocationEnabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new airplaneModeSomeServersConnectedLocationEnabledComplicationData")
+                    airplaneModeSomeServersConnectedLocationEnabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplane_mode_some_servers_connected_location_enabled), getString(R.string.airplane_mode_some_servers_connected_location_enabled))
+                    return airplaneModeSomeServersConnectedLocationEnabledComplicationData
+                }
+            }
+            getString(R.string.airplane_mode_some_servers_connected_location_disabled) -> when (null != airplaneModeSomeServersConnectedLocationDisabledComplicationData) {
+                true -> airplaneModeSomeServersConnectedLocationDisabledComplicationData
+                false -> {
+                    Log.d(TAG, "Creating new airplaneModeSomeServersConnectedLocationDisabledComplicationData")
+                    airplaneModeSomeServersConnectedLocationDisabledComplicationData = createComplicationData(Icon.createWithResource(applicationContext, R.drawable.airplane_mode_some_servers_connected_location_disabled), getString(R.string.airplane_mode_some_servers_connected_location_disabled))
+                    return airplaneModeSomeServersConnectedLocationDisabledComplicationData
                 }
             }
             getString(R.string.no_connect_server_connecting_location_enabled) -> when (null != noConnectionServerConnectingLocationEnabledComplicationData) {
