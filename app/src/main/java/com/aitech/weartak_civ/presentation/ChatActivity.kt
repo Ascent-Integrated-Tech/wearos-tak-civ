@@ -90,8 +90,9 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.ChatMessage
-import com.aitech.weartak_civ.Utils.findChatRoomFromUserUid
+import com.aitech.weartak_civ.cot.ChatMessage
+import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.findChatRoomFromUserUid
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
@@ -117,7 +118,7 @@ class ChatActivity : ComponentActivity() {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
         const val EXTRA_OPEN_ROOM_UID = "extra_open_room_uid"
         lateinit var dataRepository: DataRepository
-        val sampleRooms = listOf(Utils.ChatRoom(
+        val sampleRooms = listOf(ChatRoom(
                 "0",
                 "Test Channel",
                 listOf(
@@ -128,7 +129,7 @@ class ChatActivity : ComponentActivity() {
                 false,
                 0L,
                 0L))
-        val sampleMessages = Utils.ChatRoom(
+        val sampleMessages = ChatRoom(
             "0",
             "Test Channel",
             listOf(
@@ -177,7 +178,6 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
     val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
     var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
-    // Now using Utils.ChatRoom
     val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
 
     val hasAnyNew = chatRooms.any { it.newMessagesPresent }
@@ -260,7 +260,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
 fun ChatScreen(
     navController: NavController,
     exitActivity: () -> Unit,
-    chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
+    chatRooms: List<ChatRoom>
 ) {
     Log.d(TAG, "Chat called")
     val context = LocalContext.current
@@ -384,7 +384,7 @@ fun ChatCard(
 fun ChatScreenDetailed(
     navController: NavController,
     index: Int,
-    chatRooms: List<Utils.ChatRoom> // <-- Use Utils.ChatRoom here
+    chatRooms: List<ChatRoom>
 ) {
     WearTAKCIVTheme {
         val room = chatRooms.getOrNull(index)

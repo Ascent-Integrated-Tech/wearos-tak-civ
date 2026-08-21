@@ -17,9 +17,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.CotUtils.Point
-import com.aitech.weartak_civ.Utils.CotUtils.MarkerMapItem
-import com.aitech.weartak_civ.Utils.CotUtils.Link
+import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.CotLink
+import com.aitech.weartak_civ.cot.CotMarkerDetail
+import com.aitech.weartak_civ.cot.CotMarkerEvent
+import com.aitech.weartak_civ.cot.CotMarkerMapItem
+import com.aitech.weartak_civ.cot.CotPoint
 import com.aitech.weartak_civ.provider.TargetVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,10 +67,10 @@ class BloodhoundRepository(private val context: Context) {
 
 
         data class Target(
-            val mapItem: Utils.CotUtils.MarkerMapItem
+            val mapItem: CotMarkerMapItem
         ) {
             val name: String? = mapItem.cotEvent.detail.markerCallsign
-            val point: Point = mapItem.point
+            val point: CotPoint = mapItem.point
             val type: String = mapItem.type
         }
 
@@ -87,7 +90,7 @@ class BloodhoundRepository(private val context: Context) {
             val server = bhEvent.server
             val issuerUid = bhEvent.issuer?.uid
             val chatRoomUid = issuerUid
-            val chatRoom: Utils.ChatRoom? = null
+            val chatRoom: ChatRoom? = null
         }
     }
 
@@ -101,10 +104,10 @@ class BloodhoundRepository(private val context: Context) {
      *  Backend uses this to map devices back
      */
     data class BloodhoundEvent(
-        val mapItem: MarkerMapItem,                      // to identify the event, calc trajectory,
+        val mapItem: CotMarkerMapItem,                   // to identify the event, calc trajectory,
         val uid: String = mapItem.uid,                   // unique identifier of the event
         val server: String,                              // so we can reply via chat to the proper socket  //TODO: Instead of passing the entire details, we can pass a uuid for a tak server detail map...
-        var issuer: Link? = mapItem.link,                 // so we send the chat to the right person
+        var issuer: CotLink? = mapItem.link,              // so we send the chat to the right person
         var timeIssued: Long?,                            // tell user on UI when it was sent.
         val timeCompleted: Long?,                         // tell the issuer how long it took.
         val remark: String = ""
@@ -167,7 +170,7 @@ class BloodhoundRepository(private val context: Context) {
         lon: Double,
         time: Long
     ) {
-        val point = Point(
+        val point = CotPoint(
             lat = lat,
             lon = lon,
             hae = 0.0,
@@ -175,7 +178,7 @@ class BloodhoundRepository(private val context: Context) {
             le = 999999.0
         )
 
-        val detail = Utils.CotUtils.MarkerDetail(
+        val detail = CotMarkerDetail(
             markerCallsign = title,
             link = null,
             creator = null,
@@ -184,7 +187,7 @@ class BloodhoundRepository(private val context: Context) {
             contact = null
         )
 
-        val cotEvent = Utils.CotUtils.MarkerCotEvent(
+        val cotEvent = CotMarkerEvent(
             version = "2.0",
             uid = uid,
             type = markerType,
@@ -197,7 +200,7 @@ class BloodhoundRepository(private val context: Context) {
             detail = detail
         )
 
-        val mapItem = MarkerMapItem(cotEvent)
+        val mapItem = CotMarkerMapItem(cotEvent)
 
         upsertFromEvent(
             BloodhoundEvent(

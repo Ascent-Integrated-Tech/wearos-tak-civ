@@ -125,13 +125,6 @@ const val DESC_HIGH_EXERTION_ALERT = "HIGH Exertion"
 const val CAT_FALL_DETECTED = "Fall Detected"
 const val DESC_GOOGLE_SDK_FALL_DETECTED = "Hard fall detected with no motion for 30 seconds"
 
-// TODO Senni: This should be an enum in MarkerActivity.kt. No other service/activity uses this??
-const val MARKER_HOSTILE = "Hostile"
-const val MARKER_FRIENDLY = "Friendly"
-const val MARKER_UNKNOWN = "Unknown"
-const val MARKER_NEUTRAL = "Neutral"
-
-
 const val DEFAULT_MULTICAST_ADDRESS = "239.2.3.1"
 const val DEFAULT_MULTICAST_PORT = 6969
 const val DEFAULT_MULTICAST_PROTOCOL = "UDP"

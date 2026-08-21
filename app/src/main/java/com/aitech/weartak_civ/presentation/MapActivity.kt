@@ -115,10 +115,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material.MaterialTheme
-import com.aitech.weartak_civ.MARKER_FRIENDLY
-import com.aitech.weartak_civ.MARKER_HOSTILE
-import com.aitech.weartak_civ.MARKER_NEUTRAL
-import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.MarkerActivity.Constants.markerType
 import kotlinx.coroutines.CoroutineScope
@@ -171,8 +167,8 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import com.aitech.weartak_civ.Utils.ChatRoom
-import com.aitech.weartak_civ.Utils.findChatRoomFromUserUid
+import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.findChatRoomFromUserUid
 import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
@@ -298,13 +294,13 @@ data class MapMarkerItem(
 @Composable
 fun grayMarkerIconFromString(markerType: String): Painter {
     val painter: Painter = when (markerType) {
-        MARKER_UNKNOWN -> painterResource(R.drawable.unknown_gray)
+        MarkerType.UNKNOWN.displayName -> painterResource(R.drawable.unknown_gray)
         MarkerType.UNKNOWN.type -> painterResource(R.drawable.unknown_gray)
-        MARKER_FRIENDLY -> painterResource(R.drawable.friendly_gray)
+        MarkerType.FRIENDLY.displayName -> painterResource(R.drawable.friendly_gray)
         MarkerType.FRIENDLY.type -> painterResource(R.drawable.friendly_gray)
-        MARKER_HOSTILE -> painterResource(R.drawable.hostile_gray)
+        MarkerType.HOSTILE.displayName -> painterResource(R.drawable.hostile_gray)
         MarkerType.HOSTILE.type -> painterResource(R.drawable.hostile_gray)
-        MARKER_NEUTRAL -> painterResource(R.drawable.neutral_gray)
+        MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral_gray)
         MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral_gray)
         "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
         else ->  //TODO: Change to error icon
@@ -2181,7 +2177,7 @@ fun SelectedUser(
     navController: NavController,
     index: Int,
     receivedUserSetting: List<DataRepository.ReceivedUser>,
-    chatRooms: List<Utils.ChatRoom>,
+    chatRooms: List<ChatRoom>,
     context: Context,
 ) {
     Log.i(TAG, "User list: $receivedUserSetting")

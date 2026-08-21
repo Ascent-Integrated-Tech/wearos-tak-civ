@@ -134,10 +134,6 @@ import androidx.wear.compose.material.SwipeToRevealChip
 import androidx.wear.compose.material.SwipeToRevealDefaults
 import androidx.wear.compose.material.SwipeToRevealPrimaryAction
 import androidx.wear.compose.material.SwipeToRevealSecondaryAction
-import com.aitech.weartak_civ.MARKER_FRIENDLY
-import com.aitech.weartak_civ.MARKER_HOSTILE
-import com.aitech.weartak_civ.MARKER_NEUTRAL
-import com.aitech.weartak_civ.MARKER_UNKNOWN
 import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerCotType
@@ -928,13 +924,13 @@ fun donutArcShape(
 @Composable
 fun markerIconFromString(markerType: String): Painter {
     val painter: Painter = when (markerType) {
-        MARKER_UNKNOWN -> painterResource(R.drawable.unknown)
+        MarkerType.UNKNOWN.displayName -> painterResource(R.drawable.unknown)
         MarkerType.UNKNOWN.type -> painterResource(R.drawable.unknown)
-        MARKER_FRIENDLY -> painterResource(R.drawable.friendly)
+        MarkerType.FRIENDLY.displayName -> painterResource(R.drawable.friendly)
         MarkerType.FRIENDLY.type -> painterResource(R.drawable.friendly)
-        MARKER_HOSTILE -> painterResource(R.drawable.hostile)
+        MarkerType.HOSTILE.displayName -> painterResource(R.drawable.hostile)
         MarkerType.HOSTILE.type -> painterResource(R.drawable.hostile)
-        MARKER_NEUTRAL -> painterResource(R.drawable.neutral)
+        MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral)
         MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral)
         "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
         else ->  //TODO: Change to error icon
@@ -1737,22 +1733,22 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                 exitActivity = { exitActivity() },
                 shouldShowDialog = shouldShowConfirm,
                 onClickRightButton = {
-                    markerType = MARKER_FRIENDLY
+                    markerType = MarkerType.FRIENDLY.displayName
                     shouldShowConfirm.value = true
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
                 },
                 onClickBottomButton = {
-                    markerType = MARKER_UNKNOWN
+                    markerType = MarkerType.UNKNOWN.displayName
                     shouldShowConfirm.value = true
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
                 },
                 onClickLeftButton = {
-                    markerType = MARKER_NEUTRAL
+                    markerType = MarkerType.NEUTRAL.displayName
                     shouldShowConfirm.value = true
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
                 },
                 onClickTopButton = {
-                    markerType = MARKER_HOSTILE
+                    markerType = MarkerType.HOSTILE.displayName
                     shouldShowConfirm.value = true
                     Log.i(TAG, "Marker Button Clicked! Sending Marker Drop request for $markerType ...")
                 },

@@ -148,8 +148,12 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
-import com.aitech.weartak_civ.Utils.CotUtils.MarkerDetail
-import com.aitech.weartak_civ.Utils.CotUtils.Point
+import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.CotEventTime
+import com.aitech.weartak_civ.cot.CotEventTimeFactory
+import com.aitech.weartak_civ.cot.CotMarkerEvent
+import com.aitech.weartak_civ.cot.CotTimeOffset
+import com.aitech.weartak_civ.cot.CotUserPositionEvent
 import com.aitech.weartak_civ.ipc.AtosCotPacket
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -1124,7 +1128,7 @@ class DataRepository(private val context: Context) {
         val enqueuedToBeSent: Boolean,
         val waitingForUpdatedLocation: Boolean,
         val loc: LocationSnapshot?,
-        val time: Utils.CotEventTimeSnapshot,
+        val time: CotEventTime,
         val physio: PhysioSnapshot?,
         val system: SystemSnapshot
     )
@@ -1142,9 +1146,9 @@ class DataRepository(private val context: Context) {
 
     suspend fun snapshotMarker(item: DroppedMarker): MarkerSnapshot {
         val loc = item.location
-        val timeSnapshot = Utils.getCotEventTimeSnapshot(
-            startOffset = Utils.TimeOffset(),
-            staleOffset = Utils.TimeOffset(years = 1)
+        val timeSnapshot = CotEventTimeFactory.now(
+            startOffset = CotTimeOffset(),
+            staleOffset = CotTimeOffset(years = 1)
         )
 
         val physioSnapshot = snapshotPhysio()
@@ -1178,7 +1182,7 @@ class DataRepository(private val context: Context) {
         val description: String,
         val priority: Int,
         val sendSms: Boolean,
-        val time: Utils.CotEventTimeSnapshot,
+        val time: CotEventTime,
         val location: LocationSnapshot?,
         val physio: PhysioSnapshot?,
         val system: SystemSnapshot
@@ -1186,9 +1190,9 @@ class DataRepository(private val context: Context) {
 
     suspend fun snapshotEmergencyEvent(alert: CustomEmergencyAlert): EmergencyEventSnapshot {
         // TODO Check if we should use alert.timeMillis
-        val timeSnap = Utils.getCotEventTimeSnapshot(
-            startOffset = Utils.TimeOffset(),
-            staleOffset = Utils.TimeOffset(minutes = 15) // or whatever SOS stale you want
+        val timeSnap = CotEventTimeFactory.now(
+            startOffset = CotTimeOffset(),
+            staleOffset = CotTimeOffset(minutes = 15) // or whatever SOS stale you want
         )
 
         val locSnap = snapshotLocation()
@@ -1211,15 +1215,15 @@ class DataRepository(private val context: Context) {
 
     data class PliSnapshot(
         val loc: LocationSnapshot?,
-        val time: Utils.CotEventTimeSnapshot,
+        val time: CotEventTime,
         val physioData: PhysioSnapshot,
         val systemData: SystemSnapshot
     )
 
     suspend fun snapshotPli(): PliSnapshot {
-        val timeSnap = Utils.getCotEventTimeSnapshot(
-            startOffset = Utils.TimeOffset(),
-            staleOffset = Utils.TimeOffset(seconds = (3 * almightyReportingIntervalSecs.value))
+        val timeSnap = CotEventTimeFactory.now(
+            startOffset = CotTimeOffset(),
+            staleOffset = CotTimeOffset(seconds = (3 * almightyReportingIntervalSecs.value))
         )
 
         return PliSnapshot(
@@ -1441,7 +1445,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun applyReceivedUserEvent(
-        event: Utils.CotUtils.UserPositionCotEvent,
+        event: CotUserPositionEvent,
         source: String
     ): Boolean {
         if (event.stale <= System.currentTimeMillis()) {
@@ -1567,7 +1571,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun applyReceivedMarkerEvent(
-        event: Utils.CotUtils.MarkerCotEvent,
+        event: CotMarkerEvent,
         source: String
     ): Boolean {
         if (event.stale <= System.currentTimeMillis()) {
@@ -1599,20 +1603,22 @@ class DataRepository(private val context: Context) {
     }
 
     enum class MarkerType(
+        val displayName: String,
         val type: String,
         val icon: String
     ) {
-        FRIENDLY("a-f-G", "COT_MAPPING_2525C/a-f/a-f-G"),
-        UNKNOWN("a-u-G", "COT_MAPPING_2525C/a-u/a-u-G"),
-        HOSTILE("a-h-G", "COT_MAPPING_2525C/a-h/a-h-G"),
-        NEUTRAL("a-n-G", "COT_MAPPING_2525C/a-n/a-n-G");
+        FRIENDLY("Friendly", "a-f-G", "COT_MAPPING_2525C/a-f/a-f-G"),
+        UNKNOWN("Unknown", "a-u-G", "COT_MAPPING_2525C/a-u/a-u-G"),
+        HOSTILE("Hostile", "a-h-G", "COT_MAPPING_2525C/a-h/a-h-G"),
+        NEUTRAL("Neutral", "a-n-G", "COT_MAPPING_2525C/a-n/a-n-G");
 
         companion object {
             fun parse(input: String): MarkerType? {
                 val s = input.trim()
                 return entries.firstOrNull {
-                    it.name.equals(s, ignoreCase = true) ||   // allow FRIENDLY / HOSTILE / …
-                            it.type.equals(s, ignoreCase = true)      // allow a-f-G / a-h-G / …
+                    it.name.equals(s, ignoreCase = true) ||
+                        it.displayName.equals(s, ignoreCase = true) ||
+                        it.type.equals(s, ignoreCase = true)
                 }
             }
         }
@@ -2425,7 +2431,7 @@ class DataRepository(private val context: Context) {
         val roomTitle: String,              // human label for the room
         val message: String,                // chat text
 
-        val time: Utils.CotEventTimeSnapshot,
+        val time: CotEventTime,
         val location: LocationSnapshot?,    // might be null if you want to allow it
         val physio: PhysioSnapshot?,
         val system: SystemSnapshot
@@ -2437,9 +2443,9 @@ class DataRepository(private val context: Context) {
         message: String
     ): ChatEventSnapshot {
 
-        val timeSnap = Utils.getCotEventTimeSnapshot(
-            startOffset = Utils.TimeOffset(),
-            staleOffset = Utils.TimeOffset(minutes = 15) // or shorter if you want
+        val timeSnap = CotEventTimeFactory.now(
+            startOffset = CotTimeOffset(),
+            staleOffset = CotTimeOffset(minutes = 15) // or shorter if you want
         )
         val locSnap = snapshotLocation()
         val systemSnap = snapshotSystem()
@@ -2460,8 +2466,8 @@ class DataRepository(private val context: Context) {
 
     var newMessagesPresentPublicBoolean = MutableLiveData<Boolean>(false)
 
-    private val _chatRoomsFlow = MutableStateFlow<List<Utils.ChatRoom>>(emptyList())
-    val chatRoomsFlow: StateFlow<List<Utils.ChatRoom>> = _chatRoomsFlow
+    private val _chatRoomsFlow = MutableStateFlow<List<ChatRoom>>(emptyList())
+    val chatRoomsFlow: StateFlow<List<ChatRoom>> = _chatRoomsFlow
 
     /* ─── unread indicator ──────────────────────────────────────────────────── */
     private val _unreadCount      = MutableStateFlow(0)
@@ -2480,7 +2486,7 @@ class DataRepository(private val context: Context) {
         _hasUnread.emit(n > 0)
     }
 
-    fun setChatRooms(rooms: List<Utils.ChatRoom>) {
+    fun setChatRooms(rooms: List<ChatRoom>) {
         _chatRoomsFlow.value = rooms
         val anyUnread = rooms.any { it.newMessagesPresent }
         newMessagesPresentPublicBoolean.postValue(anyUnread)

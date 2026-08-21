@@ -13,9 +13,9 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.aitech.weartak_civ.Utils.CotUtils
-import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
-import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseUserPositionCotOrNull
+import com.aitech.weartak_civ.cot.CotMarkerEvent
+import com.aitech.weartak_civ.cot.CotMarkerMapItem
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
@@ -958,8 +958,8 @@ class SitxTakService : Service() {
     // TODO Sitx: Merge with startCotReader in TakConnectService
     private fun handleTextMessage(flowTag: String, rawXml: String) {
         if (runBlocking { dataRepo.getEnableChatService.first() }
-            && CotUtils.isChatMessage(rawXml)
-            && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
+            && CotMessageParser.isChatMessage(rawXml)
+            && CotMessageParser.isChatForRecipient(rawXml, MainActivity.device_uid, MainActivity.callsign)) {
             Log.i(TAG, "Received Chat for me:\n$rawXml")
             EventBus.getDefault().post(TakChatEvent(rawXml))
         } else if (geofenceEnabled && isRadioSilenceRectangleGeofence(rawXml)) {
@@ -971,21 +971,10 @@ class SitxTakService : Service() {
                 }
             }
         } else {
-            val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
+            val userPositionCotEvent = CotMessageParser.parseUserPositionOrNull(rawXml)
             if (userPositionCotEvent != null) {
                 //TODO: WEAR-494: Move this to data repo
                 if (userPositionCotEvent.uid != MainActivity.device_uid) {
-//                    Log.i(
-//                        TAG,
-//                        "Inbound user CoT: source=$flowTag uid=${userPositionCotEvent.uid} " +
-//                            "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
-//                            "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
-//                            "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
-//                            "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
-//                            "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how}"
-//                    )
-//                    return
-//                }
                     serviceScope.launch {
                         val shouldTrackUser = dataRepo.applyReceivedUserEvent(
                             event = userPositionCotEvent,
@@ -1001,13 +990,9 @@ class SitxTakService : Service() {
                     }
                 }
             }
-            val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
+            val markerCotEvent: CotMarkerEvent? = CotMessageParser.parseMarkerOrNull(rawXml)
 
             if (markerCotEvent != null) {
-//                if (dataRepo.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
-//                    Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
-//                    return
-//                }
                 serviceScope.launch {
                     val shouldTrackMarker = dataRepo.applyReceivedMarkerEvent(
                         event = markerCotEvent,
@@ -1017,8 +1002,7 @@ class SitxTakService : Service() {
                         Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
                         return@launch
                     }
-                    //Log.i(TAG, "Received a marker message:\n$markerCotEvent")
-                    val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
+                    val mapItem = CotMarkerMapItem(markerCotEvent)
                     val bhEvent = BloodhoundRepository.BloodhoundEvent(
                         mapItem = mapItem,
                         server = flowTag,

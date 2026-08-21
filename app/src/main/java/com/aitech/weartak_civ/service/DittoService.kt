@@ -22,8 +22,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
-import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -335,19 +335,18 @@ class DittoService : Service() {
 
 
             // 2) Merged version (original + ditto + remarks/biometrics/track)
-            val cotDetail = Utils.buildCotDetailMerged(
+            val cotDetail = CotDetailBuilder.dittoTrack(
                 // your original args:
                 heartRate     = heartRate,
                 battery       = battery,
                 callsign      = callsign,
-                roleValue     = role,
-                teamValue     = teamValue,
+                role          = role,
+                team          = teamValue,
                 uid           = uuid,
-                bearingActual = bearingActual,
-                speedActual   = speedActual,
+                course        = bearingActual,
+                speed         = speedActual,
                 // if you need a custom endpoint/phone (these also have defaults):
                 endpoint      = "*:-1:stcp",
-                phone         = "11234567890",
                 // takv info:
                 takvOs        = "WEAROS",           // e.g. "14"
                 takvVersion   = "WearTAK-${Build.VERSION.RELEASE}",        // your APK version
