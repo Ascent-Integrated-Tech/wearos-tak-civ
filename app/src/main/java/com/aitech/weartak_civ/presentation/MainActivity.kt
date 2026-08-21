@@ -3274,6 +3274,7 @@ fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
     Log.d(TAG, "connecting = $connecting")
     Log.d(TAG, "connectedMulticast = ${connectedMulticast}")
     Log.d(TAG, "someServersConn = $someServersConn")
+    Log.d(TAG, "anyTakServerDisconnected = $anyTakServerDisconnected")
 
     return when {
         connected -> TakServer.CONNECTED
@@ -3318,6 +3319,7 @@ fun buildComplicationString(
 fun overallComplicationString(context: Context): String {
     val connectivity = readConnectivity(networkManager)
     val tak = readTakStatus(takConnectService)
+    Log.d(TAG, "tak complication = $tak")
     return buildComplicationString(context, connectivity, tak, enableLocationService)
 }
 
@@ -3384,7 +3386,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
             ((anyTakServerConnected == true) && (takServerSettingList.size > 1) && (anyTakServerDisconnected)) ->
                 painterResource(R.drawable.tak_server_some_connected)
 
-            ((anyTakServerConnected == true && !anyTakServerDisconnected) || sitxEvent is SitxServiceEvent.SocketsConnected) ->
+            ((anyTakServerConnected == true && !anyTakServerDisconnected) || (dataRepository.sitxStatus.collectAsState().value == SitxServerStatus.CONNECTED)) ->
                 painterResource(R.drawable.tak_server_connected)
 
             ((anyTakServerConnecting == true) ||
