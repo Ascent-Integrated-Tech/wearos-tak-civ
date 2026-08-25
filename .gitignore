@@ -31,9 +31,10 @@ render.experimental.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 
-# Keystore files
+# Android signing material
 *.jks
 *.keystore
+signing.properties
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json
@@ -53,4 +54,5 @@ AGENTS.md
 .codex/
 docs/
 bak.*
+tools/
 
