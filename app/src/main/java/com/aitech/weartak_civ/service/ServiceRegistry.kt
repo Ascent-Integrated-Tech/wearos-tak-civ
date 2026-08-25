@@ -55,7 +55,6 @@ class ServiceRegistry() {
         ServiceType.TAK_CONNECT to TAKConnectService.isRunning,
         ServiceType.COT_DISPATCH to CotDispatchService.isRunning,
         ServiceType.REPORTING_INTERVAL to ReportingIntervalStrategyService.isRunning,
-        ServiceType.CUST_ACCESS to CustomAccessibilityService.isRunning,
         ServiceType.LOCATION to LocationService.isRunning,
         ServiceType.HEART_RATE to HeartrateService.isRunning,
         ServiceType.SKIN_TEMP to SkinTempService.isRunning,

@@ -769,7 +769,6 @@ class ReactiveServiceManager : Service() {
             put(ServiceType.COT_DISPATCH,          CotDispatchService.isRunning.get())
             put(ServiceType.LOCATION,              LocationService.isRunning.get())
             put(ServiceType.REPORTING_INTERVAL,    ReportingIntervalStrategyService.isRunning.get())
-            put(ServiceType.CUST_ACCESS,           CustomAccessibilityService.isRunning.get())
             put(ServiceType.HEART_RATE,            HeartrateService.isRunning.get())
             put(ServiceType.SKIN_TEMP,             SkinTempService.isRunning.get())
             put(ServiceType.PRESSURE, PressureService.isRunning.get())

@@ -167,7 +167,7 @@ import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.ipc.WearTakCotIpcService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.CotDispatchService
-import com.aitech.weartak_civ.service.CustomAccessibilityService
+//import com.aitech.weartak_civ.service.CustomAccessibilityService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
@@ -1323,23 +1323,7 @@ class MainActivity : ComponentActivity() {
         validateLicense(license)
         startReactiveServiceManager(applicationContext)
         WearTakCotIpcService.ensureStarted(applicationContext)
-        // Kiosk needs to be allow com.samsung.accessibility for code below to work
-        val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
-//        Log.d(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
-        if (!isAccessibilityServiceEnabled) {
-            Log.w(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled=false. trying to open Accessibility Settings")
-            /*
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            mainActivity.startActivity(intent)
-             */
 
-            gotoAccessibilitySettings(mainActivity)
-            for (i in 0..1) {
-                Toast.makeText(mainActivity,
-                    getString(R.string.weartak_accessibility_settings_toast), Toast.LENGTH_LONG).show()
-            }
-        }
         collectAudioRecordingFlows()
 
         setContent {
