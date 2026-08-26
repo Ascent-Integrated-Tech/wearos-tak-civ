@@ -3511,12 +3511,35 @@ class DataRepository(private val context: Context) {
             }
         }
 
-    suspend fun storePhysiologicalMetricAllergyList(newList: List<AllergyItem>) {
+        suspend fun storePhysiologicalMetricAllergyList(newList: List<AllergyItem>) {
         context.dataStore.edit { preferences ->
             // Convert list to JSON
             val jsonString = gson.toJson(newList)
             // Store in DataStore
             preferences[ALLERGIES_KEY] = jsonString
+        }
+    }
+
+    val getPhysiologicalMetricAllergyListString: Flow<List<String>> = context.dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[ALLERGIES_KEY_STRING]
+            if (jsonString.isNullOrEmpty()) {
+                listOf((DEFAULT_ALLERGY_LIST))
+            } else {
+                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                val typeToken = object : TypeToken<List<String>>() {}
+                val type = typeToken.type
+                Log.d("DataStoreDebug", "Allergies raw JSON = $jsonString")
+                gson.fromJson<List<String>>(jsonString, type)
+            }
+        }
+
+    suspend fun storePhysiologicalMetricAllergyListString(newList: List<String>) {
+        context.dataStore.edit { preferences ->
+            // Convert list to JSON
+            val jsonString = gson.toJson(newList)
+            // Store in DataStore
+            preferences[ALLERGIES_KEY_STRING] = jsonString
         }
     }
 
@@ -3988,6 +4011,8 @@ class DataRepository(private val context: Context) {
         private val SEX = stringPreferencesKey("sex")
         private val BLOOD_TYPE = stringPreferencesKey("blood_type")
         private val ALLERGIES_KEY = stringPreferencesKey("allergies")
+        private val ALLERGIES_KEY_STRING = stringPreferencesKey("allergies")
+
         private val USER_TYPE = stringPreferencesKey("user_type")
         private val UNIFORM_WAIST_SIZE = intPreferencesKey("uniform_waist_size")
         private val STRIDE_LENGTH = intPreferencesKey("stride_length")

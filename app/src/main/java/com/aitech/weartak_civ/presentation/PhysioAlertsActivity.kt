@@ -80,12 +80,8 @@ import com.aitech.weartak_civ.complication.PhysioStatusAndAlertingComplicationSe
 import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.PhysioAlertsActivity.Companion.alertListPreview
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -96,8 +92,12 @@ import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.presentation.CrmReserveActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServices
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
 import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModelFactory
+import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 
 class PhysioAlertsActivity : ComponentActivity() {
     companion object {
@@ -114,13 +114,13 @@ class PhysioAlertsActivity : ComponentActivity() {
         enableEdgeToEdge()
         Log.d(TAG, "Physio Oncreate Called")
         dataRepository = DataRepository(applicationContext)
-
-        selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
+//        selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    PhysioAlertsApp(exitActivity = { finishAndRemoveTask() }, context)
+                    val settingsVm: WearTAKSettingsViewModel = viewModel ()
+                    PhysioAlertsApp(exitActivity = { finishAndRemoveTask() }, context, settingsVm)
                 }
             }
         }
@@ -129,12 +129,10 @@ class PhysioAlertsActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
+fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context, settingsVm: WearTAKSettingsViewModel) {
     val navController = rememberSwipeDismissableNavController()
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
 //    val chatEnabledLive by enableChatServiceSettingsState.observeAsState()
-    val enablePhysioService by enablePhysiologicalServicesSettingsState.observeAsState()
-    val enablePhysioAlerts by enablePhysiologicalAlertsSettingState.observeAsState()
 
     //TOOD: Use when alerts are added to this
 //    val alerts by dataRepository.physioAlertsFlow.collectAsState(initial = emptyList())
@@ -147,15 +145,15 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
 
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
+                context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 exitActivity()
             }
-            isValid && enablePhysioService == true && currentDestination != "alerts_screen" -> {
+            isValid && enablePhysiologicalServices == true && currentDestination != "alerts_screen" -> {
                 navController.navigate("alerts_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
                 }
             }
-            isValid && enablePhysioService == false && currentDestination != "alerts_disabled_screen" -> {
+            isValid && enablePhysiologicalServices == false && currentDestination != "alerts_disabled_screen" -> {
                 navController.navigate("alerts_disabled_screen") {
                     popUpTo(0) { inclusive = true }
                 }
@@ -167,7 +165,7 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
         navController = navController,
         startDestination =
             if (isLicenseValid()) {
-                if (enablePhysioService == true) "alerts_screen" else "alerts_disabled_screen"
+                if (enablePhysiologicalServices == true) "alerts_screen" else "alerts_disabled_screen"
 //                if (enablePhysioService == true && enablePhysioAlerts == true) "alerts_screen" else "alerts_disabled_screen"
             } else {
                 "invalid_license_screen"
@@ -177,8 +175,10 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
             AlertsScreen(
                 navController = navController,
                 exitActivity = exitActivity,
-                alertsEnabled = enablePhysioAlerts,
+                alertsEnabled = enablePhysiologicalAlerts,
                 alerts = alerts,
+                selectedPhysioMetric,
+                settingsVm
             )
         }
 
@@ -193,7 +193,7 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context) {
         }
 
         composable("invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
             exitActivity()
         }
     }
@@ -266,103 +266,116 @@ fun AlertsScreen(
     navController: NavController,
     exitActivity: () -> Unit,
     alertsEnabled: Boolean?,
-    alerts: List<DataRepository.CustomEmergencyAlert> // <-- Use Utils.ChatRoom here,
+    alerts: List<DataRepository.CustomEmergencyAlert>, // <-- Use Utils.ChatRoom here,
+    selectedPhysioMetric: String,
+    settingsVm: WearTAKSettingsViewModel
 ) {
     Log.d(TAG, "AlertsScreen called")
     Log.d(TAG, "$alerts")
     val context = LocalContext.current
-    WearTakCivScreenDimensions(
+    WearTAKPageWithBackArrow(
+        title = if (alertsEnabled == true) "Alerts: ON" else "Alerts: OFF",
         columnContent = {
-            LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(300.dp)) {
-               item() {
-                   ExpandableCard(
-                       navController = navController
-                   )
-               }
-                itemsIndexed(alerts) { index, alert ->
-                    // room.messageList is the List<ChatMessage>
-                    if (alert.alertState == DataRepository.AlertState.ALERT) {
-                        Chip(
-                            onClick = { /* no-op */ },
-                            enabled = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ChipDefaults.outlinedChipColors(),
-                            icon = {
-                                Icon(
-                                    painter = alertIconFromString(alert.category),
-                                    contentDescription = "Favorite icon",
-                                    tint = when (alert.priority) {
-                                        1 -> Color.Red
-                                        2 -> Color.Yellow
-                                        else -> Color.Unspecified
-                                    },
-                                    modifier = Modifier.size(30.dp),
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = alertCategoryFromString(alert.category) /* + "${alert.alertState}" */,
-                                    fontSize = 15.sp,
-                                    textAlign = TextAlign.Start,
-                                    fontWeight = FontWeight.Medium,
-                                    color = when (alert.priority) {
-                                        1 -> Color.Red
-                                        2 -> Color.Yellow
-                                        else -> Color.Unspecified
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            secondaryLabel = {
-                                Column {
-                                    Text(
-                                        text = alert.description,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Text(
-                                        text = "${utcToHoursMinutes(alert.timeMillis)} ${
-                                            utcToDate(
-                                                alert.timeMillis
-                                            )
-                                        }",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            },
+            item {
+                LazyColumn(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.height(300.dp)
+                ) {
+                    item() {
+                        ExpandableCard(
+                            navController = navController,
+                            settingsVm,
+                            selectedPhysioMetric,
                         )
+                    }
+                    itemsIndexed(alerts) { index, alert ->
+                        // room.messageList is the List<ChatMessage>
+                        if (alert.alertState == DataRepository.AlertState.ALERT) {
+                            Chip(
+                                onClick = { /* no-op */ },
+                                enabled = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ChipDefaults.outlinedChipColors(),
+                                icon = {
+                                    Icon(
+                                        painter = alertIconFromString(alert.category),
+                                        contentDescription = "Favorite icon",
+                                        tint = when (alert.priority) {
+                                            1 -> Color.Red
+                                            2 -> Color.Yellow
+                                            else -> Color.Unspecified
+                                        },
+                                        modifier = Modifier.size(30.dp),
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = alertCategoryFromString(alert.category) /* + "${alert.alertState}" */,
+                                        fontSize = 15.sp,
+                                        textAlign = TextAlign.Start,
+                                        fontWeight = FontWeight.Medium,
+                                        color = when (alert.priority) {
+                                            1 -> Color.Red
+                                            2 -> Color.Yellow
+                                            else -> Color.Unspecified
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                },
+                                secondaryLabel = {
+                                    Column {
+                                        Text(
+                                            text = alert.description,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Text(
+                                            text = "${utcToHoursMinutes(alert.timeMillis)} ${
+                                                utcToDate(
+                                                    alert.timeMillis
+                                                )
+                                            }",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(10.dp))
+            item {
+                Spacer(modifier = Modifier.height(10.dp))
+            }
         },
-        rowContent = {
-            BackButton(onClick = {
-                exitActivity(); context.startActivity(Intent(context, MainActivity::class.java))
-                if (selectedPhysioMetric != selectedPhysioMetricSettingsState.value) {
-                    selectedPhysioMetric = selectedPhysioMetricSettingsState.value ?: selectedPhysioMetric
-                    CoroutineScope(Dispatchers.Main).launch {
-                        Log.d(TAG, "Storing selectedPhysioMetric ($selectedPhysioMetric)")
-                        dataRepository.storeSelectedPhysioMetric(selectedPhysioMetric)
-                        requestPhysioStatusAndAlertingComplicationUpdate(context)
-                        val logOutput = """
+        navController = navController,
+        exitActivity = true,
+        exitFunction = {
+            exitActivity(); context.startActivity(Intent(context, MainActivity::class.java))
+//            if (selectedPhysioMetric != selectedPhysioMetricSettingsState.value) {
+//                selectedPhysioMetric = selectedPhysioMetricSettingsState.value ?: selectedPhysioMetric
+                CoroutineScope(Dispatchers.Main).launch {
+                    Log.d(TAG, "Storing selectedPhysioMetric ($selectedPhysioMetric)")
+//                    settingsVm.storeSelectedPhysioMetric(selectedPhysioMetric)
+                    requestPhysioStatusAndAlertingComplicationUpdate(context)
+                    val logOutput = """
                     === === Physiological User Metrics === ===
                     ${String.format("%-25s %-30s", "Icon:", physioMetricIconComplication)}
                     ${String.format("%-25s %-30s", "Metric:", physioMetricStringComplication)}
                     """.trimIndent()
-                        Log.i(TAG, logOutput)
-                    }
+                    Log.i(TAG, logOutput)
                 }
-            })
-        },
-        text = if (alertsEnabled == true) "Alerts: ON" else "Alerts: OFF"
+        }
     )
 }
 
 @Composable
-fun ExpandableCard(navController: NavController) {
+fun ExpandableCard(
+    navController: NavController,
+    settingsVm: WearTAKSettingsViewModel,
+    selectedPhysioMetric: String) {
     var expanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val app = context.applicationContext as WearTakApplication
@@ -460,7 +473,9 @@ fun ExpandableCard(navController: NavController) {
                             openCrmReserveScreen
                         } else {
                             null
-                        }
+                        },
+                        selectedPhysioMetric,
+                        settingsVm
                     )
                 }
             }
@@ -522,7 +537,9 @@ fun ExpandableCard(navController: NavController) {
                             openCrmReserveScreen
                         } else {
                             null
-                        }
+                        },
+                        selectedPhysioMetric,
+                        settingsVm
                     )
                 }
             }
@@ -540,9 +557,10 @@ fun MetricItem(
     metricVal: String,
     metricKey: String,
     onClickOverride: (() -> Unit)? = null,
+    selectedPhysioMetric: String,
+    settingsVm: WearTAKSettingsViewModel
 ) {
-    val selectedMetric = selectedPhysioMetricSettingsState.observeAsState()
-
+    val selectedMetric = settingsVm.savedSelectedPhysioMetric.collectAsState()
     Row(
         modifier = Modifier.then(
                 if (selectedMetric.value == metricKey && onClickOverride == null) {
@@ -559,7 +577,8 @@ fun MetricItem(
                 onClick = {
                     Log.d(TAG, "MetricItem clicked: $metricKey")
                     onClickOverride?.invoke()
-                        ?: selectedPhysioMetricSettingsState.postValue(metricKey)
+                        ?: settingsVm.storeSelectedPhysioMetric(metricKey)
+                    Log.d(TAG, "metric Key = $metricKey")
                 }
             )
     ) {
@@ -597,23 +616,23 @@ fun requestPhysioStatusAndAlertingComplicationUpdate(context: Context) {
     requester.requestUpdateAll()
 }
 
-@Preview(widthDp = 192, heightDp = 400, showBackground = true)
-@Composable
-fun AlertsScreenPreview() {
-    AlertsScreen(rememberSwipeDismissableNavController(), {}, true, alertListPreview)
-}
+//@Preview(widthDp = 192, heightDp = 400, showBackground = true)
+//@Composable
+//fun AlertsScreenPreview() {
+//    AlertsScreen(rememberSwipeDismissableNavController(), {}, true, alertListPreview)
+//}
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
 @Composable
 fun AlertsDisabledPreview() {
 //    AlertsDisabledScreen(rememberSwipeDismissableNavController(), {})
 }
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun MetricItemPreview() {
-MetricItem(
-    painterResource(id = R.drawable.heart_rate),
-    "Heart Rate",
-    "100bpm",
-    "key_heart_rate"
-    )
-}
+//@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
+//@Composable
+//fun MetricItemPreview() {
+//MetricItem(
+//    painterResource(id = R.drawable.heart_rate),
+//    "Heart Rate",
+//    "100bpm",
+//    "key_heart_rate"
+//    )
+//}

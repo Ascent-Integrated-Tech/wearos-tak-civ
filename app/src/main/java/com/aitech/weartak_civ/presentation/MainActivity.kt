@@ -150,10 +150,7 @@ import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.chatComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationServiceSettingsState
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServicesSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.networkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takConnectService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
@@ -254,7 +251,6 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DUP
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlertsSettingState
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -273,13 +269,11 @@ import com.aitech.weartak_civ.presentation.audio.AudioDetectionPromptHost
 import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassServiceSettingsState
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableSitxService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricIconComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricStringComplication
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.physioMetricTitleComplication
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetricSettingsState
 import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.aitech.weartak_civ.DEFAULT_ENABLE_IMMERSION_ALERTS
@@ -291,8 +285,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerListState
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
+import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import java.io.File
 import com.aitech.weartak_civ.service.SitxTakService
@@ -320,48 +316,29 @@ class MainActivity : ComponentActivity() {
             Utils.TextSelectionButton("nPos", "In Position")
         )
         var enableLocationService : Boolean =  DEFAULT_ENABLE_LOCATION_SERVICE
-        var enableLocationServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOCATION_SERVICE)
-        var enableBetaFeaturesSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BETA_FEATURES)
         var enableBetaFeatures : Boolean = DEFAULT_ENABLE_BETA_FEATURES
-        var enableOnnxGunshotServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_GUNSHOT)
         var enableOnnxGunshotService : Boolean = DEFAULT_ENABLE_ONNX_GUNSHOT
-        var onnxGunshotTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT)
         var onnxGunshotTriggerThresholdPercent : Int = DEFAULT_ONNX_GUNSHOT_TRIGGER_THRESHOLD_PERCENT
-        var enableOnnxUasServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ONNX_UAS)
         var enableOnnxUasService : Boolean = DEFAULT_ENABLE_ONNX_UAS
-        var onnxUasTriggerThresholdPercentSettingsState = MutableLiveData<Int>(DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT)
         var onnxUasTriggerThresholdPercent : Int = DEFAULT_ONNX_UAS_TRIGGER_THRESHOLD_PERCENT
         var enableBleBeaconService : Boolean = DEFAULT_ENABLE_BLE_BEACON_SERVICE
         var localizationBleBeaconItemList : List<DataRepository.LocalizationBleBeaconItem> = listOf()
         var enablePhysiologicalServices : Boolean = DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
-        var enablePhysiologicalServicesSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES)
         var enableHeartrateService : Boolean = DEFAULT_ENABLE_HEART_RATE_SERVICE
         var enableActRecService: Boolean = DEFAULT_ENABLE_ACTIVITY_RECOGNITION_SERVICE
         var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
         var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
-        var enableDittoServiceSettingsState = MutableLiveData<Boolean>(false)
         var enableCompanionAppService: Boolean = DEFAULT_ENABLE_COMPANION_APP_SERVICE
-        var enableCompanionAppServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_COMPANION_APP_SERVICE)
         var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
-        var enableBloodhoundCompassServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE)
         var enableBloodhoundProximityVibration: Boolean = DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
-        var enableBloodhoundProximityVibrationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION)
         var bloodhoundProximityRadiusMeters: Int = DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
-        var bloodhoundProximityRadiusMetersSettingsState = MutableLiveData<Int>(DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS)
         var bloodhoundProximityIntensity: String = DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
-        var bloodhoundProximityIntensitySettingsState = MutableLiveData<String>(DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY)
         var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE
-        var enableChatServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_CHAT_SERVICE)
         var enableBatteryAlerts: Boolean = DEFAULT_ENABLE_BATTERY_ALERTS
-        var enableBatteryAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATTERY_ALERTS)
         var enableHailService: Boolean = DEFAULT_ENABLE_HAIL_SERVICE
-        var enableHailServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HAIL_SERVICE)
         var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
-        var enableBatdokCotSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_BATDOK_COT)
         var enableSitxService: Boolean = DEFAULT_ENABLE_SITX_SERVICE
-        var enableSitxServiceSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_SITX_SERVICE)
         var sitxTakUrl : String = ""
-        var sitxTakUrlSettingsState = MutableLiveData<String>("")
 
         var sitxTakGroup: SitxTakService.TakServerItem? =
             SitxTakService.TakServerItem(
@@ -370,33 +347,22 @@ class MainActivity : ComponentActivity() {
             name = "",
             description = ""
             )
-        var sitxTakGroupSettingsState = MutableLiveData<SitxTakService.TakServerItem?>()
 
         var sitxAvailableGroupList : List<SitxTakService.TakServerItem> = listOf()
-        val sitxAvailableGroupListState = MutableLiveData<List<SitxTakService.TakServerItem>>(listOf())
 
         var sitxTakClientId : String = ""
-        var sitxTakClientIdSettingsState = MutableLiveData<String>("")
         var enableImmersionAlerts: Boolean = DEFAULT_ENABLE_IMMERSION_ALERTS
-        var enableImmersionAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_IMMERSION_ALERTS)
         var enableLowAtmPressureAlert: Boolean = DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT
-        var enableLowAtmPressureAlertSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_LOW_ATM_PRESSURE_ALERT)
         var lowAtmPressureAlertThreshold: Int = DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
-        var lowAtmPressureAlertThresholdSettingsState = MutableLiveData<Int>(DEFAULT_LOW_ATM_PRESSURE_THRESHOLD)
         var enableHighAtmPressureAlert: Boolean = DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
-        var enableHighAtmPressureAlertSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT)
         var highAtmPressureAlertThreshold: Int = DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
-        var highAtmPressureAlertThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD)
         //Enable Global Health Events
         var enablePassiveDataService = false
 
         // CRM
         var enableCrmService: Boolean = false
-        val enableCrmServiceSettingsState = MutableLiveData(enableCrmService)
         var crmPoorMaxThreshold: Int = DEFAULT_CRM_POOR_MAX_THRESHOLD
         var crmModerateMaxThreshold: Int = DEFAULT_CRM_MODERATE_MAX_THRESHOLD
-        val crmPoorMaxThresholdSettingsState = MutableLiveData(crmPoorMaxThreshold)
-        val crmModerateMaxThresholdSettingsState = MutableLiveData(crmModerateMaxThreshold)
 
 
         var connectivityStatusComplication : String = ""
@@ -421,183 +387,90 @@ class MainActivity : ComponentActivity() {
         // Unlike team and teamValue, role does not have a roleValue. So removing roleValue. Please use role wherever roleValue was previously used.
         var role = ""
         var categoryRolesEntryLists: List<CategoryRolesEntry> = emptyList()
-        val categorySettingsState = MutableLiveData<String>("")
         var category = ""
         var license = "AscentFreeLicense"
         var teamValue = ""
         var dittoAppId = ""
         var dittoAuthToken = ""
         lateinit var teamEntriesValuesList : TeamsJson
-        var callsignSettingsState = MutableLiveData<String>("WEAROS-0")
-        val teamState = MutableLiveData<String>("")
-        val teamSettingsState = MutableLiveData<String>("")
-        val roleState = MutableLiveData<String>("")
-        val roleSettingsState = MutableLiveData<String>("")
-        val licenseSettingsState = MutableLiveData<String>("")
 
         var enableGeofenceService: Boolean = DEFAULT_ENABLE_GEOFENCE_SERVICE
         var enableMulticastOnWifi: Boolean = DEFAULT_ENABLE_MULTICAST_ON_WIFI
-        var enableMulticastSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_MULTICAST_ON_WIFI)
         var multicastAddress = DEFAULT_MULTICAST_ADDRESS
-        val multicastAddressSettingsState = MutableLiveData<String>(DEFAULT_MULTICAST_ADDRESS)
         var multicastProtocol = DEFAULT_MULTICAST_PROTOCOL
-        val multicastProtocolSettingsState = MutableLiveData<String>(DEFAULT_MULTICAST_PROTOCOL)
         var multicastPort = DEFAULT_MULTICAST_PORT
-        val multicastPortSettingsState = MutableLiveData<Int>(DEFAULT_MULTICAST_PORT)
 
 
         var battWarnPercent = DEFAULT_BATT_WARNING_PERCENTAGE
         var battAlertPercent = DEFAULT_BATT_ALERT_PERCENTAGE
         var birthYearValue = DEFAULT_BIRTH_YEAR
-        val birthYearState = MutableLiveData<Int>(DEFAULT_BIRTH_YEAR)
-        val birthYearSettingsState = MutableLiveData<Int>(DEFAULT_BIRTH_YEAR)
         var heightFeetValue = DEFAULT_HEIGHT_FEET
-        val heightFeetState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
-        val heightFeetSettingsState = MutableLiveData<Int>(DEFAULT_HEIGHT_FEET)
         var heightInchesValue = DEFAULT_HEIGHT_INCHES
-        val heightInchesState = MutableLiveData<Int>(DEFAULT_HEIGHT_INCHES)
-        val heightInchesSettingsState = MutableLiveData<Int>(DEFAULT_HEIGHT_INCHES)
         var weightValue = DEFAULT_WEIGHT
-        val weightState = MutableLiveData<Int>(DEFAULT_WEIGHT)
-        val weightSettingsState = MutableLiveData<Int>(DEFAULT_WEIGHT)
         var sexValue = DEFAULT_SEX
-        val sexState = MutableLiveData<String>(DEFAULT_SEX)
-        val sexSettingsState = MutableLiveData<String>(DEFAULT_SEX)
         var bloodTypeValue = DEFAULT_BLOOD_TYPE
-        val bloodTypeState = MutableLiveData<String>(DEFAULT_BLOOD_TYPE)
-        val bloodTypeSettingsState = MutableLiveData<String>(DEFAULT_BLOOD_TYPE)
         var allergyList : List<DataRepository.AllergyItem> = listOf(DataRepository.AllergyItem(name=DEFAULT_ALLERGY_LIST))
-        val allergyListState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem(DEFAULT_ALLERGY_LIST)))
-        val allergyListSettingsState = MutableLiveData<List<DataRepository.AllergyItem>>(listOf(DataRepository.AllergyItem(DEFAULT_ALLERGY_LIST)))
         var restingHeartRate = DEFAULT_RESTING_HR
-        val restingHeartRateState = MutableLiveData<Int>(DEFAULT_RESTING_HR)
-        val restingHeartRateSettingsState = MutableLiveData<Int>(DEFAULT_RESTING_HR)
         var userTypeValue = DEFAULT_USER_TYPE
-        val userTypeState = MutableLiveData<String>(DEFAULT_USER_TYPE)
-        val userTypeSettingsState = MutableLiveData<String>(DEFAULT_USER_TYPE)
 
         var uniformWaistSize = DEFAULT_UNIFORM_WAIST_SIZE
-        val uniformWaistSizeState =  MutableLiveData<Int>(DEFAULT_UNIFORM_WAIST_SIZE)
-        val uniformWaistSizeSettingsState =  MutableLiveData<Int>(DEFAULT_UNIFORM_WAIST_SIZE)
         var strideLength = DEFAULT_STRIDE_LENGTH
-        val strideLengthState =  MutableLiveData<Int>(DEFAULT_STRIDE_LENGTH)
-        val strideLengthSettingsState =  MutableLiveData<Int>(DEFAULT_STRIDE_LENGTH)
         var uniformPantsLength = DEFAULT_UNIFORM_PANTS_LENGTH
-        val uniformPantsLengthState =  MutableLiveData<Int>(DEFAULT_UNIFORM_PANTS_LENGTH)
-        val uniformPantsLengthSettingsState =  MutableLiveData<Int>(DEFAULT_UNIFORM_PANTS_LENGTH)
         var loadoutWeight = DEFAULT_LOADOUT_WEIGHT
-        val loadoutWeightState =  MutableLiveData<Int>(DEFAULT_LOADOUT_WEIGHT)
-        val loadoutWeightSettingsState =  MutableLiveData<Int>(DEFAULT_LOADOUT_WEIGHT)
 
         var takServerList : List<DataRepository.TakServerItem> = listOf()
-        val takServerListState = MutableLiveData<List<DataRepository.TakServerItem>>(listOf())
 
         var bloodhoundList : List<Utils.BloodhoundItem> = listOf()
-        val bloodhoundListState = MutableLiveData<List<Utils.BloodhoundItem>>(listOf())
         var SOME_WIFI_NETWORKS = "Some WiFi Networks"
         var ALL_WIFI_NETWORKS = "All WiFi Networks"
         var NO_WIFI_NETWORKS = "No WiFi Networks"
         var saveBattOnWifiString: String = ALL_WIFI_NETWORKS
-        val saveBattOnWifiStringState = MutableLiveData<String>(ALL_WIFI_NETWORKS)
         var enableWifiBatteryOptimization : Boolean = DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION
-        val enableWifiBatteryOptimizationState = MutableLiveData<Boolean>(DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION)
-        val enableWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_WIFI_BATTERY_OPTIMIZATION)
         var enableAllWifiBatteryOptimization : Boolean = DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
-        val enableAllWifiBatteryOptimizationState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION)
-        val enableAllWifiBatteryOptimizationSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION)
         var wifiSsidList : List<DataRepository.WifiSsidItem> = listOf()
-        val wifiSsidListState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf())
-        val wifiSsidListSettingsState = MutableLiveData<List<DataRepository.WifiSsidItem>>(listOf()) // This is the value that is obtained on clicking yes to the editSsidList (the 1 level above main Settings UI)
         var enableTakEndpoint : Boolean = DEFAULT_ENABLE_TAK_ENDPOINT
         var enableEsriEndpoint : Boolean = DEFAULT_ENABLE_ESRI_ENDPOINT
-        var enableEsriEndpointSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_ESRI_ENDPOINT)
         var esriEndpoint : String = ""
-        val esriEndpointSettingsState = MutableLiveData<String>("")
         var esriReportingUpdateInterval : Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
         var enableTabletCommandEndpoint: Boolean = DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT
-        var enableTabletCommandEndpointSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_TABLET_COMMAND_ENDPOINT)
         var tabletCommandEndpoint : String = ""
-        val tabletCommandEndpointSettingsState = MutableLiveData<String>("")
         var tabletCommandApikey : String = ""
-        val tabletCommandApikeySettingsState = MutableLiveData<String>("")
         var tabletCommandReportingUpdateInterval : Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
 
         var enableDynamicReportingStrategy = DEFAULT_ENABLE_DYNAMIC_REPORTING
-        val enableDynamicReportingStrategyState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DYNAMIC_REPORTING)
-        val enableDynamicReportingStrategySettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_DYNAMIC_REPORTING)
         var constantReportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
-        val constantReportingIntervalState = MutableLiveData<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
-        val constantReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_CONSTANT_REPORTING_INTERVAL)
         var stationaryReportingInterval = DEFAULT_STATIONARY_REPORTING_INTERVAL
-        val stationaryReportingIntervalState = MutableLiveData<Int>(DEFAULT_STATIONARY_REPORTING_INTERVAL)
-        val stationaryReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_STATIONARY_REPORTING_INTERVAL)
         var onFootReportingInterval = DEFAULT_ON_FOOT_REPORTING_INTERVAL
-        val onFootReportingIntervalState = MutableLiveData<Int>(DEFAULT_ON_FOOT_REPORTING_INTERVAL)
-        val onFootReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_ON_FOOT_REPORTING_INTERVAL)
         var vehicleReportingInterval = DEFAULT_VEHICLE_REPORTING_INTERVAL
-        val vehicleReportingIntervalState = MutableLiveData<Int>(DEFAULT_VEHICLE_REPORTING_INTERVAL)
-        val vehicleReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_VEHICLE_REPORTING_INTERVAL)
         var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
-        val whileAlertingReportingIntervalState = MutableLiveData<Int>(DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL)
-        val whileAlertingReportingIntervalSettingsState = MutableLiveData<Int>(DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL)
 
         var enableSmsForAlerts = DEFAULT_ENABLE_SMS_ALERTS
-        var enableSmsForAlertsSettingsState = MutableLiveData<Boolean>(DEFAULT_ENABLE_SMS_ALERTS)
         var smsNumbersList : List<DataRepository.SmsNumber> = listOf()
         var smsNumbersListString : String = ""
-        val smsNumbersListStringSettingsState = MutableLiveData<String>("")
 
         var selectedPhysioMetric: String = DEFAULT_SELECTED_PHYSIO_METRIC
-        val selectedPhysioMetricSettingsState = MutableLiveData<String>(DEFAULT_SELECTED_PHYSIO_METRIC)
         var physioMetricStringComplication: String = ""
         var physioMetricIconComplication: Int = 0
         var physioMetricTitleComplication: String = ""
 
         var enablePhysiologicalAlerts = DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS
-        var enablePhysiologicalAlertsSettingState = MutableLiveData<Boolean>(DEFAULT_ENABLE_PHYSIOLOGICAL_ALERTS)
 
         var restingHrHighAlertBpmThreshold: Int = DEFAULT_HIGH_RESTING_HR_THRESHOLD
-        var restingHrHighAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_THRESHOLD)
-        var restingHrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_THRESHOLD)
         var restingHrLowAlertBpmThreshold: Int = DEFAULT_LOW_RESTING_HR_THRESHOLD
-        var restingHrLowAlertBpmThresholdState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
-        var restingHrLowAlertBpmThresholdSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_THRESHOLD)
 
         var highRestingHrWarningThresholdLength: Int = DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES
-        var highRestingHrWarningThresholdLengthState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES)
-        var highRestingHrWarningThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES)
 
         var lowRestingHrWarningThresholdLength: Int = DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES
-        var lowRestingHrWarningThresholdLengthState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES)
-        var lowRestingHrWarningThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_WARNING_THRESHOLD_LENGTH_MINUTES)
 
         var highRestingHrAlertThresholdLength: Int = DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES
-        var highRestingHrAlertThresholdLengthState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES)
-        var highRestingHrAlertThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_HIGH_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES)
 
         var lowRestingHrAlertThresholdLength: Int = DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES
-        var lowRestingHrAlertThresholdLengthState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES)
-        var lowRestingHrAlertThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_LOW_RESTING_HR_ALERT_THRESHOLD_LENGTH_MINUTES)
 
         var exertionThresholdWarning: Int = DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE
-        var exertionThresholdWarningState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE)
-        var exertionThresholdWarningSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD_PERCENTAGE)
         var exertionThresholdAlert: Int = DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE
-        var exertionThresholdAlertState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE)
-        var exertionThresholdAlertSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD_PRECENTAGE)
         var exertionWarningThresholdLength: Int = DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH_SECS
-        var exertionWarningThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH_SECS)
-        var exertionWarningThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_WARNING_THRESHOLD_LENGTH_SECS)
         var exertionAlertThresholdLength: Int = DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH_SECS
-        var exertionAlertThresholdLengthState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH_SECS)
-        var exertionAlertThresholdLengthSettingsState = MutableLiveData<Int>(DEFAULT_EXERTION_ALERT_THRESHOLD_LENGTH_SECS)
 
-        //var hrHighAlertBpmThreshold : Int = 140
-        //val hrHighAlertBpmThresholdState = MutableLiveData<Int>(140)
-        //val hrHighAlertBpmThresholdSettingsState = MutableLiveData<Int>(140)
-        //var hrHighAlertNumSecsThreshold : Int = 30
-        //val hrHighAlertNumSecsThresholdState = MutableLiveData<Int>(30)
-        //val hrHighAlertNumSecsThresholdSettingsState = MutableLiveData<Int>(30)
 
         var versionNumber : String = ""
         var commitHash: String = ""
@@ -1041,7 +914,7 @@ class MainActivity : ComponentActivity() {
             weightValue        = dataRepository.getPhysiologicalMetricWeight.first()
             sexValue           = dataRepository.getPhysiologicalMetricSex.first()
             bloodTypeValue     = dataRepository.getPhysiologicalMetricBloodType.first()
-            allergyList        = dataRepository.getPhysiologicalMetricAllergyList.first()
+//            allergyList        = dataRepository.getPhysiologicalMetricAllergyList.first()
             userTypeValue      = dataRepository.getPhysiologicalMetricUserType.first()
             restingHeartRate   = dataRepository.getRestingHeartRate.first()
             uniformWaistSize   = dataRepository.getPhysiologicalMetricUniformWaistSize.first()
@@ -1186,7 +1059,6 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Weight:", weightValue)}
                     ${String.format("%-25s %-30s", "Sex:", sexValue)}
                     ${String.format("%-25s %-30s", "BloodType:", bloodTypeValue)}
-                    ${String.format("%-25s %-30s", "Allergies:", allergyList)}
                     ${String.format("%-25s %-30s", "UserType:", userTypeValue)}
                     ${String.format("%-25s %-30s", "UniformWaistSize:", uniformWaistSize)}
                     ${String.format("%-25s %-30s", "StrideLength:", strideLength)}
@@ -1293,8 +1165,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val sitxVm: SitxViewModel = viewModel()
+            val settingsVm: WearTAKSettingsViewModel = viewModel()
             WearTAKCIVTheme {
-                WearTAKCivApp(callsignSettingsState, licenseState, sitxVm)
+                WearTAKCivApp(licenseState, sitxVm, settingsVm)
             }
         }
 
@@ -1341,130 +1214,6 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshUI(context: Context) {
         Log.d(TAG, "=== === Refreshing UI  === === ")
-        callsignState.postValue(callsign)
-        callsignSettingsState.postValue(callsign)
-        teamState.postValue(team) // liveData used by UI
-        teamSettingsState.postValue(team)
-        roleState.postValue(role) // liveData used by UI
-        roleSettingsState.postValue(role)
-        licenseState.postValue(license) // tell ui
-        licenseSettingsState.postValue(license) // ephemeral ui value
-        takServerListState.postValue(takServerList)
-
-        enableMulticastSettingsState.postValue(enableMulticastOnWifi)
-        multicastAddressSettingsState.postValue(multicastAddress)
-        multicastProtocolSettingsState.postValue(multicastProtocol)
-        multicastPortSettingsState.postValue(multicastPort)
-        enableSitxServiceSettingsState.postValue(enableSitxService)
-        sitxTakUrlSettingsState.postValue(sitxTakUrl)
-        sitxTakClientIdSettingsState.postValue(sitxTakClientId)
-        sitxTakGroupSettingsState.postValue(sitxTakGroup)
-        sitxAvailableGroupListState.postValue(sitxAvailableGroupList)
-        enableTabletCommandEndpointSettingsState.postValue(enableTabletCommandEndpoint)
-        tabletCommandEndpointSettingsState.postValue(tabletCommandEndpoint)
-        tabletCommandApikeySettingsState.postValue(tabletCommandApikey)
-        enableEsriEndpointSettingsState.postValue(enableEsriEndpoint)
-        esriEndpointSettingsState.postValue(esriEndpoint)
-
-        enableWifiBatteryOptimizationState.postValue(enableWifiBatteryOptimization) // tell ui
-        enableWifiBatteryOptimizationSettingsState.postValue(enableWifiBatteryOptimization) // ephemeral ui value
-        enableAllWifiBatteryOptimizationState.postValue(enableAllWifiBatteryOptimization) // tell ui
-        enableAllWifiBatteryOptimizationSettingsState.postValue(enableAllWifiBatteryOptimization) // ephemeral ui value
-        enableDynamicReportingStrategyState.postValue(enableDynamicReportingStrategy)
-        enableDynamicReportingStrategySettingsState.postValue(enableDynamicReportingStrategy)
-        constantReportingIntervalState.postValue(constantReportingInterval)
-        constantReportingIntervalSettingsState.postValue(constantReportingInterval)
-        stationaryReportingIntervalState.postValue(stationaryReportingInterval)
-        stationaryReportingIntervalSettingsState.postValue(stationaryReportingInterval)
-        onFootReportingIntervalState.postValue(onFootReportingInterval)
-        onFootReportingIntervalSettingsState.postValue(onFootReportingInterval)
-        vehicleReportingIntervalState.postValue(vehicleReportingInterval)
-        vehicleReportingIntervalSettingsState.postValue(vehicleReportingInterval)
-        whileAlertingReportingIntervalState.postValue(whileAlertingReportingInterval)
-        whileAlertingReportingIntervalSettingsState.postValue(whileAlertingReportingInterval)
-
-        wifiSsidListState.postValue(wifiSsidList) // tell ui
-        wifiSsidListSettingsState.postValue(wifiSsidList) // ephemeral ui value
-        saveBattOnWifiStringState.postValue(saveBattOnWifiString)
-        enableLocationServiceSettingsState.postValue(enableLocationService)
-        enableBetaFeaturesSettingsState.postValue(enableBetaFeatures)
-        enableBloodhoundCompassServiceSettingsState.postValue(enableBloodhoundCompassService)
-        enableBloodhoundProximityVibrationSettingsState.postValue(enableBloodhoundProximityVibration)
-        bloodhoundProximityRadiusMetersSettingsState.postValue(bloodhoundProximityRadiusMeters)
-        bloodhoundProximityIntensitySettingsState.postValue(bloodhoundProximityIntensity)
-        enableCrmServiceSettingsState.postValue(enableCrmService)
-        enableOnnxGunshotServiceSettingsState.postValue(enableOnnxGunshotService)
-        onnxGunshotTriggerThresholdPercentSettingsState.postValue(onnxGunshotTriggerThresholdPercent)
-        enableOnnxUasServiceSettingsState.postValue(enableOnnxUasService)
-        onnxUasTriggerThresholdPercentSettingsState.postValue(onnxUasTriggerThresholdPercent)
-        enableHailServiceSettingsState.postValue(enableHailService)
-        enableBatdokCotSettingsState.postValue(enableBatdokCot)
-        enableDittoServiceSettingsState.postValue(enableDittoService)
-        enableCompanionAppServiceSettingsState.postValue(enableCompanionAppService)
-        enablePhysiologicalServicesSettingsState.postValue(enablePhysiologicalServices)
-        enableImmersionAlertsSettingsState.postValue(enableImmersionAlerts)
-        enableLowAtmPressureAlertSettingsState.postValue(enableLowAtmPressureAlert)
-        lowAtmPressureAlertThresholdSettingsState.postValue(lowAtmPressureAlertThreshold)
-        enableHighAtmPressureAlertSettingsState.postValue(enableHighAtmPressureAlert)
-        highAtmPressureAlertThresholdSettingsState.postValue(highAtmPressureAlertThreshold)
-        enableChatServiceSettingsState.postValue(enableChatService)
-        enableBatteryAlertsSettingsState.postValue(enableBatteryAlerts) // ephemeral ui value
-        enableSmsForAlertsSettingsState.postValue(enableSmsForAlerts)
-        selectedPhysioMetricSettingsState.postValue(selectedPhysioMetric)
-        smsNumbersListStringSettingsState.postValue(convertSmsNumbersListToStringWithSeparator(smsNumbersList, ","))
-        enablePhysiologicalAlertsSettingState.postValue(enablePhysiologicalAlerts)
-        restingHrHighAlertBpmThresholdState.postValue(restingHrHighAlertBpmThreshold)
-        restingHrHighAlertBpmThresholdSettingsState.postValue(restingHrHighAlertBpmThreshold)
-        restingHrLowAlertBpmThresholdState.postValue(restingHrLowAlertBpmThreshold)
-        restingHrLowAlertBpmThresholdSettingsState.postValue(restingHrLowAlertBpmThreshold)
-        highRestingHrWarningThresholdLengthState.postValue(highRestingHrWarningThresholdLength)
-        highRestingHrWarningThresholdLengthSettingsState.postValue(highRestingHrWarningThresholdLength)
-        lowRestingHrWarningThresholdLengthState.postValue(lowRestingHrWarningThresholdLength)
-        lowRestingHrWarningThresholdLengthSettingsState.postValue(lowRestingHrWarningThresholdLength)
-        highRestingHrAlertThresholdLengthState.postValue(highRestingHrAlertThresholdLength)
-        highRestingHrAlertThresholdLengthSettingsState.postValue(highRestingHrAlertThresholdLength)
-        lowRestingHrAlertThresholdLengthState.postValue(lowRestingHrAlertThresholdLength)
-        lowRestingHrAlertThresholdLengthSettingsState.postValue(lowRestingHrAlertThresholdLength)
-        exertionThresholdWarningState.postValue(exertionThresholdWarning)
-        exertionThresholdWarningSettingsState.postValue(exertionThresholdWarning)
-        exertionThresholdAlertState.postValue(exertionThresholdAlert)
-        exertionThresholdAlertSettingsState.postValue(exertionThresholdAlert)
-        exertionWarningThresholdLengthState.postValue(exertionWarningThresholdLength)
-        exertionWarningThresholdLengthSettingsState.postValue(exertionWarningThresholdLength)
-        exertionAlertThresholdLengthState.postValue(exertionAlertThresholdLength)
-        exertionAlertThresholdLengthSettingsState.postValue(exertionAlertThresholdLength)
-
-        //hrHighAlertBpmThresholdState.postValue(hrHighAlertBpmThreshold)
-        //hrHighAlertBpmThresholdSettingsState.postValue(hrHighAlertBpmThreshold)
-        //hrHighAlertNumSecsThresholdState.postValue(hrHighAlertNumSecsThreshold)
-        //hrHighAlertNumSecsThresholdSettingsState.postValue(hrHighAlertNumSecsThreshold)
-
-        birthYearState.postValue(birthYearValue)
-        birthYearSettingsState.postValue(birthYearValue)
-        heightFeetState.postValue(heightFeetValue)
-        heightFeetSettingsState.postValue(heightFeetValue)
-        heightInchesState.postValue(heightInchesValue)
-        heightInchesSettingsState.postValue(heightInchesValue)
-        weightState.postValue(weightValue)
-        weightSettingsState.postValue(weightValue)
-        sexState.postValue(sexValue)
-        sexSettingsState.postValue(sexValue)
-        bloodTypeState.postValue(bloodTypeValue)
-        bloodTypeSettingsState.postValue(bloodTypeValue)
-        allergyListState.postValue(allergyList)
-        allergyListSettingsState.postValue(allergyList)
-        userTypeState.postValue(userTypeValue)
-        userTypeSettingsState.postValue(userTypeValue)
-        uniformWaistSizeState.postValue(uniformWaistSize)
-        uniformWaistSizeSettingsState.postValue(uniformWaistSize)
-        strideLengthState.postValue(strideLength)
-        strideLengthSettingsState.postValue(strideLength)
-        uniformPantsLengthState.postValue(uniformPantsLength)
-        uniformPantsLengthSettingsState.postValue(uniformPantsLength)
-        loadoutWeightState.postValue(loadoutWeight)
-        loadoutWeightSettingsState.postValue(loadoutWeight)
-        restingHeartRateState.postValue(restingHeartRate)
-        restingHeartRateSettingsState.postValue(restingHeartRate)
 
         requestCallsignComplicationUpdate(context)
         requestSosComplicationUpdate(context)
@@ -2202,12 +1951,12 @@ class MainActivity : ComponentActivity() {
             dataRepository.storePhysiologicalMetricBloodType(
                 physiologicalMetricsBloodTypeServiceConfigUpdate
             )
-            if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
-                dataRepository.storePhysiologicalMetricAllergyList(
-                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
-                        DataRepository.AllergyItem(name = str)
-                    } ?: listOf(DataRepository.AllergyItem("N/A")))
-            }
+//            if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
+//                dataRepository.storePhysiologicalMetricAllergyList(
+//                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
+//                        DataRepository.AllergyItem(name = str)
+//                    } ?: listOf(DataRepository.AllergyItem("N/A")))
+//            }
             dataRepository.storePhysiologicalMetricUserType(
                 physiologicalMetricsUserTypeServiceConfigUpdate
             )
@@ -2440,20 +2189,20 @@ class MainActivity : ComponentActivity() {
                 )
                 bloodTypeValue = physiologicalMetricsBloodTypeServiceConfigUpdate
             }
-            if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
-                val allergyListConfigUpdate =
-                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
-                        DataRepository.AllergyItem(name = str)
-                    } ?: listOf(DataRepository.AllergyItem("N/A"))
-                if (!listEqualsIgnoreOrder(allergyList, allergyListConfigUpdate)) {
-                    Log.d(
-                        TAG,
-                        "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)"
-                    )
-                    allergyList = allergyListConfigUpdate
-                }
-
-            }
+//            if ((null != physiologicalMetricsAllergiesServiceConfigUpdate) && physiologicalMetricsAllergiesServiceConfigUpdate.isNotEmpty()) {
+//                val allergyListConfigUpdate =
+//                    physiologicalMetricsAllergiesServiceConfigUpdate.map { str ->
+//                        DataRepository.AllergyItem(name = str)
+//                    } ?: listOf(DataRepository.AllergyItem("N/A"))
+//                if (!listEqualsIgnoreOrder(allergyList, allergyListConfigUpdate)) {
+//                    Log.d(
+//                        TAG,
+//                        "Change detected allergyList(prev=$allergyList, curr=$allergyListConfigUpdate)"
+//                    )
+//                    allergyList = allergyListConfigUpdate
+//                }
+//
+//            }
             if (userTypeValue != physiologicalMetricsUserTypeServiceConfigUpdate) {
                 Log.d(
                     TAG,
@@ -2660,13 +2409,13 @@ fun requestStatusIconsComplicationUpdate(context: Context) {
 
 //Contains functionality for all watch screens
 @Composable
-fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDataState: MutableLiveData<String>, sitxVm: SitxViewModel) {
+fun WearTAKCivApp(licenseLiveDataState: MutableLiveData<String>, sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewModel) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
 
     // collect license from data repo so we can see if it changes.
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-
+    val callsign by settingsVm.savedCallsign.collectAsState()
     // react to changes in the license.
     LaunchedEffect(licenseKey) {
         if (isLicenseValid()) {
@@ -2692,10 +2441,11 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
         composable("main_screen" ) {
             MainScreen(
                 navController = navController,
-                callsignState = callsignLiveDataState,
+                callsignState = callsign,
                 dataRepository = dataRepository,
                 bhRepo = bhRepo,
                 sitxVm = sitxVm,
+                settingsVm,
                 context = context
             )
         }
@@ -2705,7 +2455,7 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 //        }
         composable(
             "invalid_license_screen") {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
         }
     }
 }
@@ -2714,17 +2464,18 @@ fun WearTAKCivApp(callsignLiveDataState: MutableLiveData<String>, licenseLiveDat
 @Composable
 fun MainScreen(
     navController: NavController,
-    callsignState: MutableLiveData<String>,
+    callsignState: String,
     dataRepository: DataRepository, // Add dataRepository parameter,
     bhRepo: BloodhoundRepository,
     sitxVm: SitxViewModel,
+    settingsVm: WearTAKSettingsViewModel,
     context: Context // Add context parameter
 ) {
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
-    val chatCheckedLive by enableChatServiceSettingsState.observeAsState()
-    val bloodhoundCheckedLive by enableBloodhoundCompassServiceSettingsState.observeAsState()
+    val chatCheckedLive by settingsVm.savedEnableChatService.collectAsState()
+    val bloodhoundCheckedLive by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
@@ -2777,7 +2528,7 @@ fun MainScreen(
                             .padding(vertical = 0.dp)
                     ) {
                         requestPhysioStatusAndAlertingComplicationUpdate(context)
-                        HeartRate(context)
+                        HeartRate(context, settingsVm)
                     }
 //                    Spacer(
 //                        modifier = Modifier.height(10.dp)
@@ -2879,7 +2630,7 @@ fun MainScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
-                TroubleshootingIcons(sitxVm)
+                TroubleshootingIcons(sitxVm, settingsVm)
 
                 TimeWithSecondsAware(context)
 
@@ -3091,12 +2842,12 @@ fun selectedMetricTitleFromKey(key: String?): String {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun HeartRate(context: Context) {
+fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
-    val physioCheckedLive by enablePhysiologicalServicesSettingsState.observeAsState()
-    val physioAlertsCheckedLive by enablePhysiologicalAlertsSettingState.observeAsState()
+    val physioCheckedLive by settingsVm.savedEnablePhysiologicalServices.collectAsState()
+    val physioAlertsCheckedLive by settingsVm.savedEnablePhysiologicalAlerts.collectAsState()
     val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState() // or collectAsStateWithLifecycle()
-    val metricKey by selectedPhysioMetricSettingsState.observeAsState()
+    val metricKey by settingsVm.savedSelectedPhysioMetric.collectAsState()
 
     // Derive the chip state from the latest list
     val chipState by remember(alerts) {
@@ -3195,7 +2946,7 @@ fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
     if ((takConnectService == null) && (enableSitxService == false) && (enableMulticastOnWifi == false)) {
         return TakServer.DISCONNECTED
     }
-    val takServerSettingList = takServerListState.value
+    val takServerSettingList = takServerList
     val anyTakServerDisconnected = takServerDetails.any {
         it.connectionStatus.plain == 0
         it.connectionStatus.plain == 5
@@ -3206,11 +2957,6 @@ fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
     val connecting = (TAKConnectService.isAnyTakConnectingLiveData.value == true) || (dataRepository.sitxStatus.value == SitxServerStatus.CONNECTING)
     val connectedMulticast = (dataRepository.multicastPublisherRunning.value) && (endpoints.equals (DataRepository.Endpoint.MULTICAST))
     val someServersConn = ((TAKConnectService.isAnyTakConnectedLiveData.value == true) && (takServerSettingList!!.size > 1) && (anyTakServerDisconnected) && (endpoints.contains(DataRepository.Endpoint.TAK_SERVER)))
-    Log.d(TAG, "connected = $connected")
-    Log.d(TAG, "connecting = $connecting")
-    Log.d(TAG, "connectedMulticast = ${connectedMulticast}")
-    Log.d(TAG, "someServersConn = $someServersConn")
-    Log.d(TAG, "anyTakServerDisconnected = $anyTakServerDisconnected")
 
     return when {
         connected -> TakServer.CONNECTED
@@ -3260,7 +3006,8 @@ fun overallComplicationString(context: Context): String {
 }
 
 fun chatComplicationString() {
-    if (enableChatServiceSettingsState.value == true) {
+//TODO: WEAR-450: See if this updates
+    if (enableChatService == true) {
         var hasUnreadMessages = false
         runBlocking {
             hasUnreadMessages = dataRepository.hasUnread.first()
@@ -3276,7 +3023,7 @@ fun chatComplicationString() {
 }
 
 @Composable
-fun TroubleshootingIcons(sitxVm: SitxViewModel) {
+fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewModel) {
     val iconSizeSmall= 20.dp
     networkManager?.checkNetworkConnected()
 
@@ -3288,7 +3035,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
     ) {
         var clickCount by remember { mutableStateOf(0) }
         val scope = rememberCoroutineScope()
-        val locationCheckedLive by enableLocationServiceSettingsState.observeAsState()
+        val locationCheckedLive by settingsVm.savedEnableLocationService.collectAsState()
         val battery by dataRepository.nonNullBatteryPercentage.collectAsState(initial = 100)
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
         val anyTakServerConnected by TAKConnectService.isAnyTakConnectedLiveData.observeAsState()
@@ -3297,7 +3044,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
             it.connectionStatus.plain == 0
             it.connectionStatus.plain == 5
         }
-        val takServerSettingList by takServerListState.observeAsState(initial = emptyList())
+        val takServerSettingList by settingsVm.savedTakServerList.collectAsState()
         val isConnected by NetworkManager.isNetworkConnectedLiveData.observeAsState()
         val cellConnected by NetworkManager.isCellularConnectedLiveData.observeAsState()
         val wifiConnected by NetworkManager.isWifiConnectedLiveData.observeAsState()
@@ -3308,12 +3055,6 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
         val endpoints by dataRepository.endpointConnected.collectAsStateWithLifecycle()
         val multicastConnected by dataRepository.multicastPublisherRunning.collectAsStateWithLifecycle()
         val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
-
-//        Log.d(TAG, "endpoints = $endpoints")
-//        Log.d(TAG, "anyTakServerConnected = $anyTakServerConnected")
-//        Log.d(TAG, "takServerSettingList = ${takServerSettingList.size}")
-//        Log.d(TAG, "anyTakServerDisconnected = $anyTakServerDisconnected")
-//        Log.d(TAG, "takServerDetails = $takServerDetails")
 
         val painter = when {
             companionConnected ->
@@ -3449,12 +3190,12 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel) {
 
 
 @Composable
-fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
-    val greetingName: String? by callsignState.observeAsState()
+fun Callsign(context: Context, callsignState: String) {
+
     val maxChar = 10
     AssistChip(
         onClick = {
-            context.startActivity(Intent(context, SettingsActivity::class.java))
+            context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
 //            navController.navigate("settings_screen")
                   },
         leadingIcon = {Icon(
@@ -3463,10 +3204,10 @@ fun Callsign(context: Context, callsignState: MutableLiveData<String>) {
             modifier = Modifier.padding(all = 0.dp)
         )},
         label = { Text(
-            "${greetingName}",
+            "$callsignState",
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            fontSize = if (greetingName!!.length <= maxChar) 15.sp else 13.sp,
+            fontSize = if (callsignState!!.length <= maxChar) 15.sp else 13.sp,
             modifier = Modifier.padding(0.dp),
 
         )},
@@ -3792,7 +3533,7 @@ fun ActivityDisabledScreen(
             Button(
                 onClick = {
                     Log.i(TAG, "Navigating to settings screen license valid: ${isLicenseValid()}")
-                    ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                    ctx.startActivity(Intent(ctx, WearTAKSettingsActivity::class.java))
                     exitActivity()
 //                    navController.navigate("invalid_license_screen") {
 //                        popUpTo("invalid_license_screen") { inclusive = true }
@@ -3884,102 +3625,9 @@ fun DefaultPreview() {
     var callsignState = MutableLiveData<String>("WEAROS-0")
     var licenseState = MutableLiveData<String>("WEAROS-0")
     val sitxVm: SitxViewModel = viewModel()
+    val settingsVm: WearTAKSettingsViewModel = viewModel()
 
-    WearTAKCivApp(callsignState, licenseState, sitxVm)
-}
-
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
-@Composable
-fun CallsignSettingsPreview() {
-    var callsignState = MutableLiveData<String>("WEAROS-0")
-    CallsignSetting(rememberSwipeDismissableNavController(), callsignState)
-}
-
-
-
-@Preview(widthDp = 192, heightDp = 500)
-@Composable
-fun OptimizeBatteryOnWifiSelectScreenPreview() {
-    OptimizeBatteryOnWifiSelectScreen(rememberSwipeDismissableNavController())
-}
-
-@Preview(widthDp = 192, heightDp = 400)
-@Composable
-fun WifiSsidSelectionPreview() {
-    WifiSsidSelectScreen(rememberSwipeDismissableNavController())
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun WifiSsidSettingPreview() {
-    EditedWiFiSSIDSetting(rememberSwipeDismissableNavController(), 2)
-}
-
-//@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-//@Composable
-//fun WifiSsidchipPreview() {
-//    WifiSsidItemChip("a")
-//}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun TAKServerChipPreview() {
-    var takServerChecked by remember{ mutableStateOf(true)}
-    SwipeableTakServerChip(
-        0,
-        "pp",
-        "pp",
-        checked = takServerChecked,
-        onCheckedChange =  { takServerChecked },
-        onPrimaryActionClick = {},
-        onSecondaryActionClick = {}
-    )
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun TAKSettingsPreview() {
-    TakServerSetting(rememberSwipeDismissableNavController())
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun ServerDialogPreview() {
-    val trueBoolean = remember { mutableStateOf(true) }
-    val falseBoolean = remember { mutableStateOf(false) }
-
-    ServerRegistrationDialog (
-        falseBoolean,
-        trueBoolean,
-        trueBoolean,
-        rememberSwipeDismissableNavController(),
-        falseBoolean,
-        falseBoolean,
-        falseBoolean
-    )
-}
-
-@Preview(widthDp = 192, heightDp = 600, showBackground = true)
-@Composable
-fun EditServerPreview() {
-    val isP12Cert = remember { mutableStateOf(true) }
-    EditServerPage(rememberSwipeDismissableNavController(), 1)
-}
-
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showBackground = true)
-@Composable
-fun ConfirmationDialogPreview() {
-    val shouldShowDialog = remember { mutableStateOf(true) }
-    val isConfirmed = remember { mutableStateOf(false) }
-
-    ConfirmationDialog(
-        shouldShowDialog = shouldShowDialog,
-        "Do you want to trigger an SOS alert at your location?",
-        Icons.Default.Warning,
-        Color.Red,
-        isConfirmed
-    )
+    WearTAKCivApp(licenseState, sitxVm, settingsVm)
 }
 
 public fun Modifier.unswipeable() =

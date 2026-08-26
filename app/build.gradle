@@ -35,8 +35,8 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 580
-        versionName "5.8.0.1"
+        versionCode 581
+        versionName "5.8.0.2"
 
         def buildGitUrl = gitUrl() ?: "unknown"
         def buildGitBranch = gitBranch() ?: "unknown"

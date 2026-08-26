@@ -32,6 +32,7 @@ import android.os.VibratorManager
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.runtime.collectAsState
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.core.app.NotificationCompat
 import com.aitech.weartak_civ.data.DataRepository

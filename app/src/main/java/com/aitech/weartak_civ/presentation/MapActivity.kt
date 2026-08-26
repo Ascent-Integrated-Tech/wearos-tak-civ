@@ -176,7 +176,10 @@ import com.aitech.weartak_civ.service.BloodhoundService
 import com.aitech.weartak_civ.service.ChatService
 import org.maplibre.compose.expressions.dsl.asNumber
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Dp
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import org.json.JSONArray
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.log10
@@ -846,7 +849,7 @@ fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): Strin
     // Read the complete list of layers from the style
     val layers = json.getJSONArray("layers")
     // Store only the layers that should remain visible
-    val filtered = org.json.JSONArray()
+    val filtered = JSONArray()
     // Copy each visible layer into the filtered style
     for (i in 0 until layers.length()) {
         val layer = layers.getJSONObject(i)
@@ -1785,7 +1788,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
 
                     // Uses the current team color for the location puck
                     colors = LocationPuckColors(
-                        dotFillColorCurrentLocation = TeamColors(team)
+                        dotFillColorCurrentLocation = TeamColors(teamValue)
                     ),
 
                     // Recenters the map and opens location details
@@ -2251,10 +2254,8 @@ fun SelectedUser(
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                BackButton(
-                    onClick = {
-                        navController.popBackStack()
-                    }
+                WearTAKBackButton(
+                    onClick = { navController.popBackStack()}
                 )
             }
         }
@@ -2670,7 +2671,7 @@ private fun ScaleLine(
             // Horizontal line
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(
+                start = Offset(
                     0f,
                     0f
                 ),
