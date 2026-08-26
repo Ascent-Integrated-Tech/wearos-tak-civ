@@ -99,6 +99,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat.getString
+import androidx.core.text.isDigitsOnly
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.MutableLiveData
@@ -3464,8 +3465,34 @@ fun WearTAKIntEntryPage(
                     navController.popBackStack()
                 },
                 onClickConfirm = {
-                    confirmFunction(textField.text.toInt())
-                    navController.popBackStack()
+                    if (textField.text.isEmpty()) {
+                        Toast.makeText(
+                            mainActivity,
+                            context.getString(R.string.please_enter_a_value),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else if (textField.text.isDigitsOnly() ){
+                        if (textField.text.toInt() > maximum) {
+                            Toast.makeText(
+                                mainActivity,
+                                context.getString(R.string.value_exceeds_maximum_please_re_enter),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else if (textField.text.toInt() < minimum) {
+                            Toast.makeText(
+                                mainActivity,
+                                " Value is less than minimum, please re-enter", Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            confirmFunction(textField.text.toInt())
+                            navController.popBackStack()
+                        }
+                    } else {
+                        Toast.makeText(
+                            mainActivity,
+                            " Value is not a number", Toast.LENGTH_LONG
+                        ).show()
+                    }
                 })
         }
     }

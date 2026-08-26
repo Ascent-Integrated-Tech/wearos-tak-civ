@@ -10,10 +10,12 @@
 package com.aitech.weartak_civ.presentation
 
 import android.annotation.SuppressLint
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -61,10 +63,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -99,6 +105,7 @@ import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
@@ -249,7 +256,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "chat_screen_detailed index: $index")
-            ChatScreenDetailed(navController, index, chatRooms)
+            ChatScreenDetailed(navController, index, context, chatRooms)
         }
 
         composable("invalid_license_screen") {
@@ -392,6 +399,7 @@ fun ChatCard(
 fun ChatScreenDetailed(
     navController: NavController,
     index: Int,
+    context: Context,
     chatRooms: List<ChatRoom>
 ) {
     WearTAKCIVTheme {
@@ -453,7 +461,8 @@ fun ChatScreenDetailed(
                             time = utcToHoursMinutes(chatMsg.timeReceived),
                             callsign = chatMsg.callsign,
                             message = chatMsg.message,
-                            uid= chatMsg.uid
+                            uid= chatMsg.uid,
+                            context = context
                         )
                     }
                     item {
@@ -545,10 +554,27 @@ fun ChatMessageItem(
     time: String,
     callsign: String,
     message: String,
-    uid: String
+    uid: String,
+    context: Context
 ) {
+    val clipboardManager = LocalClipboard.current
+
     Chip(
-        onClick = { /* no-op */ },
+        onClick = {
+            val clipData = ClipData.newPlainText(
+                "chat copy",
+                message
+            )
+
+            clipboardManager.nativeClipboard.setPrimaryClip(
+                clipData
+            )
+            Toast.makeText(
+                mainActivity,
+                "Copied: $message",
+                Toast.LENGTH_LONG
+            ).show()
+        },
         enabled = true,
         modifier = Modifier.fillMaxWidth(),
         colors = ChipDefaults.outlinedChipColors(
@@ -728,7 +754,7 @@ fun ChatScreenPreview() {
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
 fun ChatScreenDetailedPreview() {
-    ChatScreenDetailed(rememberSwipeDismissableNavController(), 0, emptyList())
+//    ChatScreenDetailed(rememberSwipeDismissableNavController(), 0, emptyList())
 }
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
