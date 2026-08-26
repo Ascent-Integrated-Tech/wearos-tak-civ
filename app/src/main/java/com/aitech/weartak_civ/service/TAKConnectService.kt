@@ -21,9 +21,9 @@ import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
-import com.aitech.weartak_civ.Utils.CotUtils
-import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseMarkerCotOrNull
-import com.aitech.weartak_civ.Utils.CotUtils.Bloodhound.parseUserPositionCotOrNull
+import com.aitech.weartak_civ.cot.CotMarkerEvent
+import com.aitech.weartak_civ.cot.CotMarkerMapItem
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.parsers.GeofenceCotParser.isRadioSilenceRectangleGeofence
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -1617,11 +1617,9 @@ class TAKConnectService: Service() {
                         if (endIdx >= 0) {
                             val rawXml = bufStr.substring(0, endIdx + "</event>".length)
                             buffer.delete(0, endIdx + "</event>".length)
-                            //if (rawXml.contains("chat", ignoreCase = true)) Log.d(TAG, "Received chat:\n$rawXml")
-                            //Log.d(TAG, "Received xml=$rawXml")
                             if (dataRepository.getEnableChatService.first()
-                                && CotUtils.isChatMessage(rawXml)
-                                && CotUtils.isChatForMe(rawXml, MainActivity.device_uid)) {
+                                && CotMessageParser.isChatMessage(rawXml)
+                                && CotMessageParser.isChatForRecipient(rawXml, MainActivity.device_uid, MainActivity.callsign)) {
                                 Log.i(TAG, "Received Chat for me:\n$rawXml")
                                 EventBus.getDefault().post(TakChatEvent(rawXml))
                             } else if (geofenceEnabled && isRadioSilenceRectangleGeofence(rawXml)) {
@@ -1631,22 +1629,9 @@ class TAKConnectService: Service() {
                             } else {
 
 
-                                val userPositionCotEvent = parseUserPositionCotOrNull(rawXml)
+                                val userPositionCotEvent = CotMessageParser.parseUserPositionOrNull(rawXml)
                                 if (userPositionCotEvent != null) {
                                     if (userPositionCotEvent.uid != MainActivity.device_uid) {
-//                                        Log.i(
-//                                            TAG,
-//                                            "Inbound user CoT: source=${takServerDetail.address} uid=${userPositionCotEvent.uid} " +
-//                                                "type=${userPositionCotEvent.type} callsign=${userPositionCotEvent.detail.markerCallsign.orEmpty()} " +
-//                                                "lat=${userPositionCotEvent.point.lat} lon=${userPositionCotEvent.point.lon} " +
-//                                                "hae=${userPositionCotEvent.point.hae} ce=${userPositionCotEvent.point.ce} " +
-//                                                "le=${userPositionCotEvent.point.le} time=${userPositionCotEvent.time} " +
-//                                                "stale=${userPositionCotEvent.stale} how=${userPositionCotEvent.how} "+
-//                                                "name = ${userPositionCotEvent.team}"
-//                                        )
-//                                        continue
-
-
                                         val shouldTrackUser = dataRepository.applyReceivedUserEvent(
                                             event = userPositionCotEvent,
                                             source = takServerDetail.address
@@ -1660,13 +1645,9 @@ class TAKConnectService: Service() {
                                         }
                                     }
                                 }
-                                val markerCotEvent: CotUtils.MarkerCotEvent? = parseMarkerCotOrNull(rawXml)
+                                val markerCotEvent: CotMarkerEvent? = CotMessageParser.parseMarkerOrNull(rawXml)
 
                                 if (markerCotEvent != null) {
-//                                    if (dataRepository.droppedMarkerList.value.any { it.uid == markerCotEvent.uid }) {
-//                                        Log.i(TAG, "Skipping reflected local marker from bloodhound ingest: ${markerCotEvent.uid}")
-//                                        continue
-//                                    }
                                     val shouldTrackMarker = dataRepository.applyReceivedMarkerEvent(
                                         event = markerCotEvent,
                                         source = takServerDetail.address
@@ -1675,8 +1656,7 @@ class TAKConnectService: Service() {
                                         Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
                                         continue
                                     }
-                                    //Log.i(TAG, "Received a marker message:\n$rawXml\n$markerCotEvent")
-                                    val mapItem = CotUtils.MarkerMapItem(markerCotEvent)
+                                    val mapItem = CotMarkerMapItem(markerCotEvent)
                                     val bhEvent = BloodhoundRepository.BloodhoundEvent(
                                         mapItem = mapItem,
                                         server = takServerDetail.address,

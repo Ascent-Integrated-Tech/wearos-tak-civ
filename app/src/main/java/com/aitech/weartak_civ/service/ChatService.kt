@@ -15,10 +15,10 @@ import android.content.Intent
 import android.os.IBinder
 import android.text.format.DateFormat
 import android.util.Log
-import com.aitech.weartak_civ.Utils
-import com.aitech.weartak_civ.Utils.ChatRoom
-import com.aitech.weartak_civ.Utils.CotUtils
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.cot.ChatMessage
+import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -95,7 +95,7 @@ class ChatService : Service() {
         val existingChatRoom = chatRoomMap[uid]
         val room = when {
             existingChatRoom != null -> existingChatRoom
-            seedRoomIfMissing -> Utils.ChatRoom(
+            seedRoomIfMissing -> ChatRoom(
                 uid = uid,
                 title = title,
                 messageList = emptyList(),
@@ -106,7 +106,7 @@ class ChatService : Service() {
             else -> null
         } ?: return
 
-        val mergedMessages = room.messageList + Utils.ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
+        val mergedMessages = room.messageList + ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
         val mergedRoom = room.copy(
             title = title,
             messageList = mergedMessages,
@@ -189,7 +189,11 @@ class ChatService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onTakChat(event: TakChatEvent) {
         // 1) Parse incoming rooms from COT
-        val incomingRooms = CotUtils.parseChatRooms(event.rawXml, MainActivity.device_uid)
+        val incomingRooms = CotMessageParser.parseChatRooms(
+            event.rawXml,
+            myUid = MainActivity.device_uid,
+            myCallsign = MainActivity.callsign,
+        )
         Log.v(TAG, "Received TakChatEvent: ${event.rawXml}")
 
         // 2) Merge into in-memory inbox
