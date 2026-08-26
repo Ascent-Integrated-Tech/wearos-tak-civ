@@ -53,7 +53,6 @@
     <string name="update_license">Update-Lizenz</string>
     <string name="bpm">bpm</string>
     <string name="sos">SOS</string>
-    <string name="weartak_accessibility_settings_toast">Bitte WearTAK-CIV in den installierten Apps der Einstellungen für Bedienungshilfen EINschalten</string>
     <string name="connecting_to_toast">Verbindung zu %1$s</string>
     <string name="connected_to_toast">Verbunden mit %1$s</string>
     <string name="connection_failed">Verbindung fehlgeschlagen</string>

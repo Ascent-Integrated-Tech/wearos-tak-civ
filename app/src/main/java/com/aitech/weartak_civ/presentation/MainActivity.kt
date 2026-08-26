@@ -9,11 +9,7 @@
 
 package com.aitech.weartak_civ.presentation
 
-import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -22,7 +18,6 @@ import android.content.IntentFilter
 import android.content.RestrictionsManager
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.hardware.display.DisplayManager
@@ -37,7 +32,6 @@ import android.text.format.DateFormat
 import android.util.Log
 import android.view.Display
 import android.view.Surface
-import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -167,7 +161,6 @@ import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.ipc.WearTakCotIpcService
 import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import com.aitech.weartak_civ.service.CotDispatchService
-import com.aitech.weartak_civ.service.CustomAccessibilityService
 import com.aitech.weartak_civ.service.HeartrateService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
@@ -716,33 +709,6 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var restrictionsManager: RestrictionsManager
     private lateinit var restrictionReceiver: BroadcastReceiver
-
-    fun isAccessibilityServiceEnabled(context: Context, service: Class<out AccessibilityService?>): Boolean {
-        val am: AccessibilityManager = context.getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
-        val enabledServices: List<AccessibilityServiceInfo> = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-
-        for (enabledService in enabledServices) {
-            val enabledServiceInfo: ServiceInfo = enabledService.resolveInfo.serviceInfo
-            if (enabledServiceInfo.packageName.equals(context.packageName) && enabledServiceInfo.name.equals(service.name)) return true
-        }
-
-        return false
-    }
-
-    fun gotoAccessibilitySettings(context: Context): Boolean {
-        val settingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        if (context !is Activity) {
-            settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        var isOk = true
-        try {
-            context.startActivity(settingsIntent)
-        } catch (e: ActivityNotFoundException) {
-            Log.d(TAG, "gotoAccessibilitySettings: ActivityNotFoundException")
-            isOk = false
-        }
-        return isOk
-    }
 
     private val requestPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -1323,23 +1289,6 @@ class MainActivity : ComponentActivity() {
         validateLicense(license)
         startReactiveServiceManager(applicationContext)
         WearTakCotIpcService.ensureStarted(applicationContext)
-        // Kiosk needs to be allow com.samsung.accessibility for code below to work
-        val isAccessibilityServiceEnabled = isAccessibilityServiceEnabled(mainActivity, CustomAccessibilityService::class.java)
-//        Log.d(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled $isAccessibilityServiceEnabled")
-        if (!isAccessibilityServiceEnabled) {
-            Log.w(TAG, "MainActivity onCreate(): isAccessibilityServiceEnabled=false. trying to open Accessibility Settings")
-            /*
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            mainActivity.startActivity(intent)
-             */
-
-            gotoAccessibilitySettings(mainActivity)
-            for (i in 0..1) {
-                Toast.makeText(mainActivity,
-                    getString(R.string.weartak_accessibility_settings_toast), Toast.LENGTH_LONG).show()
-            }
-        }
         collectAudioRecordingFlows()
 
         setContent {
@@ -1350,19 +1299,6 @@ class MainActivity : ComponentActivity() {
         }
 
         //debugPressureRepoTest()
-        /*
-        if (Settings.Secure.putString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, "com.aitech.weartak_civ/.service.CustomAccessibilityService")) {
-            Log.d(TAG, "Able to set ENABLED_ACCESSIBILITY_SERVICES to com.aitech.weartak_civ/.service.CustomAccessibilityService")
-        } else {
-            Log.d(TAG, "NOT Able to set ENABLED_ACCESSIBILITY_SERVICES to com.aitech.weartak_civ/.service.CustomAccessibilityService")
-
-        }
-        if (Settings.Secure.putString(getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, "1")) {
-            Log.d(TAG, "Able to set ACCESSIBILITY_ENABLED to 1")
-        } else {
-            Log.d(TAG, "NOT Able to set ACCESSIBILITY_ENABLED to 1")
-        }
-         */
         Log.i(TAG, "MainActivity onCreate(): End.")
     }
 

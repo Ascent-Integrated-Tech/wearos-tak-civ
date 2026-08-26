@@ -10,7 +10,6 @@
 package com.aitech.weartak_civ
 
 import android.annotation.SuppressLint
-import android.app.ActivityManager
 import android.app.AlarmManager
 import android.app.AlarmManager.AlarmClockInfo
 import android.app.Notification
@@ -275,31 +274,6 @@ object Utils {
         val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
         val ac = AlarmClockInfo(System.currentTimeMillis() + timeMs - REDUCE_ALARM_TIME_MS, pendingIntent)
         alarmManager.setAlarmClock(ac, pendingIntent)
-    }
-
-    fun startMainActivityIfNotRunning(context: Context) {
-        if (!isActivityRunning(MainActivity::class.java, context)) {
-            Log.w(TAG, "MainActivity not running. Starting it...")
-            val bootIntent = Intent(context, MainActivity::class.java)
-            bootIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(bootIntent)
-        } else {
-            Log.w(TAG, "Activity is already running. Do not start one")
-        }
-    }
-
-    fun isActivityRunning(activityClass: Class<*>, currContext: Context): Boolean {
-        val activityManager = currContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val tasks = activityManager.getRunningTasks(Int.MAX_VALUE)
-
-        for (task in tasks) {
-            if (activityClass.canonicalName.equals(task.baseActivity?.className ?: "null", ignoreCase = true)) {
-                Log.d(TAG, "isActivityRunning returned true")
-                return true
-            }
-        }
-        Log.d(TAG, "isActivityRunning returned false")
-        return false
     }
 
     fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {

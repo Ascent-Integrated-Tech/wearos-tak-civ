@@ -101,7 +101,6 @@ class ServiceConfiguration(
         ServiceType.COT_DISPATCH,
         ServiceType.REPORTING_INTERVAL,
         ServiceType.MOVEMENT_DETECTION,
-        ServiceType.CUST_ACCESS,
         ServiceType.BATTERY,
         ServiceType.CEP_SIMULATION,
 
@@ -175,7 +174,6 @@ class ServiceConfiguration(
         ServiceType.SITX_SERVICE -> emptyList()
 
         ServiceType.TAK_CONNECT,
-        ServiceType.CUST_ACCESS,
         ServiceType.REPORTING_INTERVAL,
         ServiceType.COT_DISPATCH,
         ServiceType.MOVEMENT_DETECTION,

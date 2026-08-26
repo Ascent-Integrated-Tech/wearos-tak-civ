@@ -18,9 +18,8 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
  */
 class ServiceRegistry() {
     /**
-     * Physio & custom accessibility are not managed by ReactiveServiceMgr.
-     * Custom access is triggered by the OS setting and Physio is a virtual
-     * service representing Heartrate, SkinTemp (Samsung), ActivityRec (Google).
+     * Physio is not managed by ReactiveServiceMgr. It is a virtual service representing
+     * Heartrate, SkinTemp (Samsung), and ActivityRec (Google).
      */
     private val runnableServiceClassMap = mapOf(
         ServiceType.WEATHER to WeatherService::class.java,
@@ -55,7 +54,6 @@ class ServiceRegistry() {
         ServiceType.TAK_CONNECT to TAKConnectService.isRunning,
         ServiceType.COT_DISPATCH to CotDispatchService.isRunning,
         ServiceType.REPORTING_INTERVAL to ReportingIntervalStrategyService.isRunning,
-        ServiceType.CUST_ACCESS to CustomAccessibilityService.isRunning,
         ServiceType.LOCATION to LocationService.isRunning,
         ServiceType.HEART_RATE to HeartrateService.isRunning,
         ServiceType.SKIN_TEMP to SkinTempService.isRunning,

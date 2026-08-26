@@ -53,7 +53,6 @@
     <string name="update_license">تحديث الرخصة</string>
     <string name="bpm">نبضة بالدقيقة</string>
     <string name="sos">استغاثة (SOS)</string>
-    <string name="weartak_accessibility_settings_toast">الرجاء تشغيل تطبيق WearTAK-CIV في التطبيقات المثبتة بإعدادات إمكانية الوصول</string>
     <string name="connecting_to_toast">توصيل إلى%1$s</string>
     <string name="connected_to_toast">متصل إلى%1$s</string>
     <string name="connection_failed">فشل الاتصال</string>
