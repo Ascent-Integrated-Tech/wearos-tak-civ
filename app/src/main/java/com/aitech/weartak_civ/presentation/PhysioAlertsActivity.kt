@@ -92,6 +92,7 @@ import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.presentation.CrmReserveActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBetaFeatures
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enablePhysiologicalServices
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysioMetric
@@ -396,10 +397,6 @@ fun ExpandableCard(
     val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
     val latestSpo2Debug = dataRepository.latestSpo2DebugState.collectAsState()
     val crmUiState by crmViewModel.uiState.collectAsStateWithLifecycle()
-    val betaFeaturesEnabled by dataRepository.getEnableBetaFeatures
-        .collectAsStateWithLifecycle(
-            initialValue = MainActivity.enableBetaFeatures
-        )
     
     val crmScoreText = if (deviceWorn.value && crmUiState.hasValidScore) {
         "${crmUiState.score}"
@@ -430,7 +427,7 @@ fun ExpandableCard(
         add(Utils.SelectedPhysioMetric("key_heart_rate", painterResource(id = R.drawable.heart_rate), stringResource(R.string.heart_rate), if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" else "---"))
         add(Utils.SelectedPhysioMetric("key_steps", painterResource(id = R.drawable.steps), stringResource(R.string.steps), dailyMetricsFlow.value?.steps?.toString() ?: "0"))
         add(Utils.SelectedPhysioMetric("key_skin_temp", painterResource(id = R.drawable.skin_temp), stringResource(R.string.skin_temp), if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"))
-        if (betaFeaturesEnabled) add(Utils.SelectedPhysioMetric("key_crm", painterResource(id = R.drawable.heart_rate), "CRM", crmScoreText))
+        if (enableBetaFeatures) add(Utils.SelectedPhysioMetric("key_crm", painterResource(id = R.drawable.heart_rate), "CRM", crmScoreText))
         add(Utils.SelectedPhysioMetric("key_exertion", painterResource(id = R.drawable.exertion), stringResource(R.string.exertion), if (deviceWorn.value && exertionFlow.value.toFloat() >= 0.0) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"))
         add(Utils.SelectedPhysioMetric("key_floors", painterResource(id = R.drawable.floors), stringResource(R.string.floors), dailyMetricsFlow.value?.floors?.toInt()?.toString() ?: "0"))
         add(Utils.SelectedPhysioMetric("key_calories", painterResource(id = R.drawable.calories), stringResource(R.string.calories), dailyMetricsFlow.value?.calories?.toInt()?.toString() ?: "0"))
