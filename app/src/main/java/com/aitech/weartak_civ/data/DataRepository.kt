@@ -178,6 +178,15 @@ import kotlinx.coroutines.launch
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+// Identifies which PDL the user selected
+enum class DittoPdlSource {
+    COMMUNITY,
+    CUSTOM
+}
+
+private const val DEFAULT_COMMUNITY_PDL =
+    BuildConfig.DITTO_COMMUNITY_IDENTITY
+
 class DataRepository(private val context: Context) {
     data class Spo2DebugState(
         val activeBaselinePct: Double,
@@ -191,6 +200,15 @@ class DataRepository(private val context: Context) {
     )
 
     private val TAG = "WearTAK-" + DataRepository::class.java.simpleName
+
+    // Saves the Custom PDL entered by the user
+    private val DITTO_CUSTOM_PDL =
+        stringPreferencesKey("ditto_custom_pdl")
+
+    // Saves whether the user selected Community or Custom
+    private val DITTO_PDL_SOURCE =
+        stringPreferencesKey("ditto_pdl_source")
+
     private val takServerSecretsRepository: TakServerSecretsRepository
         get() = (context.applicationContext as WearTakApplication).takServerRepo
 
@@ -3026,7 +3044,51 @@ class DataRepository(private val context: Context) {
 //            preferences[TAK_SERVER_LIST_KEY] = gson.toJson(currentList)
 //        }
     }
+    // Saves the selected PDL option
+    suspend fun storeDittoPdlSource(source: DittoPdlSource) {
+        context.dataStore.edit { preferences ->
+            preferences[DITTO_PDL_SOURCE] = source.name
+        }
+    }
 
+    // Saves the Custom PDL entered by the user
+    suspend fun storeDittoCustomPdl(pdl: String) {
+        context.dataStore.edit { preferences ->
+            preferences[DITTO_CUSTOM_PDL] = pdl.trim()
+        }
+    }
+
+    // Loads the selected PDL option
+    val getDittoPdlSource: Flow<DittoPdlSource> =
+        context.dataStore.data.map { preferences ->
+            runCatching {
+                DittoPdlSource.valueOf(
+                    preferences[DITTO_PDL_SOURCE]
+                        ?: DittoPdlSource.COMMUNITY.name
+                )
+            }.getOrDefault(DittoPdlSource.COMMUNITY)
+        }
+
+    // Loads the saved Custom PDL
+    val getDittoCustomPdl: Flow<String> =
+        context.dataStore.data.map { preferences ->
+            preferences[DITTO_CUSTOM_PDL] ?: ""
+        }
+
+    // Returns the PDL Ditto should use
+    val getEffectiveDittoPdl: Flow<String> =
+        combine(
+            getDittoPdlSource,
+            getDittoCustomPdl
+        ) { source, customPdl ->
+            when (source) {
+                DittoPdlSource.COMMUNITY ->
+                    DEFAULT_COMMUNITY_PDL
+
+                DittoPdlSource.CUSTOM ->
+                    customPdl
+            }
+        }
     val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_BLE_BEACON_SERVICE] ?: DEFAULT_ENABLE_BLE_BEACON_SERVICE
     }

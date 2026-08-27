@@ -22,6 +22,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
+import android.widget.Toast
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.data.DataRepository
@@ -56,7 +57,8 @@ class DittoService : Service() {
     private lateinit var dataRepository: DataRepository
     private var dittoUpdateHandler: Handler? = null
     private var dittoUpdateThread: HandlerThread? = null
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO) // Single CoroutineScope for background I/O tasks, ensuring lifecycle management, error isolation, and cleaner code.
+    private val ioScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO) // Single CoroutineScope for background I/O tasks, ensuring lifecycle management, error isolation, and cleaner code.
     private val uuid = MainActivity.device_uid
     private var subscriptionTrack: DittoSyncSubscription? = null
     private var subscriptionAlert: DittoSyncSubscription? = null
@@ -77,10 +79,20 @@ class DittoService : Service() {
         )
         dataRepository = MainActivity.dataRepository
 
-        if (!EventBus.getDefault().isRegistered(this)) { EventBus.getDefault().register(this) }
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
 
-        if (null == getDittoInstance()) {
-            initializeDitto(applicationContext, dataRepository)
+        if (getDittoInstance() == null) {
+            val initialized = initializeDitto(
+                applicationContext,
+                dataRepository
+            )
+
+            if (!initialized) {
+                stopSelf()
+                return
+            }
         }
 
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
@@ -112,8 +124,8 @@ class DittoService : Service() {
         subscriptionAlert?.close()
         subscriptionMapItem?.close()
 
-        subscriptionTrack   = null
-        subscriptionAlert   = null
+        subscriptionTrack = null
+        subscriptionAlert = null
         subscriptionMapItem = null
     }
 
@@ -145,7 +157,10 @@ class DittoService : Service() {
             }
 
             // Schedule the next run
-            dittoUpdateHandler?.postDelayed(this, CotDispatchService.actualReportingIntervalSecs * 1000L)
+            dittoUpdateHandler?.postDelayed(
+                this,
+                CotDispatchService.actualReportingIntervalSecs * 1000L
+            )
         }
     }
 
@@ -192,6 +207,7 @@ class DittoService : Service() {
                                     timeStale = Instant.parse(it).toEpochMilli()
                                 } ?: throw IllegalArgumentException("Missing stale in CoT XML")
                             }
+
                             "point" -> {
                                 parser.getAttributeValue(null, "lat")?.let { lat = it.toDouble() }
                                     ?: throw IllegalArgumentException("Missing lat in CoT XML")
@@ -312,10 +328,10 @@ class DittoService : Service() {
     }
 
     private fun updateTrackDocument() {
-        ioScope.launch{
+        ioScope.launch {
             val timeMs = System.currentTimeMillis()
             val staleMsOffset = 3000 * CotDispatchService.actualReportingIntervalSecs
-            val staleTimeMs = timeMs+staleMsOffset
+            val staleTimeMs = timeMs + staleMsOffset
             val location = dataRepository.latestLocation.value
             val heartRate = dataRepository.latestHeartRate.value ?: -1
             val battery = dataRepository.latestBatteryPercentage.value ?: -1
@@ -324,7 +340,7 @@ class DittoService : Service() {
             val haeActual = location?.altitude ?: 0.0
             var ceActual = location?.accuracy ?: 9999999.0F
             if (ceActual.isNaN()) ceActual = 9999999.0F
-            var leActual : Float = location?.verticalAccuracyMeters ?: 9999999.0F
+            var leActual: Float = location?.verticalAccuracyMeters ?: 9999999.0F
             if (leActual.isNaN()) leActual = 9999999.0F
             val bearingActual = location?.bearing ?: 0.0F
             val speedActual = location?.speed ?: 0.0F
@@ -337,25 +353,25 @@ class DittoService : Service() {
             // 2) Merged version (original + ditto + remarks/biometrics/track)
             val cotDetail = CotDetailBuilder.dittoTrack(
                 // your original args:
-                heartRate     = heartRate,
-                battery       = battery,
-                callsign      = callsign,
-                role          = role,
-                team          = teamValue,
-                uid           = uuid,
-                course        = bearingActual,
-                speed         = speedActual,
+                heartRate = heartRate,
+                battery = battery,
+                callsign = callsign,
+                role = role,
+                team = teamValue,
+                uid = uuid,
+                course = bearingActual,
+                speed = speedActual,
                 // if you need a custom endpoint/phone (these also have defaults):
-                endpoint      = "*:-1:stcp",
+                endpoint = "*:-1:stcp",
                 // takv info:
-                takvOs        = "WEAROS",           // e.g. "14"
-                takvVersion   = "WearTAK-${Build.VERSION.RELEASE}",        // your APK version
-                takvDevice    = deviceModel,                     // "$manufacturer $model"
-                takvPlatform  = "ATAK-CIV",
+                takvOs = "WEAROS",           // e.g. "14"
+                takvVersion = "WearTAK-${Build.VERSION.RELEASE}",        // your APK version
+                takvDevice = deviceModel,                     // "$manufacturer $model"
+                takvPlatform = "ATAK-CIV",
                 // ditto payload:
-                dittoA        = localPeerKeyString,                     // "a-f-G-U-C"
-                dittoIp       = "0.0.0.0",                         // "Undefined"
-                dittoVersion  = dittoVersion,                            // "m-g"
+                dittoA = localPeerKeyString,                     // "a-f-G-U-C"
+                dittoIp = "0.0.0.0",                         // "Undefined"
+                dittoVersion = dittoVersion,                            // "m-g"
                 dittoDeviceName = ditto.deviceName                    // same as above, or override
             )
 
@@ -380,27 +396,27 @@ class DittoService : Service() {
                 "g" to "2.0",           // your app version or Cot version
 
                 // — CoT point fields —
-                "h"  to ceActual.toDouble(),   // CE
-                "i"  to haeActual,             // HAE
-                "j"  to latActual,             // LAT
-                "k"  to leActual.toDouble(),   // LE
-                "l"  to lonActual,             // LON
+                "h" to ceActual.toDouble(),   // CE
+                "i" to haeActual,             // HAE
+                "j" to latActual,             // LAT
+                "k" to leActual.toDouble(),   // LE
+                "l" to lonActual,             // LON
 
                 // — timing & lifecycle —
                 "n" to timeMs,          // start
                 "o" to staleTimeMs,     // stale
 
                 // — how/access/detail —
-                "p"  to how,
-                "q"  to access,
-                "r"  to cotDetail,      // must be the full `<detail>…</detail>` string
+                "p" to how,
+                "q" to access,
+                "r" to cotDetail,      // must be the full `<detail>…</detail>` string
 
                 // — optional telemetry aliases —
                 "r1" to speedActual.toString(),   // speed
                 "r2" to haeActual.toString(),     // sometimes used for additional metric
 
                 // — type string for this document —
-                "w"  to typeString     // e.g. "a-f-G-U-C"
+                "w" to typeString     // e.g. "a-f-G-U-C"
             )
 
             try {
@@ -421,11 +437,21 @@ class DittoService : Service() {
         isRunning.set(false)
         stopForeground(STOP_FOREGROUND_DETACH)
 
-        try {
-            ditto.stopSync()
-            Log.d(TAG, "Sync stopped")
-        } catch (e: DittoError) {
-            Log.e(TAG, "Error stopping sync: ${e.message}")
+        val initializedDitto = getDittoInstance()
+
+        if (initializedDitto != null) {
+            try {
+                initializedDitto.stopSync()
+                Log.d(TAG, "Sync stopped")
+            } catch (error: DittoError) {
+                Log.e(
+                    TAG,
+                    "Error stopping sync: ${error.message}",
+                    error
+                )
+            }
+        } else {
+            Log.d(TAG, "Ditto was not initialized; skipping stopSync")
         }
 
         unSubscribeToCollections()
@@ -469,7 +495,7 @@ class DittoService : Service() {
     companion object {
         private val TAG = "WearTAK-" + DittoService::class.java.simpleName
         private val DITTO_SERVICE_NOTIFICATION_ID = 3333
-        val isRunning : AtomicBoolean = AtomicBoolean(false)
+        val isRunning: AtomicBoolean = AtomicBoolean(false)
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
         lateinit var localPeerKeyString: String
         private lateinit var ditto: Ditto
@@ -480,30 +506,108 @@ class DittoService : Service() {
         private fun initializeDitto(
             applicationContext: Context,
             dataRepository: DataRepository
-        ) {
+        ): Boolean {
             Log.d(TAG, "Initializing Ditto")
 
-            if (::ditto.isInitialized) return                 // already done
+            // Ditto has already been initialized
+            if (::ditto.isInitialized) {
+                return true
+            }
 
-            try {
-                // ⬇️  ONE-LINER FIX: block just long enough to get the first value
-                val appId  = runBlocking { dataRepository.getDittoAppId.first() }
-                val token  = runBlocking { dataRepository.getDittoAuthToken.first() }
+            // Load the selected Community or Custom PDL
+            val encodedPdl = runBlocking {
+                dataRepository.getEffectiveDittoPdl.first()
+            }.trim()
 
-                val androidDeps = DefaultAndroidDittoDependencies(applicationContext)
-                val identity    = DittoIdentity.OnlinePlayground(
-                    androidDeps,
-                    appId = appId,
-                    token = token
+            // Do not log the actual PDL because it contains credentials
+            Log.d(
+                TAG,
+                "Ditto identity present=${encodedPdl.isNotBlank()}, " +
+                        "length=${encodedPdl.length}"
+            )
+
+            // Decode and validate the PDL
+            val license = try {
+                DittoCommunityLicenseHelper.parse(encodedPdl)
+            } catch (error: Exception) {
+                Log.e(TAG, "Invalid PDL", error)
+
+                Toast.makeText(
+                    applicationContext,
+                    "Invalid PDL",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                return false
+            }
+
+            // Stop if the PDL has expired
+            if (license.isExpired) {
+                Log.e(TAG, "Expired PDL")
+
+                Toast.makeText(
+                    applicationContext,
+                    "Expired PDL",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                return false
+            }
+
+            // Initialize Ditto using the identity contained in the PDL
+            return try {
+                val androidDependencies =
+                    DefaultAndroidDittoDependencies(applicationContext)
+
+                val identity = DittoIdentity.SharedKey(
+                    androidDependencies,
+                    appId = license.appId,
+                    sharedKey = license.sharedKey
                 )
 
-                ditto = Ditto(androidDeps, identity)
-                Log.d(TAG, "Ditto initialized with $appId")
+                ditto = Ditto(
+                    androidDependencies,
+                    identity
+                )
 
-            } catch (e: DittoError) {
-                Log.e(TAG, "Failed to initialize Ditto: ${e.message}", e)
+                // Apply the PDL's offline license token
+                ditto.setOfflineOnlyLicenseToken(
+                    license.licenseToken
+                )
+
+                Log.i(TAG, "Ditto initialized successfully")
+                true
+            } catch (error: DittoError) {
+                Log.e(
+                    TAG,
+                    "Ditto rejected the selected license",
+                    error
+                )
+
+                Toast.makeText(
+                    applicationContext,
+                    "Invalid PDL",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                false
+            } catch (error: Exception) {
+                Log.e(
+                    TAG,
+                    "Failed to initialize Ditto",
+                    error
+                )
+
+                Toast.makeText(
+                    applicationContext,
+                    "Ditto failed to start",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                false
             }
         }
     }
-
 }
+
+
