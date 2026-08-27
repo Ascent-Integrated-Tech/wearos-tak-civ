@@ -44,6 +44,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
@@ -172,6 +173,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.sitxTakGroup
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamEntriesValuesList
+import com.aitech.weartak_civ.data.DittoPdlSource
+import com.aitech.weartak_civ.service.DittoCommunityLicenseHelper
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.versionNumber
 import com.aitech.weartak_civ.presentation.WearTAKSettingsActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.WearTAKSettingsActivity.Constants.allergiesOptionsList
@@ -351,6 +354,7 @@ fun WearTAKSettingsNav(
     val enableSmsAlerts by settingsVm.savedEnableSmsForAlerts.collectAsState()
     val smsNumberList by settingsVm.savedSmsNumbersList.collectAsState()
     val enableDittoService by settingsVm.savedEnableDittoService.collectAsState()
+    val dittoPdlSource by dataRepository.getDittoPdlSource.collectAsState(initial = DittoPdlSource.COMMUNITY)
     val enableTabletCommandEndpoint by settingsVm.savedEnableTabletCommandEndpoint.collectAsState()
     val tabletCommandEndpoint by settingsVm.savedTabletCommandEndpoint.collectAsState()
     val tabletCommandAPIKey by settingsVm.savedTabletCommandApikey.collectAsState()
@@ -486,7 +490,16 @@ fun WearTAKSettingsNav(
                 }
             }
         }
+        composable("ditto_pdl") {
+            DittoPdlSelectionPage(
+                navController = navController,
+                selectedSource = dittoPdlSource
+            )
+        }
 
+        composable("ditto_custom_pdl") {
+            DittoCustomPdlEntryPage(navController)
+        }
         //Callsign and Device Settings vvv
         composable("callsign_and_device_preferences") {
             WearTAKPageWithBackArrow(
@@ -1291,6 +1304,17 @@ fun WearTAKSettingsNav(
                             onCheckedChange = { settingsVm.storeEnableDittoService(it) },
                             title = stringResource(R.string.ditto),
                             description = stringResource(R.string.service_on_off)
+                        )
+                    }
+                    item {
+                        WearTAKTitleChipWithState(
+                            route = "ditto_pdl",
+                            title = stringResource(R.string.ditto_identity),
+                            state = when (dittoPdlSource) {
+                                DittoPdlSource.COMMUNITY -> stringResource(R.string.community_pdl)
+                                DittoPdlSource.CUSTOM -> stringResource(R.string.custom_pdl)
+                            },
+                            navController = navController
                         )
                     }
                     item {
@@ -3363,6 +3387,246 @@ fun WearTAKBackButton(onClick: () -> Unit /* What happens when pressed */) {
             Icons.AutoMirrored.Filled.KeyboardArrowLeft,
             contentDescription = "Go back to Main Settings Screen",
         )
+    }
+}
+@Composable
+fun DittoPdlSelectionPage(
+    navController: NavController,
+    selectedSource: DittoPdlSource
+) {
+    val scope = rememberCoroutineScope()
+    val showPdlHelp = remember { mutableStateOf(false) }
+    val communityTitle = stringResource(R.string.community_pdl)
+    val customTitle = stringResource(R.string.custom_pdl)
+    val pdlOptions = listOf(communityTitle, customTitle)
+
+    WearTAKPageWithBackArrow(
+        title = stringResource(R.string.ditto_identity),
+        columnContent = {
+            item {
+                WearTAKSelectableChip(
+                    selected = selectedSource == DittoPdlSource.COMMUNITY,
+                    onClick = {
+                        scope.launch {
+                            dataRepository.storeDittoPdlSource(
+                                DittoPdlSource.COMMUNITY
+                            )
+                        }
+                    },
+                    title = communityTitle,
+                    secondaryTitle = stringResource(R.string.use_default_community_identity),
+                    combined = true,
+                    list = pdlOptions
+                )
+            }
+
+            item {
+                WearTAKSelectableChip(
+                    selected = selectedSource == DittoPdlSource.CUSTOM,
+                    onClick = {
+                        navController.navigate("ditto_custom_pdl")
+                    },
+                    title = customTitle,
+                    secondaryTitle = stringResource(R.string.enter_your_own_identity),
+                    combined = true,
+                    list = pdlOptions
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        showPdlHelp.value = true
+                    },
+                    label = {
+                        Text(stringResource(R.string.pdl_help))
+                    },
+                    secondaryLabel = {
+                        Text(
+                            text = stringResource(R.string.pdl_help_summary),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = stringResource(R.string.pdl_help),
+                            modifier = Modifier.size(18.dp),
+                            tint = Color.LightGray
+                        )
+                    },
+                    colors = ChipDefaults.chipColors(
+                        backgroundColor = Color.DarkGray,
+                        contentColor = Color.White,
+                        secondaryContentColor = Color.LightGray
+                    )
+                )
+            }
+        },
+        navController = navController
+    )
+
+    DittoPdlHelpDialog(showPdlHelp)
+}
+
+@Composable
+fun DittoPdlHelpDialog(
+    shouldShowDialog: MutableState<Boolean>
+) {
+    if (shouldShowDialog.value) {
+        Dialog(
+            onDismissRequest = {
+                shouldShowDialog.value = false
+            },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = colors.background
+                ),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Info,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .size(22.dp),
+                        tint = Color.LightGray
+                    )
+
+                    Text(
+                        text = stringResource(R.string.pdl_help_instructions),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = 32.dp, bottom = 56.dp)
+                            .verticalScroll(rememberScrollState()),
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    Button(
+                        onClick = {
+                            shouldShowDialog.value = false
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .width(112.dp)
+                            .height(40.dp),
+                        contentPadding = PaddingValues(
+                            horizontal = 12.dp,
+                            vertical = 0.dp
+                        ),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Gray
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(R.string.dismiss),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DittoCustomPdlEntryPage(
+    navController: NavController
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val savedCustomPdl by dataRepository.getDittoCustomPdl.collectAsState(
+        initial = ""
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val textField = WearTAKOutlinedTextField(
+            string = savedCustomPdl,
+            label = stringResource(R.string.custom_pdl)
+        )
+
+        Row(
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            WearTAKConfirmCancelButtons(
+                onClickCancel = {
+                    navController.popBackStack()
+                },
+                onClickConfirm = {
+                    val value = textField.text.trim()
+
+                    val license = try {
+                        DittoCommunityLicenseHelper.parse(value)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Custom PDL is invalid", error)
+
+                        Toast.makeText(
+                            context,
+                            "Invalid PDL",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        return@WearTAKConfirmCancelButtons
+                    }
+
+                    if (license.isExpired) {
+                        Toast.makeText(
+                            context,
+                            "Expired PDL",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        return@WearTAKConfirmCancelButtons
+                    }
+
+                    scope.launch {
+                        dataRepository.storeDittoCustomPdl(value)
+                        dataRepository.storeDittoPdlSource(
+                            DittoPdlSource.CUSTOM
+                        )
+
+                        Toast.makeText(
+                            context,
+                            "PDL saved successfully",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        navController.popBackStack(
+                            route = "ditto_pdl",
+                            inclusive = true
+                        )
+                    }
+                }
+            )
+        }
     }
 }
 
