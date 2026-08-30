@@ -113,6 +113,27 @@ class PluginManagerLifecycleMockTest {
     }
 
     @Test
+    fun refreshBindings_skipsPersistedDisabledPlugin() {
+        val ri = resolveInfoFor(pluginPkg, ".FakeSvc")
+        val app = mockHostApp(listOf(ri))
+        val ingress = mockk<PluginIngressPort>(relaxed = true)
+        stubIngressSenderPackages(ingress, setOf(pluginPkg))
+        val stateStore = mockk<PluginStateStore>()
+        every { stateStore.isEnabled(pluginPkg) } returns false
+        val mgr = PluginManager(
+            app,
+            ingress,
+            noopPluginTrust(),
+            pluginStateStore = stateStore,
+        )
+
+        mgr.refreshBindings()
+
+        assertFalse(mgr.hasConnectionForTest(pluginPkg))
+        verify(exactly = 0) { app.bindService(any<Intent>(), any<ServiceConnection>(), any<Int>()) }
+    }
+
+    @Test
     fun unbindPackage_removesConnectionAndRecordsUnbind() {
         val ri = resolveInfoFor(pluginPkg, ".FakeSvc")
         val app = mockHostApp(listOf(ri)) { intent, conn ->

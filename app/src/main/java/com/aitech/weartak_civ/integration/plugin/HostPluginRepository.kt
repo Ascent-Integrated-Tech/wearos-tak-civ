@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class HostPluginRepository(
     private val app: WearTakApplication,
     private val manager: PluginManager,
+    private val pluginStateStore: PluginStateStore,
 ) : PluginRepository, PluginManager.PluginTopologyListener {
 
     private val identityStore = PluginIdentityStore()
@@ -59,6 +60,7 @@ class HostPluginRepository(
             }
 
             val visiblePackages = identityStore.visiblePackageNames(discoveredPackageNames)
+                .filterNot(pluginStateStore::isHidden)
             val records = visiblePackages.map { packageName ->
                 buildPluginUi(packageName, diagnostics)
             }.sortedWith(compareBy<PluginUI> { it.title.lowercase() }.thenBy { it.packageName })
@@ -81,6 +83,7 @@ class HostPluginRepository(
             publishFailure("addPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
+        pluginStateStore.setHidden(packageName, false)
         synchronized(stateLock) {
             identityStore.setHidden(packageName, false)
         }
@@ -120,7 +123,9 @@ class HostPluginRepository(
             publishFailure("loadPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
+        pluginStateStore.setEnabled(packageName, true)
         if (!manager.bindPackage(packageName)) {
+            pluginStateStore.setEnabled(packageName, false)
             publishFailure("loadPlugin", pluginId, "Unable to bind package $packageName")
             return
         }
@@ -134,6 +139,7 @@ class HostPluginRepository(
             publishFailure("unloadPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
+        pluginStateStore.setEnabled(packageName, false)
         manager.unbindPackage(packageName)
         publishSuccess("unloadPlugin", pluginId, packageName)
         refresh()
@@ -145,6 +151,8 @@ class HostPluginRepository(
             publishFailure("removePlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
+        pluginStateStore.setHidden(packageName, true)
+        pluginStateStore.setEnabled(packageName, false)
         synchronized(stateLock) {
             identityStore.setHidden(packageName, true)
             if (selectedPackageName == packageName) {
@@ -173,6 +181,8 @@ class HostPluginRepository(
     }
 
     internal fun onPackageRemoved(packageName: String) {
+        manager.unbindPackage(packageName)
+        pluginStateStore.remove(packageName)
         synchronized(stateLock) {
             identityStore.removePackage(packageName)
             if (selectedPackageName == packageName) {

@@ -24,6 +24,7 @@ import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.integration.plugin.PluginIngressPort
 import com.aitech.weartak_civ.integration.plugin.PluginManager
 import com.aitech.weartak_civ.integration.plugin.HostPluginRepository
+import com.aitech.weartak_civ.integration.plugin.PluginStateStore
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
@@ -72,6 +73,8 @@ class WearTakApplication : Application() {
         private set
     lateinit var pluginRepository: HostPluginRepository
         private set
+    lateinit var pluginStateStore: PluginStateStore
+        private set
 
     companion object {
         val TAG = "WearTAK-Application"
@@ -108,9 +111,10 @@ class WearTakApplication : Application() {
         // holder-mediated swap path, so callers must NOT invoke start() separately.
         CepProvider.getOrCreateEngine(this)
 
+        pluginStateStore = PluginStateStore(applicationContext)
         pluginIngress = PluginIngressPort(this)
-        pluginManager = PluginManager(this, pluginIngress)
-        pluginRepository = HostPluginRepository(this, pluginManager)
+        pluginManager = PluginManager(this, pluginIngress, pluginStateStore = pluginStateStore)
+        pluginRepository = HostPluginRepository(this, pluginManager, pluginStateStore)
         pluginManager.startDeferred()
     }
 
