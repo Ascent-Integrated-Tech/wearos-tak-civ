@@ -1,6 +1,8 @@
 package com.aitech.weartak_civ.presentation
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -161,6 +163,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.integration.plugin.PluginCompatibilityStatus
 import com.aitech.weartak_civ.integration.plugin.PluginLoadingStatus
+import com.aitech.weartak_civ.integration.plugin.PluginUninstallRequest
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 import com.aitech.weartak_civ.integration.plugin.PluginViewModel
 import com.aitech.weartak_civ.manager.NetworkManager
@@ -2663,13 +2666,34 @@ fun WearTAKSettingsNav(
             )
 
             WearTAKPluginPopupBox(
-                showPopup,
-                pluginitem.value.title,
+                showPopup = showPopup,
+                titleText = pluginitem.value.title,
                 description = pluginitem.value.desc,
                 versionNumber = pluginitem.value.versionName,
                 compatibility = pluginitem.value.compatibility,
                 loadingStatus = pluginitem.value.loadingStatus,
-                errorMessage = pluginitem.value.errorMessage
+                errorMessage = pluginitem.value.errorMessage,
+                onUninstallClick = {
+                    when (val request = pluginVm.uninstallPlugin(pluginitem.value.pluginId)) {
+                        is PluginUninstallRequest.Ready -> {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_DELETE,
+                                    Uri.parse("package:${request.packageName}"),
+                                ),
+                            )
+                        }
+
+                        is PluginUninstallRequest.Failure -> {
+                            Toast.makeText(
+                                context,
+                                request.reason,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                    showPopup.value = false
+                },
             )
 
             WearTAKAlertDialog(
@@ -4593,7 +4617,8 @@ fun WearTAKPluginPopupBox(
     versionNumber: String,
     compatibility: PluginCompatibilityStatus,
     loadingStatus: PluginLoadingStatus,
-    errorMessage: String
+    errorMessage: String,
+    onUninstallClick: () -> Unit = {},
 ) {
     if (showPopup.value) {
         Dialog(
@@ -4662,9 +4687,26 @@ fun WearTAKPluginPopupBox(
                                 maxLines = 2,
                                 fontSize = 10.sp,
                                 lineHeight = 11.sp
-                            )
-                        }
+                        )
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onUninstallClick,
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                            contentColor = Color.Black,
+                        ),
+                    ) {
+                        Text(
+                            text = "Uninstall",
+                            color = Color.Black,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
                 }
             }
         }
