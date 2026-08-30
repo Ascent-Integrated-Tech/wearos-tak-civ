@@ -18,8 +18,11 @@ package com.aitech.weartak_civ
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.provider.Settings.Secure
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.integration.plugin.PluginIngressPort
 import com.aitech.weartak_civ.integration.plugin.PluginManager
@@ -38,6 +41,7 @@ import com.aitech.weartak_civ.data.secure.sitx.SitxSecretsRepository
 import com.aitech.weartak_civ.data.secure.takserver.TakServerEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.integration.plugin.PluginRepository
+import com.aitech.weartak_civ.integration.plugin.PluginPackageChangedReceiver
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +58,7 @@ import live.ditto.android.DefaultAndroidDittoDependencies
 class WearTakApplication : Application() {
 
     private val takServerMigrationReady = CompletableDeferred<Result<Unit>>()
+    private val pluginPackageChangedReceiver = PluginPackageChangedReceiver()
 
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
@@ -115,7 +120,22 @@ class WearTakApplication : Application() {
         pluginIngress = PluginIngressPort(this)
         pluginManager = PluginManager(this, pluginIngress, pluginStateStore = pluginStateStore)
         pluginRepository = HostPluginRepository(this, pluginManager, pluginStateStore)
+        registerPluginPackageReceiver()
         pluginManager.startDeferred()
+    }
+
+    private fun registerPluginPackageReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        ContextCompat.registerReceiver(
+            this,
+            pluginPackageChangedReceiver,
+            filter,
+            ContextCompat.RECEIVER_EXPORTED,
+        )
     }
 
     suspend fun awaitTakServerMigration() {

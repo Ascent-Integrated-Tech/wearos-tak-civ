@@ -2591,6 +2591,7 @@ fun WearTAKSettingsNav(
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
+                        pluginVm.refreshBindings()
                         pluginVm.refresh()
                     }
                 }
@@ -2709,7 +2710,7 @@ fun WearTAKSettingsNav(
                 },
                 text = {
                     Text(
-                        "Remove ${pluginitem.value.title}?",
+                        "Uninstall ${pluginitem.value.title}?",
                         textAlign = TextAlign.Center,
                         fontSize = 14.sp
                     )
@@ -2752,15 +2753,31 @@ fun WearTAKSettingsNav(
             )
 
             if (isConfirmed.value) {
-                Log.d(TAG, "plugin removed isSuccess")
-                LaunchedEffect(Unit) {
-                    delay(1000) // Delay for 5 seconds
-                    isConfirmed.value = false // Dismiss the dialog
-                    successBoolean.value = false // Dismiss the dialog
-                    Log.d(TAG, "plugin removed called")
-                    pluginVm.removePlugin(pluginitem.value.pluginId)
-//                    pluginVm.uninstallPlugin(pluginitem.value.pluginId)
-                }
+                    Log.d(TAG, "plugin uninstall confirmed")
+                    LaunchedEffect(Unit) {
+                        delay(1000) // Delay for 5 seconds
+                        isConfirmed.value = false // Dismiss the dialog
+                        successBoolean.value = false // Dismiss the dialog
+                        Log.d(TAG, "plugin uninstall requested")
+                        when (val request = pluginVm.uninstallPlugin(pluginitem.value.pluginId)) {
+                            is PluginUninstallRequest.Ready -> {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_DELETE,
+                                        Uri.parse("package:${request.packageName}"),
+                                    ),
+                                )
+                            }
+
+                            is PluginUninstallRequest.Failure -> {
+                                Toast.makeText(
+                                    context,
+                                    request.reason,
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    }
                 //TODO: Commenting this out until successboolean is acgtually connected
 //                WearTAKSuccessFailDialog(
 //                    isConfirmed,

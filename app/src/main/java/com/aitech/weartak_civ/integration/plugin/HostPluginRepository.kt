@@ -59,8 +59,9 @@ class HostPluginRepository(
                 }
             }
 
-            val visiblePackages = identityStore.visiblePackageNames(discoveredPackageNames)
-                .filterNot(pluginStateStore::isHidden)
+            // Installed package discovery is authoritative. A plugin must remain visible while
+            // it is installed; enabled state controls whether it is bound and running.
+            val visiblePackages = discoveredPackageNames
             val records = visiblePackages.map { packageName ->
                 buildPluginUi(packageName, diagnostics)
             }.sortedWith(compareBy<PluginUI> { it.title.lowercase() }.thenBy { it.packageName })
@@ -83,10 +84,7 @@ class HostPluginRepository(
             publishFailure("addPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
-        pluginStateStore.setHidden(packageName, false)
-        synchronized(stateLock) {
-            identityStore.setHidden(packageName, false)
-        }
+        pluginStateStore.setEnabled(packageName, true)
         publishSuccess("addPlugin", pluginId, packageName)
         refresh()
     }
@@ -151,15 +149,7 @@ class HostPluginRepository(
             publishFailure("removePlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
-        pluginStateStore.setHidden(packageName, true)
         pluginStateStore.setEnabled(packageName, false)
-        synchronized(stateLock) {
-            identityStore.setHidden(packageName, true)
-            if (selectedPackageName == packageName) {
-                selectedPackageName = null
-                _selectedPlugin.value = null
-            }
-        }
         manager.unbindPackage(packageName)
         publishSuccess("removePlugin", pluginId, packageName)
         refresh()
@@ -174,6 +164,21 @@ class HostPluginRepository(
             )
         }
         return PluginUninstallRequest.Ready(packageName = packageName)
+    }
+
+    /**
+     * Re-admits a package after installation or replacement. A reinstall is a new plugin
+     * admission event, so stale hidden/disabled state from a previous Remove action must not
+     * strand the package outside the host UI.
+     */
+    internal fun onPackageChanged(packageName: String) {
+        pluginStateStore.remove(packageName)
+        synchronized(stateLock) {
+            identityStore.setHidden(packageName, false)
+        }
+        manager.unbindPackage(packageName)
+        manager.refreshBindings()
+        refresh()
     }
 
     override fun close() {
