@@ -1389,6 +1389,216 @@ class TAKConnectService: Service() {
         }
 
         var isCompanionAppConnected = false
+
+        /**
+         * checks whether the connected tak server supports channels
+         * and retrieves the channels assigned to the current user
+         */
+        private fun fetchTakServerChannels(
+            takServerDetail: TakServerDetail,
+            sslContext: SSLContext,
+            trustManager: X509TrustManager
+        ) {
+            // runs the network requests on an io thread
+            CoroutineScope(Dispatchers.IO).launch {
+
+                // creates an http client that uses the user's client certificate
+                val client = OkHttpClient.Builder()
+                    .sslSocketFactory(
+                        sslContext.socketFactory,
+                        trustManager
+                    )
+                    // TODO: don't keep this
+                    .hostnameVerifier { _,_ -> true }
+                    // stops trying if the server cannot be reached within 15 seconds
+                    .connectTimeout(
+                        15,
+                        TimeUnit.SECONDS
+                    )
+                    // stops waiting if the server does not respond within 15 seconds
+                    .readTimeout(
+                        15,
+                        TimeUnit.SECONDS
+                    )
+                    .build()
+
+                try {
+                    // builds the url used to check whether channels are enabled
+                    val supportUrl = HttpUrl.Builder()
+                        .scheme("https")
+                        .host(takServerDetail.address)
+                        .port(8443)
+                        .addPathSegments(
+                            "Marti/api/groups/groupCacheEnabled"
+                        )
+                        .build()
+
+                    // creates the get request for the channel-support endpoint
+                    val supportRequest = Request.Builder()
+                        .url(supportUrl)
+                        .addHeader("Accept", "*/*")
+                        .get()
+                        .build()
+
+                    // sends the channel-support request to the server
+                    client.newCall(supportRequest).execute().use { response ->
+
+                        // stops if the server returns an unsuccessful status code
+                        if (!response.isSuccessful) {
+                            Log.e(
+                                TAG,
+                                "Channel support request failed: ${response.code}"
+                            )
+                            return@launch
+                        }
+
+                        // reads the response body before the response is closed
+                        val responseBody = response.body?.string()
+
+                        // stops if the server returned no response content
+                        if (responseBody.isNullOrBlank()) {
+                            Log.e(
+                                TAG,
+                                "Channel support response was empty"
+                            )
+                            return@launch
+                        }
+
+                        // reads the true or false value from the json data field
+                        val channelsEnabled = ObjectMapper()
+                            .readTree(responseBody)
+                            .path("data")
+                            .asBoolean(false)
+
+                        // logs whether this server supports channels
+                        Log.d(
+                            TAG,
+                            "Channels enabled for " +
+                                    "${takServerDetail.name}: $channelsEnabled"
+                        )
+
+                        // clears the channel list and stops if channels are disabled
+                        if (!channelsEnabled) {
+                            dataRepository.updateTakChannels(emptyList())
+                            return@launch
+                        }
+                    }
+
+                    // retrieves available channels for the user identified by the certificate
+                    val channelsUrl = HttpUrl.Builder()
+                        .scheme("https")
+                        .host(takServerDetail.address)
+                        .port(8443)
+                        .addPathSegments("Marti/api/groups/all")
+                        // returns the user's cached active and inactive channel selections
+                        .addQueryParameter(
+                            "useCache",
+                            "true"
+                        )
+                        .build()
+
+                    // creates the get request for the assigned-channels endpoint
+                    val channelsRequest = Request.Builder()
+                        .url(channelsUrl)
+                        .addHeader("Accept", "*/*")
+                        .get()
+                        .build()
+
+                    // sends the assigned-channels request to the server
+                    client.newCall(channelsRequest).execute().use { response ->
+
+                        // stops if the server returns an unsuccessful status code
+                        if (!response.isSuccessful) {
+                            Log.e(
+                                TAG,
+                                "Channel request failed for " +
+                                        "${takServerDetail.name}: ${response.code}"
+                            )
+                            return@launch
+                        }
+
+                        // reads the response body before the response is closed
+                        val responseBody = response.body?.string()
+
+                        // stops if the server returned no channel data
+                        if (responseBody.isNullOrBlank()) {
+                            Log.e(
+                                TAG,
+                                "Assigned Channels response was empty"
+                            )
+                            return@launch
+                        }
+
+                        // reads the channel array from the json data field
+                        val groups = ObjectMapper()
+                            .readTree(responseBody)
+                            .path("data")
+
+                        // stops if the response does not contain a channel array
+                        if (!groups.isArray) {
+                            Log.e(
+                                TAG,
+                                "Assigned Channels response had no data array"
+                            )
+                            return@launch
+                        }
+
+                        // converts every json group into a channel object
+                        val channels = groups.map { group ->
+                            DataRepository.TakChannel(
+                                // stores the channel's display name
+                                name = group
+                                    .path("name")
+                                    .asText(),
+
+                                // stores whether the channel is for in or out data
+                                direction = group
+                                    .path("direction")
+                                    .asText(),
+
+                                // stores whether the channel is currently active
+                                active = group
+                                    .path("active")
+                                    .asBoolean(),
+
+                                // stores the channel's server bit position
+                                bitPosition = group
+                                    .path("bitpos")
+                                    .asInt()
+                            )
+                        }
+
+                        // saves the channels so other parts of the app can observe them
+                        dataRepository.updateTakChannels(channels)
+
+                        // confirms how many channels were saved
+                        Log.d(
+                            TAG,
+                            "Saved ${channels.size} Channels to DataRepository"
+                        )
+
+                        // logs each channel to make testing easier
+                        channels.forEach { channel ->
+                            Log.d(
+                                TAG,
+                                "Channel: name=${channel.name}, " +
+                                        "direction=${channel.direction}, " +
+                                        "active=${channel.active}, " +
+                                        "bitpos=${channel.bitPosition}"
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    // logs certificate, network, or json parsing failures
+                    Log.e(
+                        TAG,
+                        "Failed to retrieve Channels from " +
+                                takServerDetail.name,
+                        e
+                    )
+                }
+            }
+        }
         
         fun connectTAKServer(
             takServerDetail: TakServerDetail,
@@ -1479,6 +1689,12 @@ class TAKConnectService: Service() {
                     takServerDetail.numConnAttempts = 0
                     setIsAnyNetworkConnecting()
                     Log.d(TAG, "Successfully connected to $takServer on port $port")
+                    // retrieves the user's channels after the certificate connection succeeds
+                    fetchTakServerChannels(
+                        takServerDetail = takServerDetail,
+                        sslContext = sslContext,
+                        trustManager = trustManager
+                    )
                     if (newServerAddedViaUi) {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)

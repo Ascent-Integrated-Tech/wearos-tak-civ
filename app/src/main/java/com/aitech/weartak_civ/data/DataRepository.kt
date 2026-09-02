@@ -254,6 +254,26 @@ class DataRepository(private val context: Context) {
 
     val deviceInfo: StateFlow<DeviceInfo> = _deviceInfo.asStateFlow()
 
+    // stores one channel returned by the tak server
+    data class TakChannel(
+        val name: String,
+        val direction: String,
+        val active: Boolean,
+        val bitPosition: Int
+    )
+
+    // holds the latest channels received from the tak server
+    private val _takChannels =
+        MutableStateFlow<List<TakChannel>>(emptyList())
+
+    // allows other parts of the app to observe the channel list
+    val takChannels: StateFlow<List<TakChannel>> =
+        _takChannels.asStateFlow()
+
+    // replaces the current list with the latest channels from the server
+    fun updateTakChannels(channels: List<TakChannel>) {
+        _takChannels.value = channels
+    }
     private val _airplaneOnSuccess = MutableStateFlow(false)
     val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
 
