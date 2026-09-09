@@ -254,26 +254,44 @@ class DataRepository(private val context: Context) {
 
     val deviceInfo: StateFlow<DeviceInfo> = _deviceInfo.asStateFlow()
 
-    // stores one channel returned by the tak server
+    // Represents a TAK channel
     data class TakChannel(
+
+        // Channel name
         val name: String,
+
+        // Channel direction from TAK
+        // "IN" means data from that channel can come into weartak
+        // "OUT" means weartak can send data out to that channel
         val direction: String,
+
+        // Whether the channel is active
         val active: Boolean,
-        val bitPosition: Int
+
+        // Channel identifier from TAK
+        val bitPosition: Int,
+
+        // Unique identifier for the TAK server
+        val serverUid: String = "",
+
+        // TAK server address
+        val serverAddress: String,
+
     )
 
-    // holds the latest channels received from the tak server
+    // Holds the latest channels from the TAK server
     private val _takChannels =
-        MutableStateFlow<List<TakChannel>>(emptyList())
+        MutableStateFlow<HashMap<Int, TakChannel>>(hashMapOf())
 
-    // allows other parts of the app to observe the channel list
-    val takChannels: StateFlow<List<TakChannel>> =
+    // Lets other parts of the app observe the channels
+    val takChannels: StateFlow<HashMap<Int, TakChannel>> =
         _takChannels.asStateFlow()
 
-    // replaces the current list with the latest channels from the server
-    fun updateTakChannels(channels: List<TakChannel>) {
+    // Replaces the current HashMap with the latest channels from the server
+    fun updateTakChannels(channels: HashMap<Int, TakChannel>) {
         _takChannels.value = channels
     }
+
     private val _airplaneOnSuccess = MutableStateFlow(false)
     val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
 
@@ -2849,7 +2867,10 @@ class DataRepository(private val context: Context) {
             .trim()
 
     private fun normalizeTakServerItem(item: TakServerItem): TakServerItem {
+
         val normalizedCert = normalizeP12Cert(item.p12Cert)
+
+
         if (!item.isP12Cert) {
             return if (normalizedCert == item.p12Cert) item else item.copy(p12Cert = normalizedCert)
         }
