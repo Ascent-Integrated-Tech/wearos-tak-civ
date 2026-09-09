@@ -148,6 +148,8 @@ class TAKConnectService: Service() {
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
         var privateKey: PrivateKey? = null,
         var secureSocket : SSLSocket? = null,
+        var channelSslContext: SSLContext? = null,
+        var channelTrustManager: X509TrustManager? = null,
         val runtime: ConnectionRuntime = ConnectionRuntime(),
         var duplicateEndpointSuppressed: Boolean = false,
     )
@@ -1408,7 +1410,7 @@ class TAKConnectService: Service() {
                         sslContext.socketFactory,
                         trustManager
                     )
-                    // TODO: don't keep this
+
                     .hostnameVerifier { _,_ -> true }
                     // stops trying if the server cannot be reached within 15 seconds
                     .connectTimeout(
@@ -1479,7 +1481,7 @@ class TAKConnectService: Service() {
 
                         // clears the channel list and stops if channels are disabled
                         if (!channelsEnabled) {
-                            dataRepository.updateTakChannels(emptyList())
+                            dataRepository.updateTakChannels(hashMapOf())
                             return@launch
                         }
                     }
@@ -1543,32 +1545,41 @@ class TAKConnectService: Service() {
                             return@launch
                         }
 
-                        // converts every json group into a channel object
+                        val serverUid = TakServerEndpointIdentity.key(
+                            takServerDetail.address,
+                            takServerDetail.port
+                        )
+
+                        // Converts each group returned by the TAK server into a TakChannel
                         val channels = groups.map { group ->
+
+                            // Creates a channel using the data returned by the server
                             DataRepository.TakChannel(
-                                // stores the channel's display name
-                                name = group
-                                    .path("name")
-                                    .asText(),
 
-                                // stores whether the channel is for in or out data
-                                direction = group
-                                    .path("direction")
-                                    .asText(),
+                                // Gets the channel name
+                                name = group.path("name").asText(),
 
-                                // stores whether the channel is currently active
-                                active = group
-                                    .path("active")
-                                    .asBoolean(),
+                                // Gets whether the channel is IN or OUT
+                                direction = group.path("direction").asText(),
 
-                                // stores the channel's server bit position
-                                bitPosition = group
-                                    .path("bitpos")
-                                    .asInt()
+                                // Gets whether the channel is currently active
+                                active = group.path("active").asBoolean(),
+
+                                // Gets the channel identifier used by the TAK server
+                                bitPosition = group.path("bitpos").asInt(),
+
+                                serverUid = serverUid,
+
+                                // Saves which TAK server this channel came from
+                                serverAddress = takServerDetail.address
                             )
+
+                        // Creates a HashMap using the bit position as the key
+                        }.associateByTo(hashMapOf()) { channel ->
+                            channel.bitPosition
                         }
 
-                        // saves the channels so other parts of the app can observe them
+                        // Saves the channels so other parts of the app can observe them
                         dataRepository.updateTakChannels(channels)
 
                         // confirms how many channels were saved
@@ -1577,14 +1588,17 @@ class TAKConnectService: Service() {
                             "Saved ${channels.size} Channels to DataRepository"
                         )
 
+
                         // logs each channel to make testing easier
-                        channels.forEach { channel ->
+                        channels.forEach { (bitPosition, channel) ->
                             Log.d(
                                 TAG,
-                                "Channel: name=${channel.name}, " +
+                                "Channel: " +
+                                        "server=${takServerDetail.address}, " +
+                                        "name=${channel.name}, " +
                                         "direction=${channel.direction}, " +
                                         "active=${channel.active}, " +
-                                        "bitpos=${channel.bitPosition}"
+                                        "bitpos=$bitPosition"
                             )
                         }
                     }
@@ -1599,6 +1613,242 @@ class TAKConnectService: Service() {
                 }
             }
         }
+
+        // Updates a channel using the server address, channel bit position, and new active state
+        fun updateTakChannel(
+            serverUid: String,
+            channelBitPosition: Int,
+            shouldBeActive: Boolean
+        ) {
+            // Finds the connected TAK server for this address
+            val takServerDetail = takServerDetails.firstOrNull { server ->
+                TakServerEndpointIdentity.key(
+                server.address,
+                        server.port ) ==
+                        serverUid && server.isEnabled && server.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT
+
+            }
+
+            // Stops if the server is not connected
+            if (takServerDetail == null) {
+                Log.e(
+                    TAG,
+                    "Cannot update TAK channel: connected server not found for $serverUid"
+                )
+                return
+            }
+
+            // Gets the TLS information saved when the server connected
+            val sslContext = takServerDetail.channelSslContext
+            val trustManager = takServerDetail.channelTrustManager
+
+            // Stops if the TLS information is not available
+            if (sslContext == null || trustManager == null) {
+                Log.e(
+                    TAG,
+                    "Cannot update TAK channel: TLS state unavailable for $serverUid"
+                )
+                return
+            }
+
+            // Passes the update to the function that sends it to the TAK server
+            sendTakChannelUpdate(
+                takServerDetail = takServerDetail,
+                sslContext = sslContext,
+                trustManager = trustManager,
+                channelBitPosition = channelBitPosition,
+                shouldBeActive = shouldBeActive
+            )
+        }
+
+        // Sends the channel update to the TAK server
+        fun sendTakChannelUpdate(
+            takServerDetail: TakServerDetail,
+            sslContext: SSLContext,
+            trustManager: X509TrustManager,
+            channelBitPosition: Int,
+            shouldBeActive: Boolean
+        ) {
+            // Runs the network request on an IO thread
+            CoroutineScope(Dispatchers.IO).launch {
+
+                // Creates an HTTP client using the user's certificate
+                val client = OkHttpClient.Builder()
+                    .sslSocketFactory(sslContext.socketFactory, trustManager)
+                    .hostnameVerifier { _, _ -> true }
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .build()
+
+                try {
+
+                    // Builds the URL for getting the latest channel state
+                    val groupsUrl = HttpUrl.Builder()
+                        .scheme("https")
+                        .host(takServerDetail.address)
+                        .port(8443)
+                        .addPathSegments("Marti/api/groups/all")
+                        .addQueryParameter("useCache", "true")
+                        .build()
+
+                    // Creates the request for the latest channels
+                    val getRequest = Request.Builder()
+                        .url(groupsUrl)
+                        .addHeader("Accept", "*/*")
+                        .get()
+                        .build()
+
+                    // Gets the latest channels from the TAK server
+                    val groups =
+                        client.newCall(getRequest).execute().use { response ->
+
+                            // Stops if the request failed
+                            if (!response.isSuccessful) {
+                                Log.e(
+                                    TAG,
+                                    "Failed to get channels before update: ${response.code}"
+                                )
+                                return@launch
+                            }
+
+                            // Reads the response
+                            val responseBody = response.body?.string()
+
+                            // Stops if the response is empty
+                            if (responseBody.isNullOrBlank()) {
+                                Log.e(
+                                    TAG,
+                                    "Channel response was empty before update"
+                                )
+                                return@launch
+                            }
+
+                            // Gets the channel array from the response
+                            val data = ObjectMapper()
+                                .readTree(responseBody)
+                                .path("data")
+
+                            // Stops if there is no channel array
+                            if (!data.isArray) {
+                                Log.e(
+                                    TAG,
+                                    "Channel response had no data array"
+                                )
+                                return@launch
+                            }
+
+                            data
+                        }
+
+                    // Makes a copy of the channels that can be updated
+                    val updatedGroups =
+                        groups.deepCopy<com.fasterxml.jackson.databind.node.ArrayNode>()
+
+                    // Tracks whether the selected channel was found
+                    var channelFound = false
+
+                    // Checks each channel returned by the server
+                    updatedGroups.forEach { group ->
+
+                        // Finds records with the selected bit position
+                        if (group.path("bitpos").asInt() == channelBitPosition) {
+
+                            channelFound = true
+
+                            // Changes the channel to the requested active state
+                            (group as com.fasterxml.jackson.databind.node.ObjectNode)
+                                .put("active", shouldBeActive)
+
+                            Log.d(
+                                TAG,
+                                "Updating TAK channel: " +
+                                        "name=${group.path("name").asText()}, " +
+                                        "direction=${group.path("direction").asText()}, " +
+                                        "bitpos=$channelBitPosition, " +
+                                        "active=$shouldBeActive"
+                            )
+                        }
+                    }
+
+                    // Stops if the selected channel was not found
+                    if (!channelFound) {
+                        Log.e(
+                            TAG,
+                            "Cannot update TAK channel: " +
+                                    "bitpos=$channelBitPosition was not found"
+                        )
+                        return@launch
+                    }
+
+                    // Builds the URL used to update the channels
+                    val activeGroupsUrl = HttpUrl.Builder()
+                        .scheme("https")
+                        .host(takServerDetail.address)
+                        .port(8443)
+                        .addPathSegments("Marti/api/groups/active")
+                        .build()
+
+                    // Converts the updated channels to JSON
+                    val jsonBody = updatedGroups.toString()
+
+                    // Creates the JSON request body
+                    val requestBody = RequestBody.create(
+                        "application/json".toMediaTypeOrNull(),
+                        jsonBody
+                    )
+
+                    // Creates the PUT request
+                    val putRequest = Request.Builder()
+                        .url(activeGroupsUrl)
+                        .put(requestBody)
+                        .addHeader("Accept", "*/*")
+                        .addHeader("Content-Type", "application/json")
+                        .build()
+
+                    // Sends the updated channel state to the TAK server
+                    client.newCall(putRequest).execute().use { response ->
+
+                        val responseBody = response.body?.string()
+
+                        // Stops if the update failed
+                        if (!response.isSuccessful) {
+                            Log.e(
+                                TAG,
+                                "Failed to update TAK channel " +
+                                        "bitpos=$channelBitPosition: " +
+                                        "code=${response.code}, body=$responseBody"
+                            )
+                            return@launch
+                        }
+
+                        Log.d(
+                            TAG,
+                            "Successfully updated TAK channel " +
+                                    "bitpos=$channelBitPosition " +
+                                    "active=$shouldBeActive"
+                        )
+                    }
+
+                    // Gets the new channel state from the server and saves it
+                    fetchTakServerChannels(
+                        takServerDetail = takServerDetail,
+                        sslContext = sslContext,
+                        trustManager = trustManager
+                    )
+
+                } catch (e: Exception) {
+
+                    // Logs any error that happens while updating the channel
+                    Log.e(
+                        TAG,
+                        "Failed to update TAK channel " +
+                                "bitpos=$channelBitPosition",
+                        e ,
+                    )
+                }
+            }
+        }
+
         
         fun connectTAKServer(
             takServerDetail: TakServerDetail,
@@ -1653,7 +1903,8 @@ class TAKConnectService: Service() {
                         Log.e(TAG, "trustManager is null")
                         throw Exception("X509TrustManager is NULL. Cannot connect to ${takServerDetail.name}.")
                     }
-
+                    takServerDetail.channelSslContext = sslContext
+                    takServerDetail.channelTrustManager = trustManager
                     Log.d(TAG, "Going to createSocket and startHandshake")
                     // Create the socket and connect
                     val socketFactory = sslContext.socketFactory
@@ -1695,6 +1946,15 @@ class TAKConnectService: Service() {
                         sslContext = sslContext,
                         trustManager = trustManager
                     )
+//                    // TEMP TEST ONLY
+//                    Log.e(TAG, "========== TEST UPDATE IS RUNNING ==========")
+//
+//                    updateTakChannel(
+//                        serverAddress = takServerDetail.address,
+//                        channelBitPosition = 13, // Events
+//                        shouldBeActive = false
+//                    )
+
                     if (newServerAddedViaUi) {
                         newServerAddedViaUi = false
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
