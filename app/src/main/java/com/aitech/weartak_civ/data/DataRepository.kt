@@ -253,6 +253,10 @@ class DataRepository(private val context: Context) {
     )
 
     val deviceInfo: StateFlow<DeviceInfo> = _deviceInfo.asStateFlow()
+    data class TakChannelKey(
+        val serverUid: String,
+        val bitPosition: Int
+    )
 
     // Represents a TAK channel
     data class TakChannel(
@@ -281,14 +285,14 @@ class DataRepository(private val context: Context) {
 
     // Holds the latest channels from the TAK server
     private val _takChannels =
-        MutableStateFlow<HashMap<Int, TakChannel>>(hashMapOf())
+        MutableStateFlow<HashMap<TakChannelKey, TakChannel>>(hashMapOf())
 
     // Lets other parts of the app observe the channels
-    val takChannels: StateFlow<HashMap<Int, TakChannel>> =
+    val takChannels: StateFlow<HashMap<TakChannelKey, TakChannel>> =
         _takChannels.asStateFlow()
 
     // Replaces the current HashMap with the latest channels from the server
-    fun updateTakChannels(channels: HashMap<Int, TakChannel>) {
+    fun updateTakChannels(channels: HashMap<TakChannelKey, TakChannel>) {
         _takChannels.value = channels
     }
 

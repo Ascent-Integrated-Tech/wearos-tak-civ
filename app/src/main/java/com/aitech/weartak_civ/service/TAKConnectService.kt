@@ -1089,6 +1089,73 @@ class TAKConnectService: Service() {
             }
             return inputStream
         }
+        private fun addFakeSecondServerChannels() {
+
+            val fakeServerUid = "FAKE_SERVER_2"
+
+            val fakeChannels = hashMapOf(
+                DataRepository.TakChannelKey(fakeServerUid, 5) to
+                        DataRepository.TakChannel(
+                            name = "Fake Alpha",
+                            direction = "OUT",
+                            active = true,
+                            bitPosition = 5,
+                            serverUid = fakeServerUid,
+                            serverAddress = "fake.server.two"
+                        ),
+
+                DataRepository.TakChannelKey(fakeServerUid, 6) to
+                        DataRepository.TakChannel(
+                            name = "Fake Bravo",
+                            direction = "IN",
+                            active = false,
+                            bitPosition = 6,
+                            serverUid = fakeServerUid,
+                            serverAddress = "fake.server.two"
+                        ),
+
+                DataRepository.TakChannelKey(fakeServerUid, 10) to
+                        DataRepository.TakChannel(
+                            name = "Fake Same Bitpos",
+                            direction = "OUT",
+                            active = true,
+                            bitPosition = 10,
+                            serverUid = fakeServerUid,
+                            serverAddress = "fake.server.two"
+                        )
+            )
+
+            Log.d(TAG, "Adding fake second TAK server channels")
+
+            val combined = HashMap(dataRepository.takChannels.value)
+
+            Log.d(TAG, "BEFORE MERGE size=${combined.size}")
+
+            combined.putAll(fakeChannels)
+
+            Log.d(TAG, "AFTER MERGE size=${combined.size}")
+
+            dataRepository.updateTakChannels(combined)
+
+            Log.d(
+                TAG,
+                "AFTER REPOSITORY UPDATE size=${dataRepository.takChannels.value.size}"
+            )
+
+            Log.d(TAG, "===== FINAL REPOSITORY CHANNELS =====")
+
+            dataRepository.takChannels.value.forEach { (key, channel) ->
+                Log.d(
+                    TAG,
+                    "FINAL: " +
+                            "serverUid=${channel.serverUid}, " +
+                            "server=${channel.serverAddress}, " +
+                            "name=${channel.name}, " +
+                            "bitpos=${key.bitPosition}, " +
+                            "active=${channel.active}"
+                )
+            }
+        }
 
         private fun checkIssuerEqualsSubject(cert1: X509Certificate, cert2: X509Certificate): Boolean {
             return cert1.issuerX500Principal == cert2.subjectX500Principal
@@ -1576,11 +1643,15 @@ class TAKConnectService: Service() {
 
                         // Creates a HashMap using the bit position as the key
                         }.associateByTo(hashMapOf()) { channel ->
-                            channel.bitPosition
+                            DataRepository.TakChannelKey(
+                                serverUid = channel.serverUid,
+                                bitPosition =  channel.bitPosition
+                            )
                         }
 
                         // Saves the channels so other parts of the app can observe them
                         dataRepository.updateTakChannels(channels)
+                        addFakeSecondServerChannels()
 
                         // confirms how many channels were saved
                         Log.d(
