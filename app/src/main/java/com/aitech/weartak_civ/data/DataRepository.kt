@@ -253,47 +253,77 @@ class DataRepository(private val context: Context) {
     )
 
     val deviceInfo: StateFlow<DeviceInfo> = _deviceInfo.asStateFlow()
+
+    // Identifies one channel on one TAK server
     data class TakChannelKey(
+        // Identifies which TAK server the channel belongs to
         val serverUid: String,
+
+        // Identifies the channel within that TAK server
         val bitPosition: Int
     )
 
-    // Represents a TAK channel
+    // Represents one TAK channel returned by a server
     data class TakChannel(
 
-        // Channel name
+        // Channel name shown to the user
         val name: String,
 
-        // Channel direction from TAK
-        // "IN" means data from that channel can come into weartak
-        // "OUT" means weartak can send data out to that channel
+        // Direction returned by TAK: IN or OUT
         val direction: String,
 
-        // Whether the channel is active
+        // Whether the channel is currently active
         val active: Boolean,
 
-        // Channel identifier from TAK
+        // Channel identifier assigned by that TAK server
         val bitPosition: Int,
 
-        // Unique identifier for the TAK server
+        // Identifies the TAK server this channel came from
         val serverUid: String = "",
 
-        // TAK server address
+        // Server address kept for reference/debugging
         val serverAddress: String,
-
     )
 
-    // Holds the latest channels from the TAK server
+    // Holds the current channels from all TAK servers
     private val _takChannels =
         MutableStateFlow<HashMap<TakChannelKey, TakChannel>>(hashMapOf())
 
-    // Lets other parts of the app observe the channels
+    // Read only channel state observed by the rest of the app
     val takChannels: StateFlow<HashMap<TakChannelKey, TakChannel>> =
         _takChannels.asStateFlow()
 
-    // Replaces the current HashMap with the latest channels from the server
-    fun updateTakChannels(channels: HashMap<TakChannelKey, TakChannel>) {
-        _takChannels.value = channels
+    // Updates only the channels belonging to one TAK server
+    fun updateTakChannels(
+        serverUid: String,
+        channels: HashMap<TakChannelKey, TakChannel>
+    ) {
+        _takChannels.update { current ->
+
+            // Keep channels that belong to other TAK servers
+            val updated = HashMap(
+                current.filterKeys { key ->
+                    key.serverUid != serverUid
+                }
+            )
+
+            // Add the latest channels for this TAK server
+            updated.putAll(channels)
+
+            updated
+        }
+    }
+
+    // Removes only the channels belonging to one TAK server
+    fun clearTakChannels(serverUid: String) {
+        _takChannels.update { current ->
+
+            HashMap(
+                current.filterKeys { key ->
+                    key.serverUid != serverUid
+                }
+            )
+        }
     }
 
     private val _airplaneOnSuccess = MutableStateFlow(false)
