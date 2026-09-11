@@ -41,7 +41,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
@@ -176,9 +175,29 @@ import com.aitech.weartak_civ.service.BloodhoundService
 import com.aitech.weartak_civ.service.ChatService
 import org.maplibre.compose.expressions.dsl.asNumber
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
+import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.MapActivity.Constants.channelsList
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import com.fasterxml.jackson.databind.util.CompactStringObjectMap
 import org.json.JSONArray
 import kotlin.math.abs
 import kotlin.math.floor
@@ -200,6 +219,58 @@ class MapActivity : ComponentActivity() {
         val teal = Color(0xFF007F7F)
         val dark_green = Color(0xFF007F00)
         val brown = Color(0xFF964B00)
+        val channelsList = listOf(
+            TakServerChannels(
+                serverId = "",
+                serverName = "Server 1",
+                status = TakChannelStatus.READY,
+                channels = listOf(
+                    TakChannelTemp(
+                        name = "Channel 1",
+                        direction = "000",
+                        active = true,
+                        bitPosition = 0,
+                    ),
+                    TakChannelTemp(
+                        name = "Channel 2",
+                        direction = "000",
+                        active = true,
+                        bitPosition = 0,
+                    ),
+                    TakChannelTemp(
+                        name = "Channel 3",
+                        direction = "000",
+                        active = true,
+                        bitPosition = 0,
+                    ),
+                ),
+            ),
+            TakServerChannels(
+                serverId = "",
+                serverName = "Server 2",
+                status = TakChannelStatus.READY,
+                channels = listOf(
+                    TakChannelTemp(
+                        name = "Channel 4",
+                        direction = "000",
+                        active = true,
+                        bitPosition = 0,
+                    ),
+                    TakChannelTemp(
+                        name = "Channel 5",
+                        direction = "000",
+                        active = true,
+                        bitPosition = 0,
+                    ),
+                    TakChannelTemp(
+                        name = "Channel 6",
+                        direction = "000",
+                        active = true,
+                        bitPosition = 0,
+                    ),
+                ),
+            ),
+         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -248,6 +319,31 @@ fun MapCivApp(exitActivity: () -> Unit, context: Context) {
             SelectedUser(navController, index, receivedUserListSetting, chatRooms, context)
         }
     }
+}
+
+//TODO: WEARTAK-15: Temp data classes till backend is finished
+data class TakChannelTemp(
+    val name: String,
+    val direction: String,
+    var active: Boolean,
+    val bitPosition: Int,
+    val updating: Boolean = false,
+)
+data class TakServerChannels(
+    // Stable UUID provided by WEAR-588.
+    val serverId: String,
+    // Friendly name shown to the user.
+    val serverName: String,
+    val status: TakChannelStatus,
+    val channels: List<TakChannelTemp>,
+    val errorMessage: String? = null,
+)
+enum class TakChannelStatus {
+    LOADING,
+    READY,
+    EMPTY,
+    UNSUPPORTED,
+    ERROR,
 }
 
 // DROPPED AND RECEIVED MARKER DATA
@@ -899,6 +995,42 @@ fun ToggleRow(label: String, visible: Boolean, onToggle: () -> Unit) {
     }
 }
 
+@Composable
+fun ServerDropdown(label: String, opened: MutableState<Boolean>, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                opened.value = !opened.value
+                onToggle() }
+            .padding(vertical = 2.dp)
+    ) {
+        Image(
+            painter = painterResource(
+                R.drawable.tak_server_connected
+            ),
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .size(22.dp)
+                .padding(end = 2.dp),
+        )
+        Text(label, color = Color.White, fontSize = 10.sp)
+        Icon(
+            imageVector =
+                if (opened.value)
+                    Icons.Filled.KeyboardArrowUp
+                else
+                    Icons.Filled.KeyboardArrowDown
+            ,
+            contentDescription = if (opened.value) "Opened" else "Closed",
+            modifier = Modifier
+                .size(14.dp)
+                .width(16.dp)
+        )
+    }
+}
+
 // LOCATION DETAIL POPUP
 // Displays coordinates and MGRS beside the user location puck
 @Composable
@@ -1164,6 +1296,84 @@ fun LayerTogglePopup(
     }
 }
 
+@Composable
+fun LayerChannelsPopup(
+    onDismiss: () -> Unit
+) {
+    // Center the menu within the circular watch display
+    Popup(
+        alignment = Alignment.Center,
+        onDismissRequest = onDismiss
+    ) {
+        Box(
+            Modifier
+                .width(150.dp)
+                .height(165.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    Color.Black.copy(alpha = 0.9f),
+                    RoundedCornerShape(8.dp)
+                ),
+        ) {
+            // Allow every option to remain reachable on the small screen
+            val scrollState = rememberScrollState()
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(12.dp)
+                    .verticalScroll(scrollState)
+            ) {
+                Text(
+                    "Channels", color = Color.White, fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                LazyColumn(
+                    modifier = Modifier
+                        .wrapContentHeight()
+                        .heightIn(max = 200.dp)
+                ) {
+                    itemsIndexed(channelsList) { index, channelItem ->
+                        var channelsVisible = remember { mutableStateOf(false) }
+                        ServerDropdown(
+                            label = channelItem.serverName,
+                            opened = channelsVisible,
+                            onToggle = { }
+                        )
+                        if (channelsVisible.value) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .wrapContentHeight()
+                                    .heightIn(max = 200.dp)
+                                    .padding(start = 10.dp)
+                            ) {
+                                itemsIndexed(channelItem.channels) { index, channelItem ->
+                                    var channelsEnabled = remember { mutableStateOf(channelItem.active) }
+
+                                    ToggleRow(
+                                        label = channelItem.name,
+                                        visible = channelsEnabled.value,
+                                        onToggle = {
+                                            channelsEnabled.value = !channelsEnabled.value
+                                            if (channelsEnabled.value != channelItem.active){
+                                                channelItem.active = !channelItem.active
+                                            }
+                                        }
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
@@ -1314,6 +1524,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
 
     // Show or hide the Layers menu
     var showLayerToggle by remember { mutableStateOf(false) }
+
+    var showChannelToggle by remember {mutableStateOf(false)}
 
     // Hide zoom, snap-to-self, and the scale while keeping Layers and Back
     var hideControls by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -1990,7 +2202,9 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
             onOpenLayers = {
                 showLayerToggle = true
             },
-
+            onOpenChannels = {
+                showChannelToggle = true
+            },
             // Exits the map screen
             onBack = {
                 exitActivity()
@@ -2172,6 +2386,15 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
                 }
             )
         }
+
+        if (showChannelToggle) {
+            LayerChannelsPopup(
+                onDismiss = {
+                    showChannelToggle = false
+                }
+            )
+        }
+
     }
 }
 
@@ -2407,6 +2630,7 @@ private fun MapControlsOverlay(
     onZoomOut: () -> Unit,
     onCenterOnSelf: () -> Unit,
     onOpenLayers: () -> Unit,
+    onOpenChannels: () -> Unit,
     // Determines whether the optional map controls should be hidden.
     hideControls: Boolean,
     onBack: () -> Unit
@@ -2534,6 +2758,22 @@ private fun MapControlsOverlay(
                 painter = painterResource(R.drawable.overlay_manager),
                 contentDescription = "Layers",
                 modifier = Modifier.size(iconSize),
+                colorFilter = ColorFilter.tint(Color.White)
+            )
+        }
+
+        CircularMapButton(
+            onClick = onOpenChannels,
+            size = buttonSize,
+            showBorder = false,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = -26.dp, y = 20.dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.channels),
+                contentDescription = "Layers",
+                modifier = Modifier.size(30.dp),
                 colorFilter = ColorFilter.tint(Color.White)
             )
         }
@@ -2675,7 +2915,7 @@ private fun ScaleLine(
                     0f,
                     0f
                 ),
-                end = androidx.compose.ui.geometry.Offset(
+                end = Offset(
                     size.width,
                     0f
                 ),
@@ -2685,11 +2925,11 @@ private fun ScaleLine(
             // Left tick
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(
+                start = Offset(
                     0f,
                     0f
                 ),
-                end = androidx.compose.ui.geometry.Offset(
+                end = Offset(
                     0f,
                     size.height
                 ),
@@ -2699,11 +2939,11 @@ private fun ScaleLine(
             // Right tick
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(
+                start = Offset(
                     size.width,
                     0f
                 ),
-                end = androidx.compose.ui.geometry.Offset(
+                end = Offset(
                     size.width,
                     size.height
                 ),
@@ -2752,4 +2992,10 @@ private const val METERS_TO_FEET = 3.280839895
 @Composable
 fun MyAppPreview() {
     PopupBox(showPopup = true, anchor = DpOffset.Unspecified, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
+}
+
+@Preview(widthDp = 192, heightDp = 192, showBackground = true)
+@Composable
+fun ChannelsPreview() {
+    LayerChannelsPopup({} )
 }
