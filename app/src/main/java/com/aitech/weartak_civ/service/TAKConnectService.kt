@@ -1712,6 +1712,7 @@ class TAKConnectService: Service() {
                             "Saved ${channels.size} Channels to DataRepository"
                         )
 
+
                         // Go through each saved channel for testing logs
                         channels.forEach { (key, channel) ->
 
@@ -1744,73 +1745,46 @@ class TAKConnectService: Service() {
          * Updates the active state of a channel on a specific TAK server.
          */
         fun updateTakChannel(
-            serverUid: String,
+            // Temporary server name until UUID is available
+            serverId: String,
+
+            // Channel to update
             channelBitPosition: Int,
+
+            // New active state
             shouldBeActive: Boolean
         ) {
-            // Search the configured TAK servers
+            // Find the selected connected server
             val takServerDetail = takServerDetails.firstOrNull { server ->
-
-                // Create the server's endpoint ID
-                TakServerEndpointIdentity.key(
-
-                    // Use the server address
-                    server.address,
-
-                    // Use the server port
-                    server.port
-
-                    // Make sure this is the server that owns the channel
-                ) == serverUid &&
-
-                        // Make sure the server is enabled
+                // Temporary name match until UUID is available
+                server.name == serverId &&
                         server.isEnabled &&
-
-                        // Make sure the server is currently connected
                         server.connectionStatus.get() ==
                         TAK_SERVER_CONNECTED_COT_PORT
             }
 
-            // Stop if the correct connected server was not found
+            // Stop if server was not found
             if (takServerDetail == null) {
-                Log.e(
-                    TAG,
-                    "Cannot update TAK channel: connected server not found for $serverUid"
-                )
+                Log.e(TAG, "Cannot update TAK channel: connected server not found for $serverId")
                 return
             }
 
-            // Get the TLS context created when this server connected
+            // Get server TLS information
             val sslContext = takServerDetail.channelSslContext
-
-            // Get the trust manager created for this server
             val trustManager = takServerDetail.channelTrustManager
 
-            // Make sure the TLS information is available
+            // Stop if TLS information is unavailable
             if (sslContext == null || trustManager == null) {
-                Log.e(
-                    TAG,
-                    "Cannot update TAK channel: TLS state unavailable for $serverUid"
-                )
+                Log.e(TAG, "Cannot update TAK channel: TLS state unavailable for $serverId")
                 return
             }
 
-            // Send the channel update to the correct TAK server
+            // Send channel update
             sendTakChannelUpdate(
-
-                // Server that owns the channel
                 takServerDetail = takServerDetail,
-
-                // TLS context used for authentication
                 sslContext = sslContext,
-
-                // Trust manager used for authentication
                 trustManager = trustManager,
-
-                // Channel that should be updated
                 channelBitPosition = channelBitPosition,
-
-                // New enabled or disabled state
                 shouldBeActive = shouldBeActive
             )
         }
