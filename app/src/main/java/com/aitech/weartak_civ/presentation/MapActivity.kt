@@ -190,15 +190,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aitech.weartak_civ.data.DataRepository.TakChannel
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
-import com.aitech.weartak_civ.presentation.MapActivity.Constants.channelsList
+import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import com.fasterxml.jackson.databind.util.CompactStringObjectMap
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
+import java.io.Serializable
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.log10
@@ -219,58 +225,6 @@ class MapActivity : ComponentActivity() {
         val teal = Color(0xFF007F7F)
         val dark_green = Color(0xFF007F00)
         val brown = Color(0xFF964B00)
-        val channelsList = listOf(
-            TakServerChannels(
-                serverId = "",
-                serverName = "Server 1",
-                status = TakChannelStatus.READY,
-                channels = listOf(
-                    TakChannelTemp(
-                        name = "Channel 1",
-                        direction = "000",
-                        active = true,
-                        bitPosition = 0,
-                    ),
-                    TakChannelTemp(
-                        name = "Channel 2",
-                        direction = "000",
-                        active = true,
-                        bitPosition = 0,
-                    ),
-                    TakChannelTemp(
-                        name = "Channel 3",
-                        direction = "000",
-                        active = true,
-                        bitPosition = 0,
-                    ),
-                ),
-            ),
-            TakServerChannels(
-                serverId = "",
-                serverName = "Server 2",
-                status = TakChannelStatus.READY,
-                channels = listOf(
-                    TakChannelTemp(
-                        name = "Channel 4",
-                        direction = "000",
-                        active = true,
-                        bitPosition = 0,
-                    ),
-                    TakChannelTemp(
-                        name = "Channel 5",
-                        direction = "000",
-                        active = true,
-                        bitPosition = 0,
-                    ),
-                    TakChannelTemp(
-                        name = "Channel 6",
-                        direction = "000",
-                        active = true,
-                        bitPosition = 0,
-                    ),
-                ),
-            ),
-         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -282,7 +236,9 @@ class MapActivity : ComponentActivity() {
         setContent {
             WearTAKCIVTheme {
                 val context = LocalContext.current
-                MapCivApp({finishAndRemoveTask()}, context)
+                val mapVm: MapViewModel = viewModel ()
+
+                MapCivApp({finishAndRemoveTask()}, context, mapVm)
             }
         }
     }
@@ -290,7 +246,7 @@ class MapActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun MapCivApp(exitActivity: () -> Unit, context: Context) {
+fun MapCivApp(exitActivity: () -> Unit, context: Context, mapVm: MapViewModel) {
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
@@ -308,7 +264,7 @@ fun MapCivApp(exitActivity: () -> Unit, context: Context) {
         startDestination = "map_screen"
     ) {
         composable("map_screen" ) {
-            MapApp({ exitActivity() }, navController)
+            MapApp({ exitActivity() }, navController, mapVm)
         }
 
         composable(
@@ -319,31 +275,6 @@ fun MapCivApp(exitActivity: () -> Unit, context: Context) {
             SelectedUser(navController, index, receivedUserListSetting, chatRooms, context)
         }
     }
-}
-
-//TODO: WEARTAK-15: Temp data classes till backend is finished
-data class TakChannelTemp(
-    val name: String,
-    val direction: String,
-    var active: Boolean,
-    val bitPosition: Int,
-    val updating: Boolean = false,
-)
-data class TakServerChannels(
-    // Stable UUID provided by WEAR-588.
-    val serverId: String,
-    // Friendly name shown to the user.
-    val serverName: String,
-    val status: TakChannelStatus,
-    val channels: List<TakChannelTemp>,
-    val errorMessage: String? = null,
-)
-enum class TakChannelStatus {
-    LOADING,
-    READY,
-    EMPTY,
-    UNSUPPORTED,
-    ERROR,
 }
 
 // DROPPED AND RECEIVED MARKER DATA
@@ -1015,7 +946,7 @@ fun ServerDropdown(label: String, opened: MutableState<Boolean>, onToggle: () ->
                 .size(22.dp)
                 .padding(end = 2.dp),
         )
-        Text(label, color = Color.White, fontSize = 10.sp)
+        Text(label, color = Color.White, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(
             imageVector =
                 if (opened.value)
@@ -1298,7 +1229,9 @@ fun LayerTogglePopup(
 
 @Composable
 fun LayerChannelsPopup(
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    mapVm: MapViewModel,
+    takServers: List<MapViewModel.TakServerChannels>
 ) {
     // Center the menu within the circular watch display
     Popup(
@@ -1336,10 +1269,10 @@ fun LayerChannelsPopup(
                         .wrapContentHeight()
                         .heightIn(max = 200.dp)
                 ) {
-                    itemsIndexed(channelsList) { index, channelItem ->
+                    itemsIndexed(takServers) { index, serverItem ->
                         var channelsVisible = remember { mutableStateOf(false) }
                         ServerDropdown(
-                            label = channelItem.serverName,
+                            label = serverItem.serverUid.trim { it.isDigit() },
                             opened = channelsVisible,
                             onToggle = { }
                         )
@@ -1350,20 +1283,23 @@ fun LayerChannelsPopup(
                                     .heightIn(max = 200.dp)
                                     .padding(start = 10.dp)
                             ) {
-                                itemsIndexed(channelItem.channels) { index, channelItem ->
+                                itemsIndexed(serverItem.channels) { index, channelItem ->
                                     var channelsEnabled = remember { mutableStateOf(channelItem.active) }
 
                                     ToggleRow(
                                         label = channelItem.name,
                                         visible = channelsEnabled.value,
                                         onToggle = {
+                                            //TODO: WEAR-580: this isn't working
                                             channelsEnabled.value = !channelsEnabled.value
-                                            if (channelsEnabled.value != channelItem.active){
-                                                channelItem.active = !channelItem.active
-                                            }
+                                            mapVm.updateTakChannel(
+                                                serverId = channelItem.serverUid,
+                                                channelBitPosition = channelItem.bitPosition,
+                                                shouldBeActive = channelsEnabled.value
+                                            )
                                         }
                                     )
-                                    Spacer(Modifier.height(4.dp))
+                                    Spacer(Modifier.height(1.dp))
                                 }
                             }
                         }
@@ -1378,9 +1314,14 @@ fun LayerChannelsPopup(
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit, navController: NavController) {
+fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapViewModel) {
     // Access the application repository used by the map
     val context = LocalContext.current
+
+    val takChannels by mapVm.takChannels.collectAsStateWithLifecycle()
+    Log.d("TAK_CHANNELS", "${dataRepository.takChannels.collectAsState()}")
+    Log.d("TAK_CHANNELS", "${takChannels}")
+
 
     // Saves Layers menu settings between app sessions
     val mapPreferences = remember {
@@ -2391,7 +2332,9 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
             LayerChannelsPopup(
                 onDismiss = {
                     showChannelToggle = false
-                }
+                },
+                mapVm,
+                takServers = takChannels
             )
         }
 
@@ -2994,8 +2937,8 @@ fun MyAppPreview() {
     PopupBox(showPopup = true, anchor = DpOffset.Unspecified, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
 }
 
-@Preview(widthDp = 192, heightDp = 192, showBackground = true)
-@Composable
-fun ChannelsPreview() {
-    LayerChannelsPopup({} )
-}
+//@Preview(widthDp = 192, heightDp = 192, showBackground = true)
+//@Composable
+//fun ChannelsPreview() {
+//    LayerChannelsPopup({} )
+//}

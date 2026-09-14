@@ -1757,7 +1757,7 @@ class TAKConnectService: Service() {
             // Find the selected connected server
             val takServerDetail = takServerDetails.firstOrNull { server ->
                 // Temporary name match until UUID is available
-                server.name == serverId &&
+                (server.address+":"+server.port) == serverId &&
                         server.isEnabled &&
                         server.connectionStatus.get() ==
                         TAK_SERVER_CONNECTED_COT_PORT

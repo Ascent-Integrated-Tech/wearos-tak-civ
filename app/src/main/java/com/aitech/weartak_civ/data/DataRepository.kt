@@ -273,7 +273,7 @@ class DataRepository(private val context: Context) {
         val direction: String,
 
         // Whether the channel is currently active
-        val active: Boolean,
+        var active: Boolean,
 
         // Channel identifier assigned by that TAK server
         val bitPosition: Int,
