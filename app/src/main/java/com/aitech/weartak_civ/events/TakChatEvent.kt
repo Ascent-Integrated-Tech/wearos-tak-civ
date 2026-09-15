@@ -15,5 +15,7 @@ package com.aitech.weartak_civ.events
  */
 
 data class TakChatEvent(
-    val rawXml: String
+    val rawXml: String,
+    val sourceServerId: String? = null,
+    val receivedAt: Long = System.currentTimeMillis()
 )

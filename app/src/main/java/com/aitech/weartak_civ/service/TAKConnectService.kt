@@ -23,16 +23,19 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
-import com.aitech.weartak_civ.cot.CotMessageParser
-import com.aitech.weartak_civ.data.parsers.GeofenceCotParser.isRadioSilenceRectangleGeofence
+import com.aitech.weartak_civ.cot.TakServerCotEnvelope
+import com.aitech.weartak_civ.cot.TakServerCotIngestor
+import com.aitech.weartak_civ.cot.TakServerCotSink
+import com.aitech.weartak_civ.cot.CotUserPositionEvent
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
+import com.aitech.weartak_civ.data.takserver.TakServerId
+import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.data.GeofenceRepository
-import com.aitech.weartak_civ.data.parsers.GeofenceCotParser
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
@@ -91,6 +94,7 @@ import java.util.Base64
 import java.util.Date
 import java.util.Enumeration
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
@@ -133,6 +137,7 @@ class TAKConnectService: Service() {
     )
 
     data class TakServerDetail(
+        val serverId: String,
         var isEnabled: Boolean,
         var name: String,
         var address: String,
@@ -241,10 +246,23 @@ class TAKConnectService: Service() {
             val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
                 ?: return@runBlocking
             takServerDetails = mutableListOf()
+            takServerDetailsById.clear()
             for (takServer in takServers) {
-                takServerDetails.add(TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
-                    takServer.isP12Cert, takServer.username, takServer.password,
-                    takServer.p12Cert, takServer.p12CertPassword, numConnAttempts = 0))
+                val detail = TakServerDetail(
+                    serverId = requireNotNull(TakServerId.normalizeOrNull(takServer.serverId)),
+                    isEnabled = takServer.isEnabled,
+                    name = takServer.name,
+                    address = takServer.address.trim(),
+                    port = takServer.port,
+                    isP12Cert = takServer.isP12Cert,
+                    username = takServer.username,
+                    password = takServer.password,
+                    p12Cert = takServer.p12Cert,
+                    p12CertPassword = takServer.p12CertPassword,
+                    numConnAttempts = 0
+                )
+                takServerDetails.add(detail)
+                takServerDetailsById[detail.serverId] = detail
                 Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
                 Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
             }
@@ -356,16 +374,29 @@ class TAKConnectService: Service() {
                 Log.w(TAG, "SERVER_ADDED index($index) != takServers.size(${takServers.size})-1")
             }
             val takServer = takServers.last()
-            val takServerDetail = TakServerDetail(takServer.isEnabled, takServer.name, takServer.address.trim(), takServer.port,
-                takServer.isP12Cert, takServer.username, takServer.password, takServer.p12Cert, takServer.p12CertPassword)
+            val takServerDetail = TakServerDetail(
+                serverId = requireNotNull(TakServerId.normalizeOrNull(takServer.serverId)),
+                isEnabled = takServer.isEnabled,
+                name = takServer.name,
+                address = takServer.address.trim(),
+                port = takServer.port,
+                isP12Cert = takServer.isP12Cert,
+                username = takServer.username,
+                password = takServer.password,
+                p12Cert = takServer.p12Cert,
+                p12CertPassword = takServer.p12CertPassword
+            )
             if (takServerDetails.size == index) {
                 Log.d(TAG, "Adding server at index $index")
                 takServerDetails.add(takServerDetail)
             } else {
                 Log.d(TAG, "Updating server at index $index")
-                invalidateConnection(takServerDetails[index], terminate = true)
+                val replaced = takServerDetails[index]
+                invalidateConnection(replaced, terminate = true)
+                takServerDetailsById.remove(replaced.serverId, replaced)
                 takServerDetails.set(index, takServerDetail)
             }
+            takServerDetailsById[takServerDetail.serverId] = takServerDetail
             refreshDuplicateEndpointSuppression()
             // Delete server name file (if it exists)
             Companion.deleteFile(certificateCacheFileName(takServerDetail))
@@ -484,6 +515,7 @@ class TAKConnectService: Service() {
         invalidateConnection(takServerDetail, terminate = true)
         setIsAnyNetworkConnected()
         setIsAnyNetworkConnecting()
+        takServerDetailsById.remove(takServerDetail.serverId, takServerDetail)
         takServerDetails.removeAt(index)
         refreshDuplicateEndpointSuppression()
     }
@@ -572,6 +604,9 @@ class TAKConnectService: Service() {
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
+        private const val COT_EVENT_OPEN = "<event"
+        private const val COT_EVENT_CLOSE = "</event>"
+        private const val MAX_COT_BUFFER_CHARS = 1_048_576
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         const private val KEYSTORE_PASS = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
@@ -589,6 +624,10 @@ class TAKConnectService: Service() {
         private val connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
+        private val takServerDetailsById = ConcurrentHashMap<String, TakServerDetail>()
+
+        fun getTakServerDetail(serverId: String): TakServerDetail? =
+            TakServerId.normalizeOrNull(serverId)?.let(takServerDetailsById::get)
 
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
@@ -599,6 +638,68 @@ class TAKConnectService: Service() {
             } catch (_: Throwable) {
                 BloodhoundRepository(context)
             }
+        }
+
+        private val cotIngestor by lazy {
+            TakServerCotIngestor(
+                sink = object : TakServerCotSink {
+                    override suspend fun onChat(event: TakChatEvent) {
+                        EventBus.getDefault().post(event)
+                    }
+
+                    override suspend fun onGeofence(geofence: GeofenceCot) {
+                        GeofenceRepository.sendGeofenceCot(geofence)
+                    }
+
+                    override suspend fun onUser(
+                        event: CotUserPositionEvent,
+                        envelope: TakServerCotEnvelope
+                    ) {
+                        val shouldTrack = dataRepository.applyReceivedUserEvent(
+                            event = event,
+                            source = envelope.sourceServerAddress,
+                            sourceServerId = envelope.sourceServerId,
+                            receivedAt = envelope.receivedAt
+                        )
+                        if (!shouldTrack) {
+                            Log.i(TAG, "Removed stale received user uid=${event.uid}")
+                        }
+                    }
+
+                    override suspend fun onMarker(
+                        event: CotMarkerEvent,
+                        envelope: TakServerCotEnvelope
+                    ) {
+                        val shouldTrack = dataRepository.applyReceivedMarkerEvent(
+                            event = event,
+                            source = envelope.sourceServerAddress,
+                            sourceServerId = envelope.sourceServerId,
+                            receivedAt = envelope.receivedAt
+                        )
+                        if (!shouldTrack) {
+                            Log.i(TAG, "Removed stale received marker uid=${event.uid}")
+                            return
+                        }
+
+                        val mapItem = CotMarkerMapItem(event)
+                        bhRepo.updateBloodhoundEvent(
+                            BloodhoundRepository.BloodhoundEvent(
+                                mapItem = mapItem,
+                                server = envelope.sourceServerAddress,
+                                timeIssued = mapItem.link?.productionTime,
+                                timeCompleted = null,
+                                remark = event.detail.remarks ?: "",
+                                sourceServerId = envelope.sourceServerId,
+                                receivedAt = envelope.receivedAt
+                            )
+                        )
+                    }
+                },
+                isChatEnabled = { dataRepository.getEnableChatService.first() },
+                isGeofenceEnabled = { geofenceEnabled },
+                deviceUid = { MainActivity.device_uid },
+                deviceCallsign = { MainActivity.callsign }
+            )
         }
 
         private val TAK_CONNECT_SERVICE = TAKConnectService()
@@ -1602,73 +1703,63 @@ class TAKConnectService: Service() {
                         val buffer = StringBuilder()
 
                         while (true) {
-                        val line = try {
-                            reader.readLine()
-                        } catch (e: SocketTimeoutException) {
-                            // timeout just to re-check enabled/cancellation
-                            continue
-                        } ?: break
+                            val line = try {
+                                reader.readLine()
+                            } catch (e: SocketTimeoutException) {
+                                // Timeout just re-checks enabled state and cancellation.
+                                continue
+                            } ?: break
 
-                        buffer.append(line)
+                            buffer.append(line)
 
-                        // parse one <event> ... </event>
-                        val bufStr = buffer.toString()
-                        val endIdx = bufStr.indexOf("</event>")
-                        if (endIdx >= 0) {
-                            val rawXml = bufStr.substring(0, endIdx + "</event>".length)
-                            buffer.delete(0, endIdx + "</event>".length)
-                            if (dataRepository.getEnableChatService.first()
-                                && CotMessageParser.isChatMessage(rawXml)
-                                && CotMessageParser.isChatForRecipient(rawXml, MainActivity.device_uid, MainActivity.callsign)) {
-                                Log.i(TAG, "Received Chat for me:\n$rawXml")
-                                EventBus.getDefault().post(TakChatEvent(rawXml))
-                            } else if (geofenceEnabled && isRadioSilenceRectangleGeofence(rawXml)) {
-                                Log.i(TAG, "Received Radio Silence Rectangle Geofence:\n$rawXml")
-                                val geofenceCot = GeofenceCotParser.parse(rawXml)
-                                if (null != geofenceCot) GeofenceRepository.sendGeofenceCot(geofenceCot)
-                            } else {
+                            while (true) {
+                                val startIndex = buffer.indexOf(COT_EVENT_OPEN)
+                                if (startIndex < 0) {
+                                    if (buffer.length > MAX_COT_BUFFER_CHARS) {
+                                        Log.w(TAG, "Discarding oversized non-CoT socket buffer")
+                                        buffer.clear()
+                                    }
+                                    break
+                                }
+                                if (startIndex > 0) buffer.delete(0, startIndex)
 
-
-                                val userPositionCotEvent = CotMessageParser.parseUserPositionOrNull(rawXml)
-                                if (userPositionCotEvent != null) {
-                                    if (userPositionCotEvent.uid != MainActivity.device_uid) {
-                                        val shouldTrackUser = dataRepository.applyReceivedUserEvent(
-                                            event = userPositionCotEvent,
-                                            source = takServerDetail.address
+                                val endIndex = buffer.indexOf(COT_EVENT_CLOSE)
+                                val nestedStartIndex = buffer.indexOf(
+                                    COT_EVENT_OPEN,
+                                    COT_EVENT_OPEN.length
+                                )
+                                if (nestedStartIndex >= 0 &&
+                                    (endIndex < 0 || nestedStartIndex < endIndex)) {
+                                    Log.w(
+                                        TAG,
+                                        "Discarding malformed CoT prefix from serverId=${takServerDetail.serverId}"
+                                    )
+                                    buffer.delete(0, nestedStartIndex)
+                                    continue
+                                }
+                                if (endIndex < 0) {
+                                    if (buffer.length > MAX_COT_BUFFER_CHARS) {
+                                        Log.w(
+                                            TAG,
+                                            "Discarding oversized CoT from serverId=${takServerDetail.serverId}"
                                         )
-                                        if (!shouldTrackUser) {
-                                            Log.i(
-                                                TAG,
-                                                "Removing stale received user from map state: ${userPositionCotEvent.uid}"
-                                            )
-                                            continue
-                                        }
+                                        buffer.clear()
                                     }
+                                    break
                                 }
-                                val markerCotEvent: CotMarkerEvent? = CotMessageParser.parseMarkerOrNull(rawXml)
 
-                                if (markerCotEvent != null) {
-                                    val shouldTrackMarker = dataRepository.applyReceivedMarkerEvent(
-                                        event = markerCotEvent,
-                                        source = takServerDetail.address
+                                val messageEnd = endIndex + COT_EVENT_CLOSE.length
+                                val rawXml = buffer.substring(0, messageEnd)
+                                buffer.delete(0, messageEnd)
+                                cotIngestor.ingest(
+                                    TakServerCotEnvelope(
+                                        sourceServerId = takServerDetail.serverId,
+                                        sourceServerAddress = takServerDetail.address,
+                                        receivedAt = System.currentTimeMillis(),
+                                        rawXml = rawXml
                                     )
-                                    if (!shouldTrackMarker) {
-                                        Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
-                                        continue
-                                    }
-                                    val mapItem = CotMarkerMapItem(markerCotEvent)
-                                    val bhEvent = BloodhoundRepository.BloodhoundEvent(
-                                        mapItem = mapItem,
-                                        server = takServerDetail.address,
-                                        timeIssued = mapItem.link?.productionTime,
-                                        timeCompleted = null,
-                                        remark = markerCotEvent.detail.remarks ?: ""
-                                    )
-                                    Log.d(TAG, "New bh event: $bhEvent")
-                                    bhRepo.updateBloodhoundEvent(bhEvent)
-                                }
+                                )
                             }
-                        }
                         }
                     }
                 } catch (e: Exception) {

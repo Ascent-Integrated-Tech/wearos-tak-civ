@@ -64,6 +64,8 @@ object CotMessageParser {
     fun isMarkerType(type: String): Boolean =
         MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i"
 
+    fun eventTypeOrNull(rawXml: String): String? = eventAttribute(rawXml, "type")
+
     fun isChatMessage(rawXml: String): Boolean =
         rawXml.contains("<__chat") && rawXml.contains("<remarks")
 
@@ -73,9 +75,17 @@ object CotMessageParser {
             rawXml.contains("to=\"$myUid\"") ||
             isAllChatNotSentByMe(rawXml, myCallsign)
 
-    fun parseChatRooms(rawXml: String, myUid: String, myCallsign: String): List<ChatRoom> {
+    fun parseChatRooms(
+        rawXml: String,
+        myUid: String,
+        myCallsign: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
+    ): List<ChatRoom> {
         val document = parseDocumentOrNull(rawXml)
-        if (document == null) return parseChatRoomsWithRegex(rawXml, myUid)
+        if (document == null) {
+            return parseChatRoomsWithRegex(rawXml, myUid, sourceServerId, receivedAt)
+        }
 
         val rooms = mutableListOf<ChatRoom>()
         val chatElements = document.getElementsByTagName("__chat")
@@ -89,7 +99,13 @@ object CotMessageParser {
                 val remark = remarkElements.item(remarkIndex) as? Element ?: continue
                 val recipient = remark.getAttribute("to")
                 if (recipient == myCallsign || recipient == myUid || recipient == ALL_CHAT_ROOMS) {
-                    rooms += chatRoom(senderUid, senderCallsign, remark.textContent.trim())
+                    rooms += chatRoom(
+                        senderUid,
+                        senderCallsign,
+                        remark.textContent.trim(),
+                        sourceServerId,
+                        receivedAt
+                    )
                 }
             }
         }
@@ -135,7 +151,12 @@ object CotMessageParser {
         relation = extractAttribute(rawXml, "link", "relation"),
     )
 
-    private fun parseChatRoomsWithRegex(rawXml: String, myUid: String): List<ChatRoom> {
+    private fun parseChatRoomsWithRegex(
+        rawXml: String,
+        myUid: String,
+        sourceServerId: String?,
+        receivedAt: Long
+    ): List<ChatRoom> {
         val senderUid = """<chatgrp[^>]*uid0=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
             ?: return emptyList()
         val senderCallsign = """<__chat[^>]*senderCallsign=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
@@ -144,14 +165,36 @@ object CotMessageParser {
             .toRegex(RegexOption.DOT_MATCHES_ALL)
             .findAll(rawXml)
             .filter { it.groupValues[1] == myUid || it.groupValues[1] == ALL_CHAT_ROOMS }
-            .map { chatRoom(senderUid, senderCallsign, it.groupValues[2].trim()) }
+            .map {
+                chatRoom(
+                    senderUid,
+                    senderCallsign,
+                    it.groupValues[2].trim(),
+                    sourceServerId,
+                    receivedAt
+                )
+            }
             .toList()
     }
 
-    private fun chatRoom(senderUid: String, senderCallsign: String, message: String) = ChatRoom(
+    private fun chatRoom(
+        senderUid: String,
+        senderCallsign: String,
+        message: String,
+        sourceServerId: String?,
+        receivedAt: Long
+    ) = ChatRoom(
         uid = senderUid,
         title = senderCallsign,
-        messageList = listOf(ChatMessage(message, senderUid, senderCallsign, System.currentTimeMillis())),
+        messageList = listOf(
+            ChatMessage(
+                message = message,
+                uid = senderUid,
+                callsign = senderCallsign,
+                timeReceived = receivedAt,
+                sourceServerId = sourceServerId
+            )
+        ),
         newMessagesPresent = true,
         timeLastOpened = 0L,
         timeLastClosed = 0L,

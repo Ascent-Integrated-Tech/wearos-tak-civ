@@ -193,6 +193,8 @@ class ChatService : Service() {
             event.rawXml,
             myUid = MainActivity.device_uid,
             myCallsign = MainActivity.callsign,
+            sourceServerId = event.sourceServerId,
+            receivedAt = event.receivedAt,
         )
         Log.v(TAG, "Received TakChatEvent: ${event.rawXml}")
 
