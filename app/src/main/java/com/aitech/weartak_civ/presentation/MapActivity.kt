@@ -194,7 +194,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aitech.weartak_civ.data.DataRepository.TakChannel
+import com.aitech.weartak_civ.data.model.TakChannelStatus
+import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
@@ -1231,7 +1232,7 @@ fun LayerTogglePopup(
 fun LayerChannelsPopup(
     onDismiss: () -> Unit,
     mapVm: MapViewModel,
-    takServers: List<MapViewModel.TakServerChannels>
+    takServers: List<TakServerChannels>
 ) {
     // Center the menu within the circular watch display
     Popup(
@@ -1270,13 +1271,40 @@ fun LayerChannelsPopup(
                         .heightIn(max = 200.dp)
                 ) {
                     itemsIndexed(takServers) { index, serverItem ->
-                        var channelsVisible = remember { mutableStateOf(false) }
+                        val channelsVisible = remember(serverItem.serverId) { mutableStateOf(false) }
                         ServerDropdown(
-                            label = serverItem.serverUid.trim { it.isDigit() },
+                            label = serverItem.serverName,
                             opened = channelsVisible,
-                            onToggle = { }
+                            onToggle = {
+                                if (channelsVisible.value) {
+                                    mapVm.refreshTakChannels(serverItem.serverId)
+                                }
+                            }
                         )
                         if (channelsVisible.value) {
+                            when (serverItem.status) {
+                                TakChannelStatus.LOADING -> Text(
+                                    "Loading...",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.EMPTY -> Text(
+                                    "No channels assigned",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.UNSUPPORTED -> Text(
+                                    "Channels unsupported",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.ERROR -> Text(
+                                    serverItem.errorMessage ?: "Channel request failed",
+                                    color = Color.Red,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.READY -> Unit
+                            }
                             LazyColumn(
                                 modifier = Modifier
                                     .wrapContentHeight()
@@ -1284,19 +1312,21 @@ fun LayerChannelsPopup(
                                     .padding(start = 10.dp)
                             ) {
                                 itemsIndexed(serverItem.channels) { index, channelItem ->
-                                    var channelsEnabled = remember { mutableStateOf(channelItem.active) }
-
                                     ToggleRow(
-                                        label = channelItem.name,
-                                        visible = channelsEnabled.value,
+                                        label = if (channelItem.updating) {
+                                            "${channelItem.name}..."
+                                        } else {
+                                            channelItem.name
+                                        },
+                                        visible = channelItem.active,
                                         onToggle = {
-                                            //TODO: WEAR-580: this isn't working
-                                            channelsEnabled.value = !channelsEnabled.value
-                                            mapVm.updateTakChannel(
-                                                serverId = channelItem.serverUid,
-                                                channelBitPosition = channelItem.bitPosition,
-                                                shouldBeActive = channelsEnabled.value
-                                            )
+                                            if (!channelItem.updating) {
+                                                mapVm.updateTakChannel(
+                                                    serverId = serverItem.serverId,
+                                                    channelBitPosition = channelItem.bitPosition,
+                                                    shouldBeActive = !channelItem.active
+                                                )
+                                            }
                                         }
                                     )
                                     Spacer(Modifier.height(1.dp))
@@ -1319,9 +1349,6 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val context = LocalContext.current
 
     val takChannels by mapVm.takChannels.collectAsStateWithLifecycle()
-    Log.d("TAK_CHANNELS", "${dataRepository.takChannels.collectAsState()}")
-    Log.d("TAK_CHANNELS", "${takChannels}")
-
 
     // Saves Layers menu settings between app sessions
     val mapPreferences = remember {

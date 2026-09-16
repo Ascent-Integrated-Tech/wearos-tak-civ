@@ -9,22 +9,38 @@
 package com.aitech.weartak_civ.data
 
 import com.aitech.weartak_civ.data.model.GeofenceCot
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.StateFlow
 
 
 object GeofenceRepository {
-    // Buffered so producer doesn't block on brief bursts
-    private val geofenceCotChannel = Channel<GeofenceCot>(capacity = Channel.BUFFERED)
+    private const val NON_TAK_SOURCE = "non-tak:geofence"
+    private val geofenceStore = SourceAwareCotStore(
+        sourceIdOf = { geofence: GeofenceCot -> geofence.sourceServerId ?: NON_TAK_SOURCE },
+        cotUidOf = GeofenceCot::uid,
+        receivedAtOf = GeofenceCot::receivedAt
+    )
 
-    val geofenceCotFlow: Flow<GeofenceCot> = geofenceCotChannel.receiveAsFlow()
+    val geofenceCotFlow: StateFlow<List<GeofenceCot>> = geofenceStore.visibleItems
 
     fun trySendGeofenceCot(geofence: GeofenceCot): Boolean {
-        return geofenceCotChannel.trySend(geofence).isSuccess
+        applyGeofence(geofence)
+        return true
     }
 
     suspend fun sendGeofenceCot(geofence: GeofenceCot) {
-        geofenceCotChannel.send(geofence)
+        applyGeofence(geofence)
+    }
+
+    fun clearSource(serverId: String) {
+        geofenceStore.removeSource(serverId)
+    }
+
+    private fun applyGeofence(geofence: GeofenceCot) {
+        val sourceId = geofence.sourceServerId ?: NON_TAK_SOURCE
+        if (geofence.tracking) {
+            geofenceStore.upsert(geofence)
+        } else {
+            geofenceStore.remove(SourceCotKey(sourceId, geofence.uid))
+        }
     }
 }

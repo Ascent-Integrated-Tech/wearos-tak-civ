@@ -40,10 +40,18 @@ class CotMessageParserTest {
         assertTrue(CotMessageParser.isChatForRecipient(CHAT_XML, "watch-1", "EAGLE"))
         assertFalse(CotMessageParser.isChatForRecipient(CHAT_XML, "another-watch", "OTHER"))
 
-        val room = CotMessageParser.parseChatRooms(CHAT_XML, "watch-1", "EAGLE").single()
+        val room = CotMessageParser.parseChatRooms(
+            CHAT_XML,
+            "watch-1",
+            "EAGLE",
+            sourceServerId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            receivedAt = 123L
+        ).single()
         assertEquals("sender-1", room.uid)
         assertEquals("SENDER", room.title)
         assertEquals("Hello", room.messageList.single().message)
+        assertEquals("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", room.messageList.single().sourceServerId)
+        assertEquals(123L, room.messageList.single().timeReceived)
     }
 
     private companion object {

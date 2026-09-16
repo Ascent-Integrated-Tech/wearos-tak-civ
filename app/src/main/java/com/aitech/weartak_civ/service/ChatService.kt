@@ -188,11 +188,13 @@ class ChatService : Service() {
     // update the inbox
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onTakChat(event: TakChatEvent) {
-        // 1) Parse incoming rooms from COT
-        val incomingRooms = CotMessageParser.parseChatRooms(
+        // Direct TAK ingestion supplies parsed rooms; legacy sources still supply raw XML only.
+        val incomingRooms = event.parsedRooms ?: CotMessageParser.parseChatRooms(
             event.rawXml,
             myUid = MainActivity.device_uid,
             myCallsign = MainActivity.callsign,
+            sourceServerId = event.sourceServerId,
+            receivedAt = event.receivedAt,
         )
         Log.v(TAG, "Received TakChatEvent: ${event.rawXml}")
 

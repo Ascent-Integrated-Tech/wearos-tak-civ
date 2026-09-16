@@ -16,6 +16,7 @@ import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.data.secure.crypto.EncryptedSerializer.DecryptResult
 import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
+import com.aitech.weartak_civ.data.takserver.TakServerId
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.first
@@ -55,6 +56,17 @@ class TakServerMigration(
     private fun deduplicateJson(json: String): String {
         val type = object : TypeToken<List<TakServerItem>>() {}.type
         val items = gson.fromJson<List<TakServerItem>>(json, type)
-        return gson.toJson(items.distinctBy(TakServerEndpointIdentity::key))
+        return gson.toJson(migrateItems(items))
+    }
+
+    internal companion object {
+        fun migrateItems(items: List<TakServerItem>): List<TakServerItem> {
+            val usedIds = mutableSetOf<String>()
+            return items
+                .distinctBy(TakServerEndpointIdentity::key)
+                .map { item ->
+                    item.copy(serverId = TakServerId.ensureUnique(item.serverId, usedIds))
+                }
+        }
     }
 }
