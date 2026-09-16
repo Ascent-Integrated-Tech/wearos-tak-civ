@@ -56,6 +56,23 @@ class TakServerManagedReconcilerTest {
         )
     }
 
+    @Test
+    fun pairsTheRemainingServerAfterAnotherServerMoves() {
+        val existing = listOf(
+            server("Alpha", "alpha.example", SERVER_A),
+            server("Bravo", "bravo.example", SERVER_B)
+        )
+        val configured = listOf(
+            server("Bravo", "bravo.example", null),
+            server("New Alpha", "new-alpha.example", null)
+        )
+
+        assertEquals(
+            listOf(1, 0),
+            TakServerManagedReconciler.matchExistingIndexes(configured, existing)
+        )
+    }
+
     private fun server(name: String, address: String, serverId: String?) = TakServerItem(
         isEnabled = true,
         name = name,

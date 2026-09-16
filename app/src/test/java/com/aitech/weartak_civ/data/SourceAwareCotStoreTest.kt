@@ -54,4 +54,17 @@ class SourceAwareCotStoreTest {
         assertEquals(setOf("B", "Local"), store.visibleItems.value.map(Item::value).toSet())
         assertTrue(store.allItems.value.keys.none { it.sourceId == "server-a" })
     }
+
+    @Test
+    fun equalReceiveTimesUseTheMostRecentInsertionAsTieBreaker() {
+        val store = store()
+        store.upsert(Item("server-a", "same-uid", 100L, "A"))
+        store.upsert(Item("server-b", "same-uid", 100L, "B"))
+
+        assertEquals(listOf("B"), store.visibleItems.value.map(Item::value))
+
+        store.upsert(Item("server-a", "same-uid", 100L, "A refreshed"))
+
+        assertEquals(listOf("A refreshed"), store.visibleItems.value.map(Item::value))
+    }
 }

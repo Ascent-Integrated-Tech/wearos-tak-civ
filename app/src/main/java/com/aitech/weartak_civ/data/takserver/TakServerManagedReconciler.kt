@@ -32,11 +32,11 @@ object TakServerManagedReconciler {
         }
 
         if (configured.size == existing.size) {
-            matches.indices.forEach { index ->
-                if (matches[index] == null && index !in claimed) {
-                    matches[index] = index
-                    claimed += index
-                }
+            // Preserve relative position for records whose editable fields all changed.
+            val unmatchedConfigured = matches.indices.filter { matches[it] == null }
+            val unmatchedExisting = existing.indices.filterNot(claimed::contains)
+            unmatchedConfigured.zip(unmatchedExisting).forEach { (configuredIndex, existingIndex) ->
+                matches[configuredIndex] = existingIndex
             }
         }
         return matches

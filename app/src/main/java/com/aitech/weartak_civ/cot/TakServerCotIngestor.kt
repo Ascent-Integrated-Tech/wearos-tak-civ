@@ -88,7 +88,8 @@ class TakServerCotIngestor(
                 TakChatEvent(
                     rawXml = rawXml,
                     sourceServerId = envelope.sourceServerId,
-                    receivedAt = envelope.receivedAt
+                    receivedAt = envelope.receivedAt,
+                    parsedRooms = parsedRooms
                 )
             )
             return TakServerCotIngestResult.CHAT

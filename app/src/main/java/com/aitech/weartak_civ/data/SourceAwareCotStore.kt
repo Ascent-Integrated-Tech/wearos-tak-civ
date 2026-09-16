@@ -152,8 +152,21 @@ class SourceAwareCotStore<T>(
 
     private fun publishLocked() {
         _allItems.value = storedByKey.mapValues { it.value.value }
-        _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
-            visibleEntryLocked(uid)?.value?.value
+        val visibleByUid = HashMap<String, Stored<T>>(uidOrder.size)
+        storedByKey.forEach { (key, candidate) ->
+            val current = visibleByUid[key.cotUid]
+            if (current == null || candidate.isNewerThan(current)) {
+                visibleByUid[key.cotUid] = candidate
+            }
         }
+        _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
+            visibleByUid[uid]?.value
+        }
+    }
+
+    private fun Stored<T>.isNewerThan(other: Stored<T>): Boolean {
+        val receivedAtComparison = receivedAtOf(value).compareTo(receivedAtOf(other.value))
+        return receivedAtComparison > 0 ||
+            (receivedAtComparison == 0 && sequence > other.sequence)
     }
 }

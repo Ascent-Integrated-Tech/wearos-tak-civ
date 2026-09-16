@@ -57,6 +57,7 @@ class TakServerCotIngestorTest {
         assertEquals(SERVER_ID, sink.markers.single().second.sourceServerId)
         assertEquals(SERVER_ID, sink.chats.single().sourceServerId)
         assertEquals(103L, sink.chats.single().receivedAt)
+        assertEquals(SERVER_ID, sink.chats.single().parsedRooms?.single()?.messageList?.single()?.sourceServerId)
         assertEquals(SERVER_ID, sink.geofences.single().sourceServerId)
         assertEquals(104L, sink.geofences.single().receivedAt)
     }

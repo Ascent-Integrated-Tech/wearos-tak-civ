@@ -23,6 +23,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
+import com.aitech.weartak_civ.cot.CotStreamFramer
 import com.aitech.weartak_civ.cot.TakServerCotEnvelope
 import com.aitech.weartak_civ.cot.TakServerCotIngestor
 import com.aitech.weartak_civ.cot.TakServerCotSink
@@ -604,9 +605,6 @@ class TAKConnectService: Service() {
         val isRunning : AtomicBoolean = AtomicBoolean(false)
         private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
-        private const val COT_EVENT_OPEN = "<event"
-        private const val COT_EVENT_CLOSE = "</event>"
-        private const val MAX_COT_BUFFER_CHARS = 1_048_576
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         const private val KEYSTORE_PASS = "atakatak"
         const private val KEY_ALIAS = "myKeyAlias"
@@ -1700,7 +1698,12 @@ class TAKConnectService: Service() {
             val job = connectionScope.launch {
                 try {
                     BufferedReader(InputStreamReader(socket.inputStream)).use { reader ->
-                        val buffer = StringBuilder()
+                        val framer = CotStreamFramer { reason ->
+                            Log.w(
+                                TAG,
+                                "Discarding CoT stream data reason=$reason serverId=${takServerDetail.serverId}"
+                            )
+                        }
 
                         while (true) {
                             val line = try {
@@ -1710,47 +1713,7 @@ class TAKConnectService: Service() {
                                 continue
                             } ?: break
 
-                            buffer.append(line)
-
-                            while (true) {
-                                val startIndex = buffer.indexOf(COT_EVENT_OPEN)
-                                if (startIndex < 0) {
-                                    if (buffer.length > MAX_COT_BUFFER_CHARS) {
-                                        Log.w(TAG, "Discarding oversized non-CoT socket buffer")
-                                        buffer.clear()
-                                    }
-                                    break
-                                }
-                                if (startIndex > 0) buffer.delete(0, startIndex)
-
-                                val endIndex = buffer.indexOf(COT_EVENT_CLOSE)
-                                val nestedStartIndex = buffer.indexOf(
-                                    COT_EVENT_OPEN,
-                                    COT_EVENT_OPEN.length
-                                )
-                                if (nestedStartIndex >= 0 &&
-                                    (endIndex < 0 || nestedStartIndex < endIndex)) {
-                                    Log.w(
-                                        TAG,
-                                        "Discarding malformed CoT prefix from serverId=${takServerDetail.serverId}"
-                                    )
-                                    buffer.delete(0, nestedStartIndex)
-                                    continue
-                                }
-                                if (endIndex < 0) {
-                                    if (buffer.length > MAX_COT_BUFFER_CHARS) {
-                                        Log.w(
-                                            TAG,
-                                            "Discarding oversized CoT from serverId=${takServerDetail.serverId}"
-                                        )
-                                        buffer.clear()
-                                    }
-                                    break
-                                }
-
-                                val messageEnd = endIndex + COT_EVENT_CLOSE.length
-                                val rawXml = buffer.substring(0, messageEnd)
-                                buffer.delete(0, messageEnd)
+                            for (rawXml in framer.append(line)) {
                                 cotIngestor.ingest(
                                     TakServerCotEnvelope(
                                         sourceServerId = takServerDetail.serverId,
