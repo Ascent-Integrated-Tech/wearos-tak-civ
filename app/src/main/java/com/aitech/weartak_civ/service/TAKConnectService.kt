@@ -1524,7 +1524,7 @@ class TAKConnectService: Service() {
                     requestStatusIconsComplicationUpdate(context)
 
                     // see if we have one locally
-                    if (!takServerDetail.isP12Cert) {
+                    if (!takServerDetail.isP12Cert || takServerDetail.p12Cert.isNullOrBlank()) {
                         Log.i(TAG, "Not P12 for ${takServerDetail.address} ... checking if p12 locally loaded ...")
                         if (maybeLoadP12FromDisk(takServerDetail)) {
                             Log.i(TAG, "Loaded PKCS12 from disk for ${takServerDetail.address}; short-circuiting to connect")
@@ -1537,7 +1537,7 @@ class TAKConnectService: Service() {
                         }
                     }
 
-                    if (takServerDetail.isP12Cert) {
+                    if (takServerDetail.isP12Cert && !takServerDetail.p12Cert.isNullOrBlank()) {
                         Log.d(TAG, "isP12Cert true")
                         //takServerDetail.keyStore = KeyStore.getInstance("PKCS12")
                         val inputStream = base64ToInputStream(takServerDetail.p12Cert)
@@ -1674,6 +1674,7 @@ class TAKConnectService: Service() {
                         }
                     }
                 }
+
                 synchronized(takServerDetail.runtime.lock) {
                     if (takServerDetail.runtime.currentAttempt === attempt) {
                         attempt.job = job
