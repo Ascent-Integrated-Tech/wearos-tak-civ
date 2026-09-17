@@ -89,10 +89,28 @@ object CotMessageBuilder {
             "lat" to (location?.lat ?: 0.0), "lon" to (location?.lon ?: 0.0), "hae" to (location?.hae ?: 0.0),
             "ce" to ce, "le" to le,
         )
+        val physio = snapshot.physio?.data
+        val alertBiometrics = CotXml.element(
+            "biometrics",
+            listOf(
+                "alertUid" to snapshot.uid,
+                "alertState" to snapshot.alertState.name,
+                "alertCategory" to snapshot.category,
+                "alertPriority" to snapshot.priority,
+                "alertDescription" to snapshot.description,
+            ),
+            CotXml.element("device", content =
+                CotXml.element("model", content = "WEAROS") +
+                        CotXml.element("uid", content = snapshot.system.deviceId) +
+                        CotXml.element("hr", content = rectifiedInt(physio?.heartRateBpm)) +
+                        CotXml.element("skt", content = rectifiedNumber(physio?.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)) +
+                        CotXml.element("exert", content = rectifiedNumber(physio?.exertion, "%.2f", zeroIsInvalid = false))
+            )
+        )
         val detail = if (snapshot.alertState == DataRepository.AlertState.CANCEL) {
-            CotXml.element("emergency", listOf("cancel" to "true"), snapshot.system.callsign)
+            alertBiometrics + CotXml.element("emergency", listOf("cancel" to "true"), snapshot.system.callsign)
         } else {
-            CotXml.element("link", listOf("uid" to snapshot.system.deviceId, "type" to "a-f-G-U-C", "relation" to "p-p")) +
+            alertBiometrics + CotXml.element("link", listOf("uid" to snapshot.system.deviceId, "type" to "a-f-G-U-C", "relation" to "p-p")) +
                     CotXml.element("contact", listOf("callsign" to "${snapshot.system.callsign}&#10;${snapshot.description}")) +
                     CotXml.element("emergency", listOf("type" to snapshot.description), snapshot.system.callsign) +
                     CotXml.element("usericon", listOf("iconsetpath" to "911 Alert")) +

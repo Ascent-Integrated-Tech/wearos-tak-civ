@@ -59,7 +59,9 @@ import com.aitech.weartak_civ.DEFAULT_SELECTED_PHYSIO_METRIC
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry
+import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.data.CrmThresholdRanges
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxGroupStatus
@@ -168,6 +170,15 @@ import kotlin.Int
 import kotlin.String
 
 class WearTAKSettingsViewModel : ViewModel() {
+
+    private suspend fun refreshPhysioCepRuntime(reloadSustainOverrides: Boolean = false) {
+        if (reloadSustainOverrides) {
+            dataRepository.rebuildCepSustainOverridesFromSettings()
+        }
+        CepProvider.getOrCreateEngine(
+            WearTakApplication.AppCtx.app.applicationContext
+        ).refreshPhysiologicalRuntime(reloadSustainOverrides)
+    }
 
     fun findRadioIndex(dataName: String?, dataList: List<String>): Int {
         if (null == dataName) {
@@ -1024,6 +1035,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeEnablePhysiologicalAlerts(enable)
             enablePhysiologicalAlerts = enable
+            refreshPhysioCepRuntime()
         }
     }
 
@@ -1038,6 +1050,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeRestingHrHighAlertBpmThreshold(threshold)
             restingHrHighAlertBpmThreshold = threshold
+            refreshPhysioCepRuntime()
         }
     }
     val savedHighRestingHrWarningThresholdLength: StateFlow<Int> =
@@ -1051,6 +1064,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeHighRestingHrWarningThresholdLength(length)
             highRestingHrWarningThresholdLength = length
+            refreshPhysioCepRuntime(reloadSustainOverrides = true)
         }
     }
     val savedHighRestingHrAlertThresholdLength: StateFlow<Int> =
@@ -1064,6 +1078,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeHighRestingHrAlertThresholdLength(length)
             highRestingHrAlertThresholdLength = length
+            refreshPhysioCepRuntime(reloadSustainOverrides = true)
         }
     }
 
@@ -1078,6 +1093,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeRestingHrLowAlertBpmThreshold(threshold)
             restingHrLowAlertBpmThreshold = threshold
+            refreshPhysioCepRuntime()
         }
     }
 
@@ -1092,6 +1108,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeLowRestingHrWarningThresholdLength(length)
             lowRestingHrWarningThresholdLength = length
+            refreshPhysioCepRuntime(reloadSustainOverrides = true)
         }
     }
 
@@ -1106,6 +1123,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeLowRestingHrAlertThresholdLength(length)
             lowRestingHrAlertThresholdLength = length
+            refreshPhysioCepRuntime(reloadSustainOverrides = true)
         }
     }
     val savedExertionThresholdWarning: StateFlow<Int> =
@@ -1119,6 +1137,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeExertionThresholdWarning(threshold)
             exertionThresholdWarning = threshold
+            refreshPhysioCepRuntime()
         }
     }
     val savedExertionThresholdAlert: StateFlow<Int> =
@@ -1132,6 +1151,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeExertionThresholdAlert(threshold)
             exertionThresholdAlert = threshold
+            refreshPhysioCepRuntime()
         }
     }
     val savedExertionWarningThresholdLength: StateFlow<Int> =
@@ -1145,6 +1165,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeExertionWarningThresholdLength(length)
             exertionWarningThresholdLength = length
+            refreshPhysioCepRuntime(reloadSustainOverrides = true)
         }
     }
     val savedExertionAlertThresholdLength: StateFlow<Int> =
@@ -1158,6 +1179,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeExertionAlertThresholdLength(length)
             exertionAlertThresholdLength = length
+            refreshPhysioCepRuntime(reloadSustainOverrides = true)
         }
     }
     val savedEnableWearTakDevMode: StateFlow<Boolean> =

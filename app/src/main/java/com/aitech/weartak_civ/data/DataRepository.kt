@@ -3753,6 +3753,21 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /** Rebuild the CEP sustain override blob from physiological settings. */
+    suspend fun rebuildCepSustainOverridesFromSettings() {
+        val mainOverrides = mapOf(
+            "hr_high_threshold_resting_alert" to getHighRestingHrAlertThresholdLength.first() * 60L,
+            "hr_low_threshold_resting_alert" to getLowRestingHrAlertThresholdLength.first() * 60L,
+            "exertion_alert_hr_zone5_exercise" to getExertionAlertThresholdLength.first().toLong()
+        )
+        val warningOverrides = mapOf(
+            "hr_high_threshold_resting_warning" to getHighRestingHrWarningThresholdLength.first() * 60L,
+            "hr_low_threshold_resting_warning" to getLowRestingHrWarningThresholdLength.first() * 60L,
+            "exertion_warning_hr_zone4_exercise" to getExertionWarningThresholdLength.first().toLong()
+        )
+        storeCepSustainOverridesDual(mainOverrides, warningOverrides)
+    }
+
     // ====================================================================================
     // WEAR-508 ManagedConfiguration CEP overlay persistence
     //
